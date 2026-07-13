@@ -39,7 +39,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: YihongDong/OpenCollab
-          ref: 0d280682acfce9e1a816a9b1d0863a985b6c9b2f
+          ref: 0e3baabefdc16ca9e00484aa231c6c06c01370cf
           path: opencollab-source
 
       - name: Set up Python
@@ -95,7 +95,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: YihongDong/OpenCollab
-          ref: 0d280682acfce9e1a816a9b1d0863a985b6c9b2f
+          ref: 0e3baabefdc16ca9e00484aa231c6c06c01370cf
           path: opencollab-source
 
       - name: Set up Python
