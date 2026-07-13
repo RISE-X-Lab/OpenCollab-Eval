@@ -39,7 +39,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: YihongDong/OpenCollab
-          ref: 7ea0ea6903db5c743e89dbbccb8a164ad8397c36
+          ref: 9583d596668d1ec374ff85f984a2fa2c2e3b3871
           token: ${{ secrets.OPENCOLLAB_READ_TOKEN }}
           persist-credentials: false
           path: opencollab-source
