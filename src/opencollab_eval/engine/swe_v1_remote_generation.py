@@ -429,6 +429,12 @@ def eval_summary_matches_prediction(
     previous_sha = str(summary.get("patch_sha256") or "")
     if not patch_sha_matches(previous_sha, current_sha):
         return False
+    current_eval_sha = patch_sha(eval_model_patch(prediction))
+    previous_eval_sha = str(
+        summary.get("eval_patch_sha256") or summary.get("patch_sha256") or ""
+    )
+    if not patch_sha_matches(previous_eval_sha, current_eval_sha):
+        return False
     current_record = row_record_id(prediction)
     previous_record = str(summary.get("record_id") or "")
     if current_record and previous_record and current_record != previous_record:

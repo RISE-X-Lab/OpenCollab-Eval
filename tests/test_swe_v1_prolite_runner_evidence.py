@@ -478,6 +478,50 @@ def test_eval_attempt_count_uses_filtered_child_patch_identity(tmp_path):
     assert namespace["eval_attempt_count"](run_dir, prediction, task) == 1
 
 
+def test_eval_summary_reuse_requires_filtered_child_patch_identity(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    namespace["direct_eval_done_has_execution_proof"] = lambda *args, **kwargs: True
+    task = "instance_org__repo-1"
+    source = (
+        "diff --git a/.yarn/install-state.gz b/.yarn/install-state.gz\n"
+        "new file mode 100644\n"
+        "Binary files /dev/null and b/.yarn/install-state.gz differ\n"
+        "diff --git a/src/widget.ts b/src/widget.ts\n"
+        "--- a/src/widget.ts\n"
+        "+++ b/src/widget.ts\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+    )
+    source_sha = namespace["patch_sha"](source)
+    prediction = {
+        "instance_id": task,
+        "record_id": "record-1",
+        "patch_sha256": source_sha,
+        "model_patch": source,
+    }
+    summary = {
+        "task": task,
+        "record_id": "record-1",
+        "patch_sha256": source_sha,
+    }
+
+    assert namespace["eval_summary_matches_prediction"](
+        summary,
+        prediction,
+        task,
+    ) is False
+
+    summary["eval_patch_sha256"] = namespace["patch_sha"](
+        namespace["eval_model_patch"](prediction)
+    )
+    assert namespace["eval_summary_matches_prediction"](
+        summary,
+        prediction,
+        task,
+    ) is True
+
+
 def test_prolite_prediction_sha_comes_from_patch_text(tmp_path):
     namespace = _remote_namespace(tmp_path)
     task = "task-1"
