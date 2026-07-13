@@ -261,6 +261,7 @@ import sys
 
 names = json.loads(__OPENCOLLAB_GO_NAMES__)
 packages = {}
+target_files = {}
 for path in pathlib.Path(".").rglob("*_test.go"):
     if ".git" in path.parts:
         continue
@@ -277,15 +278,36 @@ for path in pathlib.Path(".").rglob("*_test.go"):
     parent = path.parent.as_posix()
     package = "." if parent == "." else "./" + parent
     packages.setdefault(package, set()).update(matched)
+    target_files.setdefault(package, set()).add(path.as_posix())
 found = set().union(*packages.values()) if packages else set()
 missing = [name for name in names if name not in found]
 if missing:
     print("unable to map Go tests to packages: " + ", ".join(missing), file=sys.stderr)
     raise SystemExit(127)
+owners = {
+    name: [package for package, selected in packages.items() if name in selected]
+    for name in names
+}
+ambiguous = [name for name, package_names in owners.items() if len(package_names) != 1]
+if ambiguous:
+    print("ambiguous Go test package mapping: " + ", ".join(ambiguous), file=sys.stderr)
+    raise SystemExit(127)
 status = 0
 for package in sorted(packages):
     selected = sorted(packages[package])
     pattern = "^(" + "|".join(re.escape(name) for name in selected) + ")(/.*)?$"
+    print(
+        "OPENCOLLAB_GO_TARGET_DISCOVERY "
+        + json.dumps(
+            {
+                "package": package,
+                "tests": selected,
+                "test_files": sorted(target_files[package]),
+            },
+            sort_keys=True,
+        ),
+        flush=True,
+    )
     result = subprocess.run(["go", "test", "-count=1", "-json", package, "-run", pattern])
     if result.returncode != 0:
         status = result.returncode

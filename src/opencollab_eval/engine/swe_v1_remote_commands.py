@@ -2,6 +2,7 @@
 
 # ruff: noqa: E501, F403, F405
 
+from opencollab_eval.engine.swe_v1_go_failure_proof import *
 from opencollab_eval.engine.swe_v1_remote_core import *
 from opencollab_eval.engine.swe_v1_remote_records import *
 from opencollab_eval.engine.swe_v1_remote_state import *
@@ -127,32 +128,16 @@ def _plan_log_proof_matches(proof, log_text, proof_text=""):
         return result.get("ok") is True
     if proof.get("kind") != "go_json_test_pass":
         return False
-    declared_tests = proof.get("tests")
-    if declared_tests is None:
-        declared_tests = [proof.get("test")]
-    if (
-        not isinstance(declared_tests, list)
-        or not declared_tests
-        or any(not isinstance(test, str) or not test for test in declared_tests)
-    ):
-        return False
-    expected_tests = set(declared_tests)
-    passed_tests = set()
-    for raw_line in log_text.splitlines():
-        if not raw_line.strip():
-            continue
-        try:
-            event = json.loads(raw_line)
-        except json.JSONDecodeError:
-            return False
-        if not isinstance(event, dict):
-            return False
-        if event.get("Action") == "pass" and event.get("Test") in expected_tests:
-            passed_tests.add(event["Test"])
-    return passed_tests == expected_tests
+    return go_pass_proof_matches(proof, log_text)
 
 
-def _plan_log_failure_proof_matches(proof, log_text, proof_text=""):
+def _plan_log_failure_proof_matches(
+    proof,
+    log_text,
+    proof_text="",
+    expected_command="",
+    observed_command="",
+):
     """Require one exact declared target to be observed with a failed result."""
     if not isinstance(proof, dict):
         return False
@@ -184,28 +169,12 @@ def _plan_log_failure_proof_matches(proof, log_text, proof_text=""):
         )
     if proof.get("kind") != "go_json_test_pass":
         return False
-    declared_tests = proof.get("tests")
-    if declared_tests is None:
-        declared_tests = [proof.get("test")]
-    if (
-        not isinstance(declared_tests, list)
-        or not declared_tests
-        or any(not isinstance(test, str) or not test for test in declared_tests)
-    ):
-        return False
-    expected_tests = set(declared_tests)
-    for raw_line in log_text.splitlines():
-        if not raw_line.strip():
-            continue
-        try:
-            event = json.loads(raw_line)
-        except json.JSONDecodeError:
-            return False
-        if not isinstance(event, dict):
-            return False
-        if event.get("Action") == "fail" and event.get("Test") in expected_tests:
-            return True
-    return False
+    return go_failure_proof_matches(
+        proof,
+        log_text,
+        expected_command=expected_command,
+        observed_command=observed_command,
+    )
 
 
 def task_session(task):
@@ -425,6 +394,7 @@ def go_exact_test_spec(raw):
         "declared_target": str(raw),
         "package": package,
         "test": test_name,
+        "test_file": path.replace("\\", "/").removeprefix("./"),
         "run_pattern": "^" + re.escape(test_name) + "$",
     }
 
@@ -568,7 +538,13 @@ def prolite_test_plan(
                     [tests],
                     [go_test_command(tests)],
                     "runtime_discovered_exact_test_events",
-                    proofs=[{"kind": "go_json_test_pass", "tests": tests}],
+                    proofs=[
+                        {
+                            "kind": "go_json_test_pass",
+                            "tests": tests,
+                            "dynamic_discovery": True,
+                        }
+                    ],
                 )
             return _unsupported_test_plan(tests)
         exact_specs = [spec for spec in specs if spec is not None]
@@ -584,6 +560,8 @@ def prolite_test_plan(
             {
                 "kind": "go_json_test_pass",
                 "test": spec["test"],
+                "package": spec["package"],
+                "test_file": spec["test_file"],
             }
             for spec in exact_specs
         ]

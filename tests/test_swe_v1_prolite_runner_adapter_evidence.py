@@ -72,8 +72,18 @@ def test_prolite_go_command_requires_exact_test_targets_and_json_events(tmp_path
         "go test -count=1 -json ./pkg/server -run '^TestRouter/subcase$'",
     ]
     assert plan["proofs"] == [
-        {"kind": "go_json_test_pass", "test": "TestWidget"},
-        {"kind": "go_json_test_pass", "test": "TestRouter/subcase"},
+        {
+            "kind": "go_json_test_pass",
+            "test": "TestWidget",
+            "package": "./internal/api",
+            "test_file": "internal/api/widget_test.go",
+        },
+        {
+            "kind": "go_json_test_pass",
+            "test": "TestRouter/subcase",
+            "package": "./pkg/server",
+            "test_file": "pkg/server/router_test.go",
+        },
     ]
 
 
@@ -142,6 +152,242 @@ def test_prolite_go_log_proof_requires_every_discovered_target(tmp_path):
 
     assert namespace["_plan_log_proof_matches"](proof, complete) is True
     assert namespace["_plan_log_proof_matches"](proof, partial) is False
+
+
+def _go_build_failure_log(
+    *,
+    package: str = "example.org/project/internal/api",
+    test_file: str = "internal/api/widget_test.go",
+) -> str:
+    return "".join(
+        json.dumps(event) + "\n"
+        for event in (
+            {
+                "ImportPath": package + " [" + package + ".test]",
+                "Action": "build-output",
+                "Output": f"{test_file}:42:7: undefined: missingSymbol\n",
+            },
+            {
+                "ImportPath": package + " [" + package + ".test]",
+                "Action": "build-fail",
+            },
+            {
+                "Action": "output",
+                "Package": package,
+                "Output": f"FAIL\t{package} [build failed]\n",
+            },
+            {"Action": "fail", "Package": package, "Elapsed": 0.01},
+        )
+    )
+
+
+def test_prolite_go_build_failure_proof_binds_package_and_target_test_file(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    proof = {
+        "kind": "go_json_test_pass",
+        "test": "TestWidget",
+        "package": "./internal/api",
+        "test_file": "internal/api/widget_test.go",
+    }
+
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        _go_build_failure_log(),
+    ) is True
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        _go_build_failure_log(test_file="internal/api/unrelated_test.go"),
+    ) is False
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        _go_build_failure_log(package="example.org/project/other"),
+    ) is False
+    extra_package = _go_build_failure_log() + json.dumps(
+        {"Action": "fail", "Package": "example.org/project/other"}
+    )
+    assert namespace["_plan_log_failure_proof_matches"](proof, extra_package) is False
+
+
+def test_prolite_go_build_failure_rejects_incomplete_or_unstructured_logs(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    proof = {
+        "kind": "go_json_test_pass",
+        "test": "TestWidget",
+        "package": "./internal/api",
+        "test_file": "internal/api/widget_test.go",
+    }
+    no_build_marker = _go_build_failure_log().replace(" [build failed]", "")
+    no_package_fail = "".join(_go_build_failure_log().splitlines(keepends=True)[:-1])
+    raw_compile_error = (
+        "internal/api/widget_test.go:42:7: undefined: missingSymbol\n"
+        "FAIL\texample.org/project/internal/api [build failed]\n"
+    )
+
+    assert namespace["_plan_log_failure_proof_matches"](proof, no_build_marker) is False
+    assert namespace["_plan_log_failure_proof_matches"](proof, no_package_fail) is False
+    assert namespace["_plan_log_failure_proof_matches"](proof, raw_compile_error) is False
+
+
+def test_prolite_go_dynamic_build_failure_requires_unique_discovery_binding(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    proof = {
+        "kind": "go_json_test_pass",
+        "tests": ["TestWal2JSON"],
+        "dynamic_discovery": True,
+    }
+    marker = "OPENCOLLAB_GO_TARGET_DISCOVERY " + json.dumps(
+        {
+            "package": "./lib/srv",
+            "tests": ["TestWal2JSON"],
+            "test_files": ["lib/srv/wal2json_test.go"],
+        },
+        sort_keys=True,
+    )
+    log = marker + "\n" + _go_build_failure_log(
+        package="github.com/gravitational/teleport/lib/srv",
+        test_file="lib/srv/wal2json_test.go",
+    )
+
+    assert namespace["_plan_log_failure_proof_matches"](proof, log) is True
+    duplicate = (
+        marker
+        + "\n"
+        + marker.replace("./lib/srv", "./lib/other")
+        + "\n"
+        + _go_build_failure_log(
+            package="github.com/gravitational/teleport/lib/srv",
+            test_file="lib/srv/wal2json_test.go",
+        )
+    )
+    assert namespace["_plan_log_failure_proof_matches"](proof, duplicate) is False
+
+
+def test_go_build_failure_execution_evidence_still_requires_exact_plan_command(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    f2p_plan = namespace["prolite_test_plan"](
+        {"repo_language": "go"},
+        ["internal/api/widget_test.go::TestWidget"],
+    )
+    p2p_plan = namespace["prolite_test_plan"]({"repo_language": "go"}, [])
+    for name, value in {
+        "base_commit.exit": "0\n",
+        "service_bootstrap.exit": "0\n",
+        "before_repo.exit": "0\n",
+        "post_before_base.exit": "0\n",
+        "model_patch.exit": "0\n",
+        "test_patch.exit": "0\n",
+        "f2p.exit": "1\n",
+        "p2p.exit": "0\n",
+        "f2p.log": "",
+        "p2p.log": "",
+        "f2p.command": f2p_plan["commands"][0] + "\n",
+        "p2p.command": "",
+        "service_bootstrap.log": "",
+        "base_commit.log": "",
+        "before_repo.log": "",
+        "model_patch.log": "",
+        "test_patch.log": "",
+        "f2p.batch_001.exit": "1\n",
+        "f2p.batch_001.command": f2p_plan["commands"][0] + "\n",
+        "f2p.batch_001.log": _go_build_failure_log(),
+    }.items():
+        (tmp_path / name).write_text(value, encoding="utf-8")
+
+    trusted = namespace["read_eval_output_artifacts"](
+        tmp_path,
+        f2p_plan,
+        p2p_plan,
+        "nonce",
+    )
+
+    assert trusted["f2p_execution_evidence_complete"] is True
+    assert trusted["f2p_evidence"][0]["command_matches_plan"] is True
+    assert trusted["f2p_evidence"][0]["target_failure_proof_matches_plan"] is True
+
+    (tmp_path / "f2p.batch_001.command").write_text(
+        "go test -count=1 -json ./other -run '^TestWidget$'\n",
+        encoding="utf-8",
+    )
+    tampered = namespace["read_eval_output_artifacts"](
+        tmp_path,
+        f2p_plan,
+        p2p_plan,
+        "nonce",
+    )
+
+    assert tampered["f2p_execution_evidence_complete"] is False
+    assert tampered["f2p_evidence"][0]["command_matches_plan"] is False
+
+
+def test_task76_legacy_discovery_build_failure_is_bound_to_matched_command(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    proof = {"kind": "go_json_test_pass", "tests": ["TestScanner"]}
+    old_command = r'''python3 -c 'import json
+import pathlib
+import re
+import subprocess
+names = json.loads('["TestScanner"]')
+for path in pathlib.Path(".").rglob("*_test.go"):
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if re.search(r"(?m)^func\s+" + re.escape(name) + r"\s*\(", text):
+        pass
+print("unable to map Go tests to packages: " + "")
+subprocess.run(["go", "test", "-count=1", "-json", package, "-run", pattern])
+' '''
+    task76_log = "".join(
+        json.dumps(event) + "\n"
+        for event in (
+            {
+                "ImportPath": (
+                    "github.com/navidrome/navidrome/scanner "
+                    "[github.com/navidrome/navidrome/scanner.test]"
+                ),
+                "Action": "build-output",
+                "Output": (
+                    "scanner/walk_dir_tree_test.go:21:20: "
+                    "undefined: walkResults\n"
+                ),
+            },
+            {
+                "ImportPath": (
+                    "github.com/navidrome/navidrome/scanner "
+                    "[github.com/navidrome/navidrome/scanner.test]"
+                ),
+                "Action": "build-fail",
+            },
+            {
+                "Action": "output",
+                "Package": "github.com/navidrome/navidrome/scanner",
+                "Output": (
+                    "FAIL\tgithub.com/navidrome/navidrome/scanner "
+                    "[build failed]\n"
+                ),
+            },
+            {
+                "Action": "fail",
+                "Package": "github.com/navidrome/navidrome/scanner",
+                "FailedBuild": (
+                    "github.com/navidrome/navidrome/scanner "
+                    "[github.com/navidrome/navidrome/scanner.test]"
+                ),
+            },
+        )
+    )
+
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        task76_log,
+        "",
+        old_command,
+        old_command,
+    ) is True
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        task76_log,
+        "",
+        old_command,
+        old_command + " # changed",
+    ) is False
 
 
 def test_prolite_test_command_never_falls_back_to_a_passing_noop(tmp_path):

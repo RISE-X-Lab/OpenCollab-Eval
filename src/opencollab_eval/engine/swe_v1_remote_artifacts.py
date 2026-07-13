@@ -114,6 +114,8 @@ def _read_plan_evidence(output_dir, errors, prefix, plan, proof_nonce):
                     proof,
                     log_text,
                     proof_text,
+                    expected_command,
+                    observed_command,
                 ),
                 "artifact_safe": len(errors) == error_count,
             }
