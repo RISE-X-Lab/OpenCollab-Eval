@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from importlib.resources import files
 from pathlib import Path
 
 from opencollab.sdk import RuntimeConfig, WorkflowRunResult
@@ -30,7 +31,7 @@ async def test_solver_uses_sdk_and_returns_runtime_evidence(tmp_path: Path) -> N
         name="baseTeam",
         workflow_name="base-team",
         config=RuntimeConfig(model="model", provider="provider"),
-        workflows_dir=Path(__file__).resolve().parents[1] / "src" / "opencollab_eval" / "workflows",
+        workflows_dir=Path(str(files("opencollab_eval.workflows"))),
         runtime=runtime,
     )
     task = PublicTask(

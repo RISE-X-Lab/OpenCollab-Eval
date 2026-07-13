@@ -1,27 +1,30 @@
-# Migration plan
+# Repository ownership and compatibility plan
 
-The source repository remains the recovery authority until every migrated group
-passes equivalence tests. The target package never creates top-level `swebench`,
-`scripts`, or `workflows` packages because those names collide with installed
-packages and depend on repository-root `sys.path` behavior.
+OpenCollab-Eval owns benchmark contracts, evaluator orchestration, solver
+workflows, SWE-bench generation, process isolation, evidence, reporting, remote
+execution, and every test that targets those components. OpenCollab owns the
+domain, application services, adapters, bootstrap composition, the stable SDK,
+and their tests.
 
-| Source group | Target owner |
+The migrated implementation uses package namespaces throughout:
+
+| Owner | Package |
 | --- | --- |
-| `opencollab.harness.eval_adapter` | `contracts`, `benchmarks.swe_batch_pro` |
-| `opencollab.harness.solver_backend` | `contracts.solvers` |
-| `opencollab.harness.workflow_backend` | `solvers.opencollab` |
-| `opencollab.harness.swe_eval_*` | `evidence` |
-| `opencollab.harness.swe_generation_proof` | `evidence.generation_proof` |
-| `opencollab.harness.evaluator*` | `orchestration` |
-| `opencollab.harness.swe_checkpoint*` | `orchestration.checkpoints` |
-| `opencollab.harness.swe_v1_remote_*` | `remote` |
-| repository `swebench/` generation modules | `generation`, `isolation`, `solvers` |
-| evaluation scripts | `cli`, `remote`, `reporting`, `official_eval` |
-| solver workflows | `workflows` |
+| Public and sealed task contracts | `opencollab_eval.contracts` |
+| Benchmark normalization | `opencollab_eval.benchmarks` |
+| Evaluator and evidence engine | `opencollab_eval.engine` |
+| Generation and process isolation | `opencollab_eval.generation` |
+| Batch, reporting, and remote commands | `opencollab_eval.commands` |
+| Solver workflows | `opencollab_eval.workflows` |
+| Shell and configuration assets | `opencollab_eval.resources`, `opencollab_eval.configs` |
 
-The next migration group is evidence and record handling. Container snapshot,
-quiescence, trusted patch extraction, and their proof schema then move together.
-Official evaluation follows after patch identity and execution evidence are
-stable. Remote execution moves last and installs hashed OpenCollab and
-OpenCollab-Eval wheels instead of copying source directories.
+Top-level `scripts`, `swebench`, and `workflows` Python packages are avoided so
+installed packages and repository-root path behavior cannot shadow each other.
+Remote execution installs or synchronizes the package under a `src` layout and
+starts modules with `python -m`.
 
+`opencollab.sdk.eval_compat` preserves the tested OC capabilities used by the
+migrated evaluator. Future refactoring replaces those low-level compatibility
+imports with smaller stable SDK operations. The boundary tests prohibit direct
+imports of OC adapters, application, bootstrap, domain, or retired harness
+modules from both Eval production code and Eval tests.

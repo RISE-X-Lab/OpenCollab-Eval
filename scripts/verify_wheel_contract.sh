@@ -11,19 +11,22 @@ venv_dir="$(mktemp -d "${TMPDIR:-/tmp}/opencollab-eval-wheel-test.XXXXXX")"
 trap 'rm -rf "$venv_dir"' EXIT
 
 python3 -m venv "$venv_dir"
-"$venv_dir/bin/pip" install "$1" "$2" pytest pytest-asyncio
+"$venv_dir/bin/pip" install "$1" "${2}[swebench]" pytest pytest-asyncio
 site_packages="$($venv_dir/bin/python -c 'import site; print(site.getsitepackages()[0])')"
+cp -R "$repo_root/tests" "$venv_dir/eval-tests"
 
 (
-  cd "$repo_root"
+  cd "$venv_dir"
   OPENCOLLAB_EXPECTED_WHEEL_ROOT="$site_packages" \
-    PYTHONPATH="$repo_root/src" \
-    "$venv_dir/bin/pytest" -q tests
+    OPENCOLLAB_EVAL_EXPECTED_WHEEL_ROOT="$site_packages" \
+    PYTHONPATH="$venv_dir/eval-tests" \
+    "$venv_dir/bin/pytest" -q -c /dev/null -o asyncio_mode=auto \
+      --import-mode=importlib "$venv_dir/eval-tests"
 )
 
 (
   cd "$venv_dir"
-  "$venv_dir/bin/python" -c \
+  "$venv_dir/bin/python" -I -c \
     "import opencollab, opencollab.sdk, opencollab_eval; assert opencollab.__version__ == '0.2.0'"
-  "$venv_dir/bin/python" -m opencollab_eval --help >/dev/null
+  "$venv_dir/bin/python" -I -m opencollab_eval --help >/dev/null
 )

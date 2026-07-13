@@ -12,6 +12,6 @@ target tests executed and passed. Empty test commands, zero collected tests,
 missing evidence, patch identity mismatches, and non-quiescent workspaces are
 technical failures.
 
-Run `ruff check .` and `pytest -q` before committing. New behavior needs tests.
+Install the repository in the test environment, then run `ruff check .` and
+`pytest -q` before committing. New behavior needs tests.
 Keep Python modules below 800 lines and new files below 500 KB.
-
