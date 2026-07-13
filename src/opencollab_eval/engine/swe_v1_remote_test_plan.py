@@ -1,7 +1,12 @@
 """Cross-language ProLite test-plan construction and proof dispatch."""
 
-# ruff: noqa: E501, F403, F405
+# ruff: noqa: E501, F403, F405, I001
 
+from opencollab_eval.engine.swe_test_plan_contract import (
+    NOOP_TEST_COMMANDS as _NOOP_TEST_COMMANDS,
+    is_runnable_test_command as _is_runnable_test_command,
+    validated_test_plan_kind,
+)
 from opencollab_eval.engine.swe_v1_go_failure_proof import *
 from opencollab_eval.engine.swe_v1_remote_go_targets import *
 from opencollab_eval.engine.swe_v1_remote_javascript_proof import *
@@ -113,32 +118,6 @@ def _plan_log_failure_proof_matches(
         observed_command=observed_command,
     )
 
-
-
-_NOOP_TEST_COMMANDS = {"", "true", ":", "/bin/true"}
-
-
-def _is_runnable_test_command(cmd):
-    """Recognize command forms emitted by the verified adapters above."""
-    if not cmd or cmd.strip() in _NOOP_TEST_COMMANDS:
-        return False
-    return bool(
-        re.match(r"^pytest -p opencollab_pytest_proof -q -rA -o addopts= \S", cmd)
-        or re.match(
-            r"^xvfb-run -a python -m pytest --no-xvfb "
-            r"-p opencollab_pytest_proof -q -rA -o addopts= \S",
-            cmd,
-        )
-        or re.match(r"^go test -count=1 -json \S+ -run \S+$", cmd)
-        or re.match(r"^if \[ -x \./node_modules/\.bin/(?:jest|mocha) \]; then\n", cmd)
-        or cmd.startswith("python3 -c ") and "npm run test:app" in cmd
-        or cmd.startswith("python3 -c ")
-        and "missing declared Mocha titles" in cmd
-        and "json-stream" in cmd
-        or cmd.startswith("python3 -c ")
-        and "unable to map Go tests to packages" in cmd
-        and "go\", \"test\", \"-count=1\", \"-json\"" in cmd
-    )
 
 
 def _test_plan(
@@ -308,11 +287,12 @@ def prolite_test_plan_script(plan, evidence_prefix, proof_nonce="proof"):
         raise ValueError("invalid test evidence prefix")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", str(proof_nonce)):
         raise ValueError("invalid pytest proof nonce")
-    if plan.get("adapter") == "pytest" or any(
-        isinstance(proof, dict) and proof.get("kind") == "pytest_structured_reports"
-        for proof in plan.get("proofs") or []
-    ):
-        return "#!/usr/bin/env bash\necho 'in-process Pytest evidence is unsupported' >&2\nexit 86\n"
+    plan_kind = validated_test_plan_kind(
+        plan,
+        require_commands=bool(plan.get("commands")) if isinstance(plan, dict) else True,
+    )
+    if plan_kind is None:
+        return "#!/usr/bin/env bash\necho 'untrusted test plan is unsupported' >&2\nexit 86\n"
     lines = ["#!/usr/bin/env bash", "set +e", "overall_status=0"]
     for index, command in enumerate(plan.get("commands") or [], 1):
         stem = f"/eval_output/{evidence_prefix}.batch_{index:03d}"

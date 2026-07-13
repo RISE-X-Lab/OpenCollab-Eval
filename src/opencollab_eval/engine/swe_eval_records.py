@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
 
+from opencollab_eval.engine.swe_test_plan_contract import validated_test_plan_kind
+
 _SHA256_RE = re.compile(r"[0-9a-fA-F]{64}\Z")
 MAX_JSONL_LINE_BYTES = 64 * 1024 * 1024
 MAX_JSONL_RETAINED_BYTES = 128 * 1024 * 1024
@@ -395,10 +397,7 @@ def _direct_eval_plan_status(
     evidence = tests_status.get(f"{prefix}_evidence")
     if not isinstance(plan, dict) or not isinstance(evidence, list):
         return None
-    if plan.get("adapter") == "pytest" or any(
-        isinstance(proof, dict) and proof.get("kind") == "pytest_structured_reports"
-        for proof in plan.get("proofs") or []
-    ):
+    if validated_test_plan_kind(plan, require_commands=require_commands) is None:
         return None
     if expected_plan is not None and plan != expected_plan:
         return None

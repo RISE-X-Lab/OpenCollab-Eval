@@ -32,7 +32,14 @@ def _plans() -> tuple[dict, dict]:
         "declared_targets": ["pkg/widget_test.go::TestWidget"],
         "target_batches": [["pkg/widget_test.go::TestWidget"]],
         "commands": ["go test -count=1 -json ./pkg -run '^TestWidget$'"],
-        "proofs": [{"kind": "go_json_test_pass", "test": "TestWidget"}],
+        "proofs": [
+            {
+                "kind": "go_json_test_pass",
+                "test": "TestWidget",
+                "package": "./pkg",
+                "test_file": "pkg/widget_test.go",
+            }
+        ],
     }
     p2p = {
         "schema": "opencollab.prolite_test_plan.v2",
@@ -53,8 +60,8 @@ def _seed_output(
     *,
     f2p_status: int = 0,
     f2p_log: str = (
-        '{"Action":"run","Test":"TestWidget"}\n'
-        '{"Action":"pass","Test":"TestWidget"}\n'
+        '{"Action":"run","Package":"example.org/project/pkg","Test":"TestWidget"}\n'
+        '{"Action":"pass","Package":"example.org/project/pkg","Test":"TestWidget"}\n'
     ),
 ) -> None:
     report_dir.mkdir(parents=True)
@@ -116,19 +123,26 @@ def test_aggregate_command_permission_errors_are_diagnostic_only(tmp_path: Path)
 
 
 @pytest.mark.parametrize(
-    ("mutate", "message"),
+    "mutate",
     [
-        (lambda plan: plan.pop("coverage_verified"), "does not verify target coverage"),
-        (lambda plan: plan.__setitem__("proofs", [None]), "contains an unstructured proof"),
-        (lambda plan: plan.__setitem__("proofs", []), "does not bind one proof"),
+        lambda plan: plan.pop("coverage_verified"),
+        lambda plan: plan.__setitem__("proofs", [None]),
+        lambda plan: plan.__setitem__("proofs", []),
     ],
 )
-def test_rejudge_rejects_unproven_fail_to_pass_plans(mutate, message: str) -> None:
+def test_rejudge_rejects_unproven_fail_to_pass_plans(mutate) -> None:
     f2p_plan, _p2p_plan = _plans()
     mutate(f2p_plan)
 
-    with pytest.raises(RuntimeError, match=message):
+    with pytest.raises(RuntimeError, match="executable plan contract"):
         _validate_execution_plan(f2p_plan, label="fail-to-pass", require_commands=True)
+
+
+def test_rejudge_rejects_metadata_stripped_pytest_plan() -> None:
+    plan = {"commands": ["pytest target"], "coverage_verified": True}
+
+    with pytest.raises(RuntimeError, match="executable plan contract"):
+        _validate_execution_plan(plan, label="fail-to-pass", require_commands=True)
 
 
 def test_negative_target_proofs_require_an_exact_failed_target() -> None:
@@ -280,8 +294,8 @@ def test_rejudge_writes_derived_summary_without_mutating_evidence(tmp_path: Path
         f2p_plan,
         f2p_status=1,
         f2p_log=(
-            '{"Action":"run","Test":"TestWidget"}\n'
-            '{"Action":"fail","Test":"TestWidget"}\n'
+            '{"Action":"run","Package":"example.org/project/pkg","Test":"TestWidget"}\n'
+            '{"Action":"fail","Package":"example.org/project/pkg","Test":"TestWidget"}\n'
         ),
     )
     source = {

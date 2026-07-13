@@ -19,6 +19,7 @@ def test_prolite_test_command_never_falls_back_to_a_passing_noop(tmp_path):
     assert not is_runnable("true")
     assert not is_runnable(" : ")
     assert not is_runnable("echo ok")
+    assert not is_runnable("pytest target")
 
 
 def _legacy_pytest_plan(target: str) -> dict:
@@ -110,9 +111,20 @@ def test_legacy_python_plan_script_exits_with_technical_status(tmp_path):
         "f2p",
     )
 
-    assert "in-process Pytest evidence is unsupported" in script
+    assert "untrusted test plan is unsupported" in script
     assert script.endswith("exit 86\n")
     assert "pytest -q" not in script
+
+
+def test_metadata_stripped_python_plan_script_exits_without_execution(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    plan = {"commands": ["pytest target"], "coverage_verified": True}
+
+    script = namespace["prolite_test_plan_script"](plan, "f2p")
+
+    assert "untrusted test plan is unsupported" in script
+    assert script.endswith("exit 86\n")
+    assert "pytest target" not in script
 
 
 @pytest.mark.parametrize(

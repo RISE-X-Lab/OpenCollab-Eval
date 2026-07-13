@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 
 from opencollab_eval.engine.swe_eval_records import direct_eval_done_has_execution_proof
+from opencollab_eval.engine.swe_test_plan_contract import validated_test_plan_kind
 from opencollab_eval.engine.swe_v1_remote_artifacts import (
     derive_eval_verdict,
     read_eval_output_artifacts,
@@ -139,25 +140,8 @@ def _updated_tests_status(source: dict, artifacts: dict, f2p_plan: dict, p2p_pla
 
 
 def _validate_execution_plan(plan: dict, *, label: str, require_commands: bool) -> None:
-    commands = plan.get("commands")
-    proofs = plan.get("proofs")
-    if plan.get("schema") != "opencollab.prolite_test_plan.v2":
-        raise RuntimeError(f"{label} plan has an unsupported schema")
-    if not isinstance(commands, list) or any(not isinstance(command, str) or not command for command in commands):
-        raise RuntimeError(f"{label} plan has invalid commands")
-    if require_commands and not commands:
-        raise RuntimeError(f"{label} plan has no executable commands")
-    if not isinstance(proofs, list) or len(proofs) != len(commands):
-        raise RuntimeError(f"{label} plan does not bind one proof to each command")
-    if plan.get("adapter") == "pytest" or any(
-        isinstance(proof, dict) and proof.get("kind") == "pytest_structured_reports"
-        for proof in proofs
-    ):
-        raise RuntimeError(f"{label} plan requires an external Python result boundary")
-    if commands and plan.get("coverage_verified") is not True:
-        raise RuntimeError(f"{label} plan does not verify target coverage")
-    if any(not isinstance(proof, dict) or not proof for proof in proofs):
-        raise RuntimeError(f"{label} plan contains an unstructured proof")
+    if validated_test_plan_kind(plan, require_commands=require_commands) is None:
+        raise RuntimeError(f"{label} plan does not satisfy the executable plan contract")
 
 
 def rejudge(eval_dir: Path, output_dir: Path) -> dict:

@@ -10,6 +10,7 @@ import pytest
 from generation_proof_test_support import trusted_patch_proof_fields
 
 from opencollab_eval.engine import swe_v1_remote_records as remote_records
+from opencollab_eval.engine.swe_v1_remote_test_plan import prolite_test_plan
 
 
 def _load_module():
@@ -73,6 +74,9 @@ def _args(**overrides):
 
 
 def _direct_eval_summary(task: str, patch_sha: str, record_id: str) -> dict:
+    target = f"pkg/{task.replace('-', '_')}_test.go::TestCase"
+    f2p_plan = prolite_test_plan({"repo_language": "go"}, [target])
+    p2p_plan = prolite_test_plan({"repo_language": "go"}, [])
     evidence = {
         "status": 0,
         "command_matches_plan": True,
@@ -102,8 +106,8 @@ def _direct_eval_summary(task: str, patch_sha: str, record_id: str) -> dict:
             "test_patch_status": 0,
             "fail_to_pass_status": 0,
             "pass_to_pass_status": 0,
-            "fail_to_pass_plan": {"commands": ["pytest target"], "coverage_verified": True},
-            "pass_to_pass_plan": {"commands": [], "coverage_verified": True},
+            "fail_to_pass_plan": f2p_plan,
+            "pass_to_pass_plan": p2p_plan,
             "fail_to_pass_evidence": [evidence],
             "pass_to_pass_evidence": [],
         },

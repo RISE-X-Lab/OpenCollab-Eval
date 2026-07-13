@@ -9,6 +9,8 @@ from pathlib import Path
 
 from generation_proof_test_support import trusted_summary_proof_fields
 
+from opencollab_eval.engine.swe_v1_remote_test_plan import prolite_test_plan
+
 
 def _load_module():
     module = importlib.import_module("opencollab_eval.commands.swe_eval_layer_report")
@@ -26,6 +28,9 @@ def _sha(task: str) -> str:
 
 def _direct_summary(task: str, resolved: bool) -> dict:
     f2p_status = 0 if resolved else 1
+    target = f"pkg/{task.replace('-', '_')}_test.go::TestCase"
+    f2p_plan = prolite_test_plan({"repo_language": "go"}, [target])
+    p2p_plan = prolite_test_plan({"repo_language": "go"}, [])
     evidence = {
         "status": f2p_status,
         "command_matches_plan": True,
@@ -56,8 +61,8 @@ def _direct_summary(task: str, resolved: bool) -> dict:
             "test_patch_status": 0,
             "fail_to_pass_status": f2p_status,
             "pass_to_pass_status": 0,
-            "fail_to_pass_plan": {"commands": ["pytest target"], "coverage_verified": True},
-            "pass_to_pass_plan": {"commands": [], "coverage_verified": True},
+            "fail_to_pass_plan": f2p_plan,
+            "pass_to_pass_plan": p2p_plan,
             "fail_to_pass_evidence": [evidence],
             "pass_to_pass_evidence": [],
         },
