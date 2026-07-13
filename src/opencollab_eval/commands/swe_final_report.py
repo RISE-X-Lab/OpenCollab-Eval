@@ -21,6 +21,10 @@ from pathlib import Path
 from typing import Any
 
 from opencollab_eval.commands import _swe_report_io as report_io
+from opencollab_eval.commands.swe_final_report_dataset import (
+    DatasetInputError,
+    load_dataset_census,
+)
 from opencollab_eval.commands.swe_final_report_model import (
     LABELS_SCHEMA,
     NARRATIVE_SCHEMA,
@@ -235,6 +239,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--method-b-audit-manifest", type=Path, required=True)
     parser.add_argument("--method-b-name", default="OpenHands")
     parser.add_argument("--dataset", choices=(_DATASET_ID,), default=_DATASET_ID)
+    parser.add_argument("--dataset-file", type=Path, required=True)
     parser.add_argument("--meeting-date", required=True)
     parser.add_argument("--author", required=True)
     parser.add_argument("--narrative-json", type=Path)
@@ -279,29 +284,54 @@ def run_from_args(args: argparse.Namespace) -> dict[str, Any]:
     report_io.ensure_directory(output_dir)
     manifest_path = output_dir / f"{prefix}.manifest.json"
     _safe_output_target(manifest_path)
-    _write_status_manifest(
-        manifest_path,
-        {
-            "schema": "opencollab.swe_final_report_publication.v1",
-            "status": "building",
-            "meeting_date": meeting_date,
-            "output_prefix": prefix,
-        },
-    )
+    try:
+        manifest_path.lstat()
+    except FileNotFoundError:
+        manifest_existed = False
+    else:
+        manifest_existed = True
+    if not manifest_existed:
+        _write_status_manifest(
+            manifest_path,
+            {
+                "schema": "opencollab.swe_final_report_publication.v1",
+                "status": "building",
+                "meeting_date": meeting_date,
+                "output_prefix": prefix,
+            },
+        )
 
     expected = tuple(range(1, 101))
     try:
-        method_a = load_method_facts(args.method_a_report, name=method_a_name, expected=expected)
-        method_b = load_method_facts(args.method_b_report, name=method_b_name, expected=expected)
+        try:
+            dataset_source = load_dataset_census(args.dataset_file, expected=expected)
+        except DatasetInputError as exc:
+            raise FinalReportInputError(str(exc)) from exc
+        method_a = load_method_facts(
+            args.method_a_report,
+            name=method_a_name,
+            expected=expected,
+            dataset_tasks=dataset_source.tasks,
+        )
+        method_b = load_method_facts(
+            args.method_b_report,
+            name=method_b_name,
+            expected=expected,
+            dataset_tasks=dataset_source.tasks,
+        )
         audit_a = load_audit_manifest(
             args.method_a_audit_manifest,
             method=method_a,
             expected=expected,
+            dataset_tasks=dataset_source.tasks,
+            expected_dataset_sha256=dataset_source.sha256,
         )
         audit_b = load_audit_manifest(
             args.method_b_audit_manifest,
             method=method_b,
             expected=expected,
+            dataset_tasks=dataset_source.tasks,
+            expected_dataset_sha256=dataset_source.sha256,
         )
         for runtime_field in ("dataset_sha256", "opencollab_commit", "opencollab_eval_commit"):
             if audit_a["runtime"][runtime_field] != audit_b["runtime"][runtime_field]:
@@ -323,6 +353,7 @@ def run_from_args(args: argparse.Namespace) -> dict[str, Any]:
             audit_b=audit_b,
             expected=expected,
             dataset=dataset,
+            dataset_source=dataset_source,
             author=author,
             meeting_date=meeting_date,
             narrative=narrative,
@@ -358,6 +389,11 @@ def run_from_args(args: argparse.Namespace) -> dict[str, Any]:
                 "meeting_date": meeting_date,
                 "output_prefix": prefix,
                 "inputs": {
+                    "dataset": {
+                        "name": dataset,
+                        "path": str(dataset_source.path),
+                        "sha256": dataset_source.sha256,
+                    },
                     "method_a": {
                         "name": method_a_name,
                         "fact_report": str(args.method_a_report),
@@ -396,7 +432,8 @@ def run_from_args(args: argparse.Namespace) -> dict[str, Any]:
             "output_prefix": prefix,
             "reason": str(exc),
         }
-        _write_status_manifest(manifest_path, failure)
+        if not manifest_existed:
+            _write_status_manifest(manifest_path, failure)
         raise
 
 

@@ -12,6 +12,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
+from opencollab_eval.engine.swe_eval_records import direct_eval_done_has_execution_proof
 from opencollab_eval.engine.swe_v1_remote_artifacts import (
     derive_eval_verdict,
     read_eval_output_artifacts,
@@ -137,6 +138,23 @@ def _updated_tests_status(source: dict, artifacts: dict, f2p_plan: dict, p2p_pla
     return tests
 
 
+def _validate_execution_plan(plan: dict, *, label: str, require_commands: bool) -> None:
+    commands = plan.get("commands")
+    proofs = plan.get("proofs")
+    if plan.get("schema") != "opencollab.prolite_test_plan.v2":
+        raise RuntimeError(f"{label} plan has an unsupported schema")
+    if not isinstance(commands, list) or any(not isinstance(command, str) or not command for command in commands):
+        raise RuntimeError(f"{label} plan has invalid commands")
+    if require_commands and not commands:
+        raise RuntimeError(f"{label} plan has no executable commands")
+    if not isinstance(proofs, list) or len(proofs) != len(commands):
+        raise RuntimeError(f"{label} plan does not bind one proof to each command")
+    if commands and plan.get("coverage_verified") is not True:
+        raise RuntimeError(f"{label} plan does not verify target coverage")
+    if any(not isinstance(proof, dict) or not proof for proof in proofs):
+        raise RuntimeError(f"{label} plan contains an unstructured proof")
+
+
 def rejudge(eval_dir: Path, output_dir: Path) -> dict:
     eval_dir = eval_dir.resolve()
     output_dir = output_dir.absolute()
@@ -166,6 +184,8 @@ def rejudge(eval_dir: Path, output_dir: Path) -> dict:
     input_dir = eval_dir / "input"
     _, f2p_plan = _read_json(input_dir / "f2p.plan.json")
     _, p2p_plan = _read_json(input_dir / "p2p.plan.json")
+    _validate_execution_plan(f2p_plan, label="fail-to-pass", require_commands=True)
+    _validate_execution_plan(p2p_plan, label="pass-to-pass", require_commands=False)
     proof_nonce = _read_regular_bytes(input_dir / "proof.nonce", limit=256).decode("ascii").strip()
     if not proof_nonce:
         raise RuntimeError("empty proof nonce")
@@ -234,6 +254,13 @@ def rejudge(eval_dir: Path, output_dir: Path) -> dict:
             },
         }
     )
+    if not direct_eval_done_has_execution_proof(
+        derived,
+        expected_eval_spec_sha256=str(source.get("eval_spec_sha256") or ""),
+        expected_f2p_plan=f2p_plan,
+        expected_p2p_plan=p2p_plan,
+    ):
+        raise RuntimeError("derived report lacks complete executable target-test proof")
 
     output_dir.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=f".{output_dir.name}.tmp-", dir=output_dir.parent))

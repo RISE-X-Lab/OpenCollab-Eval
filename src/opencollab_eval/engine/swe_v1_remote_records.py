@@ -546,6 +546,9 @@ def eval_attempt_count(
     expected_eval_patch_sha256="",
     expected_eval_image_id="",
 ):
+    expected_eval_image_id = str(expected_eval_image_id or "")
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", expected_eval_image_id) is None:
+        return 0
     source_patch_sha256 = row_patch_sha(prediction)
     eval_patch_sha256 = str(
         expected_eval_patch_sha256 or patch_sha(eval_model_patch(prediction))
@@ -556,10 +559,7 @@ def eval_attempt_count(
         for item in read_jsonl(run_dir / "eval_attempts.jsonl")
         if item.get("phase") == "eval_attempt_started"
         and item.get("task") == task
-        and (
-            not expected_eval_image_id
-            or item.get("eval_image_id") == expected_eval_image_id
-        )
+        and item.get("eval_image_id") == expected_eval_image_id
         and patch_sha_matches(
             str(item.get("eval_patch_sha256") or item.get("patch_sha256") or ""),
             eval_patch_sha256,

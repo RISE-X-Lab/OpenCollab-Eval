@@ -30,7 +30,7 @@ def verified_plan_patch_selection(row, prediction, metric):
         pass_to_pass and not p2p_plan["coverage_verified"]
     ):
         return None
-    return prepare_eval_patch_selection(row, prediction, metric)
+    return bind_eval_image(row, prepare_eval_patch_selection(row, prediction, metric))
 
 
 def validated_eval_patch(
@@ -46,6 +46,7 @@ def validated_eval_patch(
     task = row["instance_id"]
     if patch_selection is None:
         patch_selection = prepare_eval_patch_selection(row, prediction, metric)
+    patch_selection = bind_eval_image(row, patch_selection)
     if not patch_selection.get("ok"):
         selection_status = str(patch_selection.get("status") or "gitlink_probe_failed")
         if selection_status == "blocked_missing_eval_image":

@@ -86,9 +86,9 @@ def _collection_environment(pytest_root: Path) -> dict[str, str]:
 def test_integrity_coverage_ledger_is_complete_and_truthful() -> None:
     coverage = _load()
     platforms = _platforms()
-    expected_ids = [f"H-{index:02d}" for index in range(1, 72)]
+    expected_ids = [f"H-{index:02d}" for index in range(1, 77)]
     assert list(coverage) == expected_ids
-    assert platforms == {"H-68": "darwin"}
+    assert platforms == {"H-68": "darwin", "H-72": "linux"}
     assert set(platforms) <= set(coverage)
     roots = _roots()
     for control_id, record in coverage.items():

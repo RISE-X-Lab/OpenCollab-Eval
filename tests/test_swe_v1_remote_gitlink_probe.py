@@ -333,6 +333,27 @@ def test_eval_patch_selection_records_source_child_and_probe_binding(monkeypatch
     )
 
 
+def test_bind_eval_image_pins_ordinary_patch_to_immutable_id(monkeypatch) -> None:
+    image = "registry.example/task:latest"
+    image_id = "sha256:" + "8" * 64
+    monkeypatch.setattr(probe, "image_for_row", lambda _row: image)
+    monkeypatch.setattr(probe, "ensure_image", lambda value: {"ok": True, "image": value})
+    monkeypatch.setattr(
+        probe,
+        "resolve_local_image_id",
+        lambda value: {"ok": True, "status": "verified", "image_id": image_id},
+    )
+    selection = {
+        "ok": True,
+        "status": "ready",
+        "model_patch": "diff --git a/a.py b/a.py\n+x = 1\n",
+    }
+
+    assert probe.bind_eval_image({"instance_id": "task-1"}, selection) is selection
+    assert selection["image"] == image
+    assert selection["image_id"] == image_id
+
+
 def test_eval_patch_selection_keeps_intentional_gitlink_deletion(monkeypatch) -> None:
     oid = "1" * 40
     source = _gitlink_delete("vendor/intentional", oid)

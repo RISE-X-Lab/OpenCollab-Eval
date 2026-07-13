@@ -416,10 +416,16 @@ def _direct_eval_plan_status(
             for field in (
                 "command_matches_plan",
                 "log_artifact_safe",
-                "target_proof_matches_plan",
                 "artifact_safe",
             )
         ):
+            return None
+        proof_field = (
+            "target_proof_matches_plan"
+            if status == 0
+            else "target_failure_proof_matches_plan"
+        )
+        if item.get(proof_field) is not True:
             return None
         statuses.append(status)
     reported_status = tests_status.get(f"{prefix}_status")

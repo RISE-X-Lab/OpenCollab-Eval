@@ -14,6 +14,7 @@ from opencollab_eval.engine.swe_v1_remote_eval_retry import *
 from opencollab_eval.engine.swe_v1_remote_eval_script import direct_eval_script
 from opencollab_eval.engine.swe_v1_remote_generation import *
 from opencollab_eval.engine.swe_v1_remote_gitlink_probe import *
+from opencollab_eval.engine.swe_v1_remote_pytest_controller import prolite_pytest_controller_source
 from opencollab_eval.engine.swe_v1_remote_records import *
 from opencollab_eval.engine.swe_v1_remote_state import *
 
@@ -190,6 +191,12 @@ def eval_for_task_once(row, patch_selection=None):
         input_dir / "opencollab_pytest_proof.py",
         prolite_pytest_proof_plugin_source().encode("utf-8"),
     )
+    controller_path = input_dir / "opencollab_pytest_controller.py"
+    atomic_write_bytes(
+        controller_path,
+        prolite_pytest_controller_source().encode("utf-8"),
+    )
+    controller_path.chmod(0o755)
     atomic_write_bytes(input_dir / "proof.nonce", (proof_nonce + "\n").encode("ascii"))
     atomic_write_bytes(
         input_dir / "f2p.sh",

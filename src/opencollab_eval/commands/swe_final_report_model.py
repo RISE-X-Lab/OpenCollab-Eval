@@ -11,6 +11,7 @@ from typing import Any
 
 from opencollab_eval import __version__
 from opencollab_eval.commands import _swe_report_io as report_io
+from opencollab_eval.commands.swe_final_report_dataset import DatasetTask, LoadedDataset
 from opencollab_eval.engine.swe_eval_records import direct_eval_done_has_execution_proof
 
 FACT_REPORT_SCHEMA = "opencollab.swe_eval_layer_final_report.v1"
@@ -20,6 +21,7 @@ NARRATIVE_SCHEMA = "opencollab.swe_final_report_narrative.v1"
 LABELS_SCHEMA = "opencollab.swe_final_report_labels.v1"
 COMPARISON_SCHEMA = "opencollab.swe_final_comparison.v1"
 _SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
+_IMAGE_ID_RE = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _COMMIT_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _REQUIRED_TASK_ARTIFACTS = frozenset(
     {"official_report", "trajectory", "candidate_identity", "network_isolation"}
@@ -83,8 +85,10 @@ def _read_bound_artifact(
     *,
     anchor: Path,
     label: str,
-    cache: dict[tuple[str, str], bytes],
-) -> tuple[str, str, bytes]:
+    verified: set[tuple[str, str]],
+    payload_cache: dict[tuple[str, str], bytes],
+    retain_payload: bool,
+) -> tuple[str, str, bytes | None]:
     if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
         raise FinalReportInputError(f"{label} must contain only path and sha256")
     raw_path = reference.get("path")
@@ -95,8 +99,8 @@ def _read_bound_artifact(
     if not artifact_path.is_absolute():
         artifact_path = anchor / artifact_path
     cache_key = (str(artifact_path), expected_sha)
-    payload = cache.get(cache_key)
-    if payload is None:
+    payload = payload_cache.get(cache_key) if retain_payload else None
+    if cache_key not in verified or retain_payload and payload is None:
         try:
             payload = report_io.read_bytes(artifact_path, max_bytes=report_io.MAX_REPORT_BYTES)
         except (OSError, ValueError) as exc:
@@ -105,8 +109,11 @@ def _read_bound_artifact(
             raise FinalReportInputError(f"{label} is empty: {raw_path}")
         if hashlib.sha256(payload).hexdigest() != expected_sha:
             raise FinalReportInputError(f"{label} hash changed: {raw_path}")
-        cache[cache_key] = payload
-    return raw_path, expected_sha, payload
+        verified.add(cache_key)
+        if retain_payload:
+            payload_cache.clear()
+            payload_cache[cache_key] = payload
+    return raw_path, expected_sha, payload if retain_payload else None
 
 
 def _official_task_payload(payload: bytes, *, task: str, label: str) -> dict[str, Any]:
@@ -131,10 +138,32 @@ def _verify_official_report(
     payload: bytes,
     *,
     fact: dict[str, Any],
+    dataset_task: DatasetTask,
     label: str,
 ) -> None:
     report = _official_task_payload(payload, task=fact["task"], label=label)
-    if not direct_eval_done_has_execution_proof(report):
+    if _IMAGE_ID_RE.fullmatch(str(report.get("eval_image_id") or "").lower()) is None:
+        raise FinalReportInputError(f"{label} lacks an immutable evaluation image identity")
+    tests_status = report.get("tests_status")
+    if not isinstance(tests_status, dict):
+        raise FinalReportInputError(f"{label} has no tests_status object")
+    f2p_plan = tests_status.get("fail_to_pass_plan")
+    p2p_plan = tests_status.get("pass_to_pass_plan")
+    for plan, targets, plan_label in (
+        (f2p_plan, dataset_task.fail_to_pass, "FAIL_TO_PASS"),
+        (p2p_plan, dataset_task.pass_to_pass, "PASS_TO_PASS"),
+    ):
+        if not isinstance(plan, dict) or plan.get("schema") != "opencollab.prolite_test_plan.v2":
+            raise FinalReportInputError(f"{label} has an invalid {plan_label} plan")
+        if plan.get("declared_targets") != list(targets):
+            raise FinalReportInputError(
+                f"{label} {plan_label} targets do not match the trusted dataset"
+            )
+    if not direct_eval_done_has_execution_proof(
+        report,
+        expected_f2p_plan=f2p_plan,
+        expected_p2p_plan=p2p_plan,
+    ):
         raise FinalReportInputError(f"{label} lacks executable target-test proof")
     if str(report.get("record_id") or "") != fact["record_id"]:
         raise FinalReportInputError(f"{label} has a mismatched record_id")
@@ -146,7 +175,13 @@ def _verify_official_report(
         raise FinalReportInputError(f"{label} has a mismatched verdict")
 
 
-def load_method_facts(path: Path, *, name: str, expected: tuple[int, ...]) -> MethodFacts:
+def load_method_facts(
+    path: Path,
+    *,
+    name: str,
+    expected: tuple[int, ...],
+    dataset_tasks: tuple[DatasetTask, ...],
+) -> MethodFacts:
     """Load one fact report and require a complete terminal partition."""
 
     document = _load_document(path, label=f"{name} fact report")
@@ -159,6 +194,8 @@ def load_method_facts(path: Path, *, name: str, expected: tuple[int, ...]) -> Me
     raw_tasks = report.get("tasks")
     if not isinstance(raw_tasks, list) or len(raw_tasks) != len(expected):
         raise FinalReportInputError(f"{name} fact report must contain {len(expected)} task rows")
+    if len(dataset_tasks) != len(expected):
+        raise FinalReportInputError(f"{name} trusted dataset census has the wrong size")
 
     tasks: list[dict[str, Any]] = []
     indices: list[int] = []
@@ -175,6 +212,11 @@ def load_method_facts(path: Path, *, name: str, expected: tuple[int, ...]) -> Me
         task_id = raw_task.get("task")
         if not isinstance(task_id, str) or not task_id.strip():
             raise FinalReportInputError(f"{name} task {index} has no stable task identity")
+        dataset_task = dataset_tasks[position]
+        if dataset_task.index != index or dataset_task.task != task_id:
+            raise FinalReportInputError(
+                f"{name} task {index} does not match the trusted dataset census"
+            )
         if task_id in task_ids:
             raise FinalReportInputError(f"{name} task identity is duplicated: {task_id}")
         task_ids.add(task_id)
@@ -260,6 +302,8 @@ def load_audit_manifest(
     *,
     method: MethodFacts,
     expected: tuple[int, ...],
+    dataset_tasks: tuple[DatasetTask, ...],
+    expected_dataset_sha256: str,
 ) -> dict[str, Any]:
     """Bind a clean-run audit manifest to one exact fact report."""
 
@@ -292,8 +336,10 @@ def load_audit_manifest(
         if _COMMIT_RE.fullmatch(value) is None:
             raise FinalReportInputError(f"{method.name} audit runtime {field} is invalid")
     dataset_sha = str(runtime.get("dataset_sha256") or "").lower()
-    if _SHA256_RE.fullmatch(dataset_sha) is None:
-        raise FinalReportInputError(f"{method.name} audit runtime dataset_sha256 is invalid")
+    if dataset_sha != expected_dataset_sha256:
+        raise FinalReportInputError(
+            f"{method.name} audit runtime dataset_sha256 does not match the trusted dataset"
+        )
     normalized_runtime = {
         "opencollab_commit": str(runtime["opencollab_commit"]).lower(),
         "opencollab_eval_commit": str(runtime["opencollab_eval_commit"]).lower(),
@@ -306,7 +352,8 @@ def load_audit_manifest(
     verified_evidence: list[dict[str, str]] = []
     verified_indices: list[int] = []
     seen_paths: set[str] = set()
-    artifact_cache: dict[tuple[str, str], bytes] = {}
+    verified_payloads: set[tuple[str, str]] = set()
+    official_payload_cache: dict[tuple[str, str], bytes] = {}
     artifact_path_hashes: dict[str, str] = {}
     verified_artifacts: dict[tuple[str, str], dict[str, Any]] = {}
     for position, entry in enumerate(evidence, start=1):
@@ -379,7 +426,9 @@ def load_audit_manifest(
                     artifacts[kind],
                     anchor=evidence_document.path.parent,
                     label=artifact_label,
-                    cache=artifact_cache,
+                    verified=verified_payloads,
+                    payload_cache=official_payload_cache,
+                    retain_payload=kind == "official_report",
                 )
                 normalized_path = Path(artifact_path)
                 if not normalized_path.is_absolute():
@@ -410,6 +459,7 @@ def load_audit_manifest(
             _verify_official_report(
                 official_report_payload,
                 fact=fact,
+                dataset_task=dataset_tasks[index - 1],
                 label=f"{method.name} audit evidence task {index} official report",
             )
             document_indices.append(index)
@@ -464,6 +514,7 @@ def build_comparison(
     audit_b: dict[str, Any],
     expected: tuple[int, ...],
     dataset: str,
+    dataset_source: LoadedDataset,
     author: str,
     meeting_date: str,
     narrative: LoadedDocument | None,
@@ -558,6 +609,11 @@ def build_comparison(
         "segments": segments,
         "tasks": tasks,
         "integrity": {
+            "dataset": {
+                "path": str(dataset_source.path),
+                "sha256": dataset_source.sha256,
+                "task_count": len(dataset_source.tasks),
+            },
             "method_a": {
                 "fact_report_path": str(method_a.source.path),
                 "fact_report_sha256": method_a.source.sha256,

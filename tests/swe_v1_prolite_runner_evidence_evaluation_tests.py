@@ -8,6 +8,7 @@ from swe_v1_prolite_runner_test_support import (
     _seed_remote_completed_generation,
     _test_only_patch,
     _write_jsonl,
+    controller_proof_text,
     json,
     pytest,
 )
@@ -98,10 +99,14 @@ def test_prolite_eval_requires_matching_batch_and_target_evidence(
             return 0
 
     def fake_popen(command, *args, **kwargs):
+        assert "sha256:" + "9" * 64 in command
         input_mount = next(item for item in command if str(item).endswith(":/eval_input:ro"))
         output_mount = next(item for item in command if str(item).endswith(":/eval_output"))
         input_dir = Path(str(input_mount).removesuffix(":/eval_input:ro"))
         output_dir = Path(str(output_mount).removesuffix(":/eval_output"))
+        controller = input_dir / "opencollab_pytest_controller.py"
+        assert controller.stat().st_mode & 0o111
+        assert "os.setuid(WORKER_UID)" in controller.read_text(encoding="utf-8")
         cidfile = Path(command[command.index("--cidfile") + 1])
         cidfile.write_text(container_id, encoding="ascii")
         proof_nonce = (input_dir / "proof.nonce").read_text(encoding="ascii").strip()
@@ -170,7 +175,7 @@ def test_prolite_eval_requires_matching_batch_and_target_evidence(
                     events.append({"event": "session_finish", "exitstatus": 0})
                     proof_path = Path(f"{stem}.proof.{proof_nonce}.jsonl")
                     proof_path.write_text(
-                        "".join(json.dumps(event) + "\n" for event in events),
+                        controller_proof_text(events, returncode=0),
                         encoding="utf-8",
                     )
         return FinishedProcess()
@@ -239,8 +244,12 @@ def test_prolite_eval_requires_matching_batch_and_target_evidence(
             item["command_matches_plan"] and item["log_artifact_safe"] and item["artifact_safe"]
             for item in evidence
         )
-        namespace["ensure_image"] = lambda image: pytest.fail(
-            "valid persisted evidence should be reused before Docker"
+        monkeypatch.setattr(
+            namespace["subprocess"],
+            "Popen",
+            lambda *args, **kwargs: pytest.fail(
+                "valid persisted evidence should be reused before Docker execution"
+            ),
         )
         reused = namespace["eval_for_task"](
             {

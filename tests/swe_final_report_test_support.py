@@ -4,9 +4,10 @@ import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 
-def write_json(path: Path, value: dict) -> Path:
+def write_json(path: Path, value: Any) -> Path:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return path
 
@@ -21,8 +22,30 @@ def _direct_eval_report(*, task: str, record_id: str, patch_sha256: str, resolve
         "status": f2p_status,
         "command_matches_plan": True,
         "log_artifact_safe": True,
-        "target_proof_matches_plan": True,
+        "target_proof_matches_plan": f2p_status == 0,
+        "target_failure_proof_matches_plan": f2p_status != 0,
         "artifact_safe": True,
+    }
+    target = f"tests/{task.replace('-', '_')}.py::test_case"
+    f2p_plan = {
+        "schema": "opencollab.prolite_test_plan.v2",
+        "adapter": "pytest",
+        "coverage": "parser_backed_exact_targets",
+        "coverage_verified": True,
+        "declared_targets": [target],
+        "target_batches": [[target]],
+        "commands": ["pytest target"],
+        "proofs": [{"kind": "pytest_structured_reports", "targets": [target]}],
+    }
+    p2p_plan = {
+        "schema": "opencollab.prolite_test_plan.v2",
+        "adapter": "unsupported",
+        "coverage": "none",
+        "coverage_verified": False,
+        "declared_targets": [],
+        "target_batches": [],
+        "commands": [],
+        "proofs": [],
     }
     return {
         "schema": "opencollab.prolite_direct_eval.v2",
@@ -36,6 +59,7 @@ def _direct_eval_report(*, task: str, record_id: str, patch_sha256: str, resolve
         "container_cleanup": {"ok": True},
         "patch_sha256": patch_sha256,
         "record_id": record_id,
+        "eval_image_id": "sha256:" + "9" * 64,
         "eval_spec_sha256": "e" * 64,
         "tests_status": {
             "base_commit_status": 0,
@@ -46,8 +70,8 @@ def _direct_eval_report(*, task: str, record_id: str, patch_sha256: str, resolve
             "test_patch_status": 0,
             "fail_to_pass_status": f2p_status,
             "pass_to_pass_status": 0,
-            "fail_to_pass_plan": {"commands": ["pytest target"], "coverage_verified": True},
-            "pass_to_pass_plan": {"commands": [], "coverage_verified": True},
+            "fail_to_pass_plan": f2p_plan,
+            "pass_to_pass_plan": p2p_plan,
             "fail_to_pass_evidence": [f2p_evidence],
             "pass_to_pass_evidence": [],
         },
@@ -194,12 +218,23 @@ def _audit_manifest(path: Path, *, method: str, report: Path, resolved: set[int]
     )
 
 
-def _inputs(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+def _inputs(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
     resolved_a = {7, 11, 21, 32, 34, 35}
     resolved_b = {7, 11, 21, 32, 33}
+    dataset = write_json(
+        tmp_path / "dataset.json",
+        [
+            {
+                "instance_id": f"task-{index}",
+                "FAIL_TO_PASS": [f"tests/task_{index}.py::test_case"],
+                "PASS_TO_PASS": [],
+            }
+            for index in range(1, 101)
+        ],
+    )
     report_a = _fact_report(tmp_path / "a.json", name="A", resolved=resolved_a)
     report_b = _fact_report(tmp_path / "b.json", name="B", resolved=resolved_b)
-    dataset_sha = "c" * 64
+    dataset_sha = hashlib.sha256(dataset.read_bytes()).hexdigest()
     audit_a = _audit_manifest(
         tmp_path / "a-audit.json",
         method="Method-A",
@@ -214,7 +249,7 @@ def _inputs(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
         resolved=resolved_b,
         dataset_sha=dataset_sha,
     )
-    return report_a, report_b, audit_a, audit_b
+    return report_a, report_b, audit_a, audit_b, dataset
 
 
 def mutate_audit_evidence(manifest_path: Path, mutate) -> None:
@@ -247,7 +282,7 @@ def mutate_official_report(manifest_path: Path, mutate, *, bind_new_hash: bool =
 
 
 def final_report_args(tmp_path: Path) -> SimpleNamespace:
-    report_a, report_b, audit_a, audit_b = _inputs(tmp_path)
+    report_a, report_b, audit_a, audit_b, dataset = _inputs(tmp_path)
     return SimpleNamespace(
         method_a_report=report_a,
         method_a_audit_manifest=audit_a,
@@ -256,6 +291,7 @@ def final_report_args(tmp_path: Path) -> SimpleNamespace:
         method_b_audit_manifest=audit_b,
         method_b_name="Method-B",
         dataset="swe-batch-pro-lite",
+        dataset_file=dataset,
         meeting_date="2026-07-15",
         author="A&B_#1",
         narrative_json=None,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shlex
@@ -10,6 +11,30 @@ import sys
 from pathlib import Path
 
 from swe_v1_prolite_runner_test_support import _remote_namespace, pytest
+
+from opencollab_eval.engine.swe_v1_remote_pytest_controller import (
+    prolite_pytest_controller_source,
+)
+
+
+def _controller_proof(events, *, returncode):
+    raw = "".join(
+        json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n"
+        for event in events
+    ).encode()
+    events[0]["controller"] = {
+        "schema": "opencollab.pytest_controller.v1",
+        "worker_pid": 123,
+        "worker_uid": 65534,
+        "controller_uid": 0,
+        "command_sha256": "a" * 64,
+    }
+    events[-1]["controller"] = {
+        "termination": "normal_protocol_eof",
+        "worker_returncode": returncode,
+        "event_stream_sha256": hashlib.sha256(raw).hexdigest(),
+    }
+    return "".join(json.dumps(event) + "\n" for event in events)
 
 
 def _pytest_proof_text(nodeids, *, exitstatus=0, call_outcome="passed"):
@@ -28,7 +53,32 @@ def _pytest_proof_text(nodeids, *, exitstatus=0, call_outcome="passed"):
                 }
             )
     events.append({"event": "session_finish", "exitstatus": exitstatus})
-    return "".join(json.dumps(event) + "\n" for event in events)
+    return _controller_proof(events, returncode=exitstatus)
+
+
+def _run_pytest_worker(command, *, cwd, plugin_dir):
+    read_fd, write_fd = os.pipe()
+    try:
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            check=False,
+            env={
+                **os.environ,
+                "PYTHONPATH": str(plugin_dir),
+                "OPENCOLLAB_PYTEST_EVENT_FD": str(write_fd),
+            },
+            pass_fds=(write_fd,),
+        )
+    finally:
+        os.close(write_fd)
+    with os.fdopen(read_fd, encoding="utf-8") as handle:
+        raw_proof = handle.read()
+    events = [json.loads(line) for line in raw_proof.splitlines()]
+    proof_text = _controller_proof(events, returncode=result.returncode)
+    return result, proof_text
 
 
 
@@ -81,22 +131,9 @@ def test_prolite_pytest_console_ignores_shadow_module_and_collect_only_addopts(
         namespace["prolite_pytest_proof_plugin_source"](),
         encoding="utf-8",
     )
-    proof_path = tmp_path / "proof.jsonl"
-
     command = shlex.split(plan["commands"][0])
     command[0] = str(Path(sys.executable).with_name("pytest"))
-    result = subprocess.run(
-        command,
-        cwd=tmp_path,
-        text=True,
-        capture_output=True,
-        check=False,
-        env={
-            **os.environ,
-            "PYTHONPATH": str(plugin_dir),
-            "OPENCOLLAB_PYTEST_PROOF_PATH": str(proof_path),
-        },
-    )
+    result, proof_text = _run_pytest_worker(command, cwd=tmp_path, plugin_dir=plugin_dir)
     log = result.stdout + result.stderr
 
     assert result.returncode == 0
@@ -104,7 +141,7 @@ def test_prolite_pytest_console_ignores_shadow_module_and_collect_only_addopts(
     assert namespace["_plan_log_proof_matches"](
         plan["proofs"][0],
         log,
-        proof_path.read_text(encoding="utf-8"),
+        proof_text,
     ) is True
 
 
@@ -131,22 +168,9 @@ def test_prolite_pytest_proof_rejects_conftest_exit_status_rewrite(tmp_path):
         namespace["prolite_pytest_proof_plugin_source"](),
         encoding="utf-8",
     )
-    proof_path = tmp_path / "proof.jsonl"
-
     command = shlex.split(plan["commands"][0])
     command[0] = str(Path(sys.executable).with_name("pytest"))
-    result = subprocess.run(
-        command,
-        cwd=tmp_path,
-        text=True,
-        capture_output=True,
-        check=False,
-        env={
-            **os.environ,
-            "PYTHONPATH": str(plugin_dir),
-            "OPENCOLLAB_PYTEST_PROOF_PATH": str(proof_path),
-        },
-    )
+    result, proof_text = _run_pytest_worker(command, cwd=tmp_path, plugin_dir=plugin_dir)
     log = result.stdout + result.stderr
 
     assert result.returncode == 0
@@ -155,7 +179,7 @@ def test_prolite_pytest_proof_rejects_conftest_exit_status_rewrite(tmp_path):
     assert namespace["_plan_log_proof_matches"](
         plan["proofs"][0],
         log,
-        proof_path.read_text(encoding="utf-8"),
+        proof_text,
     ) is False
 
 
@@ -181,22 +205,10 @@ def test_prolite_pytest_proof_rejects_cleared_collection_with_forged_pass(tmp_pa
         namespace["prolite_pytest_proof_plugin_source"](),
         encoding="utf-8",
     )
-    proof_path = tmp_path / "proof.jsonl"
     command = shlex.split(plan["commands"][0])
     command[0] = str(Path(sys.executable).with_name("pytest"))
 
-    result = subprocess.run(
-        command,
-        cwd=tmp_path,
-        text=True,
-        capture_output=True,
-        check=False,
-        env={
-            **os.environ,
-            "PYTHONPATH": str(plugin_dir),
-            "OPENCOLLAB_PYTEST_PROOF_PATH": str(proof_path),
-        },
-    )
+    result, proof_text = _run_pytest_worker(command, cwd=tmp_path, plugin_dir=plugin_dir)
     log = result.stdout + result.stderr
 
     assert result.returncode == 0
@@ -204,7 +216,7 @@ def test_prolite_pytest_proof_rejects_cleared_collection_with_forged_pass(tmp_pa
     assert namespace["_plan_log_proof_matches"](
         plan["proofs"][0],
         log,
-        proof_path.read_text(encoding="utf-8"),
+        proof_text,
     ) is False
 
 
@@ -223,6 +235,32 @@ def test_prolite_pytest_proof_rejects_forged_pass_line_and_summary(tmp_path):
     structured = _pytest_proof_text([target])
     assert namespace["_plan_log_proof_matches"](proof, forged_failure, structured) is False
     assert namespace["_plan_log_proof_matches"](proof, forged_empty, structured) is False
+
+
+def test_prolite_pytest_proof_rejects_legacy_or_tampered_worker_events(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    target = "test_target.py::test_target"
+    proof = {"kind": "pytest_structured_reports", "targets": [target]}
+    legacy = [
+        {"event": "session_start"},
+        {"event": "collection_finish", "nodeids": [target]},
+        *[
+            {
+                "event": "runtest_logreport",
+                "nodeid": target,
+                "when": phase,
+                "outcome": "passed",
+            }
+            for phase in ("setup", "call", "teardown")
+        ],
+        {"event": "session_finish", "exitstatus": 0},
+    ]
+    legacy_text = "".join(json.dumps(event) + "\n" for event in legacy)
+    controlled = _controller_proof(legacy, returncode=0)
+    tampered = controlled.replace('"outcome": "passed"', '"outcome": "failed"', 1)
+
+    assert namespace["_plan_log_proof_matches"](proof, "1 passed", legacy_text) is False
+    assert namespace["_plan_log_proof_matches"](proof, "1 passed", tampered) is False
 
 
 @pytest.mark.parametrize(
@@ -246,9 +284,7 @@ def test_prolite_pytest_proof_is_host_readable_after_session_finish(
         namespace["prolite_pytest_proof_plugin_source"](),
         encoding="utf-8",
     )
-    proof_path = tmp_path / "proof.jsonl"
-
-    result = subprocess.run(
+    result, proof_text = _run_pytest_worker(
         [
             str(Path(sys.executable).with_name("pytest")),
             "-p",
@@ -259,30 +295,22 @@ def test_prolite_pytest_proof_is_host_readable_after_session_finish(
             "test_target.py::test_target",
         ],
         cwd=tmp_path,
-        env={
-            **os.environ,
-            "PYTHONPATH": str(plugin_dir),
-            "OPENCOLLAB_PYTEST_PROOF_PATH": str(proof_path),
-        },
-        capture_output=True,
-        text=True,
-        check=False,
+        plugin_dir=plugin_dir,
     )
 
     assert result.returncode == expected_status
-    assert proof_path.stat().st_mode & 0o777 == 0o644
-    events = [json.loads(line) for line in proof_path.read_text(encoding="utf-8").splitlines()]
-    assert events[-1] == {"event": "session_finish", "exitstatus": expected_status}
+    events = [json.loads(line) for line in proof_text.splitlines()]
+    assert events[-1]["event"] == "session_finish"
+    assert events[-1]["exitstatus"] == expected_status
+    assert events[-1]["controller"]["worker_returncode"] == expected_status
 
 
 @pytest.mark.parametrize("existing_kind", ["regular", "symlink"])
 def test_prolite_pytest_proof_keeps_exclusive_nofollow_creation(
     tmp_path,
-    monkeypatch,
     existing_kind,
 ):
-    namespace = _remote_namespace(tmp_path)
-    source = namespace["prolite_pytest_proof_plugin_source"]()
+    source = prolite_pytest_controller_source()
     victim = tmp_path / "victim.jsonl"
     victim.write_text("sentinel\n", encoding="utf-8")
     proof_path = tmp_path / "proof.jsonl"
@@ -290,37 +318,73 @@ def test_prolite_pytest_proof_keeps_exclusive_nofollow_creation(
         proof_path.write_text("existing\n", encoding="utf-8")
     else:
         proof_path.symlink_to(victim)
-    monkeypatch.setenv("OPENCOLLAB_PYTEST_PROOF_PATH", str(proof_path))
-    plugin = {}
-    exec(source, plugin)
-
-    with pytest.raises(OSError):
-        plugin["pytest_sessionstart"](None)
+    controller = {"__name__": "controller_test"}
+    exec(source, controller)
+    with pytest.raises(FileExistsError):
+        controller["_publish"](
+            proof_path,
+            [{"event": "session_start"}, {"event": "session_finish", "exitstatus": 0}],
+            {"worker_pid": 123, "command_sha256": "a" * 64, "returncode": 0},
+        )
 
     assert victim.read_text(encoding="utf-8") == "sentinel\n"
     if existing_kind == "regular":
         assert proof_path.read_text(encoding="utf-8") == "existing\n"
 
 
-def test_prolite_pytest_proof_remains_private_before_session_finish(
+def test_prolite_pytest_worker_streams_events_without_a_proof_path(
     tmp_path,
     monkeypatch,
 ):
     namespace = _remote_namespace(tmp_path)
-    proof_path = tmp_path / "proof.jsonl"
-    monkeypatch.setenv("OPENCOLLAB_PYTEST_PROOF_PATH", str(proof_path))
+    read_fd, write_fd = os.pipe()
+    monkeypatch.setenv("OPENCOLLAB_PYTEST_EVENT_FD", str(write_fd))
     plugin = {}
     exec(namespace["prolite_pytest_proof_plugin_source"](), plugin)
 
     plugin["pytest_sessionstart"](None)
+    plugin["pytest_sessionfinish"](None, 0)
+    os.close(write_fd)
+    with os.fdopen(read_fd, encoding="utf-8") as handle:
+        events = [json.loads(line) for line in handle]
 
-    assert proof_path.stat().st_mode & 0o777 == 0o600
-    assert namespace["_plan_log_proof_matches"](
-        {"kind": "pytest_structured_reports", "targets": ["test_target.py::test_target"]},
-        "",
-        proof_path.read_text(encoding="utf-8"),
-    ) is False
-    os.close(plugin["_fd"])
+    assert "OPENCOLLAB_PYTEST_EVENT_FD" not in os.environ
+    assert events == [
+        {"event": "session_start"},
+        {"event": "session_finish", "exitstatus": 0},
+    ]
+
+
+def test_prolite_pytest_proof_rejects_candidate_rewrite_followed_by_clean_exit(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    target = "test_target.py::test_target"
+    plan = namespace["prolite_test_plan"]({"repo_language": "python"}, [target])
+    (tmp_path / "test_target.py").write_text(
+        "import json\n"
+        "import os\n\n"
+        "def test_target():\n"
+        "    path = os.environ.get('OPENCOLLAB_PYTEST_PROOF_PATH')\n"
+        "    if path:\n"
+        "        events = [\n"
+        "            {'event': 'session_start'},\n"
+        f"            {{'event': 'collection_finish', 'nodeids': ['{target}']}},\n"
+        f"            {{'event': 'runtest_logreport', 'nodeid': '{target}', 'when': 'call', 'outcome': 'passed'}},\n"
+        "            {'event': 'session_finish', 'exitstatus': 0},\n"
+        "        ]\n"
+        "        with open(path, 'w', encoding='utf-8') as handle:\n"
+        "            handle.write('\\n'.join(json.dumps(item) for item in events) + '\\n')\n"
+        "    os._exit(0)\n",
+        encoding="utf-8",
+    )
+    script = namespace["prolite_test_plan_script"](plan, "f2p", "nonce")
+    controller = prolite_pytest_controller_source()
+
+    assert "opencollab_pytest_controller.py" in script
+    assert "OPENCOLLAB_PYTEST_PROOF_PATH" not in script
+    assert "os.setgroups([])" in controller
+    assert "os.setuid(WORKER_UID)" in controller
+    assert "pytest worker protocol is incomplete" in controller
+    assert "OPENCOLLAB_PYTEST_PROOF_PATH" not in namespace["prolite_pytest_proof_plugin_source"]()
 
 
 def test_prolite_pytest_collection_import_failure_is_exact_semantic_failure(tmp_path):

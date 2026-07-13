@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import importlib
 import inspect
 import json
@@ -76,6 +77,27 @@ namespace["cleanup_preflight_container"] = lambda *args, **kwargs: {
 namespace["initialize_runner_ownership"]()
 raise SystemExit(namespace["main"]())
 """
+
+
+def controller_proof_text(events, *, returncode):
+    events = [dict(event) for event in events]
+    raw = "".join(
+        json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n"
+        for event in events
+    ).encode()
+    events[0]["controller"] = {
+        "schema": "opencollab.pytest_controller.v1",
+        "worker_pid": 123,
+        "worker_uid": 65534,
+        "controller_uid": 0,
+        "command_sha256": "a" * 64,
+    }
+    events[-1]["controller"] = {
+        "termination": "normal_protocol_eof",
+        "worker_returncode": returncode,
+        "event_stream_sha256": hashlib.sha256(raw).hexdigest(),
+    }
+    return "".join(json.dumps(event) + "\n" for event in events)
 
 
 class _NoopHealthServer:
@@ -197,6 +219,11 @@ def _remote_namespace(tmp_path, **overrides):
     namespace["RUNNER_OWNER_RECORD"] = {
         "owner_nonce": cfg["owner_nonce"],
         "pid": os.getpid(),
+    }
+    namespace["resolve_local_image_id"] = lambda _image: {
+        "ok": True,
+        "status": "verified",
+        "image_id": "sha256:" + "9" * 64,
     }
     _REMOTE_NAMESPACES_BY_BASE[str(namespace["base_run_dir"])] = namespace
     return namespace
@@ -376,6 +403,7 @@ __all__ = [
     "_test_only_patch",
     "_write_jsonl",
     "contextmanager",
+    "controller_proof_text",
     "fcntl",
     "json",
     "os",

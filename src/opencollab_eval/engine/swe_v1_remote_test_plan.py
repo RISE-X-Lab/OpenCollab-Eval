@@ -357,18 +357,27 @@ def prolite_test_plan_script(plan, evidence_prefix, proof_nonce="proof"):
         stem = f"/eval_output/{evidence_prefix}.batch_{index:03d}"
         proofs = plan.get("proofs") or []
         proof = proofs[index - 1] if index <= len(proofs) else None
-        command_prefix = ""
+        execution_command = command
         if isinstance(proof, dict) and proof.get("kind") == "pytest_structured_reports":
             proof_path = f"{stem}.proof.{proof_nonce}.jsonl"
-            command_prefix = (
-                "OPENCOLLAB_PYTEST_PROOF_PATH="
-                + shlex.quote(proof_path)
-                + " PYTHONPATH=/eval_input${PYTHONPATH:+:$PYTHONPATH} "
+            worker_argv = shlex.split(command)
+            command_sha256 = hashlib.sha256("\0".join(worker_argv).encode("utf-8")).hexdigest()
+            execution_command = shlex.join(
+                [
+                    "python3",
+                    "/eval_input/opencollab_pytest_controller.py",
+                    "--proof-output",
+                    proof_path,
+                    "--command-sha256",
+                    command_sha256,
+                    "--",
+                    *worker_argv,
+                ]
             )
         lines.extend(
             [
                 f"printf '%s\\n' {shlex.quote(command)} > {stem}.command",
-                f"bash -c {shlex.quote(command_prefix + command)} > {stem}.log 2>&1",
+                f"bash -c {shlex.quote(execution_command)} > {stem}.log 2>&1",
                 "batch_status=$?",
                 f"printf '%s\\n' \"$batch_status\" > {stem}.exit",
                 f"cat {stem}.log",

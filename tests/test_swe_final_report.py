@@ -24,6 +24,7 @@ from swe_final_report_test_support import (
 )
 
 from opencollab_eval.commands import swe_final_report
+from opencollab_eval.commands import swe_final_report_model as final_report_model
 from opencollab_eval.commands.swe_final_report_model import FinalReportInputError
 
 
@@ -75,7 +76,10 @@ def test_final_report_rejects_a_dataset_that_disagrees_with_the_fixed_census(tmp
     ("mutate", "message"),
     [
         (lambda report: report["tasks"].pop(), "100 task rows"),
-        (lambda report: report["tasks"].__setitem__(1, dict(report["tasks"][0])), "duplicated"),
+        (
+            lambda report: report["tasks"].__setitem__(1, dict(report["tasks"][0])),
+            "trusted dataset census",
+        ),
         (lambda report: report["tasks"][0].__setitem__("eval_pending", True), "still pending"),
         (lambda report: report["tasks"][0].__setitem__("technical_failed", True), "is technical"),
         (lambda report: report["tasks"][0].__setitem__("resolved", None), "Boolean verdict"),
@@ -130,7 +134,7 @@ def test_final_report_rejects_different_dataset_identities(tmp_path, monkeypatch
     )
     monkeypatch.setattr(swe_final_report, "_compile_pdf", _fake_compile)
 
-    with pytest.raises(FinalReportInputError, match="different dataset_sha256"):
+    with pytest.raises(FinalReportInputError, match="trusted dataset"):
         swe_final_report.run_from_args(args)
 
 
@@ -160,7 +164,7 @@ def test_final_report_rejects_different_task_mappings_between_methods(tmp_path, 
     )
     monkeypatch.setattr(swe_final_report, "_compile_pdf", _fake_compile)
 
-    with pytest.raises(FinalReportInputError, match="different tasks"):
+    with pytest.raises(FinalReportInputError, match="trusted dataset census"):
         swe_final_report.run_from_args(args)
 
 
@@ -399,6 +403,66 @@ def test_final_report_recomputes_direct_execution_from_the_official_report(tmp_p
         swe_final_report.run_from_args(args)
 
 
+def test_final_report_binds_declared_targets_to_the_trusted_dataset(tmp_path, monkeypatch):
+    args = _args(tmp_path)
+    _mutate_official_report(
+        args.method_a_audit_manifest,
+        lambda report: report["task-1"]["tests_status"]["fail_to_pass_plan"].__setitem__(
+            "declared_targets", ["tests/forged.py::test_wrong"]
+        ),
+    )
+    monkeypatch.setattr(swe_final_report, "_compile_pdf", _fake_compile)
+
+    with pytest.raises(FinalReportInputError, match="targets do not match the trusted dataset"):
+        swe_final_report.run_from_args(args)
+
+
+def test_final_report_requires_an_immutable_evaluation_image_identity(tmp_path, monkeypatch):
+    args = _args(tmp_path)
+    _mutate_official_report(
+        args.method_a_audit_manifest,
+        lambda report: report["task-1"].__setitem__("eval_image_id", "mutable:latest"),
+    )
+    monkeypatch.setattr(swe_final_report, "_compile_pdf", _fake_compile)
+
+    with pytest.raises(FinalReportInputError, match="immutable evaluation image identity"):
+        swe_final_report.run_from_args(args)
+
+
+def test_bound_artifact_verification_retains_at_most_one_payload(tmp_path):
+    paths = [tmp_path / f"artifact-{index}.bin" for index in range(3)]
+    references = []
+    for index, path in enumerate(paths):
+        path.write_bytes(bytes([index + 1]) * 4096)
+        references.append({"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+    verified: set[tuple[str, str]] = set()
+    payload_cache: dict[tuple[str, str], bytes] = {}
+
+    _raw_path, _sha, payload = final_report_model._read_bound_artifact(
+        references[0],
+        anchor=tmp_path,
+        label="supporting artifact",
+        verified=verified,
+        payload_cache=payload_cache,
+        retain_payload=False,
+    )
+    assert payload is None
+    assert payload_cache == {}
+
+    for reference in references[1:]:
+        _raw_path, _sha, payload = final_report_model._read_bound_artifact(
+            reference,
+            anchor=tmp_path,
+            label="official artifact",
+            verified=verified,
+            payload_cache=payload_cache,
+            retain_payload=True,
+        )
+        assert payload is not None
+        assert len(payload_cache) == 1
+    assert len(verified) == 3
+
+
 def test_final_report_rejects_official_report_candidate_identity_mismatch(tmp_path, monkeypatch):
     args = _args(tmp_path)
     _mutate_official_report(
@@ -476,6 +540,39 @@ def test_final_report_compile_failure_marks_manifest_failed_and_keeps_old_pdf(tm
     assert old_pdf.read_bytes() == b"old-pdf"
     manifest = json.loads((args.output_dir / "comparison.manifest.json").read_text(encoding="utf-8"))
     assert manifest["status"] == "failed"
+
+
+def test_final_report_failed_republish_preserves_complete_final_publication(tmp_path, monkeypatch):
+    args = _args(tmp_path)
+    monkeypatch.setattr(swe_final_report, "_compile_pdf", _fake_compile)
+    swe_final_report.run_from_args(args)
+    published = {
+        path.name: path.read_bytes()
+        for path in args.output_dir.iterdir()
+        if path.name.startswith("comparison.")
+    }
+    assert set(published) == {
+        "comparison.json",
+        "comparison.md",
+        "comparison.tex",
+        "comparison.pdf",
+        "comparison.manifest.json",
+    }
+
+    def fail_compile(*args, **kwargs):
+        raise FinalReportInputError("compiler failed")
+
+    monkeypatch.setattr(swe_final_report, "_compile_pdf", fail_compile)
+    with pytest.raises(FinalReportInputError, match="compiler failed"):
+        swe_final_report.run_from_args(args)
+
+    assert {
+        path.name: path.read_bytes()
+        for path in args.output_dir.iterdir()
+        if path.name.startswith("comparison.")
+    } == published
+    manifest = json.loads((args.output_dir / "comparison.manifest.json").read_text(encoding="utf-8"))
+    assert manifest["status"] == "final"
 
 
 def test_final_report_preflights_every_target_before_replacing_old_outputs(tmp_path, monkeypatch):
@@ -583,6 +680,8 @@ def test_cli_final_report_returns_zero_only_after_publication(tmp_path, monkeypa
         str(args.method_b_audit_manifest),
         "--method-b-name",
         args.method_b_name,
+        "--dataset-file",
+        str(args.dataset_file),
         "--meeting-date",
         args.meeting_date,
         "--author",
@@ -611,6 +710,8 @@ def test_cli_final_report_returns_nonzero_for_invalid_input(tmp_path, capsys):
         str(args.method_b_report),
         "--method-b-audit-manifest",
         str(args.method_b_audit_manifest),
+        "--dataset-file",
+        str(args.dataset_file),
         "--meeting-date",
         args.meeting_date,
         "--author",

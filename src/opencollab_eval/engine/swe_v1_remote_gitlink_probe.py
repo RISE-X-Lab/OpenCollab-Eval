@@ -109,6 +109,26 @@ def resolve_local_image_id(image):
     return {"ok": True, "status": "verified", "image_id": image_id}
 
 
+def bind_eval_image(row, selection):
+    """Bind one evaluation selection to an immutable local image ID."""
+    if not selection.get("ok") or _IMAGE_ID_RE.fullmatch(str(selection.get("image_id") or "")):
+        return selection
+    image = image_for_row(row)
+    image_status = ensure_image(image)
+    selection["image"] = image
+    selection["image_status"] = image_status
+    if not image_status.get("ok"):
+        selection.update({"ok": False, "status": "blocked_missing_eval_image"})
+        return selection
+    image_identity = resolve_local_image_id(image)
+    selection["image_identity"] = image_identity
+    if not image_identity.get("ok"):
+        selection.update({"ok": False, "status": "image_identity_unavailable"})
+        return selection
+    selection["image_id"] = image_identity["image_id"]
+    return selection
+
+
 def probe_gitlink_deletions(
     *,
     task,
@@ -285,24 +305,13 @@ def prepare_eval_patch_selection(row, prediction, metric):
     ]
     if not eligible_candidates:
         return selection
-    image = image_for_row(row)
-    image_status = ensure_image(image)
-    selection["image"] = image
-    selection["image_status"] = image_status
-    if not image_status.get("ok"):
-        selection.update({"ok": False, "status": "blocked_missing_eval_image"})
+    bind_eval_image(row, selection)
+    if not selection.get("ok"):
         return selection
-    image_identity = resolve_local_image_id(image)
-    selection["image_identity"] = image_identity
-    if not image_identity.get("ok"):
-        selection.update({"ok": False, "status": "image_identity_unavailable"})
-        return selection
-    image_id = image_identity["image_id"]
-    selection["image_id"] = image_id
     probe = probe_gitlink_deletions(
         task=row.get("instance_id"),
-        image=image,
-        image_id=image_id,
+        image=selection["image"],
+        image_id=selection["image_id"],
         base_commit=str(row.get("base_commit") or row.get("commit") or "").strip(),
         source_patch_sha256=selection["source_patch_sha256"],
         candidates=eligible_candidates,
@@ -328,6 +337,7 @@ def prepare_eval_patch_selection(row, prediction, metric):
 __all__ = [
     "GITLINK_PROBE_SCHEMA",
     "LEGACY_GITLINK_AUDIT_SCHEMA",
+    "bind_eval_image",
     "prepare_eval_patch_selection",
     "probe_gitlink_deletions",
     "resolve_local_image_id",

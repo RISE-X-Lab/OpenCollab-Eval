@@ -15,6 +15,7 @@ oc-eval final-report \
   --method-b-report /sealed/runs/openhands/final_report.json \
   --method-b-audit-manifest /sealed/runs/openhands/clean_run_manifest.json \
   --method-b-name OpenHands \
+  --dataset-file /sealed/datasets/swe-batch-pro-lite.jsonl \
   --meeting-date 2026-07-15 \
   --author "Evaluation Team" \
   --labels-json /sealed/report_labels.json \
@@ -24,13 +25,26 @@ oc-eval final-report \
 
 The output directory receives files with a common date-derived prefix: the
 validated comparison model as JSON, Markdown, TeX, the compiled PDF, and a
-publication manifest. A failed validation or LaTeX build records manifest
-status `failed` and returns a nonzero exit code. Publication serializes writers
-for one prefix, preflights every target, backs up the previous output set,
-rechecks every published hash, and restores the complete previous set if any
-replacement or manifest write fails.
+publication manifest. A first failed validation or LaTeX build records manifest
+status `failed` and returns a nonzero exit code. Once a complete `final`
+publication exists, a later failed attempt leaves all five published files and
+their hashes unchanged. Publication serializes writers for one prefix,
+preflights every target, backs up the previous output set, rechecks every
+published hash, and restores the complete previous set if any replacement or
+manifest write fails.
 
 ## Fact report contract
+
+The required `--dataset-file` is the trusted, bounded Pro-Lite JSON or JSONL
+source. Its exact byte hash, ordered 100-task census, and every task's
+`FAIL_TO_PASS` and `PASS_TO_PASS` targets are loaded before either method
+report. Both fact reports must map indices 1 through 100 to those same task
+identities. Both audit manifests must declare the exact computed dataset
+SHA-256. Each official report must retain the immutable `sha256:...` Docker
+image identity used for evaluation, and its two declared target lists must
+exactly match the trusted dataset row before command evidence can establish a
+terminal verdict. The dataset path and hash are recorded in the comparison
+model and publication manifest.
 
 Each fact report uses schema
 `opencollab.swe_eval_layer_final_report.v1`. It must contain the exact ordered
@@ -90,6 +104,9 @@ artifacts by path and SHA-256: the official evaluation report, trajectory
 evidence, candidate-identity evidence, and network-isolation evidence. Relative
 artifact paths are resolved from the structured evidence file. Every artifact
 must be a nonempty, bounded, regular file whose bytes match the declared hash.
+Supporting artifacts are hash-verified without retaining their bodies. At most
+one bounded official-report body is retained while task records are checked,
+so memory use does not scale with all referenced artifact sizes.
 Per-file coverage arrays must equal the actual task rows, and
 resolved-execution indices must equal the resolved subset derived from those
 bound facts.

@@ -14,6 +14,14 @@ process isolation, evidence handling, batch coordination, remote execution,
 reporting commands, and the tests for those components. OpenCollab retains its
 framework, stable SDK, and framework tests.
 
+Direct Pytest evaluation separates proof ownership from candidate execution.
+A root controller starts each batch in a distinct low-privilege worker, keeps
+the output directory inaccessible to that worker, validates the complete event
+stream and process termination, and publishes structured proof only after the
+worker exits cleanly. Abrupt zero exits, missing session completion, return-code
+mismatches, legacy candidate-writable JSONL, and surviving worker processes are
+technical failures.
+
 ```bash
 oc-eval inspect path/to/tasks.jsonl --identity-key-file path/to/sealed-identity.key
 oc-eval run path/to/tasks.jsonl --model MODEL --provider PROVIDER --output results

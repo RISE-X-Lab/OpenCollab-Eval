@@ -30,7 +30,8 @@ def _direct_summary(task: str, resolved: bool) -> dict:
         "status": f2p_status,
         "command_matches_plan": True,
         "log_artifact_safe": True,
-        "target_proof_matches_plan": True,
+        "target_proof_matches_plan": f2p_status == 0,
+        "target_failure_proof_matches_plan": f2p_status != 0,
         "artifact_safe": True,
     }
     return {

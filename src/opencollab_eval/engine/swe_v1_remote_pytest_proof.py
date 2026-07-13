@@ -7,6 +7,49 @@ from opencollab_eval.engine.swe_v1_remote_state import *
 from opencollab_eval.engine.swe_v1_remote_target_proof import *
 
 
+def _pytest_controller_proof_matches(events):
+    if not isinstance(events, list) or len(events) < 3:
+        return False
+    start = events[0]
+    finish = events[-1]
+    start_controller = start.get("controller") if isinstance(start, dict) else None
+    finish_controller = finish.get("controller") if isinstance(finish, dict) else None
+    if not isinstance(start_controller, dict) or not isinstance(finish_controller, dict):
+        return False
+    worker_pid = start_controller.get("worker_pid")
+    worker_uid = start_controller.get("worker_uid")
+    controller_uid = start_controller.get("controller_uid")
+    returncode = finish_controller.get("worker_returncode")
+    if (
+        start_controller.get("schema") != "opencollab.pytest_controller.v1"
+        or isinstance(worker_pid, bool)
+        or not isinstance(worker_pid, int)
+        or worker_pid <= 0
+        or isinstance(worker_uid, bool)
+        or not isinstance(worker_uid, int)
+        or isinstance(controller_uid, bool)
+        or not isinstance(controller_uid, int)
+        or worker_uid == controller_uid
+        or re.fullmatch(r"[0-9a-f]{64}", str(start_controller.get("command_sha256") or "")) is None
+        or finish_controller.get("termination") != "normal_protocol_eof"
+        or isinstance(returncode, bool)
+        or not isinstance(returncode, int)
+        or finish.get("exitstatus") != returncode
+    ):
+        return False
+    raw_events = []
+    for index, event in enumerate(events):
+        raw_event = dict(event)
+        if index in {0, len(events) - 1}:
+            raw_event.pop("controller", None)
+        raw_events.append(raw_event)
+    raw_payload = b"".join(
+        (json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+        for event in raw_events
+    )
+    return finish_controller.get("event_stream_sha256") == hashlib.sha256(raw_payload).hexdigest()
+
+
 def _pytest_target_matches_node(target, node):
     if "::" in target:
         return node == target or node.startswith(target + "[")
@@ -46,7 +89,11 @@ def _pytest_structured_proof_matches(
         events = [json.loads(line) for line in proof_text.splitlines() if line.strip()]
     except json.JSONDecodeError:
         return False
-    if not events or any(not isinstance(event, dict) for event in events):
+    if (
+        not events
+        or any(not isinstance(event, dict) for event in events)
+        or not _pytest_controller_proof_matches(events)
+    ):
         return False
     if events[0].get("event") != "session_start" or events[-1].get("event") != "session_finish":
         return False
@@ -129,7 +176,11 @@ def _pytest_structured_failure_proof_matches(
         events = [json.loads(line) for line in proof_text.splitlines() if line.strip()]
     except json.JSONDecodeError:
         return False
-    if not events or any(not isinstance(event, dict) for event in events):
+    if (
+        not events
+        or any(not isinstance(event, dict) for event in events)
+        or not _pytest_controller_proof_matches(events)
+    ):
         return False
     starts = [event for event in events if event.get("event") == "session_start"]
     collections = [event for event in events if event.get("event") == "collection_finish"]
@@ -338,6 +389,7 @@ def _pytest_collection_failure_proof_matches(
     if (
         len(events) != 3
         or any(not isinstance(event, dict) for event in events)
+        or not _pytest_controller_proof_matches(events)
         or [event.get("event") for event in events]
         != ["session_start", "collection_finish", "session_finish"]
         or events[1].get("nodeids") != []
@@ -488,31 +540,27 @@ def compact_python_test_targets(tests, selected, max_args=80, max_chars=24000):
 
 
 def prolite_pytest_proof_plugin_source():
-    """Return the read-only pytest plugin used inside evaluation containers."""
+    """Return the worker plugin that streams events to the trusted controller."""
     return r'''import json
 import os
-import stat
 
-_fd = None
+_fd = int(os.environ.pop("OPENCOLLAB_PYTEST_EVENT_FD"))
+_payload_bytes = 0
+_MAX_PROOF_BYTES = 8 * 1024 * 1024
 
 
 def _emit(event):
-    global _fd
+    global _payload_bytes
     payload = (json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
-    if _fd is None:
-        path = os.environ["OPENCOLLAB_PYTEST_PROOF_PATH"]
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-        _fd = os.open(path, flags, 0o600)
-        opened = os.fstat(_fd)
-        if not stat.S_ISREG(opened.st_mode):
-            raise OSError("pytest proof output is not regular")
+    if _payload_bytes + len(payload) > _MAX_PROOF_BYTES:
+        raise OSError("pytest proof exceeds the bounded size")
     view = memoryview(payload)
     while view:
         written = os.write(_fd, view)
         if written <= 0:
-            raise OSError("pytest proof write made no progress")
+            raise OSError("pytest event write made no progress")
         view = view[written:]
-    os.fsync(_fd)
+    _payload_bytes += len(payload)
 
 
 def pytest_sessionstart(session):
@@ -528,15 +576,7 @@ def pytest_runtest_logreport(report):
 
 
 def pytest_sessionfinish(session, exitstatus):
-    global _fd
     _emit({"event": "session_finish", "exitstatus": exitstatus})
-    try:
-        os.fchmod(_fd, 0o644)
-    finally:
-        try:
-            os.close(_fd)
-        finally:
-            _fd = None
 '''
 
 

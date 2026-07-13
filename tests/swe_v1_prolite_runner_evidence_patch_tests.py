@@ -289,6 +289,7 @@ def test_eval_attempt_count_uses_filtered_child_patch_identity(tmp_path):
     run_dir = namespace["base_run_dir"] / task
     source_sha = namespace["patch_sha"](source)
     child_sha = namespace["patch_sha"](namespace["eval_model_patch"](prediction))
+    image_id = "sha256:" + "9" * 64
     _write_jsonl(
         run_dir / "eval_attempts.jsonl",
         [
@@ -297,6 +298,7 @@ def test_eval_attempt_count_uses_filtered_child_patch_identity(tmp_path):
                 "task": task,
                 "record_id": "record-1",
                 "patch_sha256": source_sha,
+                "eval_image_id": image_id,
             },
             {
                 "phase": "eval_attempt_started",
@@ -304,12 +306,18 @@ def test_eval_attempt_count_uses_filtered_child_patch_identity(tmp_path):
                 "record_id": "record-1",
                 "patch_sha256": source_sha,
                 "eval_patch_sha256": child_sha,
+                "eval_image_id": image_id,
             },
         ],
     )
 
     assert child_sha != source_sha
-    assert namespace["eval_attempt_count"](run_dir, prediction, task) == 1
+    assert namespace["eval_attempt_count"](
+        run_dir,
+        prediction,
+        task,
+        expected_eval_image_id=image_id,
+    ) == 1
 
 
 def test_eval_summary_reuse_requires_filtered_child_patch_identity(tmp_path):
@@ -338,12 +346,14 @@ def test_eval_summary_reuse_requires_filtered_child_patch_identity(tmp_path):
         "task": task,
         "record_id": "record-1",
         "patch_sha256": source_sha,
+        "eval_image_id": "sha256:" + "9" * 64,
     }
 
     assert namespace["eval_summary_matches_prediction"](
         summary,
         prediction,
         task,
+        expected_eval_image_id="sha256:" + "9" * 64,
     ) is False
 
     summary["eval_patch_sha256"] = namespace["patch_sha"](
@@ -353,6 +363,7 @@ def test_eval_summary_reuse_requires_filtered_child_patch_identity(tmp_path):
         summary,
         prediction,
         task,
+        expected_eval_image_id="sha256:" + "9" * 64,
     ) is True
 
 

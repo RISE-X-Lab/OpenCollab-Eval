@@ -63,10 +63,24 @@ def test_remote_runner_eval_only_uses_existing_patch_without_starting_generation
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     docker = fake_bin / "docker"
+    target = "tests/test_feature.py::test_feature"
+    proof_events = [{"event": "session_start"}, {"event": "collection_finish", "nodeids": [target]}]
+    proof_events.extend(
+        {
+            "event": "runtest_logreport",
+            "nodeid": target,
+            "when": phase,
+            "outcome": "passed",
+        }
+        for phase in ("setup", "call", "teardown")
+    )
+    proof_events.append({"event": "session_finish", "exitstatus": 0})
+    proof_text = controller_proof_text(proof_events, returncode=0)
     docker.write_text(
         "#!/usr/bin/env bash\n"
         "set -eu\n"
-        "if [ \"$1 $2\" = \"image inspect\" ]; then exit 0; fi\n"
+        "if [ \"$1 $2\" = \"image inspect\" ]; then "
+        "echo 'sha256:9999999999999999999999999999999999999999999999999999999999999999'; exit 0; fi\n"
         "if [ \"$1\" = \"run\" ]; then\n"
         "  output=\"\"; input=\"\"\n"
         "  for arg in \"$@\"; do case \"$arg\" in *:/eval_output) output=\"${arg%:/eval_output}\" ;; *:/eval_input:ro) input=\"${arg%:/eval_input:ro}\" ;; esac; done\n"
@@ -78,7 +92,7 @@ def test_remote_runner_eval_only_uses_existing_patch_without_starting_generation
         "  : > \"$output/f2p.batch_001.log\"\n"
         "  nonce=$(cat \"$input/proof.nonce\")\n"
         "  proof=\"$output/f2p.batch_001.proof.$nonce.jsonl\"\n"
-        "  printf '%s\\n' '{\"event\":\"session_start\"}' '{\"event\":\"collection_finish\",\"nodeids\":[\"tests/test_feature.py::test_feature\"]}' '{\"event\":\"runtest_logreport\",\"nodeid\":\"tests/test_feature.py::test_feature\",\"when\":\"setup\",\"outcome\":\"passed\"}' '{\"event\":\"runtest_logreport\",\"nodeid\":\"tests/test_feature.py::test_feature\",\"when\":\"call\",\"outcome\":\"passed\"}' '{\"event\":\"runtest_logreport\",\"nodeid\":\"tests/test_feature.py::test_feature\",\"when\":\"teardown\",\"outcome\":\"passed\"}' '{\"event\":\"session_finish\",\"exitstatus\":0}' > \"$proof\"\n"
+        f"  printf %s {shlex.quote(proof_text)} > \"$proof\"\n"
         "  exit 0\n"
         "fi\n"
         "exit 99\n",
@@ -179,7 +193,8 @@ def test_remote_runner_persists_eval_attempt_cap_across_resume(tmp_path):
     docker.write_text(
         "#!/usr/bin/env bash\n"
         "set -eu\n"
-        "if [ \"$1 $2\" = \"image inspect\" ]; then exit 0; fi\n"
+        "if [ \"$1 $2\" = \"image inspect\" ]; then "
+        "echo 'sha256:9999999999999999999999999999999999999999999999999999999999999999'; exit 0; fi\n"
         "if [ \"$1\" = \"run\" ]; then\n"
         f"  count_file={shlex.quote(str(docker_runs))}\n"
         "  count=0; [ ! -f \"$count_file\" ] || count=$(cat \"$count_file\")\n"

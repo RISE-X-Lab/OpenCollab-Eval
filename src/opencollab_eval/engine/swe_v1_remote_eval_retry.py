@@ -22,11 +22,6 @@ def eval_for_task_with_retries(row, eval_once):
         result["max_eval_attempts"] = max_eval_attempts
         return result
     patch_selection = verified_plan_patch_selection(row, prediction, metric)
-    if patch_selection is not None and not patch_selection.get("ok"):
-        result = dict(eval_once(row, patch_selection))
-        result["attempt_count"] = 0
-        result["max_eval_attempts"] = max_eval_attempts
-        return result
     expected_eval_patch_sha256 = (
         str(patch_selection.get("eval_patch_sha256") or "")
         if patch_selection is not None
@@ -69,7 +64,12 @@ def eval_for_task_with_retries(row, eval_once):
         }
     attempts = []
     retry_statuses = {"technical_eval_failed", "blocked_missing_eval_image"}
-    for _ in range(max_eval_attempts - persisted_attempts):
+    for attempt_index in range(max_eval_attempts - persisted_attempts):
+        if patch_selection is None or attempt_index > 0 and not patch_selection.get("ok"):
+            patch_selection = verified_plan_patch_selection(row, prediction, metric)
+        if patch_selection is not None and patch_selection.get("ok"):
+            expected_eval_patch_sha256 = str(patch_selection.get("eval_patch_sha256") or "")
+            expected_eval_image_id = str(patch_selection.get("image_id") or "")
         result = dict(eval_once(row, patch_selection))
         attempts.append(result)
         if result.get("status") not in retry_statuses:

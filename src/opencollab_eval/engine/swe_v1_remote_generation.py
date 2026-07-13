@@ -466,6 +466,9 @@ def eval_summary_matches_prediction(
     expected_eval_patch_sha256="",
     expected_eval_image_id="",
 ):
+    expected_eval_image_id = str(expected_eval_image_id or "")
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", expected_eval_image_id) is None:
+        return False
     if not isinstance(summary, dict) or not direct_eval_done_has_execution_proof(
         summary,
         expected_eval_spec_sha256=eval_spec_sha256,
@@ -477,7 +480,7 @@ def eval_summary_matches_prediction(
         return False
     if summary.get("task") != task:
         return False
-    if expected_eval_image_id and summary.get("eval_image_id") != expected_eval_image_id:
+    if summary.get("eval_image_id") != expected_eval_image_id:
         return False
     current_sha = row_patch_sha(prediction)
     previous_sha = str(summary.get("patch_sha256") or "")

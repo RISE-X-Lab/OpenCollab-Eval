@@ -4,7 +4,10 @@ import json
 import os
 from pathlib import Path
 
-from opencollab_eval.commands.swe_rejudge_direct_eval import rejudge
+import pytest
+from swe_v1_prolite_runner_test_support import controller_proof_text
+
+from opencollab_eval.commands.swe_rejudge_direct_eval import _validate_execution_plan, rejudge
 from opencollab_eval.engine.swe_v1_remote_artifacts import (
     derive_eval_verdict,
     read_eval_output_artifacts,
@@ -22,10 +25,25 @@ def _write_json(path: Path, value: object) -> None:
 
 def _plans() -> tuple[dict, dict]:
     f2p = {
-        "commands": ["pytest -q tests/test_widget.py::test_widget"],
-        "proofs": [None],
+        "schema": "opencollab.prolite_test_plan.v2",
+        "adapter": "go-test-json",
+        "coverage": "exact_test_events",
+        "coverage_verified": True,
+        "declared_targets": ["pkg/widget_test.go::TestWidget"],
+        "target_batches": [["pkg/widget_test.go::TestWidget"]],
+        "commands": ["go test -count=1 -json ./pkg -run '^TestWidget$'"],
+        "proofs": [{"kind": "go_json_test_pass", "test": "TestWidget"}],
     }
-    p2p = {"commands": [], "proofs": []}
+    p2p = {
+        "schema": "opencollab.prolite_test_plan.v2",
+        "adapter": "unsupported",
+        "coverage": "none",
+        "coverage_verified": False,
+        "declared_targets": [],
+        "target_batches": [],
+        "commands": [],
+        "proofs": [],
+    }
     return f2p, p2p
 
 
@@ -34,7 +52,10 @@ def _seed_output(
     f2p_plan: dict,
     *,
     f2p_status: int = 0,
-    f2p_log: str = "1 passed\n",
+    f2p_log: str = (
+        '{"Action":"run","Test":"TestWidget"}\n'
+        '{"Action":"pass","Test":"TestWidget"}\n'
+    ),
 ) -> None:
     report_dir.mkdir(parents=True)
     for name in (
@@ -94,6 +115,22 @@ def test_aggregate_command_permission_errors_are_diagnostic_only(tmp_path: Path)
     }
 
 
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda plan: plan.pop("coverage_verified"), "does not verify target coverage"),
+        (lambda plan: plan.__setitem__("proofs", [None]), "contains an unstructured proof"),
+        (lambda plan: plan.__setitem__("proofs", []), "does not bind one proof"),
+    ],
+)
+def test_rejudge_rejects_unproven_fail_to_pass_plans(mutate, message: str) -> None:
+    f2p_plan, _p2p_plan = _plans()
+    mutate(f2p_plan)
+
+    with pytest.raises(RuntimeError, match=message):
+        _validate_execution_plan(f2p_plan, label="fail-to-pass", require_commands=True)
+
+
 def test_negative_target_proofs_require_an_exact_failed_target() -> None:
     js_target = "test/messaging.js | Messaging edit should reject invalid data"
     js_proof = {
@@ -141,9 +178,8 @@ def test_negative_target_proofs_require_an_exact_failed_target() -> None:
 
     pytest_target = "tests/test_widget.py::test_widget"
     pytest_proof = {"kind": "pytest_structured_reports", "targets": [pytest_target]}
-    structured = "\n".join(
-        json.dumps(event)
-        for event in (
+    structured = controller_proof_text(
+        [
             {"event": "session_start"},
             {"event": "collection_finish", "nodeids": [pytest_target]},
             {
@@ -153,7 +189,8 @@ def test_negative_target_proofs_require_an_exact_failed_target() -> None:
                 "outcome": "failed",
             },
             {"event": "session_finish", "exitstatus": 1},
-        )
+        ],
+        returncode=1,
     )
     assert _plan_log_failure_proof_matches(pytest_proof, "", structured)
     assert not _plan_log_failure_proof_matches(
@@ -235,15 +272,6 @@ def test_rejudge_writes_derived_summary_without_mutating_evidence(tmp_path: Path
     eval_dir = tmp_path / "run" / "official_eval_v5"
     output_dir = tmp_path / "run" / "official_eval_v5_rejudged"
     f2p_plan, p2p_plan = _plans()
-    failed_title = "Messaging Library edit should reject invalid data"
-    f2p_plan["proofs"] = [
-        {
-            "kind": "js_parser_backed_targets",
-            "targets": [f"test/messaging.js | {failed_title}"],
-            "repo_language": "js",
-            "repo": "nodebb/nodebb",
-        }
-    ]
     _write_json(eval_dir / "input" / "f2p.plan.json", f2p_plan)
     _write_json(eval_dir / "input" / "p2p.plan.json", p2p_plan)
     (eval_dir / "input" / "proof.nonce").write_text("nonce\n", encoding="ascii")
@@ -251,7 +279,10 @@ def test_rejudge_writes_derived_summary_without_mutating_evidence(tmp_path: Path
         eval_dir / "reports" / task,
         f2p_plan,
         f2p_status=1,
-        f2p_log=json.dumps(["fail", {"fullTitle": failed_title}]),
+        f2p_log=(
+            '{"Action":"run","Test":"TestWidget"}\n'
+            '{"Action":"fail","Test":"TestWidget"}\n'
+        ),
     )
     source = {
         "schema": "opencollab.prolite_direct_eval.v2",
