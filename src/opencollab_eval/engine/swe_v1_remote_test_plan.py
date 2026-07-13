@@ -243,7 +243,7 @@ def prolite_test_plan(
         "tutao/tutanota",
     }:
         files = canonical_js_test_files(tests, selected)
-        if not files:
+        if not files or files != declared_js_test_files(tests):
             return _unsupported_test_plan(tests)
         if repo == "nodebb/nodebb":
             command = mocha_test_command(tests, selected, target_file)

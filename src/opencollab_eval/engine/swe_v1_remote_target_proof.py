@@ -115,6 +115,16 @@ def canonical_js_test_files(tests, selected):
             canonical.append(resolved)
     return canonical
 
+def declared_js_test_files(tests):
+    declared = []
+    for item in tests:
+        test_file = str(item).split(" | ", 1)[0].strip()
+        if not test_file:
+            return []
+        if test_file not in declared:
+            declared.append(test_file)
+    return declared
+
 def js_workspace_root(test_file):
     parts = pathlib.PurePosixPath(test_file).parts
     if len(parts) >= 3 and parts[0] in {"applications", "packages"}:

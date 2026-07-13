@@ -99,13 +99,76 @@ def test_mocha_target_file_command_is_bound_to_the_declared_titles(tmp_path):
     assert validated_test_plan_kind(plan, require_commands=True) is None
 
 
+@pytest.mark.parametrize(
+    ("row", "declared_target", "aliased_file", "aliased_command"),
+    [
+        (
+            {"repo_language": "typescript"},
+            "src/app/utils/replaceLocalURL.test.ts | should replace",
+            "applications/evil/src/app/utils/replaceLocalURL.test.ts",
+            jest_test_command(
+                ["applications/evil/src/app/utils/replaceLocalURL.test.ts"]
+            ),
+        ),
+        (
+            {"repo_language": "javascript", "repo": "nodebb/nodebb"},
+            "test/topics.js | title",
+            "packages/evil/test/topics.js",
+            mocha_test_command(
+                ["test/topics.js | title"],
+                ["packages/evil/test/topics.js"],
+            ),
+        ),
+    ],
+)
+def test_javascript_plan_rejects_a_self_reported_suffix_alias(
+    tmp_path,
+    row,
+    declared_target,
+    aliased_file,
+    aliased_command,
+):
+    namespace = _remote_namespace(tmp_path)
+    plan = namespace["prolite_test_plan"](row, [declared_target])
+
+    plan["proofs"][0]["test_files"] = [aliased_file]
+    plan["commands"] = [aliased_command]
+
+    assert validated_test_plan_kind(plan, require_commands=True) is None
+
+
+def test_javascript_planner_fails_closed_for_an_untrusted_workspace_alias(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    declared = "src/app/utils/replaceLocalURL.test.ts | should replace"
+    plan = namespace["prolite_test_plan"](
+        {
+            "repo_language": "typescript",
+            "selected_test_files_to_run": [
+                "applications/drive/src/app/utils/replaceLocalURL.test.ts"
+            ],
+        },
+        [declared],
+    )
+
+    assert plan == {
+        "schema": "opencollab.prolite_test_plan.v2",
+        "adapter": "unsupported",
+        "coverage": "none",
+        "coverage_verified": False,
+        "declared_targets": [declared],
+        "target_batches": [],
+        "commands": [],
+        "proofs": [],
+    }
+
+
 def test_task9_jest_suite_load_failure_binds_official_mock_and_exact_command(tmp_path):
     namespace = _remote_namespace(tmp_path)
     suite = (
         "packages/components/components/drawer/views/SecurityCenter/PassAliases/"
         "PassAliases.test.tsx"
     )
-    declared_suite = suite.removeprefix("packages/components/")
+    declared_suite = suite
     missing_module = (
         "@proton/components/components/drawer/views/SecurityCenter/PassAliases/"
         "usePassAliasesProviderSetup"
