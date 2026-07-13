@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from .patch_paths import is_generated_python_bytecode_path
+
 GIT_C_ESCAPES = {
     "a": 0x07,
     "b": 0x08,
@@ -94,6 +96,44 @@ def diff_target_path(header: str) -> str:
     return ""
 
 
+def git_diff_endpoint(token: str, side: str) -> str:
+    path = decode_git_c_path(token)
+    if path == "/dev/null":
+        return ""
+    prefix = f"{side}/"
+    if path.startswith(prefix):
+        path = path[len(prefix) :]
+    return path
+
+
+def patch_entries(patch: str) -> list[tuple[str, str]]:
+    entries: list[tuple[str, str]] = []
+    for line in str(patch or "").splitlines():
+        if not line.startswith("diff --git "):
+            continue
+        tokens = git_header_tokens(line)
+        if len(tokens) < 2:
+            continue
+        old_path = git_diff_endpoint(tokens[0], "a")
+        new_path = git_diff_endpoint(tokens[1], "b")
+        if old_path or new_path:
+            entries.append((old_path, new_path))
+    return entries
+
+
+def patch_paths(patch: str) -> list[str]:
+    paths: dict[str, None] = {}
+    for old_path, new_path in patch_entries(patch):
+        for path in (old_path, new_path):
+            if path:
+                paths.setdefault(path, None)
+    return list(paths)
+
+
+def normalize_patch_path(path: str) -> str:
+    return str(path or "").strip().replace("\\", "/").lstrip("/")
+
+
 def split_patch_blocks(patch: str) -> list[list[str]]:
     blocks: list[list[str]] = []
     current: list[str] = []
@@ -108,9 +148,48 @@ def split_patch_blocks(patch: str) -> list[list[str]]:
     return blocks
 
 
+def remove_generated_python_bytecode_blocks(
+    patch: str,
+    paths: set[str],
+) -> tuple[str, list[str]]:
+    normalized_paths = {normalize_patch_path(path) for path in paths}
+    if not normalized_paths:
+        return patch, []
+
+    kept: list[str] = []
+    removed: dict[str, None] = {}
+    for lines in split_patch_blocks(patch):
+        entries = patch_entries("".join(lines))
+        if len(entries) != 1:
+            raise RuntimeError("trusted patch block could not be classified safely")
+        endpoints = [path for path in entries[0] if path]
+        intersects = any(path in normalized_paths for path in endpoints)
+        if not intersects:
+            kept.extend(lines)
+            continue
+        if any(
+            path not in normalized_paths
+            or not is_generated_python_bytecode_path(path)
+            for path in endpoints
+        ):
+            raise RuntimeError(
+                "trusted patch bytecode filtering encountered a mixed-path entry"
+            )
+        for path in endpoints:
+            removed.setdefault(path, None)
+    if set(removed) != normalized_paths:
+        raise RuntimeError("trusted patch bytecode filtering was incomplete")
+    return "".join(kept), list(removed)
+
+
 __all__ = [
     "decode_git_c_path",
     "diff_target_path",
+    "git_diff_endpoint",
     "git_header_tokens",
+    "normalize_patch_path",
+    "patch_entries",
+    "patch_paths",
+    "remove_generated_python_bytecode_blocks",
     "split_patch_blocks",
 ]
