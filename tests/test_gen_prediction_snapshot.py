@@ -641,6 +641,24 @@ def test_host_wrapper_installs_helper_and_validates_evidence(monkeypatch):
     assert result.as_dict() == evidence
 
 
+def test_container_helper_imports_when_executed_as_a_standalone_script(tmp_path):
+    helper = tmp_path / "opencollab_gen_prediction_snapshot.py"
+    config_helper = tmp_path / "gen_prediction_snapshot_config.py"
+    helper.write_bytes(snapshot._CONTAINER_HELPER_SOURCE.read_bytes())
+    config_helper.write_bytes(snapshot._CONTAINER_CONFIG_HELPER_SOURCE.read_bytes())
+
+    result = subprocess.run(
+        [sys.executable, str(helper)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "usage: gen_prediction_snapshot_container.py WORKSPACE" in result.stderr
+    assert "ImportError" not in result.stderr
+
+
 def test_host_wrapper_rejects_unproven_evidence():
     invalid = {
         "enabled": True,
