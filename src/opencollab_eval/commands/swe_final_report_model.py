@@ -11,6 +11,7 @@ from typing import Any
 
 from opencollab_eval import __version__
 from opencollab_eval.commands import _swe_report_io as report_io
+from opencollab_eval.commands._swe_eval_layer_integrity import EMPTY_PATCH_SHA256
 from opencollab_eval.commands.swe_final_report_dataset import DatasetTask, LoadedDataset
 from opencollab_eval.engine.swe_eval_records import direct_eval_done_has_execution_proof
 
@@ -263,6 +264,8 @@ def load_method_facts(
         patch_sha = str(raw_task.get("patch_sha256") or "").lower()
         if _SHA256_RE.fullmatch(patch_sha) is None:
             raise FinalReportInputError(f"{name} task {index} lacks a full patch SHA-256")
+        if patch_sha == EMPTY_PATCH_SHA256:
+            raise FinalReportInputError(f"{name} task {index} has an empty patch")
         report_path = raw_task.get("report_path")
         if not isinstance(report_path, str) or not report_path:
             raise FinalReportInputError(f"{name} task {index} lacks an official report path")

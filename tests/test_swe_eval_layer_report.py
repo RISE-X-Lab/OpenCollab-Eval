@@ -387,6 +387,23 @@ def test_eval_layer_report_rejects_missing_candidate_identity_across_reports(tmp
     _assert_technical(report, "invalid_generation_patch_sha256")
 
 
+def test_eval_layer_report_rejects_empty_patch_labeled_generation_done(tmp_path):
+    module = _load_module()
+    row = _row(1, "task-a", "/run/task-a.outer.log", 100, "eval_done", True)
+    empty_sha = hashlib.sha256(b"").hexdigest()
+    row["generation"].update(
+        patch_sha256=empty_sha,
+        **trusted_summary_proof_fields(empty_sha, patch_bytes=0),
+    )
+    row["eval"]["summary"]["patch_sha256"] = empty_sha
+    report_path = _write_json(tmp_path / "round.json", {"rows": [row]})
+
+    report = module.build_report([report_path])
+
+    _assert_technical(report, "undeclared_empty_patch")
+    assert report["counts"]["empty_patch"] == 0
+
+
 def test_eval_layer_report_allows_verified_empty_patch_before_rerun(tmp_path):
     module = _load_module()
     first = _as_verified_empty(

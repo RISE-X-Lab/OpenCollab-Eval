@@ -147,6 +147,9 @@ def attempt_integrity(row: dict[str, Any], task: str) -> AttemptIntegrity:
     generation_sha = _full_sha(generation.get("patch_sha256"))
     if not generation_sha:
         _append_once(reasons, "invalid_generation_patch_sha256")
+    extraction = _mapping(generation.get("trusted_patch_extraction"))
+    if generation_sha == EMPTY_PATCH_SHA256 or extraction.get("patch_bytes") == 0:
+        _append_once(reasons, "undeclared_empty_patch")
     if not current_generation_summary_proof_valid(generation):
         _append_once(reasons, "missing_trusted_generation_proof")
 

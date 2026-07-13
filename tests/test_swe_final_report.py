@@ -95,6 +95,12 @@ def test_final_report_rejects_a_dataset_that_disagrees_with_the_fixed_census(tmp
         (lambda report: report["tasks"][0].__setitem__("resolved", None), "Boolean verdict"),
         (lambda report: report["tasks"][0].__setitem__("direct_execution_proven", False), "execution proof"),
         (lambda report: report["tasks"][0].__setitem__("patch_sha256", "short"), "patch SHA-256"),
+        (
+            lambda report: report["tasks"][0].__setitem__(
+                "patch_sha256", hashlib.sha256(b"").hexdigest()
+            ),
+            "empty patch",
+        ),
         (lambda report: report["tasks"][1].__setitem__("record_id", report["tasks"][0]["record_id"]), "duplicated"),
     ],
 )
