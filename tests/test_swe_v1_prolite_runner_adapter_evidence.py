@@ -287,7 +287,8 @@ def test_prolite_go_mixed_plain_build_failure_binds_command_package_and_file(tmp
     )
     log = (
         marker
-        + "\ninternal/api/widget_test.go:42:7: undefined: missingSymbol\n"
+        + f"\n# {package} [{package}.test]\n"
+        + "internal/api/widget_test.go:42:7: undefined: missingSymbol\n"
         + events
     )
     proof = {
@@ -306,6 +307,13 @@ def test_prolite_go_mixed_plain_build_failure_binds_command_package_and_file(tmp
     assert namespace["_plan_log_failure_proof_matches"](
         proof,
         log.replace("internal/api/widget_test.go:42:7", "internal/api/other_test.go:42:7"),
+        "",
+        command,
+        command,
+    ) is False
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        log.replace(f"# {package} [{package}.test]", "# example.org/wrong [example.org/wrong.test]"),
         "",
         command,
         command,

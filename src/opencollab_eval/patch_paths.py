@@ -22,3 +22,8 @@ def is_generated_python_bytecode_path(path: str) -> bool:
         and "__pycache__" in parts[:-1]
         and parts[-1].endswith((".pyc", ".pyo"))
     )
+
+
+def is_generated_python_test_artifact_path(path: str) -> bool:
+    normalized = str(path or "").replace("\\", "/").lstrip("/")
+    return normalized.startswith((".hypothesis/", ".pytest_cache/"))

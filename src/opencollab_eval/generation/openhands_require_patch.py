@@ -26,6 +26,7 @@ from opencollab_eval.patch_gitlinks import (  # noqa: E402
 from opencollab_eval.patch_paths import (  # noqa: E402
     is_generated_dependency_artifact_path,
     is_generated_python_bytecode_path,
+    is_generated_python_test_artifact_path,
 )
 
 
@@ -219,6 +220,7 @@ def _source_paths(
         for path in paths
         if is_generated_dependency_artifact_path(path)
         or is_generated_python_bytecode_path(path)
+        or is_generated_python_test_artifact_path(path)
         or path in verified
     ]
     source = [path for path in paths if path not in validation and path not in generated]

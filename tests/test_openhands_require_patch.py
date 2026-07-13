@@ -68,6 +68,23 @@ def test_stop_guard_allows_non_test_source_patch(
     assert result["reason"] == "source_patch_present"
 
 
+def test_stop_guard_treats_root_python_test_runtime_artifacts_as_generated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    patch = (
+        "diff --git a/.pytest_cache/v/cache/nodeids b/.pytest_cache/v/cache/nodeids\n"
+        "new file mode 100644\n--- /dev/null\n+++ b/.pytest_cache/v/cache/nodeids\n"
+        "@@ -0,0 +1 @@\n+[]\n"
+    )
+    monkeypatch.setattr(guard, "_container_patch", lambda *args: patch)
+
+    result = guard.evaluate_stop(_env(tmp_path, rejections=1))
+
+    assert result["decision"] == "deny"
+    state = json.loads((tmp_path / "empty_patch_stop_guard.json").read_text())
+    assert state["generated_paths"] == [".pytest_cache/v/cache/nodeids"]
+
+
 def test_stop_guard_rejects_empty_or_test_only_patch_then_allows_at_limit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

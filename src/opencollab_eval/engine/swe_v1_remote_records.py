@@ -10,6 +10,7 @@ from opencollab_eval.patch_diff import *
 from opencollab_eval.patch_paths import (
     is_generated_dependency_artifact_path,
     is_generated_python_bytecode_path,
+    is_generated_python_test_artifact_path,
 )
 
 
@@ -220,6 +221,8 @@ def model_patch_filter_reason(path):
         return "eval_test_path"
     if is_generated_python_bytecode_path(path):
         return "generated_python_bytecode"
+    if is_generated_python_test_artifact_path(path):
+        return "generated_python_test_artifact"
     if is_generated_dependency_artifact_path(path):
         return "generated_dependency_artifact"
     return ""

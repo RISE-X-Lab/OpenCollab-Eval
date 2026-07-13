@@ -470,6 +470,44 @@ def test_filter_model_patch_removes_python_bytecode_with_parent_child_sha(tmp_pa
     }
 
 
+def test_filter_model_patch_removes_root_python_test_runtime_artifacts(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+
+    def added(path):
+        return (
+            f"diff --git a/{path} b/{path}\n"
+            "new file mode 100644\n"
+            "--- /dev/null\n"
+            f"+++ b/{path}\n"
+            "@@ -0,0 +1 @@\n"
+            "+generated\n"
+        )
+
+    patch = (
+        added(".hypothesis/constants/a")
+        + added(".pytest_cache/v/cache/nodeids")
+        + added("pkg/.pytest_cache/kept")
+        + added("qutebrowser/keyinput/keyutils.py")
+    )
+
+    filtered, evidence = namespace["filter_model_patch_with_evidence"](patch)
+
+    assert ".hypothesis/" not in filtered
+    assert "b/.pytest_cache/" not in filtered
+    assert "pkg/.pytest_cache/kept" in filtered
+    assert "qutebrowser/keyinput/keyutils.py" in filtered
+    assert evidence == [
+        {
+            "path": ".hypothesis/constants/a",
+            "reason": "generated_python_test_artifact",
+        },
+        {
+            "path": ".pytest_cache/v/cache/nodeids",
+            "reason": "generated_python_test_artifact",
+        },
+    ]
+
+
 def test_yarn_install_state_only_patch_is_not_a_completed_generation(tmp_path):
     namespace = _remote_namespace(tmp_path)
     task = "instance_org__repo-1"

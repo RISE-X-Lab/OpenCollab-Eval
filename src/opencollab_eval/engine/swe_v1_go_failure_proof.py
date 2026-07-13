@@ -16,6 +16,9 @@ _PLAIN_TEST_DIAGNOSTIC_RE = re.compile(
     r"(?P<path>(?:[A-Za-z]:)?[^:\r\n]*?[^/\\:\r\n]+_test\.go):"
     r"[0-9]+(?::[0-9]+)?:[^\r\n]+\Z"
 )
+_GO_BUILD_HEADER_RE = re.compile(
+    r"# (?P<package>\S+) \[(?P<test_package>\S+)\.test\]\Z"
+)
 
 
 def _declared_tests(proof: dict[str, Any]) -> list[str]:
@@ -33,10 +36,11 @@ def _declared_tests(proof: dict[str, Any]) -> list[str]:
 
 def _parse_go_log(
     log_text: str,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]] | None:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], list[str]] | None:
     events: list[dict[str, Any]] = []
     discoveries: list[dict[str, Any]] = []
     plain_diagnostics: list[str] = []
+    build_headers: list[str] = []
     for raw_line in str(log_text or "").splitlines():
         line = raw_line.strip()
         if not line:
@@ -55,14 +59,18 @@ def _parse_go_log(
             event = json.loads(line)
         except json.JSONDecodeError:
             diagnostic = _PLAIN_TEST_DIAGNOSTIC_RE.fullmatch(line)
-            if diagnostic is None:
+            header = _GO_BUILD_HEADER_RE.fullmatch(line)
+            if diagnostic is not None:
+                plain_diagnostics.append(diagnostic.group("path"))
+            elif header is not None and header.group("package") == header.group("test_package"):
+                build_headers.append(header.group("package"))
+            else:
                 return None
-            plain_diagnostics.append(diagnostic.group("path"))
             continue
         if not isinstance(event, dict):
             return None
         events.append(event)
-    return events, discoveries, plain_diagnostics
+    return events, discoveries, plain_diagnostics, build_headers
 
 
 def _package_matches(declared: str, observed: str) -> bool:
@@ -220,8 +228,8 @@ def go_pass_proof_matches(proof: dict[str, Any], log_text: str) -> bool:
     parsed = _parse_go_log(log_text)
     if not declared_tests or parsed is None:
         return False
-    events, discoveries, plain_diagnostics = parsed
-    if plain_diagnostics:
+    events, discoveries, plain_diagnostics, build_headers = parsed
+    if plain_diagnostics or build_headers:
         return False
     if proof.get("dynamic_discovery") is True:
         bindings = _dynamic_bindings(discoveries, declared_tests)
@@ -258,7 +266,7 @@ def go_failure_proof_matches(
     parsed = _parse_go_log(log_text)
     if not declared_tests or parsed is None:
         return False
-    events, discoveries, plain_diagnostics = parsed
+    events, discoveries, plain_diagnostics, build_headers = parsed
     expected = set(declared_tests)
     exact_failures = [
         event
@@ -266,7 +274,7 @@ def go_failure_proof_matches(
         if event.get("Action") == "fail" and event.get("Test") in expected
     ]
     if exact_failures:
-        if plain_diagnostics:
+        if plain_diagnostics or build_headers:
             return False
         if proof.get("dynamic_discovery") is not True:
             if discoveries:
@@ -314,6 +322,12 @@ def go_failure_proof_matches(
         not expected_command
         or expected_command != observed_command
         or len(failed_packages) != 1
+    ):
+        return False
+    if build_headers and (
+        len(set(build_headers)) != 1
+        or len(failed_packages) != 1
+        or not _package_matches(next(iter(failed_packages)), build_headers[0])
     ):
         return False
     if legacy_dynamic and len(failed_packages) != 1:
