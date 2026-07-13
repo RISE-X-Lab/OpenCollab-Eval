@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -141,7 +142,7 @@ def test_run_openhands_passes_effective_runtime_settings(
     assert all(leaked_id not in value for value in env.values())
     assert captured["start_new_session"] is True
     assert captured["shell"] is False
-    assert Path(captured["command"][1]) == module_path(
+    assert Path(captured["command"][1]).resolve() == module_path(
         "opencollab_eval.generation.openhands_process_supervisor"
     )
 
@@ -750,6 +751,12 @@ def test_main_writes_generation_contract_for_nonempty_patch(
     )
     hook_command = hook_config["stop"][0]["hooks"][0]["command"]
     assert hook_command.startswith("if [ -f ")
-    assert str(module_path("opencollab_eval.generation.openhands_require_patch")) in hook_command
+    require_patch = module_path("opencollab_eval.generation.openhands_require_patch")
+    referenced_scripts = [
+        Path(token).resolve()
+        for token in shlex.split(hook_command)
+        if token.endswith("openhands_require_patch.py")
+    ]
+    assert referenced_scripts and set(referenced_scripts) == {require_patch}
     assert "|| exit 1" in hook_command
     assert "missing_patch_guard_script" in hook_command

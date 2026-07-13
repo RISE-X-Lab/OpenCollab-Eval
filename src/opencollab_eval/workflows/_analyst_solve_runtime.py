@@ -2,14 +2,7 @@
 
 from __future__ import annotations
 
-from opencollab.sdk.experimental import (
-    build_fact_sheet,
-    estimate_target_complexity,
-    format_fact_sheet_hint,
-    format_findings_report,
-    recon_pool_is_ample,
-    size_recon,
-)
+from opencollab.sdk.experimental import format_findings_report
 
 from ._analyst_solve_defs import (
     CODER_BUDGET,
@@ -41,6 +34,13 @@ from ._analyst_solve_defs import (
     _tester_tools_for,
     _time_low,
     _verified_test_targets,
+)
+from ._fact_sheet import (
+    build_fact_sheet,
+    estimate_target_complexity,
+    format_fact_sheet_hint,
+    recon_pool_is_ample,
+    size_recon,
 )
 
 

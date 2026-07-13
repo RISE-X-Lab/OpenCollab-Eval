@@ -4,7 +4,7 @@ OpenCollab-Eval owns benchmark adaptation, solver isolation, trusted patch
 extraction, official evaluation, evidence, batch orchestration, and reporting for
 OpenCollab-based software-engineering experiments.
 
-This repository targets OpenCollab 0.2. Evaluation production code and tests
+This repository requires OpenCollab 0.2.1 or newer in the 0.2 series. Evaluation production code and tests
 import OpenCollab only through `opencollab.sdk` and the temporary
 `opencollab.sdk.eval_compat` migration surface.
 
@@ -25,8 +25,8 @@ Release compatibility is verified from built artifacts rather than editable
 source trees. Build both wheels, then run
 `scripts/verify_wheel_contract.sh PATH_TO_OC_WHEEL PATH_TO_EVAL_WHEEL`; the
 script installs both distributions in a fresh virtual environment, runs the
-Eval tests against the installed OpenCollab package, and checks the packaged
-CLI.
+full Eval suite against the packaged wheels, checks the SDK contract, and
+exercises both packaged CLI entrypoints.
 
 The identity key is an evaluator-owned file containing exactly 32 random bytes.
 Keep it in sealed run state and reuse it for retries of the same batch so public
@@ -36,6 +36,7 @@ For development, install the repository and its test dependencies before
 running the suite:
 
 ```bash
+python -m pip install -e /path/to/OpenCollab/opencollab
 python -m pip install -e '.[dev,swebench]'
 pytest -q
 ```

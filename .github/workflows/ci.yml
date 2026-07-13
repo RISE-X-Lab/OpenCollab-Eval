@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    defaults:
+      run:
+        shell: bash
+        working-directory: eval
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Check out OpenCollab-Eval
+        uses: actions/checkout@v4
+        with:
+          path: eval
+
+      - name: Check out the compatible OpenCollab SDK
+        uses: actions/checkout@v4
+        with:
+          repository: YihongDong/OpenCollab
+          ref: 532a8d31fd070d976795f3befd7b02ec5d95a938
+          path: opencollab-source
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            eval/pyproject.toml
+            opencollab-source/opencollab/pyproject.toml
+
+      - name: Build both distributions
+        id: wheels
+        run: |
+          python -m pip install build
+          mkdir -p "$RUNNER_TEMP/wheels/opencollab" "$RUNNER_TEMP/wheels/eval"
+          python -m build --wheel --outdir "$RUNNER_TEMP/wheels/opencollab" ../opencollab-source/opencollab
+          python -m build --wheel --outdir "$RUNNER_TEMP/wheels/eval" .
+          oc_wheels=("$RUNNER_TEMP"/wheels/opencollab/*.whl)
+          eval_wheels=("$RUNNER_TEMP"/wheels/eval/*.whl)
+          test "${#oc_wheels[@]}" -eq 1
+          test "${#eval_wheels[@]}" -eq 1
+          echo "opencollab=${oc_wheels[0]}" >> "$GITHUB_OUTPUT"
+          echo "eval=${eval_wheels[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Install test dependencies
+        run: python -m pip install "${{ steps.wheels.outputs.opencollab }}" -e ".[dev,swebench]"
+
+      - name: Run Ruff
+        run: ruff check .
+
+      - name: Run the full test suite
+        run: pytest -q
+
+      - name: Verify installed wheel and SDK compatibility
+        if: matrix.python-version == '3.12'
+        env:
+          OPENCOLLAB_SOURCE_ROOT: ${{ github.workspace }}/opencollab-source
+          OPENCOLLAB_EVAL_SOURCE_ROOT: ${{ github.workspace }}/eval
+        run: scripts/verify_wheel_contract.sh "${{ steps.wheels.outputs.opencollab }}" "${{ steps.wheels.outputs.eval }}"
+
+  macos-integrity:
+    name: macOS integrity proof
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out OpenCollab-Eval
+        uses: actions/checkout@v4
+        with:
+          path: eval
+
+      - name: Check out the compatible OpenCollab SDK
+        uses: actions/checkout@v4
+        with:
+          repository: YihongDong/OpenCollab
+          ref: 532a8d31fd070d976795f3befd7b02ec5d95a938
+          path: opencollab-source
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install OpenCollab test dependencies
+        run: python -m pip install -e "./opencollab-source/opencollab[dev]"
+
+      - name: Execute the macOS path-integrity proof
+        working-directory: opencollab-source/opencollab
+        run: |
+          python -m pytest -q -p no:cacheprovider --junitxml="$RUNNER_TEMP/h68.xml" \
+            tests/test_posix_file_support.py::test_macos_alias_normalization_still_rejects_descendant_symlink
+          python - "$RUNNER_TEMP/h68.xml" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse(sys.argv[1]).getroot()
+          suites = list(root.findall("testsuite")) if root.tag == "testsuites" else [root]
+          totals = {
+              field: sum(int(suite.attrib[field]) for suite in suites)
+              for field in ("tests", "skipped", "failures", "errors")
+          }
+          assert totals == {"tests": 1, "skipped": 0, "failures": 0, "errors": 0}, totals
+          PY
