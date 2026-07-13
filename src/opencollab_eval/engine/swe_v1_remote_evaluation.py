@@ -385,6 +385,7 @@ def eval_for_task_once(row):
         container_cleanup=container_cleanup,
     )
     output_artifact_errors = artifacts["output_artifact_errors"]
+    diagnostic_artifact_errors = artifacts["diagnostic_artifact_errors"]
     base_commit_status = artifacts["base_commit_status"]
     service_status = artifacts["service_status"]
     before_status = artifacts["before_status"]
@@ -417,6 +418,7 @@ def eval_for_task_once(row):
         "error": bool(technical_error),
         "technical_reasons": technical_reasons,
         "output_artifact_errors": output_artifact_errors,
+        "diagnostic_artifact_errors": diagnostic_artifact_errors,
         "docker_exit": docker_exit,
         "cleanup_quiesced": cleanup_quiesced,
         "container_cleanup": container_cleanup,
@@ -466,6 +468,7 @@ def eval_for_task_once(row):
         "eval_model_patch_chars": len(model_patch),
         "technical_reasons": technical_reasons,
         "output_artifact_errors": output_artifact_errors,
+        "diagnostic_artifact_errors": diagnostic_artifact_errors,
         "docker_exit": docker_exit,
         "cleanup_quiesced": cleanup_quiesced,
         "container_cleanup": container_cleanup,

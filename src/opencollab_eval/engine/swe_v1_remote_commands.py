@@ -68,6 +68,38 @@ def _pytest_structured_proof_matches(targets, proof_text, log_text):
     return True
 
 
+def _pytest_structured_failure_proof_matches(targets, proof_text):
+    try:
+        events = [json.loads(line) for line in proof_text.splitlines() if line.strip()]
+    except json.JSONDecodeError:
+        return False
+    if not events or any(not isinstance(event, dict) for event in events):
+        return False
+    starts = [event for event in events if event.get("event") == "session_start"]
+    collections = [event for event in events if event.get("event") == "collection_finish"]
+    finishes = [event for event in events if event.get("event") == "session_finish"]
+    if len(starts) != 1 or len(collections) != 1 or len(finishes) != 1:
+        return False
+    if finishes[0].get("exitstatus") in {None, 0}:
+        return False
+    nodeids = collections[0].get("nodeids")
+    if not isinstance(nodeids, list) or not nodeids or any(
+        not isinstance(node, str) or not node for node in nodeids
+    ):
+        return False
+    return any(
+        event.get("event") == "runtest_logreport"
+        and event.get("nodeid") in nodeids
+        and event.get("when") in {"setup", "call", "teardown"}
+        and event.get("outcome") == "failed"
+        and any(
+            _pytest_target_matches_node(target, event["nodeid"])
+            for target in targets
+        )
+        for event in events
+    )
+
+
 def _plan_log_proof_matches(proof, log_text, proof_text=""):
     """Require positive per-target evidence from a completed test command."""
     if not proof:
@@ -118,6 +150,62 @@ def _plan_log_proof_matches(proof, log_text, proof_text=""):
         if event.get("Action") == "pass" and event.get("Test") in expected_tests:
             passed_tests.add(event["Test"])
     return passed_tests == expected_tests
+
+
+def _plan_log_failure_proof_matches(proof, log_text, proof_text=""):
+    """Require one exact declared target to be observed with a failed result."""
+    if not isinstance(proof, dict):
+        return False
+    if proof.get("kind") == "pytest_structured_reports":
+        targets = proof.get("targets")
+        return bool(
+            isinstance(targets, list)
+            and targets
+            and all(isinstance(target, str) and target for target in targets)
+            and _pytest_structured_failure_proof_matches(targets, proof_text)
+        )
+    if proof.get("kind") == "js_parser_backed_targets":
+        targets = proof.get("targets")
+        if not isinstance(targets, list) or not targets:
+            return False
+        parsed = fail_to_pass_execution_proof(
+            {
+                "repo_language": proof.get("repo_language") or "",
+                "repo": proof.get("repo") or "",
+            },
+            targets,
+            1,
+            log_text,
+        )
+        failed = parsed.get("failed")
+        return bool(
+            isinstance(failed, list)
+            and any(target in failed for target in targets)
+        )
+    if proof.get("kind") != "go_json_test_pass":
+        return False
+    declared_tests = proof.get("tests")
+    if declared_tests is None:
+        declared_tests = [proof.get("test")]
+    if (
+        not isinstance(declared_tests, list)
+        or not declared_tests
+        or any(not isinstance(test, str) or not test for test in declared_tests)
+    ):
+        return False
+    expected_tests = set(declared_tests)
+    for raw_line in log_text.splitlines():
+        if not raw_line.strip():
+            continue
+        try:
+            event = json.loads(raw_line)
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(event, dict):
+            return False
+        if event.get("Action") == "fail" and event.get("Test") in expected_tests:
+            return True
+    return False
 
 
 def task_session(task):

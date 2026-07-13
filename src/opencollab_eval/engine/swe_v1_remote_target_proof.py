@@ -527,7 +527,7 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
                         status = str(assertion.get("status") or "")
                         if item and status == "passed":
                             passed_items.add(item)
-                        elif item and status in {"failed", "pending", "todo"}:
+                        elif item and status == "failed":
                             failed_items.add(item)
                 continue
             if not isinstance(event, list) or len(event) != 2 or not isinstance(event[1], dict):

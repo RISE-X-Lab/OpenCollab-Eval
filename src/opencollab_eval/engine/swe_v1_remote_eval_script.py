@@ -114,9 +114,11 @@ echo "$test_status" > /eval_output/test_patch.exit
 
 if [ "$base_commit_status" -eq 0 ] && [ "$before_repo_status" -eq 0 ] && [ "$post_before_base_status" -eq 0 ] && [ "$service_bootstrap_status" -eq 0 ] && [ "$model_status" -eq 0 ] && [ "$test_status" -eq 0 ]; then
   cp /eval_input/f2p.command /eval_output/f2p.command
+  chmod 0644 /eval_output/f2p.command 2>/dev/null || true
   bash /eval_input/f2p.sh > /eval_output/f2p.log 2>&1
   echo "$?" > /eval_output/f2p.exit
   cp /eval_input/p2p.command /eval_output/p2p.command
+  chmod 0644 /eval_output/p2p.command 2>/dev/null || true
   bash /eval_input/p2p.sh > /eval_output/p2p.log 2>&1
   echo "$?" > /eval_output/p2p.exit
 else
