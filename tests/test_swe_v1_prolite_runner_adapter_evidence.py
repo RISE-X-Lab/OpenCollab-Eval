@@ -864,6 +864,41 @@ def test_prolite_pytest_collection_import_failure_is_exact_semantic_failure(tmp_
     ) is False
 
 
+def test_prolite_pytest_parameter_parent_fallback_proves_all_collected_instances(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    parent = "tests/test_many.py::test_case"
+    targets = [parent + "[dataset-a]", parent + "[dataset-b]"]
+    proof = {
+        "kind": "pytest_structured_reports",
+        "targets": targets,
+        "parameter_fallback_parents": [parent],
+    }
+    actual_nodes = [parent + "[runtime-repr-1]", parent + "[runtime-repr-2]"]
+    complete = _pytest_proof_text(actual_nodes)
+
+    assert namespace["_plan_log_proof_matches"](proof, "2 passed", complete) is True
+    assert namespace["_plan_log_proof_matches"](
+        proof,
+        "1 passed",
+        _pytest_proof_text(actual_nodes[:1]),
+    ) is True
+    assert namespace["_plan_log_proof_matches"](
+        proof,
+        "2 passed",
+        _pytest_proof_text([*actual_nodes, "tests/other.py::test_case[runtime]"]),
+    ) is False
+    assert namespace["_plan_log_proof_matches"](
+        proof,
+        "1 failed",
+        _pytest_proof_text(actual_nodes, call_outcome="failed"),
+    ) is False
+    assert namespace["_plan_log_proof_matches"](
+        proof,
+        "no tests ran in 0.01s",
+        _pytest_proof_text([], exitstatus=5),
+    ) is False
+
+
 def test_prolite_model_patch_filters_pytest_conftest_changes(tmp_path):
     namespace = _remote_namespace(tmp_path)
     patch = (

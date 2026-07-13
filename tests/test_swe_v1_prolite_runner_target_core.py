@@ -257,6 +257,32 @@ def test_python_test_targets_are_batched_without_file_level_expansion():
     ]
 
 
+def test_python_parameter_targets_use_bounded_parent_fallback():
+    namespace = _command_namespace()
+    targets = [
+        "tests/test_many.py::test_case[dataset-repr-a]",
+        "tests/test_many.py::test_case[dataset-repr-b]",
+        "tests/test_many.py::test_stable",
+    ]
+
+    plan = namespace["prolite_test_plan"]({"repo_language": "python"}, targets)
+
+    assert plan["coverage_verified"] is True
+    assert plan["coverage"] == "parameter_parent_targets"
+    assert plan["target_batches"] == [targets]
+    assert plan["commands"] == [
+        "pytest -p opencollab_pytest_proof -q -rA -o addopts= "
+        "tests/test_many.py::test_case tests/test_many.py::test_stable"
+    ]
+    assert plan["proofs"] == [
+        {
+            "kind": "pytest_structured_reports",
+            "targets": targets,
+            "parameter_fallback_parents": ["tests/test_many.py::test_case"],
+        }
+    ]
+
+
 def test_python_batch_command_keeps_targets_out_of_bash_argv(tmp_path):
     namespace = _command_namespace()
 

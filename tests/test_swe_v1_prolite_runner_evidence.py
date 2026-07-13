@@ -748,34 +748,22 @@ def test_remote_patch_sha_match_requires_exact_hex_digest(tmp_path):
     assert namespace["patch_sha_matches"](digest.upper(), digest) is False
 
 
-def test_prolite_python_plan_batches_81_exact_node_ids_without_file_fallback(tmp_path):
+def test_prolite_python_plan_batches_81_parameters_by_parent_without_file_fallback(tmp_path):
     namespace = _remote_namespace(tmp_path)
     targets = [f"tests/test_many.py::test_case[{index}]" for index in range(81)]
 
     plan = namespace["prolite_test_plan"]({"repo_language": "python"}, targets)
 
     assert plan["coverage_verified"] is True
-    assert plan["coverage"] == "exact_targets"
-    assert [target for batch in plan["target_batches"] for target in batch] == targets
-    assert [len(batch) for batch in plan["target_batches"]] == [80, 1]
-    command_targets = []
-    for command in plan["commands"]:
-        argv = namespace["shlex"].split(command)
-        assert argv[:7] == [
-            "pytest",
-            "-p",
-            "opencollab_pytest_proof",
-            "-q",
-            "-rA",
-            "-o",
-            "addopts=",
-        ]
-        command_targets.extend(argv[7:])
-    assert command_targets == targets
-    assert plan["commands"][1] != (
+    assert plan["coverage"] == "parameter_parent_targets"
+    assert plan["target_batches"] == [targets]
+    assert plan["commands"] == [
         "pytest -p opencollab_pytest_proof -q -rA -o addopts= "
-        "tests/test_many.py"
-    )
+        "tests/test_many.py::test_case"
+    ]
+    assert plan["proofs"][0]["parameter_fallback_parents"] == [
+        "tests/test_many.py::test_case"
+    ]
 
 
 @pytest.mark.parametrize(
@@ -915,7 +903,7 @@ def test_prolite_eval_requires_matching_batch_and_target_evidence(
     )
 
     evidence = result["summary"]["tests_status"]["fail_to_pass_evidence"]
-    assert len(evidence) == (1 if is_go else 2)
+    assert len(evidence) == 1
     if evidence_mode == "go_package_pass_only":
         assert result["status"] == "technical_eval_failed"
         assert result["summary"]["resolved"] is False

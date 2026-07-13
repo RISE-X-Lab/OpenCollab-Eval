@@ -16,7 +16,34 @@ def _pytest_target_matches_node(target, node):
     return node == prefix or node.startswith(prefix + "::") or node.startswith(prefix + "/")
 
 
-def _pytest_structured_proof_matches(targets, proof_text, log_text):
+def _pytest_parameter_parent(target):
+    target = str(target or "")
+    node_start = target.rfind("::") + 2
+    bracket = target.find("[", node_start)
+    if node_start < 2 or bracket <= node_start or not target.endswith("]"):
+        return ""
+    return target[:bracket]
+
+
+def _pytest_fallback_parents_match_targets(targets, fallback_parents):
+    expected = []
+    for target in targets:
+        parent = _pytest_parameter_parent(target)
+        if parent and parent not in expected:
+            expected.append(parent)
+    return (
+        isinstance(fallback_parents, list)
+        and fallback_parents == expected
+        and all(isinstance(parent, str) and parent for parent in fallback_parents)
+    )
+
+
+def _pytest_structured_proof_matches(
+    targets,
+    proof_text,
+    log_text,
+    fallback_parents=None,
+):
     try:
         events = [json.loads(line) for line in proof_text.splitlines() if line.strip()]
     except json.JSONDecodeError:
@@ -32,9 +59,28 @@ def _pytest_structured_proof_matches(targets, proof_text, log_text):
     if len(collections) != 1 or len(finishes) != 1 or finishes[0].get("exitstatus") != 0:
         return False
     nodeids = collections[0].get("nodeids")
-    if not isinstance(nodeids, list) or not nodeids or any(not isinstance(node, str) or not node for node in nodeids):
+    if (
+        not isinstance(nodeids, list)
+        or not nodeids
+        or len(set(nodeids)) != len(nodeids)
+        or any(not isinstance(node, str) or not node for node in nodeids)
+    ):
         return False
-    if any(not any(_pytest_target_matches_node(target, node) for target in targets) for node in nodeids):
+    fallback_parents = fallback_parents or []
+    if fallback_parents and not _pytest_fallback_parents_match_targets(
+        targets, fallback_parents
+    ):
+        return False
+    exact_targets = (
+        [target for target in targets if not _pytest_parameter_parent(target)]
+        if fallback_parents
+        else list(targets)
+    )
+    allowed_targets = [*exact_targets, *fallback_parents]
+    if any(
+        not any(_pytest_target_matches_node(target, node) for target in allowed_targets)
+        for node in nodeids
+    ):
         return False
     reports = {}
     for event in events:
@@ -52,9 +98,17 @@ def _pytest_structured_proof_matches(targets, proof_text, log_text):
         ):
             return False
         reports.setdefault(node, {})[phase] = outcome
-    for target in targets:
+    for target in exact_targets:
         matching = [node for node in nodeids if _pytest_target_matches_node(target, node)]
         if not matching:
+            return False
+    for parent in fallback_parents:
+        matching = [node for node in nodeids if node.startswith(parent + "[")]
+        if not matching or any(
+            reports.get(node)
+            != {"setup": "passed", "call": "passed", "teardown": "passed"}
+            for node in matching
+        ):
             return False
         if any(
             reports.get(node) != {"setup": "passed", "call": "passed", "teardown": "passed"}
@@ -69,7 +123,11 @@ def _pytest_structured_proof_matches(targets, proof_text, log_text):
     return True
 
 
-def _pytest_structured_failure_proof_matches(targets, proof_text):
+def _pytest_structured_failure_proof_matches(
+    targets,
+    proof_text,
+    fallback_parents=None,
+):
     try:
         events = [json.loads(line) for line in proof_text.splitlines() if line.strip()]
     except json.JSONDecodeError:
@@ -88,6 +146,22 @@ def _pytest_structured_failure_proof_matches(targets, proof_text):
         not isinstance(node, str) or not node for node in nodeids
     ):
         return False
+    fallback_parents = fallback_parents or []
+    if fallback_parents and not _pytest_fallback_parents_match_targets(
+        targets, fallback_parents
+    ):
+        return False
+    exact_targets = (
+        [target for target in targets if not _pytest_parameter_parent(target)]
+        if fallback_parents
+        else list(targets)
+    )
+    allowed_targets = [*exact_targets, *fallback_parents]
+    if fallback_parents and any(
+        not any(_pytest_target_matches_node(target, node) for target in allowed_targets)
+        for node in nodeids
+    ):
+        return False
     return any(
         event.get("event") == "runtest_logreport"
         and event.get("nodeid") in nodeids
@@ -95,7 +169,7 @@ def _pytest_structured_failure_proof_matches(targets, proof_text):
         and event.get("outcome") == "failed"
         and any(
             _pytest_target_matches_node(target, event["nodeid"])
-            for target in targets
+            for target in allowed_targets
         )
         for event in events
     )
@@ -163,7 +237,12 @@ def _plan_log_proof_matches(proof, log_text, proof_text=""):
             return False
         if any(not isinstance(target, str) or not target for target in targets):
             return False
-        return _pytest_structured_proof_matches(targets, proof_text, log_text)
+        return _pytest_structured_proof_matches(
+            targets,
+            proof_text,
+            log_text,
+            proof.get("parameter_fallback_parents"),
+        )
     if proof.get("kind") == "js_parser_backed_targets":
         targets = proof.get("targets")
         if not isinstance(targets, list) or not targets:
@@ -200,7 +279,11 @@ def _plan_log_failure_proof_matches(
             and targets
             and all(isinstance(target, str) and target for target in targets)
             and (
-                _pytest_structured_failure_proof_matches(targets, proof_text)
+                _pytest_structured_failure_proof_matches(
+                    targets,
+                    proof_text,
+                    proof.get("parameter_fallback_parents"),
+                )
                 or _pytest_collection_failure_proof_matches(
                     targets,
                     proof_text,
@@ -398,6 +481,39 @@ def python_test_target_batches(tests, selected, max_args=80, max_chars=24000):
     )
 
 
+def python_parameter_fallback_batches(tests, max_args=80, max_chars=24000):
+    declared_batches = []
+    execution_batches = []
+    current_declared = []
+    current_execution = []
+    for target in tests:
+        execution_target = _pytest_parameter_parent(target) or target
+        candidate_execution = list(current_execution)
+        if execution_target not in candidate_execution:
+            candidate_execution.append(execution_target)
+        candidate_command = "pytest -p opencollab_pytest_proof -q -rA -o addopts= " + " ".join(
+            shlex.quote(value) for value in candidate_execution
+        )
+        if current_declared and (
+            len(candidate_execution) > max_args or len(candidate_command) > max_chars
+        ):
+            declared_batches.append(current_declared)
+            execution_batches.append(current_execution)
+            current_declared = []
+            current_execution = [execution_target]
+        else:
+            current_execution = candidate_execution
+        current_declared.append(target)
+    if current_declared:
+        declared_batches.append(current_declared)
+        execution_batches.append(current_execution)
+    fallback_batches = [
+        [target for target in execution if any(_pytest_parameter_parent(value) == target for value in declared)]
+        for declared, execution in zip(declared_batches, execution_batches, strict=True)
+    ]
+    return declared_batches, execution_batches, fallback_batches
+
+
 def compact_python_test_targets(tests, selected, max_args=80, max_chars=24000):
     """Normalize truncated parameter selectors and retain each exact target once."""
     compacted = []
@@ -555,9 +671,8 @@ def prolite_test_plan(
             max_args=max_args,
             max_chars=max_chars,
         )
-        target_batches = python_test_target_batches(
+        target_batches, execution_batches, fallback_batches = python_parameter_fallback_batches(
             tests,
-            selected,
             max_args=max_args,
             max_chars=max_chars,
         )
@@ -569,21 +684,27 @@ def prolite_test_plan(
             )
         commands = [
             pytest_prefix + " ".join(shlex.quote(item) for item in batch)
-            for batch in target_batches
+            for batch in execution_batches
         ]
-        proofs = [
-            {
+        proofs = []
+        for batch, fallback_parents in zip(target_batches, fallback_batches, strict=True):
+            proof = {
                 "kind": "pytest_structured_reports",
                 "targets": list(batch),
             }
-            for batch in target_batches
-        ]
+            if fallback_parents:
+                proof["parameter_fallback_parents"] = fallback_parents
+            proofs.append(proof)
         return _test_plan(
             "pytest",
             tests,
             target_batches,
             commands,
-            "exact_targets",
+            (
+                "parameter_parent_targets"
+                if any(fallback_batches)
+                else "exact_targets"
+            ),
             proofs=proofs,
         )
     if language == "go" or repo.endswith("/vuls") or repo.endswith("/teleport") or repo.endswith("/navidrome"):
