@@ -174,16 +174,20 @@ def _pytest_structured_failure_proof_matches(
     )
 
 
-_PYTHON_NON_PACKAGE_ROOTS = {
+_PYTHON_TEST_ROOTS = {
+    "spec",
+    "specs",
+    "test",
+    "tests",
+}
+_PYTHON_SOURCE_LAYOUT_ROOTS = {
     "application",
     "applications",
+    "apps",
     "lib",
     "package",
     "packages",
-    "spec",
     "src",
-    "test",
-    "tests",
 }
 
 
@@ -192,14 +196,19 @@ def _python_repo_module_roots(repo, target_file):
     slug = str(repo or "").rsplit("/", 1)[-1].replace("-", "_").lower()
     if re.fullmatch(r"[a-z_][a-z0-9_]*", slug):
         roots.add(slug)
-    parts = pathlib.PurePosixPath(str(target_file or "")).parts[:-1]
-    for part in parts:
-        normalized = part.replace("-", "_").lower()
-        if normalized in _PYTHON_NON_PACKAGE_ROOTS:
-            continue
-        if re.fullmatch(r"[a-z_][a-z0-9_]*", normalized):
-            roots.add(normalized)
-            break
+    parts = [
+        part.replace("-", "_").lower()
+        for part in pathlib.PurePosixPath(str(target_file or "")).parts[:-1]
+    ]
+    candidate = ""
+    if parts and parts[0] in _PYTHON_TEST_ROOTS:
+        candidate = ""
+    elif len(parts) >= 2 and parts[0] in _PYTHON_SOURCE_LAYOUT_ROOTS:
+        candidate = parts[1]
+    elif parts:
+        candidate = parts[0]
+    if re.fullmatch(r"[a-z_][a-z0-9_]*", candidate):
+        roots.add(candidate)
     return roots
 
 

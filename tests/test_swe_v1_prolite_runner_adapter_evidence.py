@@ -1090,9 +1090,20 @@ def test_prolite_pytest_collection_import_failure_is_exact_semantic_failure(tmp_
     ) is False
 
 
-def test_prolite_pytest_collection_rejects_unbound_third_party_import(tmp_path):
+@pytest.mark.parametrize(
+    "target_file",
+    [
+        "tests/numpy/test_target.py",
+        "test/numpy/test_target.py",
+        "spec/numpy/test_target.py",
+        "specs/numpy/test_target.py",
+    ],
+)
+def test_prolite_pytest_collection_rejects_unbound_third_party_import(
+    tmp_path,
+    target_file,
+):
     namespace = _remote_namespace(tmp_path)
-    target_file = "tests/test_target.py"
     target = target_file + "::test_target"
     test_patch = (
         f"diff --git a/{target_file} b/{target_file}\n"
@@ -1127,6 +1138,21 @@ def test_prolite_pytest_collection_rejects_unbound_third_party_import(tmp_path):
         plan["commands"][0],
         plan["commands"][0],
     ) is False
+
+
+def test_python_repo_module_roots_respect_test_and_source_layouts(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+
+    assert namespace["_python_repo_module_roots"](
+        "example/repo", "tests/numpy/test_target.py"
+    ) == {"repo"}
+    assert namespace["_python_repo_module_roots"](
+        "example/repo", "src/localpkg/tests/test_target.py"
+    ) == {"repo", "localpkg"}
+    assert namespace["_python_repo_module_roots"](
+        "internetarchive/openlibrary",
+        "openlibrary/plugins/worksearch/schemes/tests/test_works.py",
+    ) == {"openlibrary"}
 
 
 def test_prolite_pytest_collection_candidate_exception_binds_modified_source(tmp_path):
