@@ -14,6 +14,10 @@ _MODULE_DIR = Path(__file__).resolve().parent
 if str(_MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(_MODULE_DIR))
 
+from opencollab_eval.patch_paths import (  # noqa: E402
+    is_generated_dependency_artifact_path,
+)
+
 from .gen_prediction_workflow import (  # noqa: E402
     _looks_like_validation_artifact,
     _patch_paths,
@@ -59,11 +63,12 @@ def _container_patch(container_id: str, workspace: str) -> str:
     return result.stdout
 
 
-def _source_paths(patch: str) -> tuple[list[str], list[str]]:
+def _source_paths(patch: str) -> tuple[list[str], list[str], list[str]]:
     paths = _patch_paths(patch)
     validation = [path for path in paths if _looks_like_validation_artifact(path)]
-    source = [path for path in paths if path not in validation]
-    return source, validation
+    generated = [path for path in paths if is_generated_dependency_artifact_path(path)]
+    source = [path for path in paths if path not in validation and path not in generated]
+    return source, validation, generated
 
 
 def evaluate_stop(env: Mapping[str, str] | None = None) -> dict:
@@ -87,7 +92,7 @@ def evaluate_stop(env: Mapping[str, str] | None = None) -> dict:
             "reason": "patch_guard_error",
             "additionalContext": str(exc),
         }
-    source_paths, validation_paths = _source_paths(patch)
+    source_paths, validation_paths, generated_paths = _source_paths(patch)
     if source_paths:
         _write_state(
             state_path,
@@ -96,6 +101,7 @@ def evaluate_stop(env: Mapping[str, str] | None = None) -> dict:
                 "accepted": True,
                 "source_paths": source_paths,
                 "validation_paths": validation_paths,
+                "generated_paths": generated_paths,
             },
         )
         return {
@@ -112,6 +118,7 @@ def evaluate_stop(env: Mapping[str, str] | None = None) -> dict:
                 "accepted": False,
                 "exhausted": True,
                 "validation_paths": validation_paths,
+                "generated_paths": generated_paths,
             },
         )
         return {
@@ -127,13 +134,15 @@ def evaluate_stop(env: Mapping[str, str] | None = None) -> dict:
             "accepted": False,
             "exhausted": False,
             "validation_paths": validation_paths,
+            "generated_paths": generated_paths,
         },
     )
-    detail = (
-        "Only validation/test files changed: " + ", ".join(validation_paths)
-        if validation_paths
-        else "No tracked source file has changed."
-    )
+    if validation_paths:
+        detail = "Only validation/test files changed: " + ", ".join(validation_paths)
+    elif generated_paths:
+        detail = "Only dependency-generated files changed: " + ", ".join(generated_paths)
+    else:
+        detail = "No tracked source file has changed."
     return {
         "decision": "deny",
         "reason": "empty_source_patch",

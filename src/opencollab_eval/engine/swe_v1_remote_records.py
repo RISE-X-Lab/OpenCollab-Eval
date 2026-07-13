@@ -6,6 +6,7 @@ from opencollab_eval.engine.swe_eval_records import SUBMISSION_INTEGRITY_PROVEN
 from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid
 from opencollab_eval.engine.swe_v1_remote_core import *
 from opencollab_eval.engine.swe_v1_remote_state import *
+from opencollab_eval.patch_paths import is_generated_dependency_artifact_path
 
 
 def now():
@@ -208,18 +209,6 @@ def is_eval_test_path(path):
         or ".test." in name
         or ".spec." in name
     )
-
-
-GENERATED_DEPENDENCY_ARTIFACT_PATHS = frozenset(
-    {
-        ".yarn/install-state.gz",
-    }
-)
-
-
-def is_generated_dependency_artifact_path(path):
-    normalized = str(path or "").lstrip("/")
-    return normalized in GENERATED_DEPENDENCY_ARTIFACT_PATHS
 
 
 def model_patch_filter_reason(path):

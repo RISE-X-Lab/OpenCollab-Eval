@@ -64,6 +64,28 @@ def test_stop_guard_rejects_empty_or_test_only_patch_then_allows_at_limit(
     assert state["exhausted"] is True
 
 
+def test_stop_guard_rejects_yarn_install_state_as_generated_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        guard,
+        "_container_patch",
+        lambda *args: (
+            "diff --git a/.yarn/install-state.gz b/.yarn/install-state.gz\n"
+            "new file mode 100644\n"
+            "Binary files /dev/null and b/.yarn/install-state.gz differ\n"
+        ),
+    )
+
+    result = guard.evaluate_stop(_env(tmp_path, rejections=1))
+
+    assert result["decision"] == "deny"
+    assert result["reason"] == "empty_source_patch"
+    assert "Only dependency-generated files changed: .yarn/install-state.gz" in result["additionalContext"]
+    state = json.loads((tmp_path / "empty_patch_stop_guard.json").read_text())
+    assert state["generated_paths"] == [".yarn/install-state.gz"]
+
+
 def test_stop_guard_allows_hook_infrastructure_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
