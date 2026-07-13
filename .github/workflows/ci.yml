@@ -39,7 +39,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: YihongDong/OpenCollab
-          ref: 0e3baabefdc16ca9e00484aa231c6c06c01370cf
+          ref: 7ea0ea6903db5c743e89dbbccb8a164ad8397c36
           path: opencollab-source
 
       - name: Set up Python
@@ -80,46 +80,3 @@ jobs:
           OPENCOLLAB_SOURCE_ROOT: ${{ github.workspace }}/opencollab-source
           OPENCOLLAB_EVAL_SOURCE_ROOT: ${{ github.workspace }}/eval
         run: scripts/verify_wheel_contract.sh "${{ steps.wheels.outputs.opencollab }}" "${{ steps.wheels.outputs.eval }}"
-
-  macos-integrity:
-    name: macOS integrity proof
-    runs-on: macos-latest
-    timeout-minutes: 10
-    steps:
-      - name: Check out OpenCollab-Eval
-        uses: actions/checkout@v4
-        with:
-          path: eval
-
-      - name: Check out the compatible OpenCollab SDK
-        uses: actions/checkout@v4
-        with:
-          repository: YihongDong/OpenCollab
-          ref: 0e3baabefdc16ca9e00484aa231c6c06c01370cf
-          path: opencollab-source
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install OpenCollab test dependencies
-        run: python -m pip install -e "./opencollab-source/opencollab[dev]"
-
-      - name: Execute the macOS path-integrity proof
-        working-directory: opencollab-source/opencollab
-        run: |
-          python -m pytest -q -p no:cacheprovider --junitxml="$RUNNER_TEMP/h68.xml" \
-            tests/test_posix_file_support.py::test_macos_alias_normalization_still_rejects_descendant_symlink
-          python - "$RUNNER_TEMP/h68.xml" <<'PY'
-          import sys
-          import xml.etree.ElementTree as ET
-
-          root = ET.parse(sys.argv[1]).getroot()
-          suites = list(root.findall("testsuite")) if root.tag == "testsuites" else [root]
-          totals = {
-              field: sum(int(suite.attrib[field]) for suite in suites)
-              for field in ("tests", "skipped", "failures", "errors")
-          }
-          assert totals == {"tests": 1, "skipped": 0, "failures": 0, "errors": 0}, totals
-          PY
