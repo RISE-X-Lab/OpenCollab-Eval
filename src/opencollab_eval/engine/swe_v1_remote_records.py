@@ -210,6 +210,26 @@ def is_eval_test_path(path):
     )
 
 
+GENERATED_DEPENDENCY_ARTIFACT_PATHS = frozenset(
+    {
+        ".yarn/install-state.gz",
+    }
+)
+
+
+def is_generated_dependency_artifact_path(path):
+    normalized = str(path or "").lstrip("/")
+    return normalized in GENERATED_DEPENDENCY_ARTIFACT_PATHS
+
+
+def model_patch_filter_reason(path):
+    if is_eval_test_path(path):
+        return "eval_test_path"
+    if is_generated_dependency_artifact_path(path):
+        return "generated_dependency_artifact"
+    return ""
+
+
 GIT_C_ESCAPES = {
     "a": 0x07,
     "b": 0x08,
@@ -300,9 +320,9 @@ def diff_target_path(header):
     return ""
 
 
-def filter_model_patch_for_eval(patch):
+def filter_model_patch_with_evidence(patch):
     if not patch.strip():
-        return patch
+        return patch, []
     blocks = []
     current = []
     for line in patch.splitlines(keepends=True):
@@ -314,17 +334,35 @@ def filter_model_patch_for_eval(patch):
     if current:
         blocks.append(current)
     kept = []
+    filtered_paths = []
     for block in blocks:
         header = block[0] if block else ""
         path = diff_target_path(header)
-        if path and is_eval_test_path(path):
+        reason = model_patch_filter_reason(path) if path else ""
+        if reason:
+            filtered_paths.append({"path": path, "reason": reason})
             continue
         kept.extend(block)
-    return "".join(kept)
+    return "".join(kept), filtered_paths
+
+
+def filter_model_patch_for_eval(patch):
+    filtered, _evidence = filter_model_patch_with_evidence(patch)
+    return filtered
 
 
 def eval_model_patch(prediction):
     return filter_model_patch_for_eval(prediction_patch(prediction))
+
+
+def model_patch_filter_evidence(prediction):
+    source_patch = prediction_patch(prediction)
+    filtered_patch, filtered_paths = filter_model_patch_with_evidence(source_patch)
+    return {
+        "source_patch_sha256": patch_sha(source_patch),
+        "eval_patch_sha256": patch_sha(filtered_patch),
+        "filtered_patch_paths": filtered_paths,
+    }
 
 
 def workflow_status(row):
@@ -545,6 +583,7 @@ def generation_done_result(task, prediction, metric, pairing, **extra):
         "patch_sha256": row_patch_sha(prediction),
         "submission_integrity": metric_submission_integrity(metric),
     }
+    result.update(model_patch_filter_evidence(prediction))
     result.update(generation_integrity_evidence(metric))
     result.update({key: value for key, value in extra.items() if value is not None})
     return result

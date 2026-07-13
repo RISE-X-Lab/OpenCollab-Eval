@@ -367,6 +367,68 @@ def test_filter_model_patch_decodes_quoted_octal_git_paths(tmp_path):
     assert "src\\\\tests\\\\module.py" in filtered
 
 
+def test_filter_model_patch_removes_yarn_install_state_with_parent_child_sha(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    patch = (
+        "diff --git a/.yarn/install-state.gz b/.yarn/install-state.gz\n"
+        "new file mode 100644\n"
+        "index 0000000..1111111\n"
+        "Binary files /dev/null and b/.yarn/install-state.gz differ\n"
+        "diff --git a/src/widget.ts b/src/widget.ts\n"
+        "--- a/src/widget.ts\n"
+        "+++ b/src/widget.ts\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+    )
+    prediction = {"model_patch": patch}
+
+    filtered = namespace["filter_model_patch_for_eval"](patch)
+    evidence = namespace["model_patch_filter_evidence"](prediction)
+
+    assert ".yarn/install-state.gz" not in filtered
+    assert "src/widget.ts" in filtered
+    assert evidence == {
+        "source_patch_sha256": namespace["patch_sha"](patch),
+        "eval_patch_sha256": namespace["patch_sha"](filtered),
+        "filtered_patch_paths": [
+            {
+                "path": ".yarn/install-state.gz",
+                "reason": "generated_dependency_artifact",
+            }
+        ],
+    }
+
+
+def test_yarn_install_state_only_patch_is_not_a_completed_generation(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    task = "instance_org__repo-1"
+    patch = (
+        "diff --git a/.yarn/install-state.gz b/.yarn/install-state.gz\n"
+        "new file mode 100644\n"
+        "index 0000000..1111111\n"
+        "Binary files /dev/null and b/.yarn/install-state.gz differ\n"
+    )
+    prediction = {
+        "instance_id": task,
+        "model_patch": patch,
+        "record_id": "record-1",
+        "patch_sha256": namespace["patch_sha"](patch),
+    }
+    metric = {
+        "instance_id": task,
+        "record_id": "record-1",
+        "patch_sha256": namespace["patch_sha"](patch),
+    }
+
+    assert namespace["eval_model_patch"](prediction) == ""
+    assert namespace["historical_generation_identity_status"](
+        prediction,
+        metric,
+        task,
+    ) == "invalid"
+
+
 def test_prolite_prediction_sha_comes_from_patch_text(tmp_path):
     namespace = _remote_namespace(tmp_path)
     task = "task-1"
