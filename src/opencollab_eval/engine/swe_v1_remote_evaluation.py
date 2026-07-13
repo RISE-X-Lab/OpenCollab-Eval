@@ -69,15 +69,18 @@ def eval_for_task_once(row, patch_selection=None):
         write_json(summary_path, summary)
         return {"status": "blocked_missing_eval_spec", "task": task, "summary": summary}
     pass_to_pass = parse_literal_list(row.get("pass_to_pass") or row.get("PASS_TO_PASS"))
+    candidate_source_paths = eval_python_source_paths(prediction)
     f2p_plan = prolite_test_plan(
         row,
         fail_to_pass,
         target_file="/eval_input/f2p.targets.json",
+        candidate_source_paths=candidate_source_paths,
     )
     p2p_plan = prolite_test_plan(
         row,
         pass_to_pass,
         target_file="/eval_input/p2p.targets.json",
+        candidate_source_paths=candidate_source_paths,
     )
     eval_spec_sha256 = prolite_eval_spec_sha256(row, f2p_plan, p2p_plan)
     unverified_plan_reasons = []

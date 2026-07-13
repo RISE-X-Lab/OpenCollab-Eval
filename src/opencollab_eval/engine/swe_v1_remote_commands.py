@@ -100,18 +100,17 @@ def _pytest_structured_proof_matches(
         reports.setdefault(node, {})[phase] = outcome
     for target in exact_targets:
         matching = [node for node in nodeids if _pytest_target_matches_node(target, node)]
-        if not matching:
-            return False
-    for parent in fallback_parents:
-        matching = [node for node in nodeids if node.startswith(parent + "[")]
         if not matching or any(
             reports.get(node)
             != {"setup": "passed", "call": "passed", "teardown": "passed"}
             for node in matching
         ):
             return False
-        if any(
-            reports.get(node) != {"setup": "passed", "call": "passed", "teardown": "passed"}
+    for parent in fallback_parents:
+        matching = [node for node in nodeids if node.startswith(parent + "[")]
+        if not matching or any(
+            reports.get(node)
+            != {"setup": "passed", "call": "passed", "teardown": "passed"}
             for node in matching
         ):
             return False
@@ -181,6 +180,7 @@ def _pytest_collection_failure_proof_matches(
     log_text,
     expected_command,
     observed_command,
+    candidate_source_paths=None,
 ):
     if not expected_command or expected_command != observed_command:
         return False
@@ -210,21 +210,59 @@ def _pytest_collection_failure_proof_matches(
             or "\x00" in path
         ):
             return False
-        target_files.append(path)
-    if len(set(target_files)) != 1:
+        if path not in target_files:
+            target_files.append(path)
+    if not target_files:
         return False
-    expected_file = target_files[0]
     collected_paths = re.findall(
         r"(?m)^\s*_*\s*ERROR collecting (\S+?)(?:\s+_+)?\s*$",
         str(log_text or ""),
     )
-    if not collected_paths or any(
-        path.replace("\\", "/").removeprefix("./") != expected_file
-        and not path.replace("\\", "/").endswith("/" + expected_file)
-        for path in collected_paths
+    normalized_collected = {
+        path.replace("\\", "/").removeprefix("./") for path in collected_paths
+    }
+    if normalized_collected != set(target_files):
+        return False
+    log_text = str(log_text or "")
+    if len(target_files) == 1 and re.search(
+        r"\b(?:ImportError|ModuleNotFoundError)\b", log_text
+    ):
+        return True
+    if (
+        not isinstance(candidate_source_paths, list)
+        or not candidate_source_paths
+        or len(candidate_source_paths) > 1024
+        or len(set(candidate_source_paths)) != len(candidate_source_paths)
+        or sum(len(str(path).encode("utf-8")) for path in candidate_source_paths)
+        > 128 * 1024
+        or any(
+            not isinstance(path, str)
+            or not path.endswith(".py")
+            or pathlib.PurePosixPath(path).is_absolute()
+            or ".." in pathlib.PurePosixPath(path).parts
+            or "\x00" in path
+            or is_eval_test_path(path)
+            for path in candidate_source_paths
+        )
     ):
         return False
-    return re.search(r"\b(?:ImportError|ModuleNotFoundError)\b", str(log_text or "")) is not None
+
+    def traceback_has(path):
+        return re.search(
+            r"(?m)^(?:.*?/)?" + re.escape(path) + r":[0-9]+(?::|$)",
+            log_text,
+        ) is not None
+
+    semantic_exception = re.search(
+        r"(?m)^E\s+(?:AssertionError|AttributeError|KeyError|NameError|"
+        r"NotImplementedError|RuntimeError|TypeError|ValueError)(?::|$)",
+        log_text,
+    )
+    return bool(
+        semantic_exception
+        and any(traceback_has(path) for path in target_files)
+        and any(traceback_has(path) for path in candidate_source_paths)
+    )
 
 
 def _plan_log_proof_matches(proof, log_text, proof_text=""):
@@ -290,6 +328,7 @@ def _plan_log_failure_proof_matches(
                     log_text,
                     expected_command,
                     observed_command,
+                    proof.get("candidate_source_paths"),
                 )
             )
         )
@@ -654,6 +693,7 @@ def prolite_test_plan(
     max_args=80,
     max_chars=24000,
     target_file="",
+    candidate_source_paths=None,
 ):
     language = str(row.get("repo_language") or "").lower()
     repo = str(row.get("repo") or "").lower()
@@ -694,6 +734,8 @@ def prolite_test_plan(
             }
             if fallback_parents:
                 proof["parameter_fallback_parents"] = fallback_parents
+            if candidate_source_paths:
+                proof["candidate_source_paths"] = list(candidate_source_paths)
             proofs.append(proof)
         return _test_plan(
             "pytest",

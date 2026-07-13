@@ -507,6 +507,11 @@ def test_filter_model_patch_removes_root_python_test_runtime_artifacts(tmp_path)
         },
     ]
 
+    prediction = {"model_patch": patch}
+    assert namespace["eval_python_source_paths"](prediction) == [
+        "qutebrowser/keyinput/keyutils.py"
+    ]
+
 
 def test_yarn_install_state_only_patch_is_not_a_completed_generation(tmp_path):
     namespace = _remote_namespace(tmp_path)

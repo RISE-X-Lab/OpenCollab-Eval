@@ -84,15 +84,15 @@ def _package_matches(declared: str, observed: str) -> bool:
     return bool(suffix and (observed == suffix or observed.endswith("/" + suffix)))
 
 
-def _target_file_matches(observed: str, expected: str) -> bool:
+def _diagnostic_belongs_to_package(observed: str, package: str) -> bool:
     observed_path = str(observed or "").replace("\\", "/").removeprefix("./")
-    expected_path = str(expected or "").replace("\\", "/").removeprefix("./")
-    if not observed_path or not expected_path:
+    package_path = str(package or "").replace("\\", "/").removeprefix("./").strip("/")
+    if not observed_path or not observed_path.endswith("_test.go"):
         return False
-    return observed_path == expected_path or observed_path.endswith("/" + expected_path) or (
-        pathlib.PurePosixPath(observed_path).name
-        == pathlib.PurePosixPath(expected_path).name
-    )
+    observed_parent = pathlib.PurePosixPath(observed_path).parent.as_posix().rstrip("/")
+    if not package_path or package_path == ".":
+        return observed_parent in {"", "."}
+    return observed_parent == package_path or observed_parent.endswith("/" + package_path)
 
 
 def _dynamic_bindings(
@@ -306,6 +306,10 @@ def go_failure_proof_matches(
         expected_command,
         observed_command,
     )
+    if proof.get("dynamic_discovery") is True and (
+        not expected_command or expected_command != observed_command
+    ):
+        return False
     bindings = _proof_bindings(proof, discoveries, declared_tests)
     if not bindings:
         if not legacy_dynamic or discoveries:
@@ -365,10 +369,9 @@ def go_failure_proof_matches(
         for binding in bindings:
             if not _package_matches(binding["package"], failed_package):
                 continue
-            if any(
-                _target_file_matches(path, target_file)
+            if diagnostics and all(
+                _diagnostic_belongs_to_package(path, binding["package"])
                 for path in diagnostics
-                for target_file in binding["test_files"]
             ):
                 return True
     return False

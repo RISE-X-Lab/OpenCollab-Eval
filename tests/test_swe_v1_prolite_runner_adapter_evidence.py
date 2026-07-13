@@ -181,7 +181,7 @@ def _go_build_failure_log(
     )
 
 
-def test_prolite_go_build_failure_proof_binds_package_and_target_test_file(tmp_path):
+def test_prolite_go_build_failure_proof_binds_package_and_test_compilation_unit(tmp_path):
     namespace = _remote_namespace(tmp_path)
     proof = {
         "kind": "go_json_test_pass",
@@ -197,6 +197,10 @@ def test_prolite_go_build_failure_proof_binds_package_and_target_test_file(tmp_p
     assert namespace["_plan_log_failure_proof_matches"](
         proof,
         _go_build_failure_log(test_file="internal/api/unrelated_test.go"),
+    ) is True
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        _go_build_failure_log(test_file="internal/other/unrelated_test.go"),
     ) is False
     assert namespace["_plan_log_failure_proof_matches"](
         proof,
@@ -247,8 +251,11 @@ def test_prolite_go_dynamic_build_failure_requires_unique_discovery_binding(tmp_
         package="github.com/gravitational/teleport/lib/srv",
         test_file="lib/srv/wal2json_test.go",
     )
+    command = "exact dynamic discovery command"
 
-    assert namespace["_plan_log_failure_proof_matches"](proof, log) is True
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof, log, "", command, command
+    ) is True
     duplicate = (
         marker
         + "\n"
@@ -259,7 +266,9 @@ def test_prolite_go_dynamic_build_failure_requires_unique_discovery_binding(tmp_
             test_file="lib/srv/wal2json_test.go",
         )
     )
-    assert namespace["_plan_log_failure_proof_matches"](proof, duplicate) is False
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof, duplicate, "", command, command
+    ) is False
 
 
 def test_prolite_go_mixed_plain_build_failure_binds_command_package_and_file(tmp_path):
@@ -307,6 +316,13 @@ def test_prolite_go_mixed_plain_build_failure_binds_command_package_and_file(tmp
     assert namespace["_plan_log_failure_proof_matches"](
         proof,
         log.replace("internal/api/widget_test.go:42:7", "internal/api/other_test.go:42:7"),
+        "",
+        command,
+        command,
+    ) is True
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        log.replace("internal/api/widget_test.go:42:7", "internal/other/other_test.go:42:7"),
         "",
         command,
         command,
@@ -525,6 +541,52 @@ subprocess.run(["go", "test", "-count=1", "-json", package, "-run", pattern])
         "",
         old_command,
         old_command + " # changed",
+    ) is False
+
+
+def test_task76_fresh_discovery_accepts_same_package_test_compile_error(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    proof = {
+        "kind": "go_json_test_pass",
+        "tests": ["TestScanner"],
+        "dynamic_discovery": True,
+    }
+    marker = "OPENCOLLAB_GO_TARGET_DISCOVERY " + json.dumps(
+        {
+            "package": "./scanner",
+            "tests": ["TestScanner"],
+            "test_files": ["scanner/scanner_suite_test.go"],
+        },
+        sort_keys=True,
+    )
+    command = "exact fresh discovery command"
+    log = marker + "\n" + _go_build_failure_log(
+        package="github.com/navidrome/navidrome/scanner",
+        test_file="scanner/walk_dir_tree_test.go",
+    )
+
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof, log, "", command, command
+    ) is True
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof, log, "", command, command + " changed"
+    ) is False
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        log.replace("scanner/walk_dir_tree_test.go", "other/walk_dir_tree_test.go"),
+        "",
+        command,
+        command,
+    ) is False
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        log.replace(
+            "github.com/navidrome/navidrome/scanner",
+            "github.com/navidrome/navidrome/other",
+        ),
+        "",
+        command,
+        command,
     ) is False
 
 
@@ -861,6 +923,94 @@ def test_prolite_pytest_collection_import_failure_is_exact_semantic_failure(tmp_
         proof_text,
         command,
         command + " # changed",
+    ) is False
+
+
+def test_prolite_pytest_collection_candidate_exception_binds_modified_source(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    target = "tests/unit/keyinput/test_keyutils.py::test_target[param]"
+    source_path = "qutebrowser/keyinput/keyutils.py"
+    proof = {
+        "kind": "pytest_structured_reports",
+        "targets": [target],
+        "parameter_fallback_parents": [target.split("[", 1)[0]],
+        "candidate_source_paths": [source_path],
+    }
+    proof_text = _pytest_proof_text([], exitstatus=4)
+    command = (
+        "pytest -p opencollab_pytest_proof -q -rA -o addopts= "
+        "tests/unit/keyinput/test_keyutils.py::test_target"
+    )
+    valid_log = (
+        "ERROR collecting tests/unit/keyinput/test_keyutils.py\n"
+        "tests/unit/keyinput/test_keyutils.py:247: in <module>\n"
+        f"{source_path}:501: in _convert_key\n"
+        "E   AssertionError: <Ctrl+Alt+y>\n"
+    )
+
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof, valid_log, proof_text, command, command
+    ) is True
+    rejected_logs = (
+        valid_log.replace("tests/unit/keyinput/test_keyutils.py:247", "tests/unit/other.py:247"),
+        valid_log.replace(f"{source_path}:501", "qutebrowser/other.py:501"),
+        valid_log.replace("AssertionError", "ConnectionError"),
+        valid_log.replace(
+            "ERROR collecting tests/unit/keyinput/test_keyutils.py",
+            "ERROR collecting tests/unit/other.py",
+        ),
+    )
+    for log in rejected_logs:
+        assert namespace["_plan_log_failure_proof_matches"](
+            proof, log, proof_text, command, command
+        ) is False
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof, valid_log, proof_text, command, command + " changed"
+    ) is False
+
+
+def test_prolite_pytest_collection_candidate_exception_covers_every_target_file(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    targets = [
+        "tests/unit/keyinput/test_bindingtrie.py::test_target[param]",
+        "tests/unit/keyinput/test_keyutils.py::test_other[param]",
+    ]
+    source_path = "qutebrowser/keyinput/keyutils.py"
+    proof = {
+        "kind": "pytest_structured_reports",
+        "targets": targets,
+        "candidate_source_paths": [source_path],
+    }
+    proof_text = _pytest_proof_text([], exitstatus=4)
+    command = "exact multi-file pytest command"
+    valid_log = (
+        "ERROR collecting tests/unit/keyinput/test_bindingtrie.py\n"
+        "tests/unit/keyinput/test_bindingtrie.py:32: in <module>\n"
+        "ERROR collecting tests/unit/keyinput/test_keyutils.py\n"
+        "tests/unit/keyinput/test_keyutils.py:502: in TestKeySequence\n"
+        f"{source_path}:501: in _convert_key\n"
+        "E   AssertionError: <Ctrl+Alt+y>\n"
+    )
+
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof, valid_log, proof_text, command, command
+    ) is True
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        valid_log.replace(
+            "ERROR collecting tests/unit/keyinput/test_bindingtrie.py\n",
+            "",
+        ),
+        proof_text,
+        command,
+        command,
+    ) is False
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        valid_log + "ERROR collecting tests/unit/keyinput/test_unrelated.py\n",
+        proof_text,
+        command,
+        command,
     ) is False
 
 
