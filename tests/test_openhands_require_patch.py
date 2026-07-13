@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -12,6 +14,34 @@ if str(_SWEBENCH_DIR) not in sys.path:
     sys.path.insert(0, str(_SWEBENCH_DIR))
 
 from opencollab_eval.generation import openhands_require_patch as guard  # noqa: E402
+
+
+def test_stop_guard_runs_as_copied_standalone_script(tmp_path: Path) -> None:
+    script = tmp_path / "openhands_require_patch.py"
+    script.write_text(Path(guard.__file__).read_text(encoding="utf-8"), encoding="utf-8")
+    env = os.environ.copy()
+    env.pop("OPENHANDS_CONTAINER_ID", None)
+    package_root = module_path("opencollab_eval").parent.parent
+    current_pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = os.pathsep.join(
+        value for value in (str(package_root), current_pythonpath) if value
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(script)],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "decision": "allow",
+        "reason": "missing_container_id",
+    }
 
 
 def _env(tmp_path: Path, *, rejections: int = 2) -> dict[str, str]:
@@ -153,3 +183,83 @@ def test_stop_guard_allows_hook_infrastructure_error(
 
     assert result["decision"] == "allow"
     assert result["reason"] == "patch_guard_error"
+
+
+def test_stop_guard_rejects_only_verified_missing_baseline_gitlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    oid = "1" * 40
+    patch = (
+        "diff --git a/e b/e\n"
+        "deleted file mode 160000\n"
+        f"index {oid}..{'0' * 40}\n"
+        "--- a/e\n"
+        "+++ /dev/null\n"
+        "@@ -1 +0,0 @@\n"
+        f"-Subproject commit {oid}\n"
+    )
+    monkeypatch.setattr(guard, "_container_patch", lambda *args: patch)
+    monkeypatch.setattr(
+        guard,
+        "_container_gitlink_probe",
+        lambda *args: {
+            "status": "verified",
+            "source_patch_sha256": "2" * 64,
+            "paths": [
+                {
+                    "path": "e",
+                    "old_oid": oid,
+                    "base_oid": oid,
+                    "probe_status": "verified",
+                }
+            ],
+        },
+    )
+
+    result = guard.evaluate_stop(_env(tmp_path, rejections=1))
+
+    assert result["decision"] == "deny"
+    assert result["reason"] == "empty_source_patch"
+    state = json.loads((tmp_path / "empty_patch_stop_guard.json").read_text())
+    assert state.get("source_paths", []) == []
+    assert state["generated_paths"] == ["e"]
+    assert state["gitlink_probe"]["paths"][0]["probe_status"] == "verified"
+
+
+def test_stop_guard_keeps_gitlink_when_baseline_oid_does_not_match(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    oid = "1" * 40
+    patch = (
+        "diff --git a/e b/e\n"
+        "deleted file mode 160000\n"
+        f"index {oid}..{'0' * 40}\n"
+        "--- a/e\n"
+        "+++ /dev/null\n"
+        "@@ -1 +0,0 @@\n"
+        f"-Subproject commit {oid}\n"
+    )
+    monkeypatch.setattr(guard, "_container_patch", lambda *args: patch)
+    monkeypatch.setattr(
+        guard,
+        "_container_gitlink_probe",
+        lambda *args: {
+            "status": "baseline_mismatch",
+            "source_patch_sha256": "2" * 64,
+            "paths": [
+                {
+                    "path": "e",
+                    "old_oid": oid,
+                    "base_oid": "3" * 40,
+                    "probe_status": "mismatch",
+                }
+            ],
+        },
+    )
+
+    result = guard.evaluate_stop(_env(tmp_path, rejections=1))
+
+    assert result == {"decision": "allow", "reason": "source_patch_present"}
+    state = json.loads((tmp_path / "empty_patch_stop_guard.json").read_text())
+    assert state["source_paths"] == ["e"]
+    assert state["generated_paths"] == []

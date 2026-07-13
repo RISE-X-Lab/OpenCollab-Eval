@@ -15,8 +15,11 @@ from opencollab_eval.engine import (
     swe_v1_remote_artifacts,
     swe_v1_remote_commands,
     swe_v1_remote_core,
+    swe_v1_remote_eval_patch,
+    swe_v1_remote_eval_retry,
     swe_v1_remote_evaluation,
     swe_v1_remote_generation,
+    swe_v1_remote_gitlink_probe,
     swe_v1_remote_records,
     swe_v1_remote_state,
 )
@@ -24,9 +27,12 @@ from opencollab_eval.engine import (
 _RUNTIME_MODULES = (
     swe_v1_remote_core,
     swe_v1_remote_records,
+    swe_v1_remote_gitlink_probe,
     swe_v1_remote_commands,
     swe_v1_remote_generation,
     swe_v1_remote_artifacts,
+    swe_v1_remote_eval_patch,
+    swe_v1_remote_eval_retry,
     swe_v1_remote_evaluation,
 )
 

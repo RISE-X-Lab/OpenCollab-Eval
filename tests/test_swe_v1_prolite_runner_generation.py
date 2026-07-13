@@ -188,6 +188,98 @@ def test_generation_normal_exit_cleanup_failure_is_technical(monkeypatch, tmp_pa
     assert namespace["ACTIVE_FIFO_PATHS"] == set()
 
 
+def test_verified_gitlink_only_child_forces_exactly_one_new_generation(tmp_path):
+    namespace = _remote_namespace(
+        tmp_path,
+        max_empty_patch_retries=1,
+        max_task_starts=2,
+    )
+    task = "task-1"
+    calls = []
+
+    def fake_generation_once(row, *, reuse_existing_empty_patch=True):
+        calls.append(reuse_existing_empty_patch)
+        if len(calls) == 1:
+            return {
+                "status": "empty_patch",
+                "task": row["instance_id"],
+                "record_id": "raw-gitlink-only",
+                "submission_integrity": "filtered_empty_patch_proven",
+                "source_patch_sha256": "1" * 64,
+                "eval_patch_sha256": namespace["patch_sha"](""),
+                "filtered_patch_paths": [
+                    {
+                        "path": "e",
+                        "reason": "missing_snapshot_gitlink",
+                        "old_oid": "2" * 40,
+                        "base_oid": "2" * 40,
+                        "probe_status": "verified",
+                    }
+                ],
+            }
+        return {
+            "status": "generation_done",
+            "task": row["instance_id"],
+            "record_id": "new-source-candidate",
+        }
+
+    namespace["generation_for_task_once"] = fake_generation_once
+    namespace["start_count"] = lambda run_dir: 1
+
+    result = namespace["generation_for_task"]({"instance_id": task})
+
+    assert calls == [True, False]
+    assert result["status"] == "generation_done"
+    assert result["generation_attempt_count"] == 2
+    assert result["empty_patch_retry_count"] == 1
+    events = namespace["read_jsonl"](namespace["base_run_dir"] / "events.jsonl")
+    assert [event["phase"] for event in events] == ["empty_patch_retry"]
+    assert events[0]["previous_record_id"] == "raw-gitlink-only"
+
+
+def test_generation_classifies_verified_empty_child_as_retryable_empty_patch(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    task = "task-1"
+    source_patch = "diff --git a/e b/e\ndeleted file mode 160000\n"
+    prediction = {
+        "instance_id": task,
+        "record_id": "r1",
+        "patch_sha256": namespace["patch_sha"](source_patch),
+        "model_patch": source_patch,
+    }
+    metric = {"workflow_status": "done"}
+    namespace["prepare_eval_patch_selection"] = lambda *args: {
+        "ok": True,
+        "status": "ready",
+        "model_patch": "",
+        "source_patch_sha256": namespace["patch_sha"](source_patch),
+        "eval_patch_sha256": namespace["patch_sha"](""),
+        "filtered_patch_paths": [
+            {
+                "path": "e",
+                "reason": "missing_snapshot_gitlink",
+                "old_oid": "1" * 40,
+                "base_oid": "1" * 40,
+                "probe_status": "verified",
+            }
+        ],
+        "gitlink_probe": {"status": "verified"},
+    }
+
+    result = namespace["_generation_patch_result"](
+        {"instance_id": task},
+        task,
+        prediction,
+        metric,
+        "record_id",
+    )
+
+    assert result["status"] == "empty_patch"
+    assert result["submission_integrity"] == "filtered_empty_patch_proven"
+    assert result["patch_len"] == 0
+    assert result["eval_patch_sha256"] == namespace["patch_sha"]("")
+
+
 def test_generation_wait_system_exit_terminates_child_and_re_raises(
     monkeypatch,
     tmp_path,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shlex
@@ -14,14 +15,17 @@ _MODULE_DIR = Path(__file__).resolve().parent
 if str(_MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(_MODULE_DIR))
 
+from opencollab_eval.generation.gen_prediction_workflow import (  # noqa: E402
+    _looks_like_validation_artifact,
+    _patch_paths,
+)
+from opencollab_eval.patch_gitlinks import (  # noqa: E402
+    gitlink_deletion_candidates,
+    parse_ls_tree_entries,
+)
 from opencollab_eval.patch_paths import (  # noqa: E402
     is_generated_dependency_artifact_path,
     is_generated_python_bytecode_path,
-)
-
-from .gen_prediction_workflow import (  # noqa: E402
-    _looks_like_validation_artifact,
-    _patch_paths,
 )
 
 
@@ -64,14 +68,89 @@ def _container_patch(container_id: str, workspace: str) -> str:
     return result.stdout
 
 
-def _source_paths(patch: str) -> tuple[list[str], list[str], list[str]]:
+def _container_gitlink_probe(container_id: str, workspace: str, patch: str) -> dict:
+    candidates = gitlink_deletion_candidates(patch)
+    evidence = {
+        "status": "no_candidates",
+        "source_patch_sha256": hashlib.sha256(patch.encode("utf-8")).hexdigest(),
+        "paths": [],
+    }
+    if not candidates:
+        return evidence
+    command = [
+        "docker",
+        "exec",
+        container_id,
+        "env",
+        "GIT_CONFIG_NOSYSTEM=1",
+        "GIT_CONFIG_GLOBAL=/dev/null",
+        "GIT_NO_REPLACE_OBJECTS=1",
+        "git",
+        "--literal-pathspecs",
+        "-C",
+        workspace,
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.hooksPath=/dev/null",
+        "ls-tree",
+        "-z",
+        "HEAD",
+        "--",
+        *(str(item["path"]) for item in candidates),
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            text=True,
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+        entries = parse_ls_tree_entries(result.stdout) if result.returncode == 0 else {}
+    except (OSError, subprocess.SubprocessError, ValueError):
+        evidence["status"] = "probe_failed"
+        return evidence
+    for item in candidates:
+        base = entries.get(str(item["path"]), {})
+        status = (
+            "verified"
+            if base.get("base_mode") == "160000"
+            and base.get("base_type") == "commit"
+            and base.get("base_oid") == item["old_oid"]
+            else "mismatch"
+        )
+        evidence["paths"].append(
+            {
+                "path": item["path"],
+                "old_oid": item["old_oid"],
+                "base_oid": str(base.get("base_oid") or ""),
+                "probe_status": status,
+            }
+        )
+    evidence["status"] = (
+        "verified"
+        if evidence["paths"]
+        and all(item["probe_status"] == "verified" for item in evidence["paths"])
+        else "baseline_mismatch"
+    )
+    return evidence
+
+
+def _source_paths(
+    patch: str,
+    *,
+    verified_gitlinks: set[str] | None = None,
+) -> tuple[list[str], list[str], list[str]]:
     paths = _patch_paths(patch)
+    verified = verified_gitlinks or set()
     validation = [path for path in paths if _looks_like_validation_artifact(path)]
     generated = [
         path
         for path in paths
         if is_generated_dependency_artifact_path(path)
         or is_generated_python_bytecode_path(path)
+        or path in verified
     ]
     source = [path for path in paths if path not in validation and path not in generated]
     return source, validation, generated
@@ -98,7 +177,16 @@ def evaluate_stop(env: Mapping[str, str] | None = None) -> dict:
             "reason": "patch_guard_error",
             "additionalContext": str(exc),
         }
-    source_paths, validation_paths, generated_paths = _source_paths(patch)
+    gitlink_probe = _container_gitlink_probe(container_id, workspace, patch)
+    verified_gitlinks = {
+        str(item["path"])
+        for item in gitlink_probe["paths"]
+        if item.get("probe_status") == "verified"
+    }
+    source_paths, validation_paths, generated_paths = _source_paths(
+        patch,
+        verified_gitlinks=verified_gitlinks,
+    )
     if source_paths:
         _write_state(
             state_path,
@@ -108,6 +196,7 @@ def evaluate_stop(env: Mapping[str, str] | None = None) -> dict:
                 "source_paths": source_paths,
                 "validation_paths": validation_paths,
                 "generated_paths": generated_paths,
+                "gitlink_probe": gitlink_probe,
             },
         )
         return {
@@ -125,6 +214,7 @@ def evaluate_stop(env: Mapping[str, str] | None = None) -> dict:
                 "exhausted": True,
                 "validation_paths": validation_paths,
                 "generated_paths": generated_paths,
+                "gitlink_probe": gitlink_probe,
             },
         )
         return {
@@ -141,6 +231,7 @@ def evaluate_stop(env: Mapping[str, str] | None = None) -> dict:
             "exhausted": False,
             "validation_paths": validation_paths,
             "generated_paths": generated_paths,
+            "gitlink_probe": gitlink_probe,
         },
     )
     if validation_paths:

@@ -9,13 +9,16 @@ from opencollab_eval.engine.swe_v1_remote_artifacts import (
 )
 from opencollab_eval.engine.swe_v1_remote_commands import *
 from opencollab_eval.engine.swe_v1_remote_core import *
+from opencollab_eval.engine.swe_v1_remote_eval_patch import *
+from opencollab_eval.engine.swe_v1_remote_eval_retry import *
 from opencollab_eval.engine.swe_v1_remote_eval_script import direct_eval_script
 from opencollab_eval.engine.swe_v1_remote_generation import *
+from opencollab_eval.engine.swe_v1_remote_gitlink_probe import *
 from opencollab_eval.engine.swe_v1_remote_records import *
 from opencollab_eval.engine.swe_v1_remote_state import *
 
 
-def eval_for_task_once(row):
+def eval_for_task_once(row, patch_selection=None):
     task = row["instance_id"]
     run_dir = base_run_dir / task
     eval_dir = run_dir / eval_dir_name
@@ -98,6 +101,20 @@ def eval_for_task_once(row):
         }
         write_json(summary_path, summary)
         return {"status": "technical_eval_failed", "task": task, "summary": summary}
+    prepared_patch = validated_eval_patch(
+        row=row,
+        prediction=prediction,
+        metric=metric,
+        pairing=pairing,
+        eval_spec_sha256=eval_spec_sha256,
+        summary_path=summary_path,
+        patch_selection=patch_selection,
+    )
+    if not prepared_patch["ready"]:
+        return prepared_patch["result"]
+    patch_selection = prepared_patch["patch_selection"]
+    model_patch = prepared_patch["model_patch"]
+    patch_evidence = prepared_patch["patch_evidence"]
     previous = load_json(summary_path)
     if (
         isinstance(previous, dict)
@@ -109,19 +126,32 @@ def eval_for_task_once(row):
             eval_spec_sha256=eval_spec_sha256,
             f2p_plan=f2p_plan,
             p2p_plan=p2p_plan,
+            expected_eval_patch_sha256=patch_selection["eval_patch_sha256"],
         )
     ):
-        return {"status": "eval_done", "task": task, "summary": previous, "report_path": str(report_path)}
+        return {
+            "status": "eval_done",
+            "task": task,
+            "summary": previous,
+            "report_path": str(report_path),
+            "eval_patch_sha256": patch_selection["eval_patch_sha256"],
+        }
     if dry_run:
-        return {"status": "would_eval", "task": task, "executed": False}
-    image = image_for_row(row)
-    image_status = ensure_image(image)
+        return {
+            "status": "would_eval",
+            "task": task,
+            "executed": False,
+            "eval_patch_sha256": patch_selection["eval_patch_sha256"],
+        }
+    image = patch_selection.get("image_id") or patch_selection.get("image") or image_for_row(row)
+    image_status = patch_selection.get("image_status") or ensure_image(image)
     if not image_status.get("ok"):
         return {
             "status": "blocked_missing_eval_image",
             "task": task,
             "image_status": image_status,
             "executed": False,
+            "eval_patch_sha256": patch_selection["eval_patch_sha256"],
         }
     input_dir = eval_dir / "input"
     output_dir = report_path.parent
@@ -130,7 +160,6 @@ def eval_for_task_once(row):
     output_dir.chmod(0o777)
     proof_nonce = uuid.uuid4().hex
     original_model_patch = prediction_patch(prediction)
-    model_patch = eval_model_patch(prediction)
     test_patch = str(row.get("test_patch") or "")
     f2p_cmd = " && ".join(f2p_plan["commands"])
     p2p_cmd = " && ".join(p2p_plan["commands"])
@@ -423,7 +452,7 @@ def eval_for_task_once(row):
         "cleanup_quiesced": cleanup_quiesced,
         "container_cleanup": container_cleanup,
         "patch_sha256": row_patch_sha(prediction),
-        **model_patch_filter_evidence(prediction),
+        **patch_evidence,
         "record_id": row_record_id(prediction),
         "eval_spec_sha256": eval_spec_sha256,
         "model_patch_chars": len(original_model_patch),
@@ -461,7 +490,7 @@ def eval_for_task_once(row):
         "task": task,
         "resolved": resolved,
         "patch_sha256": row_patch_sha(prediction),
-        **model_patch_filter_evidence(prediction),
+        **patch_evidence,
         "record_id": row_record_id(prediction),
         "eval_spec_sha256": eval_spec_sha256,
         "model_patch_chars": len(original_model_patch),
@@ -483,71 +512,12 @@ def eval_for_task_once(row):
         "summary": summary,
         "report_path": str(report_path),
         "executed": True,
+        "eval_patch_sha256": patch_selection["eval_patch_sha256"],
     }
 
 
 def eval_for_task(row):
-    task = row["instance_id"]
-    run_dir = base_run_dir / task
-    done, prediction, _metric, pairing = generation_done(
-        run_dir,
-        task,
-        require_identity=not eval_only,
-    )
-    if not done:
-        result = dict(eval_for_task_once(row))
-        result["attempt_count"] = 0
-        result["max_eval_attempts"] = max_eval_attempts
-        return result
-    persisted_attempts = eval_attempt_count(run_dir, prediction, task)
-    if persisted_attempts >= max_eval_attempts:
-        previous = load_json(run_dir / eval_dir_name / "summary.json")
-        status = (
-            "eval_done"
-            if eval_summary_matches_prediction(previous, prediction, task)
-            else "technical_eval_failed"
-        )
-        return {
-            "status": status,
-            "task": task,
-            "summary": previous,
-            "pairing": pairing,
-            "executed": False,
-            "retry_budget_exhausted": status != "eval_done",
-            "attempt_count": persisted_attempts,
-            "max_eval_attempts": max_eval_attempts,
-        }
-    attempts = []
-    retry_statuses = {"technical_eval_failed", "blocked_missing_eval_image"}
-    for _ in range(max_eval_attempts - persisted_attempts):
-        result = dict(eval_for_task_once(row))
-        attempts.append(result)
-        if result.get("status") not in retry_statuses:
-            break
-        if not eval_retry_cleanup_safe(result):
-            break
-        current_attempts = eval_attempt_count(run_dir, prediction, task)
-        if current_attempts >= max_eval_attempts:
-            break
-        append_jsonl(
-            base_run_dir / "events.jsonl",
-            {
-                "time": now(),
-                "phase": "eval_retry",
-                "task": task,
-                "attempt": current_attempts + 1,
-                "previous_status": result.get("status"),
-                "technical_reasons": (
-                    (result.get("summary") or {}).get("technical_reasons", [])
-                ),
-            },
-        )
-    final = dict(attempts[-1])
-    final["attempt_count"] = eval_attempt_count(run_dir, prediction, task)
-    final["max_eval_attempts"] = max_eval_attempts
-    if len(attempts) > 1:
-        final["attempts"] = attempts
-    return final
+    return eval_for_task_with_retries(row, eval_for_task_once)
 
 
 def write_markdown(summary):
