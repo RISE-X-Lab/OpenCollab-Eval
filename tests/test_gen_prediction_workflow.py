@@ -202,7 +202,17 @@ def test_patch_paths_to_remove_honors_disallowed_paths():
     ) == ["tmp/check.py"]
 
 
-def test_guarded_extraction_removes_generated_python_bytecode(monkeypatch):
+@pytest.mark.parametrize(
+    "bytecode_path",
+    [
+        "pkg/__pycache__/widget.cpython-311.pyc",
+        "tests/__pycache__/test_widget.cpython-311-pytest-8.4.1.pyc",
+    ],
+)
+def test_guarded_extraction_removes_generated_python_bytecode(
+    monkeypatch,
+    bytecode_path,
+):
     source_patch = (
         "diff --git a/pkg/widget.py b/pkg/widget.py\n"
         "--- a/pkg/widget.py\n"
@@ -211,7 +221,6 @@ def test_guarded_extraction_removes_generated_python_bytecode(monkeypatch):
         "-old\n"
         "+new\n"
     )
-    bytecode_path = "tests/__pycache__/test_widget.cpython-311-pytest-8.4.1.pyc"
     patch = source_patch + (
         f"diff --git a/{bytecode_path} b/{bytecode_path}\n"
         "new file mode 100644\n"

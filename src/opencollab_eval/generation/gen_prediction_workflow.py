@@ -423,33 +423,33 @@ def extract_patch_guarded(
     patch, extraction = gp.extract_patch_trusted(cid, trusted_baseline)
     if not guard_validation_artifacts:
         return patch, [], extraction.as_dict()
-    violations = _patch_paths_to_remove(
+    generated_bytecode = {
+        path
+        for entry in _patch_entries(patch)
+        for path in entry
+        if path and is_generated_python_bytecode_path(path)
+    }
+    filtered_patch, removed = _remove_generated_bytecode_blocks(
         patch,
+        generated_bytecode,
+    )
+    violations = _patch_paths_to_remove(
+        filtered_patch,
         allowed_paths=allowed_paths,
         disallowed_paths=disallowed_paths,
     )
-    if not violations:
-        return patch, [], extraction.as_dict()
-    generated_bytecode = {
-        path for path in violations if is_generated_python_bytecode_path(path)
-    }
-    remaining_violations = {
-        path for path in violations if path not in generated_bytecode
-    }
-    if not remaining_violations:
-        filtered_patch, removed = _remove_generated_bytecode_blocks(
-            patch,
-            generated_bytecode,
+    if violations:
+        raise RuntimeError(
+            "trusted host patch contains disallowed paths: "
+            + ", ".join(sorted(set(violations)))
         )
-        proof = extraction.as_dict()
-        encoded = filtered_patch.encode("utf-8", errors="surrogatepass")
-        proof["patch_sha256"] = hashlib.sha256(encoded).hexdigest()
-        proof["patch_bytes"] = len(encoded)
-        return filtered_patch, removed, proof
-    raise RuntimeError(
-        "trusted host patch contains disallowed paths: "
-        + ", ".join(sorted(remaining_violations))
-    )
+    if not removed:
+        return filtered_patch, [], extraction.as_dict()
+    proof = extraction.as_dict()
+    encoded = filtered_patch.encode("utf-8", errors="surrogatepass")
+    proof["patch_sha256"] = hashlib.sha256(encoded).hexdigest()
+    proof["patch_bytes"] = len(encoded)
+    return filtered_patch, removed, proof
 
 
 async def generate(
