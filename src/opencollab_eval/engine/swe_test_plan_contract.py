@@ -8,6 +8,7 @@ import shlex
 from typing import Any
 
 from opencollab_eval.engine.swe_v1_remote_target_proof import (
+    declared_js_test_files,
     go_test_command,
     jest_test_command,
     mocha_test_command,
@@ -158,15 +159,10 @@ def _valid_javascript_plan(plan: dict[str, Any]) -> bool:
     ):
         return False
     test_files = proof.get("test_files")
-    declared_files: list[str] = []
-    for target in plan["declared_targets"]:
-        test_file = target.split(" | ", 1)[0].strip()
-        if not test_file:
-            return False
-        if test_file not in declared_files:
-            declared_files.append(test_file)
+    declared_files = declared_js_test_files(plan["declared_targets"])
     if (
-        not isinstance(test_files, list)
+        not declared_files
+        or not isinstance(test_files, list)
         or not test_files
         or any(not isinstance(path, str) or not path for path in test_files)
         or len(set(test_files)) != len(test_files)
