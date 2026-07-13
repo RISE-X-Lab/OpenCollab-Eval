@@ -1,0 +1,135 @@
+# Final SWE comparison reports
+
+`oc-eval final-report` publishes one comparison from two completed 100-task
+SWE-bench Pro-Lite runs. Every output format is rendered from one validated JSON
+model. The command exits successfully only after the PDF and all source files
+have been atomically published and the publication manifest has status `final`.
+
+## Command
+
+```bash
+oc-eval final-report \
+  --method-a-report /sealed/runs/g11/final_report.json \
+  --method-a-audit-manifest /sealed/runs/g11/clean_run_manifest.json \
+  --method-a-name G1.1 \
+  --method-b-report /sealed/runs/openhands/final_report.json \
+  --method-b-audit-manifest /sealed/runs/openhands/clean_run_manifest.json \
+  --method-b-name OpenHands \
+  --meeting-date 2026-07-15 \
+  --author "Evaluation Team" \
+  --labels-json /sealed/report_labels.json \
+  --narrative-json /sealed/report_notes.json \
+  --output-dir /sealed/publication
+```
+
+The output directory receives files with a common date-derived prefix: the
+validated comparison model as JSON, Markdown, TeX, the compiled PDF, and a
+publication manifest. A failed validation or LaTeX build records manifest
+status `failed` and returns a nonzero exit code. Publication serializes writers
+for one prefix, preflights every target, backs up the previous output set,
+rechecks every published hash, and restores the complete previous set if any
+replacement or manifest write fails.
+
+## Fact report contract
+
+Each fact report uses schema
+`opencollab.swe_eval_layer_final_report.v1`. It must contain the exact ordered
+task census 1 through 100. Every row must have completed generation and official
+evaluation, a Boolean verdict, zero pending or technical state, a stable record
+identity, a full patch SHA-256, an official report path, and direct execution
+proof. The declared aggregate counts must equal the values derived from the
+rows. Missing, duplicate, reordered, ambiguous, or technically failed rows stop
+publication.
+
+## Clean-run audit manifest contract
+
+Each audit manifest uses schema `opencollab.swe_clean_run_manifest.v1` and binds
+to the exact fact report through `source_report_sha256`. It records the method
+name; the full task census for clean trajectory, candidate identity, network
+isolation, and direct execution; the exact resolved-task set with executable
+proof; OpenCollab and OpenCollab-Eval commits; the dataset SHA-256; and one or
+more structured evidence files. Both compared methods must use the same runtime
+and dataset identities.
+
+```json
+{
+  "schema": "opencollab.swe_clean_run_manifest.v1",
+  "method": "G1.1",
+  "source_report_sha256": "<64 lowercase hex characters>",
+  "expected_indices": [1, 2, 3],
+  "clean_trajectory_indices": [1, 2, 3],
+  "candidate_identity_indices": [1, 2, 3],
+  "network_isolation_indices": [1, 2, 3],
+  "direct_execution_indices": [1, 2, 3],
+  "resolved_execution_indices": [2],
+  "runtime": {
+    "opencollab_commit": "<40 or 64 lowercase hex characters>",
+    "opencollab_eval_commit": "<40 or 64 lowercase hex characters>",
+    "dataset_sha256": "<64 lowercase hex characters>"
+  },
+  "evidence_files": [
+    {
+      "path": "evidence/trajectory_audit.json",
+      "sha256": "<64 lowercase hex characters>"
+    }
+  ]
+}
+```
+
+The abbreviated arrays above illustrate field meaning. A publishable Pro-Lite
+manifest contains all indices 1 through 100 in every full-census field.
+
+Every listed evidence file uses schema
+`opencollab.swe_clean_run_evidence.v1`. Its method, source report SHA-256, and
+runtime object must equal the manifest. Its task rows collectively cover the
+exact ordered 1 through 100 census without overlap. Each row binds the task ID,
+record ID, and patch SHA-256 from the fact report and sets
+`trajectory_clean`, `candidate_identity_verified`, `network_isolated`, and
+`direct_execution_proven` to `true`. Per-file coverage arrays must equal the
+actual task rows, and resolved-execution indices must equal the resolved subset
+derived from those bound facts.
+
+```json
+{
+  "schema": "opencollab.swe_clean_run_evidence.v1",
+  "method": "G1.1",
+  "source_report_sha256": "<same fact report SHA-256>",
+  "runtime": {
+    "opencollab_commit": "<same commit>",
+    "opencollab_eval_commit": "<same commit>",
+    "dataset_sha256": "<same dataset SHA-256>"
+  },
+  "covered_indices": [1],
+  "clean_trajectory_indices": [1],
+  "candidate_identity_indices": [1],
+  "network_isolation_indices": [1],
+  "direct_execution_indices": [1],
+  "resolved_execution_indices": [],
+  "tasks": [
+    {
+      "index": 1,
+      "task": "<fact report task ID>",
+      "record_id": "<fact report record ID>",
+      "patch_sha256": "<fact report patch SHA-256>",
+      "trajectory_clean": true,
+      "candidate_identity_verified": true,
+      "network_isolated": true,
+      "direct_execution_proven": true
+    }
+  ]
+}
+```
+
+## Optional presentation inputs
+
+The labels document uses schema
+`opencollab.swe_final_report_labels.v1` and overrides known presentation labels.
+Resolved counts, comparison counts, terminal coverage, and evidence claims are
+generated directly from the validated model and cannot be supplied by labels.
+The narrative document uses schema
+`opencollab.swe_final_report_narrative.v1`; it may add overview paragraphs and
+task notes with task indices and evidence references. Narrative text cannot
+change any verdict, count, comparison set, runtime identity, or evidence hash.
+Narrative evidence references must name a file already verified by one of the
+two audit manifests. All external text is escaped independently for Markdown
+and TeX.

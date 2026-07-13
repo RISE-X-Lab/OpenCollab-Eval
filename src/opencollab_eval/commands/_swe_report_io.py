@@ -60,6 +60,11 @@ def read_text(path: Path, *, max_bytes: int = MAX_LOG_BYTES) -> str:
     return safe_files.read_regular_text(path, max_bytes=max_bytes)
 
 
+def read_bytes(path: Path, *, max_bytes: int = MAX_LOG_BYTES) -> bytes:
+    """Read one bounded regular file without following symlinks."""
+    return safe_files.read_regular_bytes(path, max_bytes=max_bytes)
+
+
 def write_text(path: Path, value: str, *, max_bytes: int = MAX_LOG_BYTES) -> None:
     """Atomically replace one regular text file without following symlinks."""
     payload = value.encode("utf-8")
@@ -82,6 +87,7 @@ __all__ = [
     "ensure_directory",
     "load_json",
     "load_json_with_error",
+    "read_bytes",
     "read_text",
     "write_json",
     "write_text",

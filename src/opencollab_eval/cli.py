@@ -6,12 +6,15 @@ import argparse
 import asyncio
 import json
 import os
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 from opencollab_eval import __version__
 from opencollab_eval.benchmarks.swe_batch_pro import load_identity_key, load_jsonl_dataset, tasks_from_rows
 from opencollab_eval.commands.eval_batch import _eval, _result_counts
+from opencollab_eval.commands.swe_final_report import add_arguments as add_final_report_arguments
+from opencollab_eval.commands.swe_final_report import run_from_args as run_final_report
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -33,6 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--timeout", type=float, default=600.0)
     run_parser.add_argument("--temperature", type=float, default=0.2)
     run_parser.add_argument("--top-p", type=float)
+    final_parser = subparsers.add_parser(
+        "final-report",
+        help="Build a final comparison report from two terminal SWE fact reports",
+    )
+    add_final_report_arguments(final_parser)
     return parser
 
 
@@ -71,6 +79,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         eligible, ineligible = _result_counts(results)
         print(json.dumps({"tasks": len(results), "eligible_patches": eligible, "ineligible": ineligible}))
+        return 0
+    if args.command == "final-report":
+        try:
+            result = run_final_report(args)
+        except (OSError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     raise AssertionError(f"unhandled command: {args.command}")
 

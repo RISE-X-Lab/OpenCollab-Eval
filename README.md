@@ -18,6 +18,12 @@ oc-eval inspect path/to/tasks.jsonl --identity-key-file path/to/sealed-identity.
 oc-eval run path/to/tasks.jsonl --model MODEL --provider PROVIDER --output results
 ```
 
+After two 100-task runs have terminal fact reports and clean-run audit
+manifests, publish their comparison with `oc-eval final-report`. The command
+validates the complete census and evidence bindings before atomically writing a
+JSON model, Markdown, TeX, PDF, and publication manifest. See
+[docs/final-report.md](docs/final-report.md) for the input contract and example.
+
 See [MIGRATION.md](MIGRATION.md) for the ownership map and compatibility-removal
 sequence.
 
