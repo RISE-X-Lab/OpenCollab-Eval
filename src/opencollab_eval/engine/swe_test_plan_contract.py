@@ -35,6 +35,7 @@ _ADAPTER_COVERAGE = {
     "mocha-json-stream": "parser_backed_exact_targets",
     "ospec-structured-results": "parser_backed_exact_targets",
 }
+_JAVASCRIPT_LANGUAGES = {"js", "javascript", "ts", "typescript"}
 
 
 def is_runnable_test_command(command: str) -> bool:
@@ -160,6 +161,8 @@ def _valid_javascript_plan(plan: dict[str, Any]) -> bool:
         return False
     test_files = proof.get("test_files")
     declared_files = declared_js_test_files(plan["declared_targets"])
+    language = proof.get("repo_language")
+    repo = proof.get("repo")
     if (
         not declared_files
         or not isinstance(test_files, list)
@@ -167,21 +170,38 @@ def _valid_javascript_plan(plan: dict[str, Any]) -> bool:
         or any(not isinstance(path, str) or not path for path in test_files)
         or len(set(test_files)) != len(test_files)
         or test_files != declared_files
+        or not isinstance(language, str)
+        or language not in _JAVASCRIPT_LANGUAGES
+        or not isinstance(repo, str)
+        or repo != repo.strip().lower()
     ):
         return False
     adapter = plan["adapter"]
     if adapter == "jest-json-verbose":
-        return "target_file" not in proof and plan["commands"] == [
-            jest_test_command(test_files)
-        ]
+        return (
+            repo not in {"nodebb/nodebb", "tutao/tutanota"}
+            and "target_file" not in proof
+            and plan["commands"] == [jest_test_command(test_files)]
+        )
     if adapter == "mocha-json-stream":
         target_file = proof.get("target_file", "")
-        return isinstance(target_file, str) and plan["commands"] == [
-            mocha_test_command(plan["declared_targets"], test_files, target_file)
-        ]
-    return "target_file" not in proof and plan["commands"] == [
-        tutanota_test_command(plan["declared_targets"])
-    ]
+        return (
+            repo == "nodebb/nodebb"
+            and isinstance(target_file, str)
+            and plan["commands"]
+            == [
+                mocha_test_command(
+                    plan["declared_targets"],
+                    test_files,
+                    target_file,
+                )
+            ]
+        )
+    return (
+        repo == "tutao/tutanota"
+        and "target_file" not in proof
+        and plan["commands"] == [tutanota_test_command(plan["declared_targets"])]
+    )
 
 
 def validated_test_plan_kind(

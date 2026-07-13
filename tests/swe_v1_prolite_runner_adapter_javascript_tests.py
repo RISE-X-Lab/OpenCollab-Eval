@@ -162,6 +162,71 @@ def test_javascript_planner_fails_closed_for_an_untrusted_workspace_alias(tmp_pa
     }
 
 
+@pytest.mark.parametrize(
+    ("row", "target", "forged_repo"),
+    [
+        (
+            {"repo_language": "typescript"},
+            "test/FooTest.ts | works",
+            "tutao/tutanota",
+        ),
+        (
+            {"repo_language": "javascript"},
+            "test/foo.test.js | works",
+            "nodebb/nodebb",
+        ),
+        (
+            {"repo_language": "javascript", "repo": "nodebb/nodebb"},
+            "test/topics.js | title",
+            "",
+        ),
+        (
+            {"repo_language": "typescript", "repo": "tutao/tutanota"},
+            "test/tests/FooTest.ts | works",
+            "",
+        ),
+    ],
+)
+def test_javascript_plan_rejects_adapter_and_proof_repository_mismatches(
+    tmp_path,
+    row,
+    target,
+    forged_repo,
+):
+    namespace = _remote_namespace(tmp_path)
+    plan = namespace["prolite_test_plan"](row, [target])
+
+    assert validated_test_plan_kind(plan, require_commands=True) == plan["adapter"]
+
+    plan["proofs"][0]["repo"] = forged_repo
+
+    assert validated_test_plan_kind(plan, require_commands=True) is None
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("repo_language", "TypeScript"),
+        ("repo", "NodeBB/NodeBB"),
+        ("repo", " nodebb/nodebb"),
+    ],
+)
+def test_javascript_plan_rejects_noncanonical_proof_dispatch_metadata(
+    tmp_path,
+    field,
+    value,
+):
+    namespace = _remote_namespace(tmp_path)
+    plan = namespace["prolite_test_plan"](
+        {"repo_language": "javascript", "repo": "nodebb/nodebb"},
+        ["test/topics.js | title"],
+    )
+
+    plan["proofs"][0][field] = value
+
+    assert validated_test_plan_kind(plan, require_commands=True) is None
+
+
 def test_task9_jest_suite_load_failure_binds_official_mock_and_exact_command(tmp_path):
     namespace = _remote_namespace(tmp_path)
     suite = (
