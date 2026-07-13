@@ -1027,20 +1027,39 @@ def test_prolite_pytest_proof_remains_private_before_session_finish(
 
 def test_prolite_pytest_collection_import_failure_is_exact_semantic_failure(tmp_path):
     namespace = _remote_namespace(tmp_path)
-    proof = {
-        "kind": "pytest_structured_reports",
-        "targets": ["tests/test_target.py::test_target"],
-    }
-    proof_text = _pytest_proof_text([], exitstatus=4)
-    command = (
-        "pytest -p opencollab_pytest_proof -q -rA -o addopts= "
-        "tests/test_target.py::test_target"
+    target_file = "openlibrary/plugins/worksearch/schemes/tests/test_works.py"
+    target = target_file + "::test_process_user_query"
+    module = "openlibrary.plugins.worksearch.schemes.works"
+    test_patch = (
+        f"diff --git a/{target_file} b/{target_file}\n"
+        "new file mode 100644\n"
+        "--- /dev/null\n"
+        f"+++ b/{target_file}\n"
+        "@@ -0,0 +1,2 @@\n"
+        f"+from {module} import WorkSearchScheme\n"
+        "+def test_process_user_query(): pass\n"
     )
+    plan = namespace["prolite_test_plan"](
+        {
+            "repo_language": "python",
+            "repo": "internetarchive/openlibrary",
+            "test_patch": test_patch,
+        },
+        [target],
+    )
+    proof = plan["proofs"][0]
+    proof_text = _pytest_proof_text([], exitstatus=4)
+    command = plan["commands"][0]
     valid_log = (
-        "ERROR collecting tests/test_target.py\n"
-        "E   ModuleNotFoundError: No module named 'production'\n"
+        f"ERROR collecting {target_file}\n"
+        f"{target_file}:2: in <module>\n"
+        f"    from {module} import WorkSearchScheme\n"
+        f"E   ModuleNotFoundError: No module named '{module}'\n"
     )
 
+    assert proof["target_imports"] == [
+        {"test_file": target_file, "modules": [module]}
+    ]
     assert namespace["_plan_log_failure_proof_matches"](
         proof,
         valid_log,
@@ -1050,8 +1069,9 @@ def test_prolite_pytest_collection_import_failure_is_exact_semantic_failure(tmp_
     ) is True
     invalid_logs = (
         "no tests ran in 0.01s\n",
-        "ERROR collecting tests/test_target.py::wrong\nE   ModuleNotFoundError: missing\n",
-        "ERROR collecting tests/test_other.py\nE   ImportError: missing\n",
+        valid_log.replace(module, "openlibrary.plugins.unbound", 1),
+        valid_log.replace("ERROR collecting " + target_file, "ERROR collecting tests/test_other.py"),
+        valid_log.replace("from " + module, "from openlibrary.plugins.unbound"),
     )
     for log in invalid_logs:
         assert namespace["_plan_log_failure_proof_matches"](
@@ -1067,6 +1087,45 @@ def test_prolite_pytest_collection_import_failure_is_exact_semantic_failure(tmp_
         proof_text,
         command,
         command + " # changed",
+    ) is False
+
+
+def test_prolite_pytest_collection_rejects_unbound_third_party_import(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    target_file = "tests/test_target.py"
+    target = target_file + "::test_target"
+    test_patch = (
+        f"diff --git a/{target_file} b/{target_file}\n"
+        f"--- a/{target_file}\n"
+        f"+++ b/{target_file}\n"
+        "@@ -0,0 +1 @@\n"
+        "+import numpy\n"
+    )
+    plan = namespace["prolite_test_plan"](
+        {
+            "repo_language": "python",
+            "repo": "example/repo",
+            "test_patch": test_patch,
+        },
+        [target],
+        candidate_source_paths=["src/candidate.py"],
+    )
+    proof = plan["proofs"][0]
+    proof_text = _pytest_proof_text([], exitstatus=4)
+    log = (
+        f"ERROR collecting {target_file}\n"
+        f"{target_file}:1: in <module>\n"
+        "    import numpy\n"
+        "E   ModuleNotFoundError: No module named 'numpy'\n"
+    )
+
+    assert "target_imports" not in proof
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        log,
+        proof_text,
+        plan["commands"][0],
+        plan["commands"][0],
     ) is False
 
 

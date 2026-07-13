@@ -174,6 +174,144 @@ def _pytest_structured_failure_proof_matches(
     )
 
 
+_PYTHON_NON_PACKAGE_ROOTS = {
+    "application",
+    "applications",
+    "lib",
+    "package",
+    "packages",
+    "spec",
+    "src",
+    "test",
+    "tests",
+}
+
+
+def _python_repo_module_roots(repo, target_file):
+    roots = set()
+    slug = str(repo or "").rsplit("/", 1)[-1].replace("-", "_").lower()
+    if re.fullmatch(r"[a-z_][a-z0-9_]*", slug):
+        roots.add(slug)
+    parts = pathlib.PurePosixPath(str(target_file or "")).parts[:-1]
+    for part in parts:
+        normalized = part.replace("-", "_").lower()
+        if normalized in _PYTHON_NON_PACKAGE_ROOTS:
+            continue
+        if re.fullmatch(r"[a-z_][a-z0-9_]*", normalized):
+            roots.add(normalized)
+            break
+    return roots
+
+
+def _python_module_is_repo_local(module, repo, target_file):
+    if not re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", str(module or "")):
+        return False
+    return module.split(".", 1)[0].lower() in _python_repo_module_roots(
+        repo, target_file
+    )
+
+
+def _python_test_patch_import_bindings(row, targets):
+    target_files = {
+        str(target).split("::", 1)[0].replace("\\", "/").removeprefix("./")
+        for target in targets
+    }
+    if len(target_files) != 1:
+        return []
+    target_file = next(iter(target_files))
+    bindings = []
+    for block in split_patch_blocks(str(row.get("test_patch") or "")):
+        path = diff_target_path(block[0] if block else "")
+        normalized_path = path.replace("\\", "/").removeprefix("./")
+        if not (
+            normalized_path == target_file
+            or normalized_path.endswith("/" + target_file)
+            or target_file.endswith("/" + normalized_path)
+        ):
+            continue
+        modules = []
+        for line in block:
+            if not line.startswith("+") or line.startswith("+++"):
+                continue
+            try:
+                tree = ast.parse(line[1:].strip())
+            except (IndentationError, SyntaxError):
+                continue
+            for node in tree.body:
+                if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                    candidates = [node.module]
+                elif isinstance(node, ast.Import):
+                    candidates = [alias.name for alias in node.names]
+                else:
+                    candidates = []
+                for module in candidates:
+                    if (
+                        _python_module_is_repo_local(
+                            module,
+                            row.get("repo"),
+                            normalized_path,
+                        )
+                        and module not in modules
+                    ):
+                        modules.append(module)
+        if modules:
+            bindings.append({"test_file": normalized_path, "modules": modules})
+    return bindings
+
+
+def _pytest_bound_import_failure_matches(
+    target_file,
+    target_imports,
+    repo,
+    log_text,
+):
+    if not isinstance(target_imports, list) or not target_imports or len(target_imports) > 64:
+        return False
+    matched_modules = []
+    for binding in target_imports:
+        if not isinstance(binding, dict):
+            return False
+        path = str(binding.get("test_file") or "").replace("\\", "/").removeprefix("./")
+        modules = binding.get("modules")
+        if path != target_file and not path.endswith("/" + target_file):
+            continue
+        if (
+            matched_modules
+            or not isinstance(modules, list)
+            or not modules
+            or len(modules) > 128
+            or len(set(modules)) != len(modules)
+            or any(
+                not isinstance(module, str)
+                or len(module.encode("utf-8")) > 4096
+                or not _python_module_is_repo_local(module, repo, path)
+                for module in modules
+            )
+        ):
+            return False
+        matched_modules = modules
+    if not matched_modules:
+        return False
+    missing_modules = set(
+        re.findall(
+            r"(?m)^E\s+(?:ImportError|ModuleNotFoundError):\s+"
+            r"No module named ['\"]([^'\"]+)['\"]\s*$",
+            log_text,
+        )
+    )
+    if len(missing_modules) != 1:
+        return False
+    missing = next(iter(missing_modules))
+    if missing not in matched_modules:
+        return False
+    target_frame = re.escape(target_file) + r":[0-9]+: in <module>"
+    import_line = (
+        r"\n\s*(?:from\s+" + re.escape(missing) + r"\s+import\b|"
+        r"import\s+" + re.escape(missing) + r"(?:\s|$))"
+    )
+    return re.search(r"(?m)^(?:.*?/)?" + target_frame + import_line, log_text) is not None
+
+
 def _pytest_collection_failure_proof_matches(
     targets,
     proof_text,
@@ -181,6 +319,8 @@ def _pytest_collection_failure_proof_matches(
     expected_command,
     observed_command,
     candidate_source_paths=None,
+    target_imports=None,
+    repo="",
 ):
     if not expected_command or expected_command != observed_command:
         return False
@@ -224,8 +364,11 @@ def _pytest_collection_failure_proof_matches(
     if normalized_collected != set(target_files):
         return False
     log_text = str(log_text or "")
-    if len(target_files) == 1 and re.search(
-        r"\b(?:ImportError|ModuleNotFoundError)\b", log_text
+    if len(target_files) == 1 and _pytest_bound_import_failure_matches(
+        target_files[0],
+        target_imports,
+        repo,
+        log_text,
     ):
         return True
     if (
@@ -469,6 +612,8 @@ def _plan_log_failure_proof_matches(
                     expected_command,
                     observed_command,
                     proof.get("candidate_source_paths"),
+                    proof.get("target_imports"),
+                    proof.get("repo") or "",
                 )
             )
         )
@@ -881,6 +1026,10 @@ def prolite_test_plan(
                 proof["parameter_fallback_parents"] = fallback_parents
             if candidate_source_paths:
                 proof["candidate_source_paths"] = list(candidate_source_paths)
+            target_imports = _python_test_patch_import_bindings(row, batch)
+            if target_imports:
+                proof["repo"] = repo
+                proof["target_imports"] = target_imports
             proofs.append(proof)
         return _test_plan(
             "pytest",
