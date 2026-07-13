@@ -267,6 +267,7 @@ def eval_for_task_once(row):
             "task": task,
             "record_id": row_record_id(prediction),
             "patch_sha256": row_patch_sha(prediction),
+            "eval_patch_sha256": patch_sha(model_patch),
             "eval_spec_sha256": eval_spec_sha256,
         },
     )
@@ -420,6 +421,7 @@ def eval_for_task_once(row):
         "cleanup_quiesced": cleanup_quiesced,
         "container_cleanup": container_cleanup,
         "patch_sha256": row_patch_sha(prediction),
+        **model_patch_filter_evidence(prediction),
         "record_id": row_record_id(prediction),
         "eval_spec_sha256": eval_spec_sha256,
         "model_patch_chars": len(original_model_patch),
@@ -457,6 +459,7 @@ def eval_for_task_once(row):
         "task": task,
         "resolved": resolved,
         "patch_sha256": row_patch_sha(prediction),
+        **model_patch_filter_evidence(prediction),
         "record_id": row_record_id(prediction),
         "eval_spec_sha256": eval_spec_sha256,
         "model_patch_chars": len(original_model_patch),

@@ -614,14 +614,25 @@ def empty_patch_result(task, prediction, metric, pairing, **extra):
 
 
 def eval_attempt_count(run_dir, prediction, task):
-    patch_sha256 = row_patch_sha(prediction)
+    source_patch_sha256 = row_patch_sha(prediction)
+    eval_patch_sha256 = patch_sha(eval_model_patch(prediction))
     record_id = row_record_id(prediction)
     return sum(
         1
         for item in read_jsonl(run_dir / "eval_attempts.jsonl")
         if item.get("phase") == "eval_attempt_started"
         and item.get("task") == task
-        and patch_sha_matches(str(item.get("patch_sha256") or ""), patch_sha256)
+        and patch_sha_matches(
+            str(item.get("eval_patch_sha256") or item.get("patch_sha256") or ""),
+            eval_patch_sha256,
+        )
+        and (
+            item.get("eval_patch_sha256")
+            or patch_sha_matches(
+                str(item.get("patch_sha256") or ""),
+                source_patch_sha256,
+            )
+        )
         and (not record_id or item.get("record_id") == record_id)
     )
 

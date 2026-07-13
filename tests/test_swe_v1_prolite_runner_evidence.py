@@ -429,6 +429,55 @@ def test_yarn_install_state_only_patch_is_not_a_completed_generation(tmp_path):
     ) == "invalid"
 
 
+def test_eval_attempt_count_uses_filtered_child_patch_identity(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    task = "instance_org__repo-1"
+    generated = (
+        "diff --git a/.yarn/install-state.gz b/.yarn/install-state.gz\n"
+        "new file mode 100644\n"
+        "Binary files /dev/null and b/.yarn/install-state.gz differ\n"
+    )
+    source = (
+        generated
+        + "diff --git a/src/widget.ts b/src/widget.ts\n"
+        "--- a/src/widget.ts\n"
+        "+++ b/src/widget.ts\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+    )
+    prediction = {
+        "instance_id": task,
+        "record_id": "record-1",
+        "patch_sha256": namespace["patch_sha"](source),
+        "model_patch": source,
+    }
+    run_dir = namespace["base_run_dir"] / task
+    source_sha = namespace["patch_sha"](source)
+    child_sha = namespace["patch_sha"](namespace["eval_model_patch"](prediction))
+    _write_jsonl(
+        run_dir / "eval_attempts.jsonl",
+        [
+            {
+                "phase": "eval_attempt_started",
+                "task": task,
+                "record_id": "record-1",
+                "patch_sha256": source_sha,
+            },
+            {
+                "phase": "eval_attempt_started",
+                "task": task,
+                "record_id": "record-1",
+                "patch_sha256": source_sha,
+                "eval_patch_sha256": child_sha,
+            },
+        ],
+    )
+
+    assert child_sha != source_sha
+    assert namespace["eval_attempt_count"](run_dir, prediction, task) == 1
+
+
 def test_prolite_prediction_sha_comes_from_patch_text(tmp_path):
     namespace = _remote_namespace(tmp_path)
     task = "task-1"
