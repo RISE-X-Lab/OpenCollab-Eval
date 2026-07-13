@@ -397,6 +397,9 @@ def test_snapshot_preserves_gitlink_without_copying_submodule_objects(tmp_path):
 
     assert evidence["base_tree"] == base_tree
     assert evidence["removed_git_metadata"] == 1
+    assert evidence["removed_gitlinks"] == [
+        {"path": submodule_path.as_posix(), "old_oid": submodule_commit}
+    ]
     assert not (repo / submodule_path).exists()
     assert _git(repo, "ls-tree", "HEAD", str(submodule_path)).stdout.startswith(
         f"160000 commit {submodule_commit}"
@@ -612,6 +615,7 @@ def test_host_wrapper_installs_helper_and_validates_evidence(monkeypatch):
         "remote_count": 0,
         "extra_git_metadata": 0,
         "removed_git_metadata": 0,
+        "removed_gitlinks": [],
     }
 
     def fake_docker(*args, **kwargs):
@@ -668,6 +672,7 @@ def test_host_wrapper_rejects_unproven_evidence():
         "remote_count": 0,
         "extra_git_metadata": 0,
         "removed_git_metadata": 0,
+        "removed_gitlinks": [],
     }
 
     with pytest.raises(RuntimeError, match="integrity verification failed"):

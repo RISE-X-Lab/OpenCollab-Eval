@@ -11,12 +11,16 @@ from opencollab_eval.engine.swe_v1_remote_records import *
 from opencollab_eval.patch_gitlinks import *
 
 GITLINK_PROBE_SCHEMA = "opencollab.prolite_gitlink_probe.v1"
+LEGACY_GITLINK_AUDIT_SCHEMA = "opencollab.prolite_gitlink_legacy_audit.v1"
 MAX_GITLINK_PROBE_PATHS = 1024
 MAX_GITLINK_PROBE_PATH_BYTES = 128 * 1024
 _OBJECT_ID_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _IMAGE_ID_RE = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _PROBE_SCRIPT = r"""
 set -eu
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+  GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR GIT_CEILING_DIRECTORIES \
+  GIT_DISCOVERY_ACROSS_FILESYSTEM
 export GIT_CONFIG_NOSYSTEM=1
 export GIT_CONFIG_GLOBAL=/dev/null
 export GIT_NO_REPLACE_OBJECTS=1
@@ -29,6 +33,69 @@ for repo in /app /testbed /workspace /repo /src; do
 done
 exit 125
 """
+
+
+def _canonical_json(value):
+    return json.dumps(value, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+
+
+def _removed_gitlinks(value):
+    if (
+        not isinstance(value, list)
+        or len(value) > MAX_GITLINK_PROBE_PATHS
+        or any(
+            not isinstance(item, dict)
+            or set(item) != {"path", "old_oid"}
+            or not isinstance(item.get("path"), str)
+            or not item["path"]
+            or "\x00" in item["path"]
+            or not isinstance(item.get("old_oid"), str)
+            or _OBJECT_ID_RE.fullmatch(item["old_oid"]) is None
+            for item in value
+        )
+        or len({item["path"] for item in value}) != len(value)
+        or sum(len(item["path"].encode("utf-8", errors="surrogatepass")) for item in value)
+        > MAX_GITLINK_PROBE_PATH_BYTES
+    ):
+        return None
+    return {(item["path"], item["old_oid"]) for item in value}
+
+
+def _legacy_audited_removed_gitlinks(row, prediction, metric, source_patch_sha256):
+    audit = metric.get("audited_legacy_gitlink_evidence") if isinstance(metric, dict) else None
+    task = str(row.get("instance_id") or "")
+    base_commit = str(row.get("base_commit") or row.get("commit") or "").strip().lower()
+    if (
+        not isinstance(audit, dict)
+        or set(audit)
+        != {
+            "schema",
+            "audit_id",
+            "task",
+            "base_commit",
+            "source_patch_sha256",
+            "removed_gitlinks",
+        }
+        or audit.get("schema") != LEGACY_GITLINK_AUDIT_SCHEMA
+        or not isinstance(audit.get("audit_id"), str)
+        or not audit["audit_id"].strip()
+        or len(audit["audit_id"].encode("utf-8", errors="surrogatepass")) > 256
+        or audit.get("task") != task
+        or audit.get("base_commit") != base_commit
+        or audit.get("source_patch_sha256") != source_patch_sha256
+        or row_patch_sha(prediction) != source_patch_sha256
+    ):
+        return None
+    return _removed_gitlinks(audit.get("removed_gitlinks"))
+
+
+def _trusted_removed_gitlinks(row, prediction, metric, source_patch, source_patch_sha256):
+    if current_generation_proof_valid(metric, source_patch):
+        snapshot = metric.get("solver_git_snapshot")
+        if isinstance(snapshot, dict):
+            return _removed_gitlinks(snapshot.get("removed_gitlinks"))
+        return None
+    return _legacy_audited_removed_gitlinks(row, prediction, metric, source_patch_sha256)
 
 
 def resolve_local_image_id(image):
@@ -82,6 +149,23 @@ def probe_gitlink_deletions(
 
     container_name = "opencollab-prolite-gitlink-probe-" + uuid.uuid4().hex[:20]
     cidfile = base_run_dir / ("." + container_name + ".cid")
+    probe_argv = [
+        "docker",
+        "run",
+        "--rm",
+        "--read-only",
+        "--network",
+        "none",
+        "--entrypoint",
+        "/bin/bash",
+        binding["image_id"],
+        "-c",
+        _PROBE_SCRIPT,
+        "opencollab-gitlink-probe",
+        binding["base_commit"],
+        "--",
+        *paths,
+    ]
     command = [
         "timeout",
         "120",
@@ -109,9 +193,10 @@ def probe_gitlink_deletions(
         "--",
         *paths,
     ]
+    evidence["probe_argv"] = probe_argv
     evidence["probe_script_sha256"] = hashlib.sha256(_PROBE_SCRIPT.encode("utf-8")).hexdigest()
     evidence["probe_command_sha256"] = hashlib.sha256(
-        json.dumps(command, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+        _canonical_json(probe_argv).encode("utf-8")
     ).hexdigest()
     result = {"returncode": 127, "stdout": "", "stderr": "probe did not start"}
     try:
@@ -120,9 +205,6 @@ def probe_gitlink_deletions(
         cleanup = cleanup_preflight_container(cidfile, container_name)
     evidence["returncode"] = result.get("returncode")
     evidence["container_cleanup"] = cleanup
-    evidence["probe_output_sha256"] = hashlib.sha256(
-        str(result.get("stdout") or "").encode("utf-8", errors="surrogatepass")
-    ).hexdigest()
     if result.get("returncode") != 0 or cleanup.get("ok") is not True:
         evidence["status"] = "probe_execution_failed"
         return {"ok": False, "status": "gitlink_probe_execution_failed", "probe": evidence}
@@ -131,6 +213,19 @@ def probe_gitlink_deletions(
     except ValueError:
         evidence["status"] = "probe_output_invalid"
         return {"ok": False, "status": "gitlink_probe_output_invalid", "probe": evidence}
+    parsed_output = [
+        {
+            "path": path,
+            "base_mode": str(entry.get("base_mode") or ""),
+            "base_type": str(entry.get("base_type") or ""),
+            "base_oid": str(entry.get("base_oid") or ""),
+        }
+        for path, entry in sorted(entries.items())
+    ]
+    evidence["probe_parsed_output"] = parsed_output
+    evidence["probe_output_sha256"] = hashlib.sha256(
+        _canonical_json(parsed_output).encode("utf-8")
+    ).hexdigest()
 
     verified = []
     for item in candidates:
@@ -178,28 +273,17 @@ def prepare_eval_patch_selection(row, prediction, metric):
     candidates = gitlink_deletion_candidates(model_patch)
     if not candidates:
         return selection
-    if not current_generation_proof_valid(metric, source_patch):
-        selection.update(
-            {
-                "ok": False,
-                "status": "gitlink_probe_untrusted_generation",
-                "gitlink_probe": {
-                    "schema": GITLINK_PROBE_SCHEMA,
-                    "status": "untrusted_generation",
-                    "task": str(row.get("instance_id") or ""),
-                    "source_patch_sha256": selection["source_patch_sha256"],
-                    "paths": [
-                        {
-                            "path": item["path"],
-                            "old_oid": item["old_oid"],
-                            "base_oid": "",
-                            "probe_status": "not_run",
-                        }
-                        for item in candidates
-                    ],
-                },
-            }
-        )
+    removed_gitlinks = _trusted_removed_gitlinks(
+        row,
+        prediction,
+        metric,
+        source_patch,
+        selection["source_patch_sha256"],
+    )
+    eligible_candidates = [
+        item for item in candidates if (item["path"], item["old_oid"]) in (removed_gitlinks or set())
+    ]
+    if not eligible_candidates:
         return selection
     image = image_for_row(row)
     image_status = ensure_image(image)
@@ -221,7 +305,7 @@ def prepare_eval_patch_selection(row, prediction, metric):
         image_id=image_id,
         base_commit=str(row.get("base_commit") or row.get("commit") or "").strip(),
         source_patch_sha256=selection["source_patch_sha256"],
-        candidates=candidates,
+        candidates=eligible_candidates,
     )
     selection["gitlink_probe"] = probe["probe"]
     if not probe.get("ok"):
@@ -243,6 +327,7 @@ def prepare_eval_patch_selection(row, prediction, metric):
 
 __all__ = [
     "GITLINK_PROBE_SCHEMA",
+    "LEGACY_GITLINK_AUDIT_SCHEMA",
     "prepare_eval_patch_selection",
     "probe_gitlink_deletions",
     "resolve_local_image_id",

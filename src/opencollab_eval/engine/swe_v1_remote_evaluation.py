@@ -127,6 +127,7 @@ def eval_for_task_once(row, patch_selection=None):
             f2p_plan=f2p_plan,
             p2p_plan=p2p_plan,
             expected_eval_patch_sha256=patch_selection["eval_patch_sha256"],
+            expected_eval_image_id=str(patch_selection.get("image_id") or ""),
         )
     ):
         return {
@@ -298,6 +299,7 @@ def eval_for_task_once(row, patch_selection=None):
             "patch_sha256": row_patch_sha(prediction),
             "eval_patch_sha256": patch_sha(model_patch),
             "eval_spec_sha256": eval_spec_sha256,
+            "eval_image_id": str(patch_selection.get("image_id") or ""),
         },
     )
     cleanup_quiesced = True

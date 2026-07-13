@@ -66,6 +66,7 @@ def validated_eval_patch(
             "eval_patch_sha256": patch_selection.get("eval_patch_sha256"),
             "filtered_patch_paths": patch_selection.get("filtered_patch_paths", []),
             "gitlink_probe": patch_selection.get("gitlink_probe"),
+            "eval_image_id": patch_selection.get("image_id") or "",
             "record_id": row_record_id(prediction),
             "eval_spec_sha256": eval_spec_sha256,
             "technical_reasons": [selection_status],
@@ -80,6 +81,7 @@ def validated_eval_patch(
                 "summary": summary,
                 "executed": False,
                 "eval_patch_sha256": patch_selection.get("eval_patch_sha256"),
+                "eval_image_id": patch_selection.get("image_id") or "",
             },
         }
     model_patch = patch_selection["model_patch"]
@@ -88,6 +90,7 @@ def validated_eval_patch(
         "eval_patch_sha256": patch_selection["eval_patch_sha256"],
         "filtered_patch_paths": patch_selection["filtered_patch_paths"],
         "gitlink_probe": patch_selection.get("gitlink_probe"),
+        "eval_image_id": patch_selection.get("image_id") or "",
     }
     if not model_patch.strip():
         summary = {

@@ -23,6 +23,7 @@ _SNAPSHOT_KEYS = {
     "remote_count",
     "extra_git_metadata",
     "removed_git_metadata",
+    "removed_gitlinks",
 }
 _EXTRACTION_KEYS = {
     "schema",
@@ -65,6 +66,25 @@ def solver_git_snapshot_valid(value: Any) -> bool:
     if not isinstance(base_tree, str) or not _OBJECT_ID_RE.fullmatch(base_tree):
         return False
     if len(anonymous_head) != len(base_tree):
+        return False
+    removed_gitlinks = value.get("removed_gitlinks")
+    if (
+        not isinstance(removed_gitlinks, list)
+        or len(removed_gitlinks) > 1024
+        or any(
+            not isinstance(item, dict)
+            or set(item) != {"path", "old_oid"}
+            or not isinstance(item.get("path"), str)
+            or not item["path"]
+            or "\x00" in item["path"]
+            or not isinstance(item.get("old_oid"), str)
+            or not _OBJECT_ID_RE.fullmatch(item["old_oid"])
+            for item in removed_gitlinks
+        )
+        or len({item["path"] for item in removed_gitlinks}) != len(removed_gitlinks)
+        or sum(len(item["path"].encode("utf-8")) for item in removed_gitlinks)
+        > 128 * 1024
+    ):
         return False
     return bool(
         value.get("enabled") is True

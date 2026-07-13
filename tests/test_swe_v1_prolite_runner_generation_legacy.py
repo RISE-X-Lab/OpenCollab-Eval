@@ -312,7 +312,7 @@ def test_remote_runner_retries_empty_patch_once(tmp_path, second_mode):
         "'patch_sha256': empty_sha}\n"
         "snapshot = {'enabled': True, 'anonymous_head': 'a' * 40, "
         "'base_tree': 'b' * 40, 'commit_count': 1, 'remote_count': 0, "
-        "'extra_git_metadata': 0, 'removed_git_metadata': 0}\n"
+        "'extra_git_metadata': 0, 'removed_git_metadata': 0, 'removed_gitlinks': []}\n"
         "proof = {'schema': 'opencollab.trusted_patch_extraction.v1', "
         "'host_trusted': True, 'fixed_anonymous_base': 'a' * 40, "
         "'base_tree': 'b' * 40, 'archive_bounded': True, "

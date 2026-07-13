@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 from opencollab_eval.engine import swe_v1_remote_gitlink_probe as probe
@@ -88,6 +90,28 @@ def test_gitlink_probe_filters_only_matching_baseline_oid(monkeypatch, tmp_path:
     assert len(result["probe"]["probe_output_sha256"]) == 64
     assert len(result["probe"]["probe_script_sha256"]) == 64
     assert len(result["probe"]["probe_command_sha256"]) == 64
+    assert result["probe"]["probe_command_sha256"] == hashlib.sha256(
+        json.dumps(
+            result["probe"]["probe_argv"],
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    assert result["probe"]["probe_output_sha256"] == hashlib.sha256(
+        json.dumps(
+            result["probe"]["probe_parsed_output"],
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    canonical_command = result["probe"]["probe_argv"]
+    assert "--name" not in canonical_command
+    assert "--cidfile" not in canonical_command
+    assert "--label" not in canonical_command
+    assert "timeout" not in canonical_command
+    assert "a" * 32 not in " ".join(canonical_command)
     assert result["probe"]["paths"] == [
         {
             "block_index": 0,
@@ -114,6 +138,20 @@ def test_gitlink_probe_filters_only_matching_baseline_oid(monkeypatch, tmp_path:
     assert "--read-only" in command
     assert command[command.index("--network") + 1] == "none"
     assert command[-3:] == ["2" * 40, "--", "vendor/infogami"]
+
+
+def test_gitlink_probe_unsets_git_redirection_environment() -> None:
+    for name in (
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_COMMON_DIR",
+        "GIT_CEILING_DIRECTORIES",
+        "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+    ):
+        assert name in probe._PROBE_SCRIPT
 
 
 def test_gitlink_probe_rejects_forged_oid(monkeypatch, tmp_path: Path) -> None:
@@ -264,7 +302,12 @@ def test_eval_patch_selection_records_source_child_and_probe_binding(monkeypatch
             "base_commit": "2" * 40,
         },
         {"model_patch": source},
-        {"trusted": True},
+        {
+            "trusted": True,
+            "solver_git_snapshot": {
+                "removed_gitlinks": [{"path": "vendor/infogami", "old_oid": oid}]
+            },
+        },
     )
 
     assert selection["ok"] is True
@@ -288,3 +331,58 @@ def test_eval_patch_selection_records_source_child_and_probe_binding(monkeypatch
         selection["gitlink_probe"]["source_patch_sha256"]
         == selection["source_patch_sha256"]
     )
+
+
+def test_eval_patch_selection_keeps_intentional_gitlink_deletion(monkeypatch) -> None:
+    oid = "1" * 40
+    source = _gitlink_delete("vendor/intentional", oid)
+    monkeypatch.setattr(probe, "current_generation_proof_valid", lambda *args: True)
+    monkeypatch.setattr(
+        probe,
+        "ensure_image",
+        lambda image: (_ for _ in ()).throw(AssertionError("probe must not run")),
+    )
+
+    selection = probe.prepare_eval_patch_selection(
+        {"instance_id": "instance_org__repo-1", "base_commit": "2" * 40},
+        {"model_patch": source},
+        {"solver_git_snapshot": {"removed_gitlinks": []}},
+    )
+
+    assert selection["ok"] is True
+    assert selection["model_patch"] == source
+    assert selection["gitlink_probe"] is None
+    assert selection["filtered_patch_paths"] == []
+
+
+def test_legacy_gitlink_filter_requires_explicit_bound_audit(monkeypatch) -> None:
+    oid = "1" * 40
+    source = _gitlink_delete("vendor/infogami", oid)
+    source_sha = probe.patch_sha(source)
+    row = {"instance_id": "instance_org__repo-1", "base_commit": "2" * 40}
+    prediction = {"instance_id": row["instance_id"], "model_patch": source}
+    audit = {
+        "schema": probe.LEGACY_GITLINK_AUDIT_SCHEMA,
+        "audit_id": "task41-manual-audit-20260713",
+        "task": row["instance_id"],
+        "base_commit": row["base_commit"],
+        "source_patch_sha256": source_sha,
+        "removed_gitlinks": [{"path": "vendor/infogami", "old_oid": oid}],
+    }
+    monkeypatch.setattr(probe, "current_generation_proof_valid", lambda *args: False)
+
+    assert probe._trusted_removed_gitlinks(
+        row,
+        prediction,
+        {"audited_legacy_gitlink_evidence": audit},
+        source,
+        source_sha,
+    ) == {("vendor/infogami", oid)}
+    forged = {**audit, "source_patch_sha256": "3" * 64}
+    assert probe._trusted_removed_gitlinks(
+        row,
+        prediction,
+        {"audited_legacy_gitlink_evidence": forged},
+        source,
+        source_sha,
+    ) is None

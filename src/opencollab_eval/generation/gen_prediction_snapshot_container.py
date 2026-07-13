@@ -331,7 +331,7 @@ def create_solver_snapshot(
     expected_base_commit: str,
     *,
     filesystem_root: Path = Path("/"),
-) -> dict[str, str | int | bool]:
+) -> dict[str, object]:
     """Replace the source repository metadata and return machine-verifiable evidence."""
     expected_base_commit = str(expected_base_commit or "").strip().lower()
     if _OBJECT_ID_RE.fullmatch(expected_base_commit) is None:
@@ -362,6 +362,10 @@ def create_solver_snapshot(
         base_tree = _git_text(repo_root, "rev-parse", "HEAD^{tree}", env=env).lower()
         tracked_paths, tracked_entry_names, gitlinks = _tracked_index(repo_root, env=env)
         removed_git_metadata = _remove_gitlink_worktrees(repo_root, gitlinks)
+        removed_gitlinks = [
+            {"path": path, "old_oid": object_id}
+            for _mode, object_id, path in gitlinks
+        ]
 
         shutil.rmtree(git_dir)
         _run_git(repo_root, *_git_init_args(object_format), env=env)
@@ -467,6 +471,7 @@ def create_solver_snapshot(
         "remote_count": 0,
         "extra_git_metadata": 0,
         "removed_git_metadata": removed_git_metadata,
+        "removed_gitlinks": removed_gitlinks,
     }
 
 

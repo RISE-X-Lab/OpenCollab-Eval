@@ -592,6 +592,84 @@ def test_eval_summary_reuse_requires_filtered_child_patch_identity(tmp_path):
     ) is True
 
 
+def test_eval_summary_reuse_requires_exact_eval_image_identity(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    namespace["direct_eval_done_has_execution_proof"] = lambda *args, **kwargs: True
+    task = "instance_org__repo-1"
+    patch = "diff --git a/src/widget.py b/src/widget.py\n+fixed\n"
+    patch_sha = namespace["patch_sha"](patch)
+    prediction = {
+        "instance_id": task,
+        "record_id": "record-1",
+        "patch_sha256": patch_sha,
+        "model_patch": patch,
+    }
+    summary = {
+        "task": task,
+        "record_id": "record-1",
+        "patch_sha256": patch_sha,
+        "eval_patch_sha256": patch_sha,
+        "eval_image_id": "sha256:" + "a" * 64,
+    }
+
+    assert namespace["eval_summary_matches_prediction"](
+        summary,
+        prediction,
+        task,
+        expected_eval_image_id="sha256:" + "b" * 64,
+    ) is False
+    summary.pop("eval_image_id")
+    assert namespace["eval_summary_matches_prediction"](
+        summary,
+        prediction,
+        task,
+        expected_eval_image_id="sha256:" + "b" * 64,
+    ) is False
+    summary["eval_image_id"] = "sha256:" + "b" * 64
+    assert namespace["eval_summary_matches_prediction"](
+        summary,
+        prediction,
+        task,
+        expected_eval_image_id="sha256:" + "b" * 64,
+    ) is True
+
+
+def test_eval_attempt_budget_is_isolated_by_eval_image_identity(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    task = "instance_org__repo-1"
+    patch = "diff --git a/src/widget.py b/src/widget.py\n+fixed\n"
+    patch_sha = namespace["patch_sha"](patch)
+    prediction = {
+        "instance_id": task,
+        "record_id": "record-1",
+        "patch_sha256": patch_sha,
+        "model_patch": patch,
+    }
+    run_dir = namespace["base_run_dir"] / task
+    common = {
+        "phase": "eval_attempt_started",
+        "task": task,
+        "record_id": "record-1",
+        "patch_sha256": patch_sha,
+        "eval_patch_sha256": patch_sha,
+    }
+    _write_jsonl(
+        run_dir / "eval_attempts.jsonl",
+        [
+            {**common, "eval_image_id": "sha256:" + "a" * 64},
+            common,
+            {**common, "eval_image_id": "sha256:" + "b" * 64},
+        ],
+    )
+
+    assert namespace["eval_attempt_count"](
+        run_dir,
+        prediction,
+        task,
+        expected_eval_image_id="sha256:" + "b" * 64,
+    ) == 1
+
+
 def test_prolite_prediction_sha_comes_from_patch_text(tmp_path):
     namespace = _remote_namespace(tmp_path)
     task = "task-1"

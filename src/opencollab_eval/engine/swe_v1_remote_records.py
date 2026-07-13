@@ -519,7 +519,14 @@ def empty_patch_result(task, prediction, metric, pairing, **extra):
     return result
 
 
-def eval_attempt_count(run_dir, prediction, task, *, expected_eval_patch_sha256=""):
+def eval_attempt_count(
+    run_dir,
+    prediction,
+    task,
+    *,
+    expected_eval_patch_sha256="",
+    expected_eval_image_id="",
+):
     source_patch_sha256 = row_patch_sha(prediction)
     eval_patch_sha256 = str(
         expected_eval_patch_sha256 or patch_sha(eval_model_patch(prediction))
@@ -530,6 +537,10 @@ def eval_attempt_count(run_dir, prediction, task, *, expected_eval_patch_sha256=
         for item in read_jsonl(run_dir / "eval_attempts.jsonl")
         if item.get("phase") == "eval_attempt_started"
         and item.get("task") == task
+        and (
+            not expected_eval_image_id
+            or item.get("eval_image_id") == expected_eval_image_id
+        )
         and patch_sha_matches(
             str(item.get("eval_patch_sha256") or item.get("patch_sha256") or ""),
             eval_patch_sha256,

@@ -25,6 +25,7 @@ def trusted_summary_proof_fields(
         "remote_count": 0,
         "extra_git_metadata": 0,
         "removed_git_metadata": 0,
+        "removed_gitlinks": [],
     }
     extraction = {
         "schema": TRUSTED_PATCH_EXTRACTION_SCHEMA,

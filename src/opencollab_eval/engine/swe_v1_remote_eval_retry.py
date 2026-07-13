@@ -32,11 +32,17 @@ def eval_for_task_with_retries(row, eval_once):
         if patch_selection is not None
         else ""
     )
+    expected_eval_image_id = (
+        str(patch_selection.get("image_id") or "")
+        if patch_selection is not None
+        else ""
+    )
     persisted_attempts = eval_attempt_count(
         run_dir,
         prediction,
         task,
         expected_eval_patch_sha256=expected_eval_patch_sha256,
+        expected_eval_image_id=expected_eval_image_id,
     )
     if persisted_attempts >= max_eval_attempts:
         previous = load_json(run_dir / eval_dir_name / "summary.json")
@@ -47,6 +53,7 @@ def eval_for_task_with_retries(row, eval_once):
                 prediction,
                 task,
                 expected_eval_patch_sha256=expected_eval_patch_sha256,
+                expected_eval_image_id=expected_eval_image_id,
             )
             else "technical_eval_failed"
         )
@@ -74,6 +81,7 @@ def eval_for_task_with_retries(row, eval_once):
             prediction,
             task,
             expected_eval_patch_sha256=expected_eval_patch_sha256,
+            expected_eval_image_id=expected_eval_image_id,
         )
         if current_attempts >= max_eval_attempts:
             break
@@ -96,6 +104,7 @@ def eval_for_task_with_retries(row, eval_once):
         prediction,
         task,
         expected_eval_patch_sha256=expected_eval_patch_sha256,
+        expected_eval_image_id=expected_eval_image_id,
     )
     final["max_eval_attempts"] = max_eval_attempts
     if len(attempts) > 1:

@@ -263,3 +263,28 @@ def test_stop_guard_keeps_gitlink_when_baseline_oid_does_not_match(
     state = json.loads((tmp_path / "empty_patch_stop_guard.json").read_text())
     assert state["source_paths"] == ["e"]
     assert state["generated_paths"] == []
+
+
+def test_stop_guard_keeps_gitlink_absent_from_snapshot_allowlist(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    oid = "1" * 40
+    patch = (
+        "diff --git a/e b/e\n"
+        "deleted file mode 160000\n"
+        f"index {oid}..{'0' * 40}\n"
+        "--- a/e\n"
+        "+++ /dev/null\n"
+        "@@ -1 +0,0 @@\n"
+        f"-Subproject commit {oid}\n"
+    )
+    monkeypatch.setattr(guard, "_container_patch", lambda *args: patch)
+
+    result = guard.evaluate_stop(_env(tmp_path, rejections=1))
+
+    assert result == {"decision": "allow", "reason": "source_patch_present"}
+    state = json.loads((tmp_path / "empty_patch_stop_guard.json").read_text())
+    assert state["source_paths"] == ["e"]
+    assert state["generated_paths"] == []
+    assert state["gitlink_probe"]["status"] == "no_eligible_candidates"
+    assert state["gitlink_probe"]["paths"][0]["probe_status"] == "not_snapshot_removed"

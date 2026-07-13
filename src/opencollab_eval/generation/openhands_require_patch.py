@@ -68,20 +68,57 @@ def _container_patch(container_id: str, workspace: str) -> str:
     return result.stdout
 
 
-def _container_gitlink_probe(container_id: str, workspace: str, patch: str) -> dict:
-    candidates = gitlink_deletion_candidates(patch)
+def _container_gitlink_probe(
+    container_id: str,
+    workspace: str,
+    patch: str,
+    expected_removed: dict[str, str],
+) -> dict:
+    all_candidates = gitlink_deletion_candidates(patch)
+    candidates = [
+        item
+        for item in all_candidates
+        if expected_removed.get(str(item["path"])) == item["old_oid"]
+    ]
     evidence = {
         "status": "no_candidates",
         "source_patch_sha256": hashlib.sha256(patch.encode("utf-8")).hexdigest(),
-        "paths": [],
+        "paths": [
+            {
+                "path": item["path"],
+                "old_oid": item["old_oid"],
+                "base_oid": "",
+                "probe_status": "not_snapshot_removed",
+            }
+            for item in all_candidates
+            if item not in candidates
+        ],
     }
     if not candidates:
+        if all_candidates:
+            evidence["status"] = "no_eligible_candidates"
         return evidence
     command = [
         "docker",
         "exec",
         container_id,
         "env",
+        "-u",
+        "GIT_DIR",
+        "-u",
+        "GIT_WORK_TREE",
+        "-u",
+        "GIT_INDEX_FILE",
+        "-u",
+        "GIT_OBJECT_DIRECTORY",
+        "-u",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "-u",
+        "GIT_COMMON_DIR",
+        "-u",
+        "GIT_CEILING_DIRECTORIES",
+        "-u",
+        "GIT_DISCOVERY_ACROSS_FILESYSTEM",
         "GIT_CONFIG_NOSYSTEM=1",
         "GIT_CONFIG_GLOBAL=/dev/null",
         "GIT_NO_REPLACE_OBJECTS=1",
@@ -128,13 +165,45 @@ def _container_gitlink_probe(container_id: str, workspace: str, patch: str) -> d
                 "probe_status": status,
             }
         )
+    eligible_paths = {str(item["path"]) for item in candidates}
+    eligible_evidence = [
+        item for item in evidence["paths"] if str(item["path"]) in eligible_paths
+    ]
     evidence["status"] = (
         "verified"
-        if evidence["paths"]
-        and all(item["probe_status"] == "verified" for item in evidence["paths"])
+        if len(eligible_evidence) == len(candidates)
+        and all(item["probe_status"] == "verified" for item in eligible_evidence)
         else "baseline_mismatch"
     )
     return evidence
+
+
+def _expected_removed_gitlinks(values: Mapping[str, str]) -> dict[str, str]:
+    raw = str(values.get("OPENHANDS_REMOVED_GITLINKS_JSON") or "[]")
+    if len(raw.encode("utf-8")) > 256 * 1024:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(parsed, list) or len(parsed) > 1024:
+        return {}
+    result: dict[str, str] = {}
+    for item in parsed:
+        if (
+            not isinstance(item, dict)
+            or set(item) != {"path", "old_oid"}
+            or not isinstance(item.get("path"), str)
+            or not item["path"]
+            or "\x00" in item["path"]
+            or not isinstance(item.get("old_oid"), str)
+            or len(item["old_oid"]) not in {40, 64}
+            or any(char not in "0123456789abcdef" for char in item["old_oid"])
+            or item["path"] in result
+        ):
+            return {}
+        result[item["path"]] = item["old_oid"]
+    return result
 
 
 def _source_paths(
@@ -177,7 +246,12 @@ def evaluate_stop(env: Mapping[str, str] | None = None) -> dict:
             "reason": "patch_guard_error",
             "additionalContext": str(exc),
         }
-    gitlink_probe = _container_gitlink_probe(container_id, workspace, patch)
+    gitlink_probe = _container_gitlink_probe(
+        container_id,
+        workspace,
+        patch,
+        _expected_removed_gitlinks(values),
+    )
     verified_gitlinks = {
         str(item["path"])
         for item in gitlink_probe["paths"]

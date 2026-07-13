@@ -464,6 +464,7 @@ def eval_summary_matches_prediction(
     f2p_plan=None,
     p2p_plan=None,
     expected_eval_patch_sha256="",
+    expected_eval_image_id="",
 ):
     if not isinstance(summary, dict) or not direct_eval_done_has_execution_proof(
         summary,
@@ -475,6 +476,8 @@ def eval_summary_matches_prediction(
     if not eval_model_patch(prediction).strip():
         return False
     if summary.get("task") != task:
+        return False
+    if expected_eval_image_id and summary.get("eval_image_id") != expected_eval_image_id:
         return False
     current_sha = row_patch_sha(prediction)
     previous_sha = str(summary.get("patch_sha256") or "")
