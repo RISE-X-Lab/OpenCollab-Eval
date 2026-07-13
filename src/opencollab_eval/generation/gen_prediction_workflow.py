@@ -48,6 +48,9 @@ from opencollab_eval.engine.swe_generation_proof import (  # noqa: E402
     current_generation_proof_valid,
 )
 from opencollab_eval.engine.test_injection import _decode_git_c_path  # noqa: E402
+from opencollab_eval.patch_paths import (  # noqa: E402
+    is_generated_python_bytecode_path,
+)
 
 from . import gen_prediction as gp  # noqa: E402 — shared container plumbing
 from .container_quiescence import require_container_quiescence  # noqa: E402
@@ -364,6 +367,51 @@ def _patch_paths_to_remove(
     return list(remove)
 
 
+def _remove_generated_bytecode_blocks(
+    patch: str,
+    paths: set[str],
+) -> tuple[str, list[str]]:
+    normalized_paths = {_normalize_patch_path(path) for path in paths}
+    if not normalized_paths:
+        return patch, []
+    blocks: list[list[str]] = []
+    current: list[str] = []
+    for line in patch.splitlines(keepends=True):
+        if line.startswith("diff --git ") and current:
+            blocks.append(current)
+            current = [line]
+        else:
+            current.append(line)
+    if current:
+        blocks.append(current)
+
+    kept: list[str] = []
+    removed: dict[str, None] = {}
+    for lines in blocks:
+        block = "".join(lines)
+        entries = _patch_entries(block)
+        if len(entries) != 1:
+            raise RuntimeError("trusted patch block could not be classified safely")
+        endpoints = [path for path in entries[0] if path]
+        intersects = any(path in normalized_paths for path in endpoints)
+        if not intersects:
+            kept.extend(lines)
+            continue
+        if any(
+            path not in normalized_paths
+            or not is_generated_python_bytecode_path(path)
+            for path in endpoints
+        ):
+            raise RuntimeError(
+                "trusted patch bytecode filtering encountered a mixed-path entry"
+            )
+        for path in endpoints:
+            removed.setdefault(path, None)
+    if set(removed) != normalized_paths:
+        raise RuntimeError("trusted patch bytecode filtering was incomplete")
+    return "".join(kept), list(removed)
+
+
 def extract_patch_guarded(
     cid: str,
     trusted_baseline,
@@ -382,9 +430,25 @@ def extract_patch_guarded(
     )
     if not violations:
         return patch, [], extraction.as_dict()
+    generated_bytecode = {
+        path for path in violations if is_generated_python_bytecode_path(path)
+    }
+    remaining_violations = {
+        path for path in violations if path not in generated_bytecode
+    }
+    if not remaining_violations:
+        filtered_patch, removed = _remove_generated_bytecode_blocks(
+            patch,
+            generated_bytecode,
+        )
+        proof = extraction.as_dict()
+        encoded = filtered_patch.encode("utf-8", errors="surrogatepass")
+        proof["patch_sha256"] = hashlib.sha256(encoded).hexdigest()
+        proof["patch_bytes"] = len(encoded)
+        return filtered_patch, removed, proof
     raise RuntimeError(
         "trusted host patch contains disallowed paths: "
-        + ", ".join(sorted(set(violations)))
+        + ", ".join(sorted(remaining_violations))
     )
 
 
