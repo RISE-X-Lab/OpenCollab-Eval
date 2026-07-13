@@ -119,6 +119,7 @@ def test_supervisor_timeout_cleans_setsid_escape_before_return(
     tmp_path: Path,
 ) -> None:
     sentinel = tmp_path / "timeout-setsid-leak"
+    escaped_pid = tmp_path / "timeout-setsid-pid"
     code = textwrap.dedent(
         f"""
         import os
@@ -127,6 +128,7 @@ def test_supervisor_timeout_cleans_setsid_escape_before_return(
         import time
 
         if os.fork():
+            time.sleep(2.0)
             os._exit(0)
         os.setsid()
         if os.fork():
@@ -134,7 +136,8 @@ def test_supervisor_timeout_cleans_setsid_escape_before_return(
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
         os.close(1)
         os.close(2)
-        time.sleep(0.4)
+        pathlib.Path({str(escaped_pid)!r}).write_text(str(os.getpid()))
+        time.sleep(2.0)
         pathlib.Path({str(sentinel)!r}).write_text("leaked")
         os._exit(0)
         """
@@ -146,7 +149,7 @@ def test_supervisor_timeout_cleans_setsid_escape_before_return(
             "-m",
             _SUPERVISOR_MODULE,
             "--timeout-seconds",
-            "0.05",
+            "1.0",
             "--",
             sys.executable,
             "-c",
@@ -159,7 +162,8 @@ def test_supervisor_timeout_cleans_setsid_escape_before_return(
     )
 
     assert result.returncode == 124, result.stderr
-    time.sleep(0.5)
+    assert escaped_pid.exists()
+    assert not Path(f"/proc/{escaped_pid.read_text()}").exists()
     assert not sentinel.exists()
 
 

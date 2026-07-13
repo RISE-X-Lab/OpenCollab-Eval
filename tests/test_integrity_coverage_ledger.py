@@ -157,11 +157,21 @@ def test_integrity_coverage_nodeids_execute_successfully() -> None:
 
 
 def test_platform_specific_integrity_controls_have_ci_probes() -> None:
-    workflow = (_eval_root() / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    h68_nodeid = _load()["H-68"]["nodeid"]
-    assert workflow.count("repository: YihongDong/OpenCollab") == 2
-    assert "KaiEureka/OpenCollab" not in workflow
-    assert "runs-on: macos-latest" in workflow
-    assert h68_nodeid in workflow
-    assert '--junitxml="$RUNNER_TEMP/h68.xml"' in workflow
-    assert '"skipped": 0' in workflow
+    eval_workflow = (_eval_root() / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
+    opencollab_root, _pytest_root = _roots()["OpenCollab"]
+    owner_workflow = (opencollab_root / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
+    h68 = _load()["H-68"]
+
+    assert h68["owner"] == "OpenCollab"
+    assert eval_workflow.count("repository: YihongDong/OpenCollab") == 1
+    assert "KaiEureka/OpenCollab" not in eval_workflow
+    assert "runs-on: macos-latest" not in eval_workflow
+    assert h68["nodeid"] not in eval_workflow
+    assert "runs-on: macos-latest" in owner_workflow
+    assert h68["nodeid"] in owner_workflow
+    assert '--junitxml="$RUNNER_TEMP/h68.xml"' in owner_workflow
+    assert '"skipped": 0' in owner_workflow

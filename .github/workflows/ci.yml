@@ -41,6 +41,7 @@ jobs:
           repository: YihongDong/OpenCollab
           ref: 7ea0ea6903db5c743e89dbbccb8a164ad8397c36
           token: ${{ secrets.OPENCOLLAB_READ_TOKEN }}
+          persist-credentials: false
           path: opencollab-source
 
       - name: Set up Python
