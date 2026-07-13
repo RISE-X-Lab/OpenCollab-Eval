@@ -101,6 +101,58 @@ def _pytest_structured_failure_proof_matches(targets, proof_text):
     )
 
 
+def _pytest_collection_failure_proof_matches(
+    targets,
+    proof_text,
+    log_text,
+    expected_command,
+    observed_command,
+):
+    if not expected_command or expected_command != observed_command:
+        return False
+    try:
+        events = [json.loads(line) for line in proof_text.splitlines() if line.strip()]
+    except json.JSONDecodeError:
+        return False
+    if (
+        len(events) != 3
+        or any(not isinstance(event, dict) for event in events)
+        or [event.get("event") for event in events]
+        != ["session_start", "collection_finish", "session_finish"]
+        or events[1].get("nodeids") != []
+        or isinstance(events[2].get("exitstatus"), bool)
+        or not isinstance(events[2].get("exitstatus"), int)
+        or events[2]["exitstatus"] == 0
+    ):
+        return False
+    target_files = []
+    for target in targets:
+        path = target.split("::", 1)[0].replace("\\", "/").removeprefix("./")
+        pure = pathlib.PurePosixPath(path)
+        if (
+            not path.endswith(".py")
+            or pure.is_absolute()
+            or ".." in pure.parts
+            or "\x00" in path
+        ):
+            return False
+        target_files.append(path)
+    if len(set(target_files)) != 1:
+        return False
+    expected_file = target_files[0]
+    collected_paths = re.findall(
+        r"(?m)^\s*_*\s*ERROR collecting (\S+?)(?:\s+_+)?\s*$",
+        str(log_text or ""),
+    )
+    if not collected_paths or any(
+        path.replace("\\", "/").removeprefix("./") != expected_file
+        and not path.replace("\\", "/").endswith("/" + expected_file)
+        for path in collected_paths
+    ):
+        return False
+    return re.search(r"\b(?:ImportError|ModuleNotFoundError)\b", str(log_text or "")) is not None
+
+
 def _plan_log_proof_matches(proof, log_text, proof_text=""):
     """Require positive per-target evidence from a completed test command."""
     if not proof:
@@ -147,7 +199,16 @@ def _plan_log_failure_proof_matches(
             isinstance(targets, list)
             and targets
             and all(isinstance(target, str) and target for target in targets)
-            and _pytest_structured_failure_proof_matches(targets, proof_text)
+            and (
+                _pytest_structured_failure_proof_matches(targets, proof_text)
+                or _pytest_collection_failure_proof_matches(
+                    targets,
+                    proof_text,
+                    log_text,
+                    expected_command,
+                    observed_command,
+                )
+            )
         )
     if proof.get("kind") == "js_parser_backed_targets":
         targets = proof.get("targets")
@@ -694,8 +755,13 @@ def pytest_runtest_logreport(report):
 def pytest_sessionfinish(session, exitstatus):
     global _fd
     _emit({"event": "session_finish", "exitstatus": exitstatus})
-    os.close(_fd)
-    _fd = None
+    try:
+        os.fchmod(_fd, 0o644)
+    finally:
+        try:
+            os.close(_fd)
+        finally:
+            _fd = None
 '''
 
 

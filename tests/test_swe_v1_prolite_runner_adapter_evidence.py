@@ -262,6 +262,62 @@ def test_prolite_go_dynamic_build_failure_requires_unique_discovery_binding(tmp_
     assert namespace["_plan_log_failure_proof_matches"](proof, duplicate) is False
 
 
+def test_prolite_go_mixed_plain_build_failure_binds_command_package_and_file(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    package = "example.org/project/internal/api"
+    marker = "OPENCOLLAB_GO_TARGET_DISCOVERY " + json.dumps(
+        {
+            "package": "./internal/api",
+            "tests": ["TestWidget"],
+            "test_files": ["internal/api/widget_test.go"],
+        },
+        sort_keys=True,
+    )
+    events = "".join(
+        json.dumps(event) + "\n"
+        for event in (
+            {"Action": "start", "Package": package},
+            {
+                "Action": "output",
+                "Package": package,
+                "Output": f"FAIL\t{package} [build failed]\n",
+            },
+            {"Action": "fail", "Package": package},
+        )
+    )
+    log = (
+        marker
+        + "\ninternal/api/widget_test.go:42:7: undefined: missingSymbol\n"
+        + events
+    )
+    proof = {
+        "kind": "go_json_test_pass",
+        "tests": ["TestWidget"],
+        "dynamic_discovery": True,
+    }
+    command = "exact dynamic Go command"
+
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof, log, "", command, command
+    ) is True
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof, log, "", command, command + " changed"
+    ) is False
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        log.replace("internal/api/widget_test.go:42:7", "internal/api/other_test.go:42:7"),
+        "",
+        command,
+        command,
+    ) is False
+    extra_failure = log + json.dumps(
+        {"Action": "fail", "Package": "example.org/project/other"}
+    )
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof, extra_failure, "", command, command
+    ) is False
+
+
 def _go_dynamic_two_package_log(*, action: str, swap_packages: bool) -> str:
     markers = [
         {
@@ -655,6 +711,149 @@ def test_prolite_pytest_proof_rejects_forged_pass_line_and_summary(tmp_path):
     structured = _pytest_proof_text([target])
     assert namespace["_plan_log_proof_matches"](proof, forged_failure, structured) is False
     assert namespace["_plan_log_proof_matches"](proof, forged_empty, structured) is False
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_status"),
+    [
+        ("def test_target():\n    assert True\n", 0),
+        ("def test_target():\n    assert False\n", 1),
+        ("import opencollab_missing_production_module\n", 4),
+    ],
+)
+def test_prolite_pytest_proof_is_host_readable_after_session_finish(
+    tmp_path,
+    source,
+    expected_status,
+):
+    namespace = _remote_namespace(tmp_path)
+    (tmp_path / "test_target.py").write_text(source, encoding="utf-8")
+    plugin_dir = tmp_path / "proof-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "opencollab_pytest_proof.py").write_text(
+        namespace["prolite_pytest_proof_plugin_source"](),
+        encoding="utf-8",
+    )
+    proof_path = tmp_path / "proof.jsonl"
+
+    result = subprocess.run(
+        [
+            str(Path(sys.executable).with_name("pytest")),
+            "-p",
+            "opencollab_pytest_proof",
+            "-q",
+            "-o",
+            "addopts=",
+            "test_target.py::test_target",
+        ],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PYTHONPATH": str(plugin_dir),
+            "OPENCOLLAB_PYTEST_PROOF_PATH": str(proof_path),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == expected_status
+    assert proof_path.stat().st_mode & 0o777 == 0o644
+    events = [json.loads(line) for line in proof_path.read_text(encoding="utf-8").splitlines()]
+    assert events[-1] == {"event": "session_finish", "exitstatus": expected_status}
+
+
+@pytest.mark.parametrize("existing_kind", ["regular", "symlink"])
+def test_prolite_pytest_proof_keeps_exclusive_nofollow_creation(
+    tmp_path,
+    monkeypatch,
+    existing_kind,
+):
+    namespace = _remote_namespace(tmp_path)
+    source = namespace["prolite_pytest_proof_plugin_source"]()
+    victim = tmp_path / "victim.jsonl"
+    victim.write_text("sentinel\n", encoding="utf-8")
+    proof_path = tmp_path / "proof.jsonl"
+    if existing_kind == "regular":
+        proof_path.write_text("existing\n", encoding="utf-8")
+    else:
+        proof_path.symlink_to(victim)
+    monkeypatch.setenv("OPENCOLLAB_PYTEST_PROOF_PATH", str(proof_path))
+    plugin = {}
+    exec(source, plugin)
+
+    with pytest.raises(OSError):
+        plugin["pytest_sessionstart"](None)
+
+    assert victim.read_text(encoding="utf-8") == "sentinel\n"
+    if existing_kind == "regular":
+        assert proof_path.read_text(encoding="utf-8") == "existing\n"
+
+
+def test_prolite_pytest_proof_remains_private_before_session_finish(
+    tmp_path,
+    monkeypatch,
+):
+    namespace = _remote_namespace(tmp_path)
+    proof_path = tmp_path / "proof.jsonl"
+    monkeypatch.setenv("OPENCOLLAB_PYTEST_PROOF_PATH", str(proof_path))
+    plugin = {}
+    exec(namespace["prolite_pytest_proof_plugin_source"](), plugin)
+
+    plugin["pytest_sessionstart"](None)
+
+    assert proof_path.stat().st_mode & 0o777 == 0o600
+    assert namespace["_plan_log_proof_matches"](
+        {"kind": "pytest_structured_reports", "targets": ["test_target.py::test_target"]},
+        "",
+        proof_path.read_text(encoding="utf-8"),
+    ) is False
+    os.close(plugin["_fd"])
+
+
+def test_prolite_pytest_collection_import_failure_is_exact_semantic_failure(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    proof = {
+        "kind": "pytest_structured_reports",
+        "targets": ["tests/test_target.py::test_target"],
+    }
+    proof_text = _pytest_proof_text([], exitstatus=4)
+    command = (
+        "pytest -p opencollab_pytest_proof -q -rA -o addopts= "
+        "tests/test_target.py::test_target"
+    )
+    valid_log = (
+        "ERROR collecting tests/test_target.py\n"
+        "E   ModuleNotFoundError: No module named 'production'\n"
+    )
+
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        valid_log,
+        proof_text,
+        command,
+        command,
+    ) is True
+    invalid_logs = (
+        "no tests ran in 0.01s\n",
+        "ERROR collecting tests/test_target.py::wrong\nE   ModuleNotFoundError: missing\n",
+        "ERROR collecting tests/test_other.py\nE   ImportError: missing\n",
+    )
+    for log in invalid_logs:
+        assert namespace["_plan_log_failure_proof_matches"](
+            proof,
+            log,
+            proof_text,
+            command,
+            command,
+        ) is False
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        valid_log,
+        proof_text,
+        command,
+        command + " # changed",
+    ) is False
 
 
 def test_prolite_model_patch_filters_pytest_conftest_changes(tmp_path):

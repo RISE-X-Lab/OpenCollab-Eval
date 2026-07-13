@@ -12,6 +12,10 @@ _TEST_DIAGNOSTIC_RE = re.compile(
     r"(?m)(?P<path>(?:[A-Za-z]:)?[^:\r\n]*?[^/\\:\r\n]+_test\.go):"
     r"[0-9]+(?::[0-9]+)?:"
 )
+_PLAIN_TEST_DIAGNOSTIC_RE = re.compile(
+    r"(?P<path>(?:[A-Za-z]:)?[^:\r\n]*?[^/\\:\r\n]+_test\.go):"
+    r"[0-9]+(?::[0-9]+)?:[^\r\n]+\Z"
+)
 
 
 def _declared_tests(proof: dict[str, Any]) -> list[str]:
@@ -27,9 +31,12 @@ def _declared_tests(proof: dict[str, Any]) -> list[str]:
     return values
 
 
-def _parse_go_log(log_text: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]] | None:
+def _parse_go_log(
+    log_text: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]] | None:
     events: list[dict[str, Any]] = []
     discoveries: list[dict[str, Any]] = []
+    plain_diagnostics: list[str] = []
     for raw_line in str(log_text or "").splitlines():
         line = raw_line.strip()
         if not line:
@@ -47,11 +54,15 @@ def _parse_go_log(log_text: str) -> tuple[list[dict[str, Any]], list[dict[str, A
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
-            return None
+            diagnostic = _PLAIN_TEST_DIAGNOSTIC_RE.fullmatch(line)
+            if diagnostic is None:
+                return None
+            plain_diagnostics.append(diagnostic.group("path"))
+            continue
         if not isinstance(event, dict):
             return None
         events.append(event)
-    return events, discoveries
+    return events, discoveries, plain_diagnostics
 
 
 def _package_matches(declared: str, observed: str) -> bool:
@@ -209,7 +220,9 @@ def go_pass_proof_matches(proof: dict[str, Any], log_text: str) -> bool:
     parsed = _parse_go_log(log_text)
     if not declared_tests or parsed is None:
         return False
-    events, discoveries = parsed
+    events, discoveries, plain_diagnostics = parsed
+    if plain_diagnostics:
+        return False
     if proof.get("dynamic_discovery") is True:
         bindings = _dynamic_bindings(discoveries, declared_tests)
         if (
@@ -245,7 +258,7 @@ def go_failure_proof_matches(
     parsed = _parse_go_log(log_text)
     if not declared_tests or parsed is None:
         return False
-    events, discoveries = parsed
+    events, discoveries, plain_diagnostics = parsed
     expected = set(declared_tests)
     exact_failures = [
         event
@@ -253,6 +266,8 @@ def go_failure_proof_matches(
         if event.get("Action") == "fail" and event.get("Test") in expected
     ]
     if exact_failures:
+        if plain_diagnostics:
+            return False
         if proof.get("dynamic_discovery") is not True:
             if discoveries:
                 return False
@@ -295,6 +310,12 @@ def go_failure_proof_matches(
         for event in events
         if event.get("Action") == "fail" and event.get("Package")
     }
+    if plain_diagnostics and (
+        not expected_command
+        or expected_command != observed_command
+        or len(failed_packages) != 1
+    ):
+        return False
     if legacy_dynamic and len(failed_packages) != 1:
         return False
     for failed_package in failed_packages:
@@ -305,20 +326,26 @@ def go_failure_proof_matches(
         )
         if "[build failed]" not in package_output:
             continue
-        build_output = _build_output_for_package(events, failed_package)
-        build_failed = any(
-            event.get("Action") == "build-fail"
-            and _package_matches(
-                failed_package,
-                str(event.get("ImportPath") or "").split(" [", 1)[0],
+        if plain_diagnostics:
+            diagnostics = plain_diagnostics
+        else:
+            build_output = _build_output_for_package(events, failed_package)
+            build_failed = any(
+                event.get("Action") == "build-fail"
+                and _package_matches(
+                    failed_package,
+                    str(event.get("ImportPath") or "").split(" [", 1)[0],
+                )
+                for event in events
             )
-            for event in events
-        )
-        if not build_failed:
-            continue
-        diagnostics = [match.group("path") for match in _TEST_DIAGNOSTIC_RE.finditer(build_output)]
+            if not build_failed:
+                continue
+            diagnostics = [
+                match.group("path")
+                for match in _TEST_DIAGNOSTIC_RE.finditer(build_output)
+            ]
         if legacy_dynamic:
-            if diagnostics:
+            if diagnostics and not plain_diagnostics:
                 return True
             continue
         for binding in bindings:
