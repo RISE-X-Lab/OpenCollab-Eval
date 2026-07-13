@@ -58,8 +58,8 @@ class PublicTask:
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not self.task_id.startswith("solver-"):
-            raise ValueError("public task_id must be anonymous")
+        if re.fullmatch(r"solver-[0-9a-f]{32}", self.task_id) is None:
+            raise ValueError("public task_id must be an anonymous digest")
         if not self.repo.strip() or not self.problem_statement.strip():
             raise ValueError("public task requires repo and problem statement")
         object.__setattr__(self, "hints", tuple(str(item) for item in self.hints))
@@ -104,7 +104,9 @@ class SolverBudget:
 
     def __post_init__(self) -> None:
         if self.max_tokens is not None and (
-            isinstance(self.max_tokens, bool) or self.max_tokens <= 0
+            isinstance(self.max_tokens, bool)
+            or not isinstance(self.max_tokens, int)
+            or self.max_tokens <= 0
         ):
             raise ValueError("max_tokens must be a positive integer")
         if self.timeout_seconds is not None and (
@@ -113,7 +115,11 @@ class SolverBudget:
             or self.timeout_seconds <= 0
         ):
             raise ValueError("timeout_seconds must be positive and finite")
-        if isinstance(self.max_concurrency, bool) or self.max_concurrency <= 0:
+        if (
+            isinstance(self.max_concurrency, bool)
+            or not isinstance(self.max_concurrency, int)
+            or self.max_concurrency <= 0
+        ):
             raise ValueError("max_concurrency must be a positive integer")
 
 
@@ -128,4 +134,3 @@ class SolverRun:
     session_count: int
     artifact_dir: Path
     sdk_api_version: int
-

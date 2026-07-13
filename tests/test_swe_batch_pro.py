@@ -41,6 +41,13 @@ def test_public_metadata_rejects_sealed_fields() -> None:
         task_from_row(row)
 
 
+def test_public_metadata_rejects_sealed_values_under_innocent_keys() -> None:
+    row = _row()
+    row["solver_public_metadata"] = {"note": "Use secret-base as the starting point"}
+    with pytest.raises(ValueError, match="sealed task information"):
+        task_from_row(row)
+
+
 def test_dataset_loader_rejects_symlinks_and_reads_objects(tmp_path) -> None:
     dataset = tmp_path / "tasks.jsonl"
     dataset.write_text(json.dumps(_row()) + "\n", encoding="utf-8")
@@ -50,4 +57,3 @@ def test_dataset_loader_rejects_symlinks_and_reads_objects(tmp_path) -> None:
     symlink.symlink_to(dataset)
     with pytest.raises(OSError):
         load_jsonl_dataset(symlink)
-
