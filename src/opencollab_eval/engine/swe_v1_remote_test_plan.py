@@ -205,54 +205,10 @@ def prolite_test_plan(
         not language and any("::" in item or item.endswith(".py") for item in tests)
     )
     if python_targets:
-        tests = compact_python_test_targets(
-            tests,
-            selected,
-            max_args=max_args,
-            max_chars=max_chars,
-        )
-        target_batches, execution_batches, fallback_batches = python_parameter_fallback_batches(
-            tests,
-            max_args=max_args,
-            max_chars=max_chars,
-        )
-        pytest_prefix = "pytest -p opencollab_pytest_proof -q -rA -o addopts= "
-        if repo == "qutebrowser/qutebrowser":
-            pytest_prefix = (
-                "xvfb-run -a python -m pytest --no-xvfb "
-                "-p opencollab_pytest_proof -q -rA -o addopts= "
-            )
-        commands = [
-            pytest_prefix + " ".join(shlex.quote(item) for item in batch)
-            for batch in execution_batches
-        ]
-        proofs = []
-        for batch, fallback_parents in zip(target_batches, fallback_batches, strict=True):
-            proof = {
-                "kind": "pytest_structured_reports",
-                "targets": list(batch),
-            }
-            if fallback_parents:
-                proof["parameter_fallback_parents"] = fallback_parents
-            if candidate_source_paths:
-                proof["candidate_source_paths"] = list(candidate_source_paths)
-            target_imports = _python_test_patch_import_bindings(row, batch)
-            if target_imports:
-                proof["repo"] = repo
-                proof["target_imports"] = target_imports
-            proofs.append(proof)
-        return _test_plan(
-            "pytest",
-            tests,
-            target_batches,
-            commands,
-            (
-                "parameter_parent_targets"
-                if any(fallback_batches)
-                else "exact_targets"
-            ),
-            proofs=proofs,
-        )
+        # Candidate code and Pytest reporting hooks share one interpreter.
+        # An external result boundary is required before Python targets can
+        # produce executable pass evidence.
+        return _unsupported_test_plan(tests)
     if language == "go" or repo.endswith("/vuls") or repo.endswith("/teleport") or repo.endswith("/navidrome"):
         specs = [go_exact_test_spec(item) for item in tests]
         if any(spec is None for spec in specs):
@@ -352,32 +308,18 @@ def prolite_test_plan_script(plan, evidence_prefix, proof_nonce="proof"):
         raise ValueError("invalid test evidence prefix")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", str(proof_nonce)):
         raise ValueError("invalid pytest proof nonce")
+    if plan.get("adapter") == "pytest" or any(
+        isinstance(proof, dict) and proof.get("kind") == "pytest_structured_reports"
+        for proof in plan.get("proofs") or []
+    ):
+        return "#!/usr/bin/env bash\necho 'in-process Pytest evidence is unsupported' >&2\nexit 86\n"
     lines = ["#!/usr/bin/env bash", "set +e", "overall_status=0"]
     for index, command in enumerate(plan.get("commands") or [], 1):
         stem = f"/eval_output/{evidence_prefix}.batch_{index:03d}"
-        proofs = plan.get("proofs") or []
-        proof = proofs[index - 1] if index <= len(proofs) else None
-        execution_command = command
-        if isinstance(proof, dict) and proof.get("kind") == "pytest_structured_reports":
-            proof_path = f"{stem}.proof.{proof_nonce}.jsonl"
-            worker_argv = shlex.split(command)
-            command_sha256 = hashlib.sha256("\0".join(worker_argv).encode("utf-8")).hexdigest()
-            execution_command = shlex.join(
-                [
-                    "python3",
-                    "/eval_input/opencollab_pytest_controller.py",
-                    "--proof-output",
-                    proof_path,
-                    "--command-sha256",
-                    command_sha256,
-                    "--",
-                    *worker_argv,
-                ]
-            )
         lines.extend(
             [
                 f"printf '%s\\n' {shlex.quote(command)} > {stem}.command",
-                f"bash -c {shlex.quote(execution_command)} > {stem}.log 2>&1",
+                f"bash -c {shlex.quote(command)} > {stem}.log 2>&1",
                 "batch_status=$?",
                 f"printf '%s\\n' \"$batch_status\" > {stem}.exit",
                 f"cat {stem}.log",

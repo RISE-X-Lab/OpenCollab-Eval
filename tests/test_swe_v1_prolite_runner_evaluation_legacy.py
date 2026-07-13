@@ -35,8 +35,8 @@ def test_remote_runner_eval_only_uses_existing_patch_without_starting_generation
             {
                 "instance_id": task,
                 "dockerhub_tag": "fake.image",
-                "repo_language": "python",
-                "fail_to_pass": ["tests/test_feature.py::test_feature"],
+                "repo_language": "go",
+                "fail_to_pass": ["pkg/feature_test.go::TestFeature"],
             }
         )
         + "\n",
@@ -63,19 +63,6 @@ def test_remote_runner_eval_only_uses_existing_patch_without_starting_generation
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     docker = fake_bin / "docker"
-    target = "tests/test_feature.py::test_feature"
-    proof_events = [{"event": "session_start"}, {"event": "collection_finish", "nodeids": [target]}]
-    proof_events.extend(
-        {
-            "event": "runtest_logreport",
-            "nodeid": target,
-            "when": phase,
-            "outcome": "passed",
-        }
-        for phase in ("setup", "call", "teardown")
-    )
-    proof_events.append({"event": "session_finish", "exitstatus": 0})
-    proof_text = controller_proof_text(proof_events, returncode=0)
     docker.write_text(
         "#!/usr/bin/env bash\n"
         "set -eu\n"
@@ -88,11 +75,9 @@ def test_remote_runner_eval_only_uses_existing_patch_without_starting_generation
         "  for name in base_commit before_repo post_before_base service_bootstrap model_patch test_patch f2p p2p; do "
         "echo 0 > \"$output/$name.exit\"; done\n"
         "  echo 0 > \"$output/f2p.batch_001.exit\"\n"
-        "  echo 'pytest -p opencollab_pytest_proof -q -rA -o addopts= tests/test_feature.py::test_feature' > \"$output/f2p.batch_001.command\"\n"
-        "  : > \"$output/f2p.batch_001.log\"\n"
-        "  nonce=$(cat \"$input/proof.nonce\")\n"
-        "  proof=\"$output/f2p.batch_001.proof.$nonce.jsonl\"\n"
-        f"  printf %s {shlex.quote(proof_text)} > \"$proof\"\n"
+        "  echo \"go test -count=1 -json ./pkg -run '^TestFeature$'\" > \"$output/f2p.batch_001.command\"\n"
+        "  echo '{\"Action\":\"run\",\"Package\":\"example.org/project/pkg\",\"Test\":\"TestFeature\"}' > \"$output/f2p.batch_001.log\"\n"
+        "  echo '{\"Action\":\"pass\",\"Package\":\"example.org/project/pkg\",\"Test\":\"TestFeature\"}' >> \"$output/f2p.batch_001.log\"\n"
         "  exit 0\n"
         "fi\n"
         "exit 99\n",
@@ -135,7 +120,7 @@ def test_remote_runner_eval_only_uses_existing_patch_without_starting_generation
         env=env,
     )
 
-    assert proc.returncode == 0, proc.stderr
+    assert proc.returncode == 0, proc.stdout + proc.stderr
     summary = json.loads(proc.stdout)
     assert summary["eval_only"] is True
     assert summary["eval_dir_name"] == "official_eval_fresh"
@@ -161,8 +146,8 @@ def test_remote_runner_persists_eval_attempt_cap_across_resume(tmp_path):
             {
                 "instance_id": task,
                 "dockerhub_tag": "fake.image",
-                "repo_language": "python",
-                "fail_to_pass": ["tests/test_feature.py::test_feature"],
+                "repo_language": "go",
+                "fail_to_pass": ["pkg/feature_test.go::TestFeature"],
             }
         )
         + "\n",
@@ -280,8 +265,8 @@ def test_remote_runner_retries_blocked_eval_image_once_and_caps_configured_attem
             {
                 "instance_id": task,
                 "dockerhub_tag": "missing.image",
-                "repo_language": "python",
-                "fail_to_pass": ["tests/test_feature.py::test_feature"],
+                "repo_language": "go",
+                "fail_to_pass": ["pkg/feature_test.go::TestFeature"],
             }
         )
         + "\n",

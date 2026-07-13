@@ -36,7 +36,9 @@ manifest write fails.
 ## Fact report contract
 
 The required `--dataset-file` is the trusted, bounded Pro-Lite JSON or JSONL
-source. Its exact byte hash, ordered 100-task census, and every task's
+source. Its bytes must match the recorded Pro-Lite 1-100 snapshot SHA-256
+`a1d473cb415ec0050eee023f373cdf71183436351216240f3f88c820a200c078`.
+Its ordered 100-task census and every task's
 `FAIL_TO_PASS` and `PASS_TO_PASS` targets are loaded before either method
 report. Both fact reports must map indices 1 through 100 to those same task
 identities. Both audit manifests must declare the exact computed dataset
@@ -45,6 +47,14 @@ image identity used for evaluation, and its two declared target lists must
 exactly match the trusted dataset row before command evidence can establish a
 terminal verdict. The dataset path and hash are recorded in the comparison
 model and publication manifest.
+
+Plans are independently derived from the trusted dataset row. Adapter,
+coverage mode, target batches, commands, and proof bindings must equal that
+derived plan. Python rows currently derive an unsupported plan because an
+in-process Pytest plugin shares the candidate interpreter. Such rows remain a
+technical failure until an external result boundary supplies independent
+execution evidence; stored exit codes or plugin events cannot make them
+publishable.
 
 Each fact report uses schema
 `opencollab.swe_eval_layer_final_report.v1`. It must contain the exact ordered

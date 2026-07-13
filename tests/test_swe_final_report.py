@@ -24,8 +24,18 @@ from swe_final_report_test_support import (
 )
 
 from opencollab_eval.commands import swe_final_report
+from opencollab_eval.commands import swe_final_report_dataset as final_report_dataset
 from opencollab_eval.commands import swe_final_report_model as final_report_model
 from opencollab_eval.commands.swe_final_report_model import FinalReportInputError
+
+
+@pytest.fixture(autouse=True)
+def _trust_synthetic_dataset(monkeypatch):
+    monkeypatch.setattr(
+        final_report_dataset,
+        "_trusted_dataset_sha256",
+        lambda raw: hashlib.sha256(raw).hexdigest(),
+    )
 
 
 def test_final_report_publishes_all_formats_from_one_model(tmp_path, monkeypatch):
@@ -417,6 +427,22 @@ def test_final_report_binds_declared_targets_to_the_trusted_dataset(tmp_path, mo
         swe_final_report.run_from_args(args)
 
 
+@pytest.mark.parametrize("field", ["commands", "proofs"])
+def test_final_report_rederives_the_complete_test_plan_from_the_dataset(tmp_path, monkeypatch, field):
+    args = _args(tmp_path)
+    _mutate_official_report(
+        args.method_a_audit_manifest,
+        lambda report: report["task-1"]["tests_status"]["fail_to_pass_plan"].__setitem__(
+            field,
+            ["pytest forged"] if field == "commands" else [{"kind": "forged"}],
+        ),
+    )
+    monkeypatch.setattr(swe_final_report, "_compile_pdf", _fake_compile)
+
+    with pytest.raises(FinalReportInputError, match="plan does not match the trusted dataset adapter"):
+        swe_final_report.run_from_args(args)
+
+
 def test_final_report_requires_an_immutable_evaluation_image_identity(tmp_path, monkeypatch):
     args = _args(tmp_path)
     _mutate_official_report(
@@ -620,6 +646,37 @@ def test_final_report_rolls_back_every_output_when_publish_fails_midway(tmp_path
     monkeypatch.setattr(swe_final_report, "_publish", fail_second_publish)
 
     with pytest.raises(OSError, match="injected publish failure"):
+        swe_final_report.run_from_args(args)
+
+    for suffix, payload in old.items():
+        assert (args.output_dir / f"comparison.{suffix}").read_bytes() == payload
+
+
+def test_final_report_restores_completed_backups_when_backup_phase_fails(tmp_path, monkeypatch):
+    args = _args(tmp_path)
+    args.output_dir.mkdir()
+    old = {
+        "pdf": b"old-pdf",
+        "tex": b"old-tex",
+        "md": b"old-markdown",
+        "json": b"old-json",
+    }
+    for suffix, payload in old.items():
+        (args.output_dir / f"comparison.{suffix}").write_bytes(payload)
+    monkeypatch.setattr(swe_final_report, "_compile_pdf", _fake_compile)
+    real_backup = swe_final_report._backup_existing
+    calls = 0
+
+    def fail_second_backup(target, backup):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("injected backup failure")
+        real_backup(target, backup)
+
+    monkeypatch.setattr(swe_final_report, "_backup_existing", fail_second_backup)
+
+    with pytest.raises(OSError, match="injected backup failure"):
         swe_final_report.run_from_args(args)
 
     for suffix, payload in old.items():

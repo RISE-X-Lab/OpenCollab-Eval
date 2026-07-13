@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Any
 
 from opencollab_eval.commands import _swe_report_io as report_io
+from opencollab_eval.engine.swe_v1_remote_test_plan import prolite_test_plan
+
+TRUSTED_DATASET_SHA256 = "a1d473cb415ec0050eee023f373cdf71183436351216240f3f88c820a200c078"
 
 
 class DatasetInputError(ValueError):
@@ -21,6 +24,8 @@ class DatasetTask:
     task: str
     fail_to_pass: tuple[str, ...]
     pass_to_pass: tuple[str, ...]
+    fail_to_pass_plan: dict[str, Any]
+    pass_to_pass_plan: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +33,10 @@ class LoadedDataset:
     path: Path
     sha256: str
     tasks: tuple[DatasetTask, ...]
+
+
+def _trusted_dataset_sha256(_raw: bytes) -> str:
+    return TRUSTED_DATASET_SHA256
 
 
 def _dataset_rows(raw: bytes, *, path: Path) -> list[dict[str, Any]]:
@@ -96,6 +105,9 @@ def load_dataset_census(path: Path, *, expected: tuple[int, ...]) -> LoadedDatas
         raise DatasetInputError(f"dataset is unsafe or unstable: {path}") from exc
     if not raw:
         raise DatasetInputError(f"dataset is empty: {path}")
+    raw_sha256 = hashlib.sha256(raw).hexdigest()
+    if raw_sha256 != _trusted_dataset_sha256(raw):
+        raise DatasetInputError("dataset does not match the trusted SWE-bench Pro-Lite 1-100 snapshot")
     rows = _dataset_rows(raw, path=path)
     if len(rows) != len(expected):
         raise DatasetInputError(
@@ -111,29 +123,47 @@ def load_dataset_census(path: Path, *, expected: tuple[int, ...]) -> LoadedDatas
         if task in seen:
             raise DatasetInputError(f"dataset task identity is duplicated: {task}")
         seen.add(task)
+        fail_to_pass = _targets(
+            row,
+            "FAIL_TO_PASS",
+            "fail_to_pass",
+            label=f"row {position} FAIL_TO_PASS",
+        )
+        pass_to_pass = _targets(
+            row,
+            "PASS_TO_PASS",
+            "pass_to_pass",
+            label=f"row {position} PASS_TO_PASS",
+        )
         tasks.append(
             DatasetTask(
                 index=index,
                 task=task,
-                fail_to_pass=_targets(
+                fail_to_pass=fail_to_pass,
+                pass_to_pass=pass_to_pass,
+                fail_to_pass_plan=prolite_test_plan(
                     row,
-                    "FAIL_TO_PASS",
-                    "fail_to_pass",
-                    label=f"row {position} FAIL_TO_PASS",
+                    list(fail_to_pass),
+                    target_file="/eval_input/f2p.targets.json",
                 ),
-                pass_to_pass=_targets(
+                pass_to_pass_plan=prolite_test_plan(
                     row,
-                    "PASS_TO_PASS",
-                    "pass_to_pass",
-                    label=f"row {position} PASS_TO_PASS",
+                    list(pass_to_pass),
+                    target_file="/eval_input/p2p.targets.json",
                 ),
             )
         )
     return LoadedDataset(
         path=path,
-        sha256=hashlib.sha256(raw).hexdigest(),
+        sha256=raw_sha256,
         tasks=tuple(tasks),
     )
 
 
-__all__ = ["DatasetInputError", "DatasetTask", "LoadedDataset", "load_dataset_census"]
+__all__ = [
+    "TRUSTED_DATASET_SHA256",
+    "DatasetInputError",
+    "DatasetTask",
+    "LoadedDataset",
+    "load_dataset_census",
+]

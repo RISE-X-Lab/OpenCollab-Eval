@@ -1,13 +1,24 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
 
+from opencollab_eval.commands import swe_final_report_dataset as dataset_module
 from opencollab_eval.commands.swe_final_report_dataset import (
     DatasetInputError,
     load_dataset_census,
 )
+
+
+@pytest.fixture(autouse=True)
+def _trust_synthetic_dataset(monkeypatch):
+    monkeypatch.setattr(
+        dataset_module,
+        "_trusted_dataset_sha256",
+        lambda raw: hashlib.sha256(raw).hexdigest(),
+    )
 
 
 def test_dataset_census_reads_jsonl_and_literal_target_lists(tmp_path):
@@ -73,3 +84,21 @@ def test_dataset_census_rejects_a_symlink(tmp_path):
 
     with pytest.raises(DatasetInputError, match="unsafe or unstable"):
         load_dataset_census(path, expected=(1,))
+
+
+def test_dataset_census_rejects_a_noncanonical_snapshot(tmp_path, monkeypatch):
+    path = tmp_path / "instances.json"
+    path.write_text(
+        json.dumps([{"instance_id": "task-a", "FAIL_TO_PASS": ["test-a"], "PASS_TO_PASS": []}]),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(dataset_module, "_trusted_dataset_sha256", lambda _raw: "0" * 64)
+
+    with pytest.raises(DatasetInputError, match="trusted SWE-bench Pro-Lite 1-100 snapshot"):
+        load_dataset_census(path, expected=(1,))
+
+
+def test_trusted_dataset_hash_matches_the_recorded_snapshot():
+    assert dataset_module.TRUSTED_DATASET_SHA256 == (
+        "a1d473cb415ec0050eee023f373cdf71183436351216240f3f88c820a200c078"
+    )

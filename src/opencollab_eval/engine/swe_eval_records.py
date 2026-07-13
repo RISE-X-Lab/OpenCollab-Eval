@@ -395,6 +395,11 @@ def _direct_eval_plan_status(
     evidence = tests_status.get(f"{prefix}_evidence")
     if not isinstance(plan, dict) or not isinstance(evidence, list):
         return None
+    if plan.get("adapter") == "pytest" or any(
+        isinstance(proof, dict) and proof.get("kind") == "pytest_structured_reports"
+        for proof in plan.get("proofs") or []
+    ):
+        return None
     if expected_plan is not None and plan != expected_plan:
         return None
     commands = plan.get("commands")

@@ -149,6 +149,11 @@ def _validate_execution_plan(plan: dict, *, label: str, require_commands: bool) 
         raise RuntimeError(f"{label} plan has no executable commands")
     if not isinstance(proofs, list) or len(proofs) != len(commands):
         raise RuntimeError(f"{label} plan does not bind one proof to each command")
+    if plan.get("adapter") == "pytest" or any(
+        isinstance(proof, dict) and proof.get("kind") == "pytest_structured_reports"
+        for proof in proofs
+    ):
+        raise RuntimeError(f"{label} plan requires an external Python result boundary")
     if commands and plan.get("coverage_verified") is not True:
         raise RuntimeError(f"{label} plan does not verify target coverage")
     if any(not isinstance(proof, dict) or not proof for proof in proofs):

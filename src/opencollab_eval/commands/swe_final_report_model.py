@@ -149,15 +149,33 @@ def _verify_official_report(
         raise FinalReportInputError(f"{label} has no tests_status object")
     f2p_plan = tests_status.get("fail_to_pass_plan")
     p2p_plan = tests_status.get("pass_to_pass_plan")
-    for plan, targets, plan_label in (
-        (f2p_plan, dataset_task.fail_to_pass, "FAIL_TO_PASS"),
-        (p2p_plan, dataset_task.pass_to_pass, "PASS_TO_PASS"),
+    for plan, targets, trusted_plan, plan_label in (
+        (
+            f2p_plan,
+            dataset_task.fail_to_pass,
+            dataset_task.fail_to_pass_plan,
+            "FAIL_TO_PASS",
+        ),
+        (
+            p2p_plan,
+            dataset_task.pass_to_pass,
+            dataset_task.pass_to_pass_plan,
+            "PASS_TO_PASS",
+        ),
     ):
         if not isinstance(plan, dict) or plan.get("schema") != "opencollab.prolite_test_plan.v2":
             raise FinalReportInputError(f"{label} has an invalid {plan_label} plan")
         if plan.get("declared_targets") != list(targets):
             raise FinalReportInputError(
                 f"{label} {plan_label} targets do not match the trusted dataset"
+            )
+        normalized_plan = json.loads(json.dumps(plan))
+        for proof in normalized_plan.get("proofs", []):
+            if isinstance(proof, dict):
+                proof.pop("candidate_source_paths", None)
+        if normalized_plan != trusted_plan:
+            raise FinalReportInputError(
+                f"{label} {plan_label} plan does not match the trusted dataset adapter"
             )
     if not direct_eval_done_has_execution_proof(
         report,

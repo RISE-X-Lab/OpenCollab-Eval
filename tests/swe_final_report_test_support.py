@@ -6,6 +6,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from opencollab_eval.engine.swe_v1_remote_test_plan import prolite_test_plan
+
 
 def write_json(path: Path, value: Any) -> Path:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -26,27 +28,9 @@ def _direct_eval_report(*, task: str, record_id: str, patch_sha256: str, resolve
         "target_failure_proof_matches_plan": f2p_status != 0,
         "artifact_safe": True,
     }
-    target = f"tests/{task.replace('-', '_')}.py::test_case"
-    f2p_plan = {
-        "schema": "opencollab.prolite_test_plan.v2",
-        "adapter": "pytest",
-        "coverage": "parser_backed_exact_targets",
-        "coverage_verified": True,
-        "declared_targets": [target],
-        "target_batches": [[target]],
-        "commands": ["pytest target"],
-        "proofs": [{"kind": "pytest_structured_reports", "targets": [target]}],
-    }
-    p2p_plan = {
-        "schema": "opencollab.prolite_test_plan.v2",
-        "adapter": "unsupported",
-        "coverage": "none",
-        "coverage_verified": False,
-        "declared_targets": [],
-        "target_batches": [],
-        "commands": [],
-        "proofs": [],
-    }
+    target = f"pkg/{task.replace('-', '_')}_test.go::TestCase"
+    f2p_plan = prolite_test_plan({"repo_language": "go"}, [target])
+    p2p_plan = prolite_test_plan({"repo_language": "go"}, [])
     return {
         "schema": "opencollab.prolite_direct_eval.v2",
         "status": "done",
@@ -225,8 +209,9 @@ def _inputs(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
         tmp_path / "dataset.json",
         [
             {
+                "repo_language": "go",
                 "instance_id": f"task-{index}",
-                "FAIL_TO_PASS": [f"tests/task_{index}.py::test_case"],
+                "FAIL_TO_PASS": [f"pkg/task_{index}_test.go::TestCase"],
                 "PASS_TO_PASS": [],
             }
             for index in range(1, 101)

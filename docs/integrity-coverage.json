@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "fields": ["owner", "status", "implementation", "test", "nodeid"],
-  "platforms": {"H-68": "darwin", "H-72": "linux"},
+  "platforms": {"H-68": "darwin"},
   "coverage": {
     "H-01": ["OpenCollab", "fixed", "opencollab/opencollab/adapters/tools/bash.py", "opencollab/tests/test_tool_guardrails.py", "tests/test_tool_guardrails.py::test_headless_command_tools_and_grep_cannot_read_outside_secret"],
     "H-02": ["OpenCollab", "fixed", "opencollab/opencollab/adapters/tools/run_tests.py", "opencollab/tests/test_run_tests_tool.py", "tests/test_run_tests_tool.py::test_run_tests_rejects_noop_runner_green_forgery"],
@@ -59,7 +59,7 @@
     "H-54": ["OpenCollab", "fixed", "opencollab/opencollab/adapters/_env_worktree_lifecycle.py", "opencollab/tests/test_worktree_ownership_races.py", "tests/test_worktree_ownership_races.py::test_cleanup_uses_pinned_source_after_repository_path_replacement"],
     "H-55": ["OpenCollab", "fixed", "opencollab/opencollab/adapters/_owned_file_cleanup.py", "opencollab/tests/test_safe_file_reclamation.py", "tests/test_safe_file_reclamation.py::test_durable_unlink_refuses_entry_swapped_after_open_without_harming_victim"],
     "H-56": ["OpenCollab", "fixed", "opencollab/opencollab/adapters/_safe_file_atomic.py", "opencollab/tests/test_safe_file_ownership.py", "tests/test_safe_file_ownership.py::test_atomic_write_restores_previous_target_after_commit_sync_failure"],
-    "H-57": ["OpenCollab-Eval", "fixed", "src/opencollab_eval/engine/swe_v1_remote_pytest_proof.py", "tests/test_swe_v1_prolite_runner_evidence.py", "tests/test_swe_v1_prolite_runner_evidence.py::test_prolite_python_plan_batches_81_parameters_by_parent_without_file_fallback"],
+    "H-57": ["OpenCollab-Eval", "fixed", "src/opencollab_eval/engine/swe_v1_remote_test_plan.py", "tests/test_swe_v1_prolite_runner_adapter_evidence.py", "tests/test_swe_v1_prolite_runner_adapter_evidence.py::test_python_targets_require_an_external_result_boundary[row0]"],
     "H-58": ["OpenCollab-Eval", "fixed", "src/opencollab_eval/engine/swe_eval_discovery.py", "tests/test_swe_eval_status.py", "tests/test_swe_eval_status.py::test_eval_report_without_patch_sha_does_not_finish_current_patch"],
     "H-59": ["OpenCollab-Eval", "fixed", "src/opencollab_eval/generation/gen_prediction_pending.py", "tests/test_gen_prediction_single_agent_recovery.py", "tests/test_gen_prediction_single_agent_recovery.py::test_pending_replay_retains_candidate_for_malformed_complete_jsonl_record"],
     "H-60": ["OpenCollab-Eval", "fixed", "src/opencollab_eval/engine/evaluator_task_resources.py", "tests/test_evaluator_workflow_teardown.py", "tests/test_evaluator_workflow_teardown.py::test_non_quiescent_workflow_bounds_checkpoint_abort_and_revokes_env"],
@@ -74,10 +74,12 @@
     "H-69": ["OpenCollab-Eval", "partial", "src/opencollab_eval/engine/evaluator_patch.py", "tests/test_evaluator_workflow_lifecycle.py", "tests/test_evaluator_workflow_lifecycle.py::test_worktree_diff_excludes_registered_tombstone_and_keeps_real_change"],
     "H-70": ["OpenCollab-Eval", "fixed", "tests/test_repository_hygiene.py", "tests/test_repository_hygiene.py", "tests/test_repository_hygiene.py::test_repository_python_files_stay_within_line_limit"],
     "H-71": ["OpenCollab", "fixed", "opencollab/opencollab/adapters/tools/_run_tests_go.py", "opencollab/tests/test_run_tests_go.py", "tests/test_run_tests_go.py::test_run_tests_rejects_go_multi_selector_before_any_command"],
-    "H-72": ["OpenCollab-Eval", "fixed", "src/opencollab_eval/engine/swe_v1_remote_pytest_controller.py", "tests/test_pytest_controller_linux.py", "tests/test_pytest_controller_linux.py::test_pytest_controller_rejects_proof_rewrite_and_abrupt_zero_exit"],
+    "H-72": ["OpenCollab-Eval", "fixed", "src/opencollab_eval/engine/swe_eval_records.py", "tests/test_swe_v1_prolite_runner_adapter_evidence.py", "tests/test_swe_v1_prolite_runner_adapter_evidence.py::test_python_worker_outcomes_never_become_direct_eval_green[reported pass-0]"],
     "H-73": ["OpenCollab-Eval", "fixed", "src/opencollab_eval/engine/swe_v1_remote_gitlink_probe.py", "tests/test_swe_v1_remote_gitlink_probe.py", "tests/test_swe_v1_remote_gitlink_probe.py::test_bind_eval_image_pins_ordinary_patch_to_immutable_id"],
     "H-74": ["OpenCollab-Eval", "fixed", "src/opencollab_eval/commands/swe_final_report_model.py", "tests/test_swe_final_report.py", "tests/test_swe_final_report.py::test_final_report_binds_declared_targets_to_the_trusted_dataset"],
     "H-75": ["OpenCollab-Eval", "fixed", "src/opencollab_eval/commands/swe_rejudge_direct_eval.py", "tests/test_swe_rejudge_direct_eval.py", "tests/test_swe_rejudge_direct_eval.py::test_nonzero_exit_without_exact_failed_target_remains_technical"],
-    "H-76": ["OpenCollab-Eval", "fixed", "src/opencollab_eval/commands/swe_final_report_model.py", "tests/test_swe_final_report.py", "tests/test_swe_final_report.py::test_bound_artifact_verification_retains_at_most_one_payload"]
+    "H-76": ["OpenCollab-Eval", "fixed", "src/opencollab_eval/commands/swe_final_report_model.py", "tests/test_swe_final_report.py", "tests/test_swe_final_report.py::test_bound_artifact_verification_retains_at_most_one_payload"],
+    "H-77": ["OpenCollab-Eval", "fixed", "src/opencollab_eval/commands/swe_final_report_dataset.py", "tests/test_swe_final_report_dataset.py", "tests/test_swe_final_report_dataset.py::test_dataset_census_rejects_a_noncanonical_snapshot"],
+    "H-78": ["OpenCollab-Eval", "fixed", "src/opencollab_eval/commands/swe_final_report.py", "tests/test_swe_final_report.py", "tests/test_swe_final_report.py::test_final_report_restores_completed_backups_when_backup_phase_fails"]
   }
 }

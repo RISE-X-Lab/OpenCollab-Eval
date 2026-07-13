@@ -69,6 +69,12 @@ def _publish(staged: Path, target: Path) -> None:
     os.replace(staged, target)
 
 
+def _backup_existing(target: Path, backup: Path) -> None:
+    """Move one preflighted publication target into the private stage."""
+
+    os.replace(target, backup)
+
+
 def _publish_transaction(
     *,
     stage: Path,
@@ -94,7 +100,7 @@ def _publish_transaction(
             except FileNotFoundError:
                 continue
             backup = stage / f".previous-{name}"
-            os.replace(target, backup)
+            _backup_existing(target, backup)
             backups[name] = backup
         for name in order:
             _publish(staged_outputs[name], targets[name])
@@ -106,7 +112,7 @@ def _publish_transaction(
         return published
     except Exception as exc:
         rollback_errors: list[str] = []
-        for name in reversed(order):
+        for name in reversed(tuple(published)):
             target = targets[name]
             try:
                 target.lstat()
@@ -118,12 +124,20 @@ def _publish_transaction(
                     os.replace(target, stage / f".failed-{name}")
                 except Exception as rollback_exc:
                     rollback_errors.append(f"remove {name}: {rollback_exc}")
-            backup = backups.get(name)
-            if backup is not None:
-                try:
-                    os.replace(backup, target)
-                except Exception as rollback_exc:
-                    rollback_errors.append(f"restore {name}: {rollback_exc}")
+        for name in reversed(tuple(backups)):
+            backup = backups[name]
+            target = targets[name]
+            try:
+                target.lstat()
+            except FileNotFoundError:
+                pass
+            else:
+                rollback_errors.append(f"restore {name}: target unexpectedly exists")
+                continue
+            try:
+                os.replace(backup, target)
+            except Exception as rollback_exc:
+                rollback_errors.append(f"restore {name}: {rollback_exc}")
         if rollback_errors:
             raise FinalReportInputError("report publication rollback failed: " + "; ".join(rollback_errors)) from exc
         raise

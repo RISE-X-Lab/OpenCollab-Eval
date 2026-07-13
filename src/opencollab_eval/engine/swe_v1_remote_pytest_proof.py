@@ -539,49 +539,6 @@ def compact_python_test_targets(tests, selected, max_args=80, max_chars=24000):
 
 
 
-def prolite_pytest_proof_plugin_source():
-    """Return the worker plugin that streams events to the trusted controller."""
-    return r'''import json
-import os
-
-_fd = int(os.environ.pop("OPENCOLLAB_PYTEST_EVENT_FD"))
-_payload_bytes = 0
-_MAX_PROOF_BYTES = 8 * 1024 * 1024
-
-
-def _emit(event):
-    global _payload_bytes
-    payload = (json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
-    if _payload_bytes + len(payload) > _MAX_PROOF_BYTES:
-        raise OSError("pytest proof exceeds the bounded size")
-    view = memoryview(payload)
-    while view:
-        written = os.write(_fd, view)
-        if written <= 0:
-            raise OSError("pytest event write made no progress")
-        view = view[written:]
-    _payload_bytes += len(payload)
-
-
-def pytest_sessionstart(session):
-    _emit({"event": "session_start"})
-
-
-def pytest_collection_finish(session):
-    _emit({"event": "collection_finish", "nodeids": [item.nodeid for item in session.items]})
-
-
-def pytest_runtest_logreport(report):
-    _emit({"event": "runtest_logreport", "nodeid": report.nodeid, "when": report.when, "outcome": report.outcome})
-
-
-def pytest_sessionfinish(session, exitstatus):
-    _emit({"event": "session_finish", "exitstatus": exitstatus})
-'''
-
-
-
-
 __all__ = [
     "_PYTHON_SOURCE_LAYOUT_ROOTS",
     "_PYTHON_TEST_ROOTS",
@@ -597,7 +554,6 @@ __all__ = [
     "_python_repo_module_roots",
     "_python_test_patch_import_bindings",
     "compact_python_test_targets",
-    "prolite_pytest_proof_plugin_source",
     "python_parameter_fallback_batches",
     "python_test_target_batches",
 ]

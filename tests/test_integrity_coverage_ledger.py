@@ -86,9 +86,9 @@ def _collection_environment(pytest_root: Path) -> dict[str, str]:
 def test_integrity_coverage_ledger_is_complete_and_truthful() -> None:
     coverage = _load()
     platforms = _platforms()
-    expected_ids = [f"H-{index:02d}" for index in range(1, 77)]
+    expected_ids = [f"H-{index:02d}" for index in range(1, 79)]
     assert list(coverage) == expected_ids
-    assert platforms == {"H-68": "darwin", "H-72": "linux"}
+    assert platforms == {"H-68": "darwin"}
     assert set(platforms) <= set(coverage)
     roots = _roots()
     for control_id, record in coverage.items():
@@ -151,7 +151,9 @@ def test_integrity_coverage_nodeids_execute_successfully() -> None:
             suites = list(summary.findall("testsuite")) if summary.tag == "testsuites" else [summary]
             executed = sum(int(suite.attrib["tests"]) for suite in suites)
             skipped = sum(int(suite.attrib["skipped"]) for suite in suites)
-            assert executed == len(ordered), f"{owner} integrity test count mismatch"
+            assert executed == len(ordered), (
+                f"{owner} integrity test count mismatch\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+            )
             assert skipped == 0, f"{owner} integrity tests were skipped"
         assert result.returncode == 0, f"{owner} integrity tests failed:\n{result.stdout}\n{result.stderr}"
 

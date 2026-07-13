@@ -40,6 +40,14 @@ def _bypass_container_binding(namespace):
     }
 
 
+def _go_eval_row(task):
+    return {
+        "instance_id": task,
+        "fail_to_pass": ["pkg/feature_test.go::TestFeature"],
+        "repo_language": "go",
+    }
+
+
 @pytest.mark.parametrize("kind", ["symlink", "fifo"])
 def test_eval_container_unsafe_exit_artifact_is_technical_without_blocking(
     monkeypatch,
@@ -89,13 +97,7 @@ def test_eval_container_unsafe_exit_artifact_is_technical_without_blocking(
     namespace["ensure_image"] = lambda image: {"ok": True}
     namespace["ensure_process_group_quiesced_after_wait"] = lambda proc: True
 
-    result = namespace["eval_for_task"](
-        {
-            "instance_id": task,
-            "fail_to_pass": ["tests/test_a.py::test_a"],
-            "repo_language": "python",
-        }
-    )
+    result = namespace["eval_for_task"](_go_eval_row(task))
 
     assert result["status"] == "technical_eval_failed"
     assert "unsafe_or_missing_output_artifact" in result["summary"]["technical_reasons"]
@@ -113,13 +115,7 @@ def test_eval_popen_failure_clears_only_verified_pending_marker(monkeypatch, tmp
     )
     namespace["ensure_image"] = lambda image: {"ok": True}
 
-    result = namespace["eval_for_task"](
-        {
-            "instance_id": task,
-            "fail_to_pass": ["tests/test_a.py::test_a"],
-            "repo_language": "python",
-        }
-    )
+    result = namespace["eval_for_task"](_go_eval_row(task))
 
     eval_dir = namespace["base_run_dir"] / task / "official_eval_v1_prolite26_35_20260707"
     assert result["status"] == "technical_eval_failed"
@@ -235,13 +231,7 @@ def test_eval_timeout_returns_technical_result(monkeypatch, tmp_path):
     monkeypatch.setattr(namespace["os"], "killpg", lambda *args, **kwargs: None)
     namespace["ensure_image"] = lambda image: {"ok": True}
 
-    result = namespace["eval_for_task"](
-        {
-            "instance_id": task,
-            "fail_to_pass": ["tests/test_a.py::test_a"],
-            "repo_language": "python",
-        }
-    )
+    result = namespace["eval_for_task"](_go_eval_row(task))
 
     assert result["status"] == "technical_eval_failed"
     assert "docker_exit" in result["summary"]["technical_reasons"]
@@ -299,13 +289,7 @@ def test_eval_timeout_reports_stubborn_kill_reap(monkeypatch, tmp_path):
     monkeypatch.setattr(namespace["os"], "killpg", lambda *args, **kwargs: None)
     namespace["ensure_image"] = lambda image: {"ok": True}
     try:
-        result = namespace["eval_for_task"](
-            {
-                "instance_id": task,
-                "fail_to_pass": ["tests/test_a.py::test_a"],
-                "repo_language": "python",
-            }
-        )
+        result = namespace["eval_for_task"](_go_eval_row(task))
     finally:
         release.set()
 
@@ -366,13 +350,7 @@ def test_eval_normal_exit_cleanup_failure_is_technical(monkeypatch, tmp_path):
         "status": "removed",
     }
 
-    result = namespace["eval_for_task"](
-        {
-            "instance_id": task,
-            "fail_to_pass": ["tests/test_a.py::test_a"],
-            "repo_language": "python",
-        }
-    )
+    result = namespace["eval_for_task"](_go_eval_row(task))
 
     assert result["status"] == "technical_eval_failed"
     assert result["summary"]["cleanup_quiesced"] is False
@@ -444,13 +422,7 @@ def test_eval_timeout_force_removes_container_from_cidfile(monkeypatch, tmp_path
     namespace["ensure_image"] = lambda image: {"ok": True}
     namespace["run"] = fake_run
 
-    result = namespace["eval_for_task"](
-        {
-            "instance_id": task,
-            "fail_to_pass": ["tests/test_a.py::test_a"],
-            "repo_language": "python",
-        }
-    )
+    result = namespace["eval_for_task"](_go_eval_row(task))
 
     assert result["status"] == "technical_eval_failed"
     network_index = docker_commands[0].index("--network")
@@ -622,12 +594,6 @@ def test_eval_wait_interrupt_terminates_child_and_re_raises(monkeypatch, tmp_pat
     namespace["ensure_image"] = lambda image: {"ok": True}
 
     with pytest.raises(KeyboardInterrupt, match="eval interrupted"):
-        namespace["eval_for_task"](
-            {
-                "instance_id": task,
-                "fail_to_pass": ["tests/test_a.py::test_a"],
-                "repo_language": "python",
-            }
-        )
+        namespace["eval_for_task"](_go_eval_row(task))
 
     assert signals == [(424251, namespace["signal"].SIGTERM)]
