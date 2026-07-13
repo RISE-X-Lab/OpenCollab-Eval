@@ -6,6 +6,8 @@ import json
 
 from swe_v1_prolite_runner_test_support import _remote_namespace
 
+from opencollab_eval.engine.swe_test_plan_contract import validated_test_plan_kind
+
 
 def test_prolite_go_command_requires_exact_test_targets_and_json_events(tmp_path):
     namespace = _remote_namespace(tmp_path)
@@ -50,6 +52,21 @@ def test_prolite_go_file_only_target_is_technical_red(tmp_path):
     assert plan["coverage_verified"] is False
     assert plan["commands"] == []
 
+
+def test_dynamic_go_plan_rejects_a_command_suffix_after_the_trusted_program(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    plan = namespace["prolite_test_plan"](
+        {"repo_language": "go", "repo": "gravitational/teleport"},
+        ["TestColumn", "TestMessage"],
+    )
+
+    assert validated_test_plan_kind(plan, require_commands=True) == (
+        "go-test-json-discovery"
+    )
+
+    plan["commands"][0] += "; true"
+
+    assert validated_test_plan_kind(plan, require_commands=True) is None
 
 
 def test_prolite_go_log_proof_rejects_package_pass_without_test_event(tmp_path):

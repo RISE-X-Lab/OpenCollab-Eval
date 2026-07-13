@@ -257,9 +257,12 @@ def prolite_test_plan(
         proof = {
             "kind": "js_parser_backed_targets",
             "targets": tests,
+            "test_files": files,
             "repo_language": language,
             "repo": repo,
         }
+        if adapter == "mocha-json-stream" and target_file:
+            proof["target_file"] = target_file
         suite_module_mocks = _js_suite_module_mock_bindings(row, files)
         if suite_module_mocks:
             proof["suite_module_mocks"] = suite_module_mocks

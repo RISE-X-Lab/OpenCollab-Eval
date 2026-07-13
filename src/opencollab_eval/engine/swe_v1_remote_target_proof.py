@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import re
@@ -136,7 +137,8 @@ def jest_test_command(test_files):
 
 def mocha_test_command(tests, selected, target_file=""):
     if target_file:
-        launcher = """import json
+        launcher = """import hashlib
+import json
 import pathlib
 import re
 import shutil
@@ -144,6 +146,11 @@ import subprocess
 import sys
 
 tests = json.loads(open(sys.argv[1], encoding="utf-8").read())
+canonical_tests = json.dumps(tests, ensure_ascii=True, separators=(",", ":"))
+actual_targets_sha256 = hashlib.sha256(canonical_tests.encode("utf-8")).hexdigest()
+if actual_targets_sha256 != __OPENCOLLAB_EXPECTED_TARGETS_SHA256__:
+    print("Mocha target file does not match declared targets", file=sys.stderr)
+    raise SystemExit(127)
 grouped = {}
 for value in tests:
     item = str(value)
@@ -175,7 +182,19 @@ for test_file in sorted(grouped):
     if result.returncode != 0:
         status = result.returncode
 raise SystemExit(status)
-"""
+""".replace(
+            "__OPENCOLLAB_EXPECTED_TARGETS_SHA256__",
+            repr(
+                hashlib.sha256(
+                    json.dumps(
+                        [str(item) for item in tests],
+                        ensure_ascii=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()
+            ),
+            1,
+        )
         return "python3 -c " + shlex.quote(launcher) + " " + shlex.quote(target_file)
     files = canonical_js_test_files(tests, selected)
     requested_by_file = {}

@@ -6,6 +6,13 @@ import json
 
 from swe_v1_prolite_runner_test_support import _remote_namespace, pytest
 
+from opencollab_eval.engine.swe_test_plan_contract import validated_test_plan_kind
+from opencollab_eval.engine.swe_v1_remote_target_proof import (
+    jest_test_command,
+    mocha_test_command,
+    tutanota_test_command,
+)
+
 
 @pytest.mark.parametrize("language", ["javascript", "typescript"])
 def test_prolite_js_file_target_uses_positive_event_parser(
@@ -25,10 +32,71 @@ def test_prolite_js_file_target_uses_positive_event_parser(
         {
             "kind": "js_parser_backed_targets",
             "targets": ["test/widget.test.js"],
+            "test_files": ["test/widget.test.js"],
             "repo_language": language,
             "repo": "",
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("row", "declared_target", "wrong_command"),
+    [
+        (
+            {"repo_language": "javascript"},
+            "test/a.test.js",
+            jest_test_command(["test/b.test.js"]),
+        ),
+        (
+            {"repo_language": "javascript", "repo": "nodebb/nodebb"},
+            "test/a.js | suite A",
+            mocha_test_command(["test/b.js | suite B"], ["test/b.js"]),
+        ),
+        (
+            {"repo_language": "typescript", "repo": "tutao/tutanota"},
+            "test/tests/FooTest.ts | Foo",
+            tutanota_test_command(["test/tests/BarTest.ts | Bar"]),
+        ),
+    ],
+)
+def test_javascript_plan_rejects_commands_for_a_different_declared_target(
+    tmp_path,
+    row,
+    declared_target,
+    wrong_command,
+):
+    namespace = _remote_namespace(tmp_path)
+    plan = namespace["prolite_test_plan"](row, [declared_target])
+
+    assert validated_test_plan_kind(plan, require_commands=True) == plan["adapter"]
+
+    plan["commands"] = [wrong_command]
+
+    assert validated_test_plan_kind(plan, require_commands=True) is None
+
+
+def test_mocha_target_file_command_is_bound_to_the_declared_titles(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    target_file = "/eval_input/f2p.targets.json"
+    plan = namespace["prolite_test_plan"](
+        {"repo_language": "javascript", "repo": "nodebb/nodebb"},
+        ["test/a.js | suite A"],
+        target_file=target_file,
+    )
+
+    assert validated_test_plan_kind(plan, require_commands=True) == (
+        "mocha-json-stream"
+    )
+
+    plan["commands"] = [
+        mocha_test_command(
+            ["test/b.js | suite B"],
+            ["test/b.js"],
+            target_file,
+        )
+    ]
+
+    assert validated_test_plan_kind(plan, require_commands=True) is None
 
 
 def test_task9_jest_suite_load_failure_binds_official_mock_and_exact_command(tmp_path):

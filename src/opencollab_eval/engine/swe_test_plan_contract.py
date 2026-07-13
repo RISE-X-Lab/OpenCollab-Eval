@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
-import json
 import pathlib
 import re
 import shlex
 from typing import Any
+
+from opencollab_eval.engine.swe_v1_remote_target_proof import (
+    canonical_js_test_files,
+    go_test_command,
+    jest_test_command,
+    mocha_test_command,
+    tutanota_test_command,
+)
 
 PLAN_SCHEMA = "opencollab.prolite_test_plan.v2"
 EMPTY_PLAN_KIND = "empty"
@@ -125,15 +132,7 @@ def _valid_dynamic_go_plan(plan: dict[str, Any]) -> bool:
         "dynamic_discovery": True,
     }:
         return False
-    command = plan["commands"][0]
-    required = (
-        'for path in pathlib.Path(".").rglob("*_test.go")',
-        'print("unable to map Go tests to packages: "',
-        'subprocess.run(["go", "test", "-count=1", "-json", package, "-run", pattern])',
-    )
-    return all(fragment in command for fragment in required) and all(
-        json.dumps(target) in command for target in targets
-    )
+    return plan["commands"] == [go_test_command(targets)]
 
 
 def _valid_javascript_plan(plan: dict[str, Any]) -> bool:
@@ -154,33 +153,33 @@ def _valid_javascript_plan(plan: dict[str, Any]) -> bool:
             "repo_language",
             "repo",
             "suite_module_mocks",
+            "test_files",
+            "target_file",
         }
     ):
         return False
-    command = plan["commands"][0]
-    if "pytest" in command.lower():
+    test_files = proof.get("test_files")
+    if (
+        not isinstance(test_files, list)
+        or not test_files
+        or any(not isinstance(path, str) or not path for path in test_files)
+        or len(set(test_files)) != len(test_files)
+        or canonical_js_test_files(plan["declared_targets"], test_files) != test_files
+    ):
         return False
     adapter = plan["adapter"]
     if adapter == "jest-json-verbose":
-        return bool(
-            command.startswith("if [ -x ./node_modules/.bin/jest ]; then\n")
-            and "--json --coverage=false --runInBand --verbose --runTestsByPath" in command
-            and command.endswith("\nfi")
-        )
+        return "target_file" not in proof and plan["commands"] == [
+            jest_test_command(test_files)
+        ]
     if adapter == "mocha-json-stream":
-        return bool(
-            command.startswith("if [ -x ./node_modules/.bin/mocha ]; then\n")
-            and "--reporter json-stream" in command
-            and command.endswith("\nfi")
-            or command.startswith("python3 -c ")
-            and "missing declared Mocha titles" in command
-            and '"--reporter", "json-stream"' in command
-        )
-    return bool(
-        command.startswith("python3 -c ")
-        and "OPENCOLLAB_OSPEC_RESULTS" in command
-        and command.endswith("npm_config_nodedir=/usr/local npm run test:app")
-    )
+        target_file = proof.get("target_file", "")
+        return isinstance(target_file, str) and plan["commands"] == [
+            mocha_test_command(plan["declared_targets"], test_files, target_file)
+        ]
+    return "target_file" not in proof and plan["commands"] == [
+        tutanota_test_command(plan["declared_targets"])
+    ]
 
 
 def validated_test_plan_kind(
@@ -198,7 +197,12 @@ def validated_test_plan_kind(
     declared = _string_list(plan.get("declared_targets"), allow_empty=True)
     target_batches = plan.get("target_batches")
     proofs = plan.get("proofs")
-    if commands is None or declared is None or not isinstance(target_batches, list) or not isinstance(proofs, list):
+    if (
+        commands is None
+        or declared is None
+        or not isinstance(target_batches, list)
+        or not isinstance(proofs, list)
+    ):
         return None
     if not commands:
         if require_commands:
