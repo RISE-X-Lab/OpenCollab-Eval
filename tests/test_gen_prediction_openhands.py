@@ -9,24 +9,18 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from package_test_support import module_path
-
-_SWEBENCH_DIR = module_path("opencollab_eval.generation.gen_prediction").parent
-if str(_SWEBENCH_DIR) not in sys.path:
-    sys.path.insert(0, str(_SWEBENCH_DIR))
-
-from gen_prediction_openhands_support import (  # noqa: E402
+from gen_prediction_openhands_support import (
     install_fake_openhands_process as _install_fake_openhands_process,
 )
 
-from opencollab_eval.engine.swe_eval_decision import (  # noqa: E402
+from opencollab_eval.engine.swe_eval_decision import (
     TaskSnapshot,
     TaskState,
     decide_task,
 )
-from opencollab_eval.generation import gen_prediction_openhands as gpo  # noqa: E402
-from opencollab_eval.generation import openhands_runtime  # noqa: E402
-from opencollab_eval.generation.gen_prediction_snapshot import SolverGitSnapshot  # noqa: E402
+from opencollab_eval.generation import gen_prediction_openhands as gpo
+from opencollab_eval.generation import openhands_runtime
+from opencollab_eval.generation.gen_prediction_snapshot import SolverGitSnapshot
 
 
 def test_prompt_requires_all_repository_work_to_use_the_existing_container() -> None:
@@ -142,9 +136,10 @@ def test_run_openhands_passes_effective_runtime_settings(
     assert all(leaked_id not in value for value in env.values())
     assert captured["start_new_session"] is True
     assert captured["shell"] is False
-    assert Path(captured["command"][1]).resolve() == module_path(
-        "opencollab_eval.generation.openhands_process_supervisor"
-    )
+    assert captured["command"][1:3] == [
+        "-m",
+        "opencollab_eval.generation.openhands_process_supervisor",
+    ]
 
 
 def test_container_guard_preparation_streams_trusted_host_source(
@@ -750,13 +745,10 @@ def test_main_writes_generation_contract_for_nonempty_patch(
         (attempt_dir / ".openhands" / "hooks.json").read_text()
     )
     hook_command = hook_config["stop"][0]["hooks"][0]["command"]
-    assert hook_command.startswith("if [ -f ")
-    require_patch = module_path("opencollab_eval.generation.openhands_require_patch")
-    referenced_scripts = [
-        Path(token).resolve()
-        for token in shlex.split(hook_command)
-        if token.endswith("openhands_require_patch.py")
+    hook_tokens = shlex.split(hook_command)
+    assert hook_tokens[:3] == [
+        sys.executable,
+        "-m",
+        "opencollab_eval.generation.openhands_require_patch",
     ]
-    assert referenced_scripts and set(referenced_scripts) == {require_patch}
     assert "|| exit 1" in hook_command
-    assert "missing_patch_guard_script" in hook_command

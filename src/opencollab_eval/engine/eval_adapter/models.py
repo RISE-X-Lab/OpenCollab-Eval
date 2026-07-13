@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -49,21 +49,6 @@ class WorkspaceSpec:
     def __post_init__(self) -> None:
         object.__setattr__(self, "repo_root_candidates", tuple(self.repo_root_candidates))
         object.__setattr__(self, "service_dependencies", tuple(self.service_dependencies))
-
-
-@dataclass(frozen=True, slots=True)
-class PreparedWorkspace:
-    """A running workspace handed to a solver backend."""
-
-    container_id: str
-    repo_root: str
-    workdir: str
-    env: Mapping[str, str] = field(default_factory=dict)
-    cleanup: Callable[[], None] | None = None
-
-    def close(self) -> None:
-        if self.cleanup is not None:
-            self.cleanup()
 
 
 @dataclass(frozen=True, slots=True)

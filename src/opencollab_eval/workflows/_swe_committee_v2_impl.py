@@ -5,15 +5,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from opencollab.sdk import (
+from opencollab.sdk.tools import (
     ApplyPatchTool,
     BashTool,
     FileReadTool,
     FileWriteTool,
     GrepTool,
     verification_run_tests_tool,
-    workflow,
 )
+from opencollab.sdk.workflows import workflow
 
 from ._swe_committee_v2_defs import (
     BASELINE_JUDGE_PROMPT,

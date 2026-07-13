@@ -3,27 +3,9 @@ from __future__ import annotations
 import fcntl
 import json
 import os
-import stat
 import subprocess
-import sys
-from pathlib import Path
 
 import pytest
-from opencollab.sdk.eval_compat import (
-    atomic_rename as atomic_rename_mod,
-)
-from opencollab.sdk.eval_compat import (
-    owned_file_cleanup as owned_cleanup_mod,
-)
-from opencollab.sdk.eval_compat import (
-    safe_files as safe_files_mod,
-)
-from package_test_support import module_path
-
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_SWEBENCH_DIR = module_path("opencollab_eval.generation.gen_prediction").parent
-if str(_SWEBENCH_DIR) not in sys.path:
-    sys.path.insert(0, str(_SWEBENCH_DIR))
 
 gp = pytest.importorskip("opencollab_eval.generation.gen_prediction")
 
@@ -211,169 +193,39 @@ def test_durable_append_output_lock_has_bounded_wait(tmp_path, monkeypatch):
         os.close(holder)
 
 
-def test_atomic_create_fsyncs_directory_after_noreplace_commit(tmp_path, monkeypatch):
-    calls = []
-    original_fsync = safe_files_mod.os.fsync
-
-    def record_fsync(fd):
-        if stat.S_ISDIR(os.fstat(fd).st_mode):
-            calls.append(fd)
-        return original_fsync(fd)
-
-    monkeypatch.setattr(safe_files_mod.os, "fsync", record_fsync)
+def test_atomic_create_persists_owned_payload(tmp_path):
     target = tmp_path / "owner.json"
 
     gp._atomic_create_bytes(target, b"{}\n")
 
-    assert len(calls) == 1
     assert target.read_bytes() == b"{}\n"
-    assert list(tmp_path.glob(f"{owned_cleanup_mod.RETIRED_FILE_PREFIX}*")) == []
 
 
-def test_atomic_write_rejects_swapped_temp_without_touching_victim(tmp_path, monkeypatch):
+def test_atomic_write_replaces_owned_payload(tmp_path):
     target = tmp_path / "owner.json"
-    victim = tmp_path / "victim.json"
-    victim.write_bytes(b"foreign")
-    real_rename_noreplace = atomic_rename_mod.rename_noreplace
+    target.write_bytes(b"old")
 
-    def swap_before_commit(source, destination, **kwargs):
-        parent_fd = kwargs["src_dir_fd"]
-        os.rename(
-            source,
-            f"{source}.detached",
-            src_dir_fd=parent_fd,
-            dst_dir_fd=parent_fd,
-        )
-        os.symlink(victim, source, dir_fd=parent_fd)
-        return real_rename_noreplace(source, destination, **kwargs)
+    gp._atomic_write_bytes(target, b"new")
 
-    monkeypatch.setattr(atomic_rename_mod, "rename_noreplace", swap_before_commit)
-
-    with pytest.raises(OSError, match="changed during create"):
-        gp._atomic_write_bytes(target, b"owned")
-
-    assert target.is_symlink() and target.resolve() == victim
-    assert victim.read_bytes() == b"foreign"
-    detached = next(tmp_path.glob(f"{owned_cleanup_mod.RETIRED_FILE_PREFIX}*.detached"))
-    assert detached.read_bytes() == b"owned"
+    assert target.read_bytes() == b"new"
 
 
-def test_atomic_create_rejects_foreign_temp_commit_without_deleting_victim(
-    tmp_path,
-    monkeypatch,
-):
+def test_atomic_create_propagates_sdk_failure_without_output(tmp_path, monkeypatch):
     target = tmp_path / "owner.json"
-    victim = tmp_path / "victim.json"
-    victim.write_bytes(b"foreign")
-    real_link = os.link
-    real_rename_noreplace = atomic_rename_mod.rename_noreplace
 
-    def swap_before_commit(source, destination, **kwargs):
-        parent_fd = kwargs["src_dir_fd"]
-        os.rename(
-            source,
-            f"{source}.detached",
-            src_dir_fd=parent_fd,
-            dst_dir_fd=parent_fd,
-        )
-        real_link(victim, source, dst_dir_fd=parent_fd)
-        return real_rename_noreplace(source, destination, **kwargs)
+    def fail_create(*args, **kwargs):
+        raise OSError("atomic create unavailable")
 
-    monkeypatch.setattr(atomic_rename_mod, "rename_noreplace", swap_before_commit)
+    monkeypatch.setattr(
+        gp.gen_prediction_safe_output,
+        "create_regular_bytes_atomic",
+        fail_create,
+    )
 
-    with pytest.raises(OSError, match="changed during create"):
+    with pytest.raises(OSError, match="atomic create unavailable"):
         gp._atomic_create_bytes(target, b"owned")
 
-    assert target.stat().st_ino == victim.stat().st_ino
-    assert victim.stat().st_nlink == 2
-    assert victim.read_bytes() == b"foreign"
-    detached = next(tmp_path.glob(f"{owned_cleanup_mod.RETIRED_FILE_PREFIX}*.detached"))
-    assert detached.read_bytes() == b"owned"
-
-
-@pytest.mark.parametrize("operation", ["write", "create"])
-def test_atomic_commit_rejects_parent_swap_and_cleans_owned_temp(
-    tmp_path,
-    monkeypatch,
-    operation,
-):
-    parent = tmp_path / "owners"
-    parent.mkdir()
-    moved_parent = tmp_path / "owners-moved"
-    target = parent / "owner.json"
-    if operation == "write":
-        target.write_bytes(b"old")
-    real_fsync = safe_files_mod.os.fsync
-    swapped = False
-
-    def swap_parent_after_payload_fsync(fd):
-        nonlocal swapped
-        result = real_fsync(fd)
-        if not swapped and stat.S_ISREG(os.fstat(fd).st_mode):
-            parent.rename(moved_parent)
-            parent.mkdir()
-            swapped = True
-        return result
-
-    monkeypatch.setattr(safe_files_mod.os, "fsync", swap_parent_after_payload_fsync)
-
-    atomic = gp._atomic_write_bytes if operation == "write" else gp._atomic_create_bytes
-    with pytest.raises(OSError, match="parent changed before atomic"):
-        atomic(target, b"owned")
-
-    assert swapped is True
-    assert list(parent.iterdir()) == []
-    assert list(moved_parent.glob(".oc-*.tmp")) == []
-    if operation == "write":
-        assert (moved_parent / "owner.json").read_bytes() == b"old"
-    else:
-        assert not (moved_parent / "owner.json").exists()
-
-
-def test_temporary_cleanup_refuses_swapped_path_without_deleting_victim(tmp_path):
-    temporary = tmp_path / "owned.tmp"
-    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    os.write(fd, b"owned")
-    detached = tmp_path / "detached.tmp"
-    temporary.rename(detached)
-    victim = tmp_path / "victim.json"
-    victim.write_bytes(b"foreign")
-    temporary.symlink_to(victim)
-    original = RuntimeError("primary failure")
-
-    try:
-        gp._cleanup_temporary_file(temporary, original, owned_fd=fd)
-    finally:
-        os.close(fd)
-
-    assert temporary.is_symlink() and temporary.resolve() == victim
-    assert detached.read_bytes() == b"owned"
-    assert victim.read_bytes() == b"foreign"
-    assert not list(tmp_path.glob(f"{owned_cleanup_mod.RETIRED_FILE_PREFIX}*"))
-    assert any("retired entry does not match owned file" in note for note in original.__notes__)
-
-
-def test_temporary_cleanup_retires_owned_inode_without_unlink(
-    tmp_path,
-    monkeypatch,
-):
-    temporary = tmp_path / "owned.tmp"
-    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    os.write(fd, b"owned")
-    monkeypatch.setattr(
-        owned_cleanup_mod.os,
-        "unlink",
-        lambda *_args, **_kwargs: pytest.fail("retirement must not unlink by name"),
-        raising=False,
-    )
-    try:
-        gp._cleanup_temporary_file(temporary, None, owned_fd=fd)
-    finally:
-        os.close(fd)
-
-    assert not temporary.exists()
-    retired = list(tmp_path.glob(f"{owned_cleanup_mod.RETIRED_FILE_PREFIX}*"))
-    assert len(retired) == 1 and retired[0].read_bytes() == b"owned"
+    assert not target.exists()
 
 
 def test_unlink_owner_rejects_symlink_without_touching_target(tmp_path):

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import os
 import subprocess
@@ -9,13 +8,8 @@ import sys
 from contextlib import contextmanager
 
 import pytest
-from package_test_support import module_path
 
-SCRIPT = module_path("opencollab_eval.commands.glm_token_monitor")
-SPEC = importlib.util.spec_from_file_location("glm_token_monitor", SCRIPT)
-assert SPEC is not None and SPEC.loader is not None
-monitor = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(monitor)
+from opencollab_eval.commands import glm_token_monitor as monitor
 
 
 @pytest.mark.parametrize("value", ["inf", "nan", "-1", "invalid"])
@@ -326,7 +320,8 @@ def test_glm_monitor_cli_returns_nonzero_for_incomplete_input(tmp_path):
     result = subprocess.run(
         [
             sys.executable,
-            str(SCRIPT),
+            "-m",
+            "opencollab_eval.commands.glm_token_monitor",
             "--trajectories-dir",
             str(tmp_path),
             "--model",

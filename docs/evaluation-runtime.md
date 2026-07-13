@@ -21,6 +21,13 @@ Pro-Lite batches use
 coordination uses
 `python -m opencollab_eval.commands.swe_g11_parallel_runner`.
 
+Python command modules are launched with `python -m`. They use package imports
+from the installed OpenCollab-Eval distribution and do not add repository or
+package directories to `sys.path`. The remote v1 runner is the sole bootstrap
+exception: after the packaged runner source is embedded on an evaluation host,
+it adds that host's synchronized `remote_repo/src` directory before importing
+the transferred runtime modules.
+
 The packaged `run_team_batch.sh` and `start_team_run.sh` resources preserve
 their explicit legacy gates. They return technical status 125 before starting
 a solver because their historical mount design cannot establish the current

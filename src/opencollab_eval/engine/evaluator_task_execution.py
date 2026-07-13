@@ -10,7 +10,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from opencollab.sdk.eval_compat import CallerTimeoutError, abandon_on_timeout
+from opencollab.sdk.lifecycle import CallerTimeoutError, abandon_on_timeout
 
 
 @dataclass(frozen=True)
@@ -232,7 +232,7 @@ async def run_session_or_workflow(
 ) -> None:
     repo_map = await controller.run(
         "repo_map",
-        facade.build_repo_map_via_env(state.env),
+        facade.build_repository_map(state.env),
     )
     prompt = f"{config.prompt}\n\n{repo_map}" if repo_map else config.prompt
     execution_task = replace(state.task, timeout=controller.remaining_time())

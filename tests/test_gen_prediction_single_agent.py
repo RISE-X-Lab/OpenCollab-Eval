@@ -9,19 +9,14 @@ import time
 from pathlib import Path
 
 import pytest
-from opencollab.sdk.eval_compat import SessionPhase
-from package_test_support import module_path
+from opencollab.sdk.errors import AgentRunLifecycleError
+from opencollab.sdk.models import AgentRunResult
 
 from opencollab_eval.engine.swe_eval_records import (
     SUBMISSION_INTEGRITY_PROVEN,
     latest_paired_rows,
     metric_submission_integrity,
 )
-
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_SWEBENCH_DIR = module_path("opencollab_eval.generation.gen_prediction").parent
-if str(_SWEBENCH_DIR) not in sys.path:
-    sys.path.insert(0, str(_SWEBENCH_DIR))
 
 gp = pytest.importorskip("opencollab_eval.generation.gen_prediction")
 
@@ -132,20 +127,57 @@ def test_single_agent_cli_accepts_metrics_argument():
     assert "--metrics" in result.stdout
 
 
-def _patch_run_agent_dependencies(monkeypatch, session):
-    class Dummy:
-        def __init__(self, *args, **kwargs):
-            self.name = kwargs.get("name", "dummy")
+class RecordingRuntime:
+    def __init__(self, result=None, error: Exception | None = None):
+        self.result = result
+        self.error = error
+        self.requests = []
 
-        def close(self):
-            return None
+    async def run_agent(self, request):
+        self.requests.append(request)
+        assert request.artifact_dir is not None
+        assert list(request.artifact_dir.iterdir()) == []
+        if self.error is not None:
+            raise self.error
+        return self.result
 
-    monkeypatch.setattr(gp, "DockerEnvironment", Dummy)
-    monkeypatch.setattr(gp, "Agent", Dummy)
-    monkeypatch.setattr(gp, "Tracer", Dummy)
-    monkeypatch.setattr(gp, "make_run_dir", lambda root: Path("/tmp/run"))
-    monkeypatch.setattr(gp, "agent_save_path", lambda *args: "/tmp/session.json")
-    monkeypatch.setattr(gp, "build_session", lambda **kwargs: session)
+
+def _runtime_result(
+    *,
+    outcome="completed",
+    phase="done",
+    error_type=None,
+    error_message=None,
+    tokens_spent=10,
+    step_count=1,
+    cleanup_quiesced=True,
+):
+    return AgentRunResult(
+        output="result" if outcome == "completed" else None,
+        outcome=outcome,
+        phase=phase,
+        terminal_reason=None,
+        error_type=error_type,
+        error_message=error_message,
+        tokens_spent=tokens_spent,
+        step_count=step_count,
+        artifact_dir=None,
+        transcript_path=None,
+        trace_path=None,
+        cleanup_quiesced=cleanup_quiesced,
+    )
+
+
+def _reserve_empty_artifact_dir(monkeypatch, tmp_path):
+    artifact_dir = tmp_path / "agent-artifacts"
+
+    def reserve(_root):
+        assert Path(_root) == tmp_path
+        artifact_dir.mkdir()
+        return str(artifact_dir)
+
+    monkeypatch.setattr(gp.gen_prediction_agent, "reserve_run_directory", reserve)
+    return artifact_dir
 
 
 def _agent_config():
@@ -157,42 +189,142 @@ def _agent_config():
     }
 
 
-def test_single_agent_reports_real_terminal_phase(monkeypatch):
-    class FakeSession:
-        phase = SessionPhase.BUDGET_EXCEEDED
-        step_count = 4
-        used_tokens = 100
+def test_single_agent_sealed_fields_do_not_reach_runtime_request(monkeypatch, tmp_path):
+    _reserve_empty_artifact_dir(monkeypatch, tmp_path)
+    runtime = RecordingRuntime(_runtime_result())
+    sealed_values = (
+        "private-instance-id",
+        "private-base-commit",
+        "tests/private_target.py::test_secret",
+        "private test patch",
+        "private reference patch",
+    )
+    prompt = gp.build_task(
+        {
+            "repo": "owner/repo",
+            "problem_statement": "Fix the public behavior.",
+            "instance_id": sealed_values[0],
+            "base_commit": sealed_values[1],
+            "FAIL_TO_PASS": [sealed_values[2]],
+            "test_patch": sealed_values[3],
+            "reference_patch": sealed_values[4],
+        }
+    )
 
-        async def add_user_message(self, content):
-            return None
+    asyncio.run(
+        gp.run_agent(
+            prompt,
+            "cid",
+            _agent_config(),
+            4,
+            100,
+            1,
+            artifact_root=tmp_path,
+            runtime=runtime,
+        )
+    )
 
-        async def run_loop(self):
-            return ""
+    assert "owner/repo" in prompt
+    assert "Fix the public behavior." in prompt
+    assert runtime.requests[0].prompt == prompt
+    assert all(secret not in prompt for secret in sealed_values)
 
-    _patch_run_agent_dependencies(monkeypatch, FakeSession())
 
-    metrics = asyncio.run(gp.run_agent("task", "cid", _agent_config(), 4, 100, 1))
+def test_single_agent_builds_stable_runtime_request(monkeypatch, tmp_path):
+    artifact_dir = _reserve_empty_artifact_dir(monkeypatch, tmp_path)
+    runtime = RecordingRuntime(_runtime_result())
+    config = {
+        **_agent_config(),
+        "llm_timeout": 45.0,
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "max_output_tokens": 2048,
+        "thinking": True,
+        "thinking_params": {"enable_thinking": True},
+    }
+
+    metrics = asyncio.run(
+        gp.run_agent(
+            "task",
+            "cid",
+            config,
+            4,
+            100,
+            12.5,
+            artifact_root=tmp_path,
+            runtime=runtime,
+        )
+    )
+
+    request = runtime.requests[0]
+    assert request.prompt == "task"
+    assert request.name == "swe_agent"
+    assert request.system_prompt == gp.AGENT_PROMPT.strip()
+    assert request.failure_mode == "return"
+    assert request.trace is True
+    assert request.environment._container_id == "cid"
+    assert request.environment_workdir == gp.DOCKER_WORKDIR
+    assert request.source_root == gp.DOCKER_WORKDIR
+    assert request.artifact_dir == artifact_dir
+    assert request.budget.max_steps == 4
+    assert request.budget.max_tokens == 100
+    assert request.budget.timeout_seconds == 12.5
+    assert request.budget.cleanup_timeout_seconds == gp.AGENT_CANCELLATION_GRACE_SECONDS
+    assert request.config.llm_timeout_seconds == 45.0
+    assert request.config.temperature == 0.7
+    assert request.config.top_p == 0.8
+    assert request.config.max_output_tokens == 2048
+    assert request.config.thinking is True
+    assert dict(request.config.thinking_params) == {"enable_thinking": True}
+    assert [type(tool).__name__ for tool in request.tools] == [
+        "BashTool",
+        "FileReadTool",
+        "FileWriteTool",
+        "GrepTool",
+    ]
+    assert metrics["workflow_status"] == "done"
+
+
+def test_single_agent_reports_real_terminal_phase(monkeypatch, tmp_path):
+    _reserve_empty_artifact_dir(monkeypatch, tmp_path)
+    runtime = RecordingRuntime(
+        _runtime_result(
+            outcome="failed",
+            phase="budget_exceeded",
+            tokens_spent=100,
+            step_count=4,
+        )
+    )
+
+    metrics = asyncio.run(
+        gp.run_agent(
+            "task", "cid", _agent_config(), 4, 100, 1, artifact_root=tmp_path, runtime=runtime
+        )
+    )
 
     assert metrics["workflow_status"] == "budget_exceeded"
     assert metrics["session_phase"] == "budget_exceeded"
+    assert metrics["step_count"] == 4
+    assert metrics["used_tokens"] == 100
     assert metrics["wall_clock_timeout"] is False
 
 
-def test_single_agent_does_not_relabel_provider_timeout(monkeypatch):
-    class FakeSession:
-        phase = SessionPhase.CALLING_LLM
-        step_count = 1
-        used_tokens = 10
+def test_single_agent_does_not_relabel_provider_timeout(monkeypatch, tmp_path):
+    _reserve_empty_artifact_dir(monkeypatch, tmp_path)
+    runtime = RecordingRuntime(
+        _runtime_result(
+            outcome="failed",
+            phase="calling_llm",
+            error_type="TimeoutError",
+            error_message="provider timeout",
+        )
+    )
 
-        async def add_user_message(self, content):
-            return None
-
-        async def run_loop(self):
-            raise asyncio.TimeoutError("provider timeout")
-
-    _patch_run_agent_dependencies(monkeypatch, FakeSession())
-
-    metrics = asyncio.run(gp.run_agent("task", "cid", _agent_config(), 4, 100, 1))
+    metrics = asyncio.run(
+        gp.run_agent(
+            "task", "cid", _agent_config(), 4, 100, 1, artifact_root=tmp_path, runtime=runtime
+        )
+    )
 
     assert metrics["workflow_status"] == "error"
     assert metrics["wall_clock_timeout"] is False
@@ -200,151 +332,117 @@ def test_single_agent_does_not_relabel_provider_timeout(monkeypatch):
     assert metrics["error"] == "provider timeout"
 
 
-def test_single_agent_marks_only_caller_deadline_as_wall_timeout(monkeypatch):
-    class FakeSession:
-        phase = SessionPhase.CALLING_LLM
-        step_count = 1
-        used_tokens = 10
+def test_single_agent_timeout_preserves_partial_patch_metrics(monkeypatch, tmp_path):
+    _reserve_empty_artifact_dir(monkeypatch, tmp_path)
+    runtime = RecordingRuntime(
+        _runtime_result(
+            outcome="timed_out",
+            phase="cancelled",
+            tokens_spent=321,
+            step_count=7,
+        )
+    )
 
-        async def add_user_message(self, content):
-            return None
-
-        async def run_loop(self):
-            await asyncio.Event().wait()
-
-    _patch_run_agent_dependencies(monkeypatch, FakeSession())
-
-    metrics = asyncio.run(gp.run_agent("task", "cid", _agent_config(), 4, 100, 0.01))
+    metrics = asyncio.run(
+        gp.run_agent(
+            "task",
+            "cid",
+            _agent_config(),
+            40,
+            1000,
+            0.01,
+            artifact_root=tmp_path,
+            runtime=runtime,
+        )
+    )
 
     assert metrics["workflow_status"] == "done_with_timeout_patch"
     assert metrics["wall_clock_timeout"] is True
     assert metrics["execution_quiesced"] is True
     assert metrics["submission_eligible"] is True
+    assert metrics["session_phase"] == "cancelled"
+    assert metrics["step_count"] == 7
+    assert metrics["used_tokens"] == 321
 
 
-def test_single_agent_non_quiescent_timeout_revokes_env_and_rejects_patch(monkeypatch):
-    release_late_write = asyncio.Event()
-    late_attempt_finished = asyncio.Event()
-    state = {"late_write": False, "late_write_rejected": False, "cancels": 0}
+def test_single_agent_rejects_non_quiescent_runtime_result(monkeypatch, tmp_path):
+    _reserve_empty_artifact_dir(monkeypatch, tmp_path)
+    runtime = RecordingRuntime(
+        _runtime_result(
+            outcome="timed_out",
+            phase="cancelled",
+            cleanup_quiesced=False,
+        )
+    )
 
-    class RevocableEnv:
-        def __init__(self):
-            self.aborted = False
+    metrics = asyncio.run(
+        gp.run_agent(
+            "task",
+            "cid",
+            _agent_config(),
+            4,
+            100,
+            0.05,
+            artifact_root=tmp_path,
+            runtime=runtime,
+        )
+    )
 
-        async def abort(self):
-            self.aborted = True
-
-    env = RevocableEnv()
-
-    class FakeSession:
-        phase = SessionPhase.CALLING_LLM
-        step_count = 1
-        used_tokens = 10
-
-        async def add_user_message(self, content):
-            return None
-
-        async def run_loop(self):
-            while not release_late_write.is_set():
-                try:
-                    await release_late_write.wait()
-                except asyncio.CancelledError:
-                    state["cancels"] += 1
-            if env.aborted:
-                state["late_write_rejected"] = True
-            else:
-                state["late_write"] = True
-            late_attempt_finished.set()
-
-    class Dummy:
-        def __init__(self, *args, **kwargs):
-            self.name = kwargs.get("name", "dummy")
-
-        def close(self):
-            return None
-
-    monkeypatch.setattr(gp, "DockerEnvironment", lambda **_kwargs: env)
-    monkeypatch.setattr(gp, "Agent", Dummy)
-    monkeypatch.setattr(gp, "Tracer", Dummy)
-    monkeypatch.setattr(gp, "make_run_dir", lambda root: Path("/tmp/run"))
-    monkeypatch.setattr(gp, "agent_save_path", lambda *args: "/tmp/session.json")
-    monkeypatch.setattr(gp, "build_session", lambda **kwargs: FakeSession())
-    monkeypatch.setattr(gp, "AGENT_CANCELLATION_GRACE_SECONDS", 0.01)
-
-    async def scenario():
-        metrics = await gp.run_agent("task", "cid", _agent_config(), 4, 100, 0.05)
-        assert metrics["execution_quiesced"] is False
-        assert metrics["submission_eligible"] is False
-        assert metrics["workflow_status"] == "error"
-        assert env.aborted is True
-        release_late_write.set()
-        await asyncio.wait_for(late_attempt_finished.wait(), timeout=1)
-        return metrics
-
-    metrics = asyncio.run(scenario())
-
-    assert state["cancels"] >= 2
-    assert state["late_write"] is False
-    assert state["late_write_rejected"] is True
+    assert metrics["execution_quiesced"] is False
+    assert metrics["submission_eligible"] is False
+    assert metrics["workflow_status"] == "error"
+    assert metrics["error_type"] == "ExecutionNotQuiesced"
     assert gp.metrics_have_completed_identity(metrics, "+candidate") is False
 
 
-def test_single_agent_always_closes_tracer(monkeypatch):
-    class FakeSession:
-        phase = SessionPhase.DONE
-        step_count = 1
-        used_tokens = 10
+def test_single_agent_failed_done_phase_cannot_become_submission_eligible(
+    monkeypatch, tmp_path
+):
+    _reserve_empty_artifact_dir(monkeypatch, tmp_path)
+    runtime = RecordingRuntime(
+        _runtime_result(
+            outcome="failed",
+            phase="done",
+            error_type="RuntimeError",
+            error_message="completion evidence failed",
+        )
+    )
 
-        async def add_user_message(self, content):
-            return None
+    metrics = asyncio.run(
+        gp.run_agent(
+            "task", "cid", _agent_config(), 4, 100, 1, artifact_root=tmp_path, runtime=runtime
+        )
+    )
 
-        async def run_loop(self):
-            return ""
-
-    closed = []
-
-    class ClosingTracer:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def close(self):
-            closed.append(True)
-
-    _patch_run_agent_dependencies(monkeypatch, FakeSession())
-    monkeypatch.setattr(gp, "Tracer", ClosingTracer)
-
-    metrics = asyncio.run(gp.run_agent("task", "cid", _agent_config(), 4, 100, 1))
-
-    assert metrics["workflow_status"] == "done"
-    assert closed == [True]
+    assert metrics["workflow_status"] == "error"
+    assert metrics["execution_quiesced"] is True
+    assert metrics["submission_eligible"] is False
+    assert metrics["error_type"] == "RuntimeError"
 
 
-def test_single_agent_records_tracer_close_failure(monkeypatch):
-    class FakeSession:
-        phase = SessionPhase.DONE
-        step_count = 1
-        used_tokens = 10
+@pytest.mark.parametrize(
+    "error",
+    [
+        AgentRunLifecycleError("agent evidence incomplete"),
+        RuntimeError("runtime unavailable"),
+    ],
+)
+def test_single_agent_runtime_call_failures_are_ineligible(monkeypatch, tmp_path, error):
+    _reserve_empty_artifact_dir(monkeypatch, tmp_path)
+    runtime = RecordingRuntime(error=error)
 
-        async def add_user_message(self, content):
-            return None
+    metrics = asyncio.run(
+        gp.run_agent(
+            "task", "cid", _agent_config(), 4, 100, 1, artifact_root=tmp_path, runtime=runtime
+        )
+    )
 
-        async def run_loop(self):
-            return ""
-
-    class FailingTracer:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def close(self):
-            raise OSError("trace disk failure")
-
-    _patch_run_agent_dependencies(monkeypatch, FakeSession())
-    monkeypatch.setattr(gp, "Tracer", FailingTracer)
-
-    metrics = asyncio.run(gp.run_agent("task", "cid", _agent_config(), 4, 100, 1))
-
-    assert metrics["tracer_close_error_type"] == "OSError"
-    assert metrics["tracer_close_error"] == "trace disk failure"
+    assert metrics["workflow_status"] == "error"
+    assert metrics["session_phase"] == "error"
+    assert metrics["execution_quiesced"] is False
+    assert metrics["submission_eligible"] is False
+    assert metrics["error_type"] == type(error).__name__
+    assert metrics["error"] == str(error)
 
 
 def test_docker_timeout_accepts_positive_float(monkeypatch):

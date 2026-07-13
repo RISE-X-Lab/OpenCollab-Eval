@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import json
 import subprocess
 from types import SimpleNamespace
-
-from package_test_support import module_path
 
 from opencollab_eval.engine.token_cost import build_summary, collect_workflow_usage, to_markdown
 
@@ -16,12 +14,8 @@ def _write_jsonl(path, rows):
 
 
 def _load_cli_module():
-    script = module_path("opencollab_eval.commands.swe_token_cost_summary")
-    spec = importlib.util.spec_from_file_location("swe_token_cost_summary", script)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+    module = importlib.import_module("opencollab_eval.commands.swe_token_cost_summary")
+    return importlib.reload(module)
 
 
 def test_token_cost_summary_uses_api_usage_as_billable_source(tmp_path):

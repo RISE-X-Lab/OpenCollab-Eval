@@ -3,21 +3,48 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
-from package_test_support import module_path
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_SWEBENCH_DIR = module_path("opencollab_eval.generation.gen_prediction").parent
-if str(_SWEBENCH_DIR) not in sys.path:
-    sys.path.insert(0, str(_SWEBENCH_DIR))
+from opencollab_eval.generation import gen_prediction_snapshot as snapshot
+from opencollab_eval.generation import gen_prediction_snapshot_config as snapshot_config
+from opencollab_eval.generation import gen_prediction_snapshot_container as snapshot_container
 
-from opencollab_eval.generation import gen_prediction_snapshot as snapshot  # noqa: E402
-from opencollab_eval.generation import gen_prediction_snapshot_config as snapshot_config  # noqa: E402
-from opencollab_eval.generation import gen_prediction_snapshot_container as snapshot_container  # noqa: E402
+
+def test_container_snapshot_helper_runs_as_a_standalone_script(tmp_path: Path) -> None:
+    helper_dir = tmp_path / "helper"
+    helper_dir.mkdir()
+    helper = helper_dir / "gen_prediction_snapshot_container.py"
+    config = helper_dir / "gen_prediction_snapshot_config.py"
+    shutil.copy2(Path(snapshot._CONTAINER_HELPER_SOURCE), helper)
+    shutil.copy2(Path(snapshot._CONTAINER_CONFIG_HELPER_SOURCE), config)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import runpy,sys; script=sys.argv[1]; sys.argv=sys.argv[1:]; "
+                "runpy.run_path(script, run_name='__main__')"
+            ),
+            str(helper),
+            str(tmp_path),
+        ],
+        cwd=helper_dir,
+        input="invalid-base\n",
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 1
+    assert "expected base commit must be a full hexadecimal object id" in result.stderr
+    assert "ImportError" not in result.stderr
 
 
 def _git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:

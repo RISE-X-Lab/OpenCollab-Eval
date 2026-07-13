@@ -11,21 +11,16 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .gen_prediction_snapshot_config import (
-    SnapshotSetupError,
-)
-from .gen_prediction_snapshot_config import (
-    audit_default_solver_git_config as _audit_default_solver_git_config,
-)
-from .gen_prediction_snapshot_config import (
-    clean_git_env as _clean_git_env,
-)
-from .gen_prediction_snapshot_config import (
-    replace_untrusted_repository_config as _replace_untrusted_repository_config,
-)
-from .gen_prediction_snapshot_config import (
-    sanitize_default_git_configs as _sanitize_default_git_configs,
-)
+if __package__:
+    from . import gen_prediction_snapshot_config as _snapshot_config
+else:
+    import gen_prediction_snapshot_config as _snapshot_config
+
+SnapshotSetupError = _snapshot_config.SnapshotSetupError
+_audit_default_solver_git_config = _snapshot_config.audit_default_solver_git_config
+_clean_git_env = _snapshot_config.clean_git_env
+_replace_untrusted_repository_config = _snapshot_config.replace_untrusted_repository_config
+_sanitize_default_git_configs = _snapshot_config.sanitize_default_git_configs
 
 _OBJECT_ID_RE = re.compile(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}")
 _LOOSE_OBJECT_DIR_RE = re.compile(r"[0-9a-fA-F]{2}")

@@ -36,12 +36,10 @@ import uuid
 from dataclasses import fields
 from pathlib import Path
 
-from opencollab.sdk import discover_workflows, model_context_window
-from opencollab.sdk.eval_compat import (
-    DEFAULT_MAX_OUTPUT_TOKENS,
-    DockerEnvironment,
-    get_config,
-)
+from opencollab.sdk.config import get_config
+from opencollab.sdk.environments import DockerEnvironment
+from opencollab.sdk.usage import DEFAULT_MAX_OUTPUT_TOKENS, model_context_window
+from opencollab.sdk.workflows import discover_workflows
 
 from opencollab_eval.engine.evaluator import EvalTask, run_eval_task  # noqa: E402
 from opencollab_eval.engine.swe_generation_proof import (  # noqa: E402

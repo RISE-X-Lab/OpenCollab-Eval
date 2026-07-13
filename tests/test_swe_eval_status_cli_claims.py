@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from package_test_support import module_path
 from swe_eval_status_support import (
     Path,
     SimpleNamespace,
@@ -22,6 +21,12 @@ from swe_eval_status_support import (
     threading,
     time,
 )
+
+_DRIVER_MODULE = "opencollab_eval.commands.swe_auto_eval_driver"
+
+
+def _driver_command(*args: str) -> list[str]:
+    return [sys.executable, "-m", _DRIVER_MODULE, *args]
 
 
 def test_claim_runner_hides_retirement_registry_from_evaluator(monkeypatch, tmp_path):
@@ -51,10 +56,8 @@ def test_status_script_defaults_to_read_only_summary(tmp_path):
     }
     _write_jsonl(run_dir / "predictions.jsonl", [prediction])
     _write_jsonl(run_dir / "metrics.jsonl", [metric])
-    script = module_path("opencollab_eval.commands.swe_auto_eval_driver")
-
     result = subprocess.run(
-        [sys.executable, str(script), "--run-dir", str(run_dir)],
+        _driver_command("--run-dir", str(run_dir)),
         check=True,
         text=True,
         capture_output=True,
@@ -83,19 +86,15 @@ def test_status_script_dry_run_requires_explicit_start_eval(tmp_path):
     }
     _write_jsonl(run_dir / "predictions.jsonl", [prediction])
     _write_jsonl(run_dir / "metrics.jsonl", [metric])
-    script = module_path("opencollab_eval.commands.swe_auto_eval_driver")
-
     result = subprocess.run(
-        [
-            sys.executable,
-            str(script),
+        _driver_command(
             "--run-dir",
             str(run_dir),
             "--start-eval",
             "--dry-run",
             "--eval-command-template",
             "echo {task} {patch_sha}",
-        ],
+        ),
         check=True,
         text=True,
         capture_output=True,
@@ -128,19 +127,15 @@ def test_status_script_limits_eval_starts_by_default(tmp_path):
         )
     _write_jsonl(run_dir / "predictions.jsonl", predictions)
     _write_jsonl(run_dir / "metrics.jsonl", metrics)
-    script = module_path("opencollab_eval.commands.swe_auto_eval_driver")
-
     result = subprocess.run(
-        [
-            sys.executable,
-            str(script),
+        _driver_command(
             "--run-dir",
             str(run_dir),
             "--start-eval",
             "--dry-run",
             "--eval-command-template",
             "echo {task}",
-        ],
+        ),
         check=True,
         text=True,
         capture_output=True,
@@ -269,18 +264,14 @@ def test_auto_eval_start_failure_returns_nonzero(tmp_path):
     }
     _write_jsonl(run_dir / "predictions.jsonl", [prediction])
     _write_jsonl(run_dir / "metrics.jsonl", [metric])
-    script = module_path("opencollab_eval.commands.swe_auto_eval_driver")
-
     result = subprocess.run(
-        [
-            sys.executable,
-            str(script),
+        _driver_command(
             "--run-dir",
             str(run_dir),
             "--start-eval",
             "--eval-command-template",
             "/definitely/missing/eval-command {task}",
-        ],
+        ),
         text=True,
         capture_output=True,
     )
@@ -306,20 +297,17 @@ def test_auto_eval_detaches_child_output_and_returns_before_child(tmp_path):
     }
     _write_jsonl(run_dir / "predictions.jsonl", [prediction])
     _write_jsonl(run_dir / "metrics.jsonl", [metric])
-    script = module_path("opencollab_eval.commands.swe_auto_eval_driver")
     command = f"{sys.executable} -c 'import time; print(\"CHILD_OUTPUT\"); time.sleep(5)'"
 
     started = time.monotonic()
     result = subprocess.run(
-        [
-            sys.executable,
-            str(script),
+        _driver_command(
             "--run-dir",
             str(run_dir),
             "--start-eval",
             "--eval-command-template",
             command,
-        ],
+        ),
         text=True,
         capture_output=True,
         check=True,
@@ -339,7 +327,6 @@ def test_auto_eval_detaches_child_output_and_returns_before_child(tmp_path):
 
 
 def test_auto_eval_wrapper_kills_background_group_after_leader_exit(tmp_path):
-    driver = importlib.import_module("opencollab_eval.commands.swe_auto_eval_driver")
     claim_path = tmp_path / "claim.json"
     attempt_path = tmp_path / "attempt.json"
     sentinel = tmp_path / "late-write"
@@ -365,8 +352,8 @@ def test_auto_eval_wrapper_kills_background_group_after_leader_exit(tmp_path):
     result = subprocess.run(
         [
             sys.executable,
-            "-c",
-            driver._EVAL_WRAPPER,
+            "-m",
+            "opencollab_eval.commands.swe_auto_eval_claim_runner",
             str(claim_path),
             str(attempt_path),
             json.dumps({**identity, "schema": "opencollab.swe_eval_claim.v1"}),
@@ -389,7 +376,6 @@ def test_auto_eval_wrapper_kills_background_group_after_leader_exit(tmp_path):
 
 
 def test_auto_eval_wrapper_signal_terminates_owned_evaluator_group(tmp_path):
-    driver = importlib.import_module("opencollab_eval.commands.swe_auto_eval_driver")
     claim_path = tmp_path / "claim.json"
     attempt_path = tmp_path / "attempt.json"
     sentinel = tmp_path / "signal-leak"
@@ -406,8 +392,8 @@ def test_auto_eval_wrapper_signal_terminates_owned_evaluator_group(tmp_path):
     wrapper = subprocess.Popen(
         [
             sys.executable,
-            "-c",
-            driver._EVAL_WRAPPER,
+            "-m",
+            "opencollab_eval.commands.swe_auto_eval_claim_runner",
             str(claim_path),
             str(attempt_path),
             json.dumps({**identity, "schema": "opencollab.swe_eval_claim.v1"}),

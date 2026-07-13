@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from package_test_support import module_path
 
-SCRIPT = module_path("opencollab_eval.commands.swe_eval_run")
 MODEL_ARGUMENTS = [
     "--model-name",
     "public-evaluation-model",
@@ -19,12 +17,8 @@ MODEL_ARGUMENTS = [
 
 
 def _load_entry_module() -> Any:
-    spec = importlib.util.spec_from_file_location("swe_eval_run_under_test", SCRIPT)
-    module = importlib.util.module_from_spec(spec)
-    assert spec is not None and spec.loader is not None
-    sys.modules["swe_eval_run_under_test"] = module
-    spec.loader.exec_module(module)
-    return module
+    module = importlib.import_module("opencollab_eval.commands.swe_eval_run")
+    return importlib.reload(module)
 
 
 def test_base_team_entry_delegates_to_parallel_runner(monkeypatch: Any) -> None:
@@ -37,7 +31,7 @@ def test_base_team_entry_delegates_to_parallel_runner(monkeypatch: Any) -> None:
             captured["argv"] = list(sys.argv)
             return 0
 
-    monkeypatch.setattr(module, "_load_module", lambda path, name: FakeRunner)
+    monkeypatch.setattr(module, "_load_module", lambda name: FakeRunner)
 
     rc = module.main(
         [
@@ -75,7 +69,7 @@ def test_team_pro_entry_uses_dynamic_workflow_defaults(monkeypatch: Any) -> None
             captured["argv"] = list(sys.argv)
             return 0
 
-    monkeypatch.setattr(module, "_load_module", lambda path, name: FakeRunner)
+    monkeypatch.setattr(module, "_load_module", lambda name: FakeRunner)
 
     rc = module.main(
         [
@@ -115,7 +109,7 @@ def test_team_pro_entry_accepts_explicit_runtime_settings(monkeypatch: Any) -> N
             captured["argv"] = list(sys.argv)
             return 0
 
-    monkeypatch.setattr(module, "_load_module", lambda path, name: FakeRunner)
+    monkeypatch.setattr(module, "_load_module", lambda name: FakeRunner)
     assert module.main(
         [
             "--indices",
@@ -188,7 +182,7 @@ def test_openhands_entry_delegates_external_workflow(monkeypatch: Any) -> None:
             captured["argv"] = list(sys.argv)
             return 0
 
-    monkeypatch.setattr(module, "_load_module", lambda path, name: FakeRunner)
+    monkeypatch.setattr(module, "_load_module", lambda name: FakeRunner)
 
     rc = module.main(
         [
@@ -226,7 +220,7 @@ def test_openhands_entry_has_one_command_defaults(monkeypatch: Any) -> None:
             captured["argv"] = list(sys.argv)
             return 0
 
-    monkeypatch.setattr(module, "_load_module", lambda path, name: FakeRunner)
+    monkeypatch.setattr(module, "_load_module", lambda name: FakeRunner)
     assert module.main(
         [
             "--indices",
@@ -271,7 +265,7 @@ def test_solver_entry_reads_model_configuration_from_environment(monkeypatch: An
 
     monkeypatch.setenv("OPENCOLLAB_SWE_MODEL_NAME", "environment-run")
     monkeypatch.setenv("OPENCOLLAB_SWE_LLM_MODEL", "provider/environment-model")
-    monkeypatch.setattr(module, "_load_module", lambda path, name: FakeRunner)
+    monkeypatch.setattr(module, "_load_module", lambda name: FakeRunner)
 
     assert module.main(["--indices", "1", "--solver", "g11", "--dry-run"]) == 0
     argv = captured["argv"]
@@ -279,17 +273,26 @@ def test_solver_entry_reads_model_configuration_from_environment(monkeypatch: An
     assert argv[argv.index("--llm-model") + 1] == "provider/environment-model"
 
 
-def test_detached_plist_uses_direct_python_without_wrapper() -> None:
+def test_detached_plist_uses_module_entry_without_shell_wrapper() -> None:
     module = _load_entry_module()
     payload = module._launchd_plist(
         label="com.opencollab.eval.test",
-        program_arguments=[sys.executable, str(SCRIPT), "--indices", "51-100"],
+        program_arguments=[
+            sys.executable,
+            "-m",
+            "opencollab_eval.commands.swe_eval_run",
+            "--indices",
+            "51-100",
+        ],
         stdout_path=Path("/tmp/stdout.log"),
         stderr_path=Path("/tmp/stderr.log"),
     )
 
     assert payload["ProgramArguments"][0] == sys.executable
-    assert payload["ProgramArguments"][1] == str(SCRIPT)
+    assert payload["ProgramArguments"][1:3] == [
+        "-m",
+        "opencollab_eval.commands.swe_eval_run",
+    ]
     assert payload["KeepAlive"] is False
     assert "/bin/bash" not in payload["ProgramArguments"]
 
@@ -353,7 +356,11 @@ def test_detach_starts_direct_launch_agent_once(monkeypatch: Any, tmp_path: Path
     assert rc == 0
     assert len(written) == 1
     program = written[0][1]["ProgramArguments"]
-    assert program[:2] == [sys.executable, str(SCRIPT)]
+    assert program[:3] == [
+        sys.executable,
+        "-m",
+        "opencollab_eval.commands.swe_eval_run",
+    ]
     assert "--detach" not in program
     assert "--no-persistent-proxy" not in program
     assert any(call[0] == "bootstrap" for call in launchctl_calls)

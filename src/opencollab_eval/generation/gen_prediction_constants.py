@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 from opencollab_eval.engine.swe_eval_records import MAX_JSONL_SCAN_BYTES
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
 
 DOCKER_WORKDIR = "/testbed"
 # Activate the testbed conda env so the agent's `python`/tests see the repo deps.

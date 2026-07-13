@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 from evaluator_test_support import (
-    Environment,
     EvalResult,
     EvalTask,
     FakeEnv,
     FakeLLMClient,
     LocalEnvironment,
     asyncio,
-    container,
     evaluator,
-    os,
+    patch_evaluator_llm,
     pytest,
     run,
     run_eval_batch,
@@ -21,7 +19,7 @@ from evaluator_test_support import (
 
 
 def test_run_eval_task_produces_patch(monkeypatch, tmp_path):
-    monkeypatch.setattr(container, "LLMClient", FakeLLMClient)
+    patch_evaluator_llm(monkeypatch, FakeLLMClient)
     env = FakeEnv()
 
     async def env_factory(task):
@@ -42,7 +40,7 @@ def test_run_eval_task_produces_patch(monkeypatch, tmp_path):
     assert env.cleaned_up is True
 
 def test_run_eval_task_empty_diff_not_produced(monkeypatch, tmp_path):
-    monkeypatch.setattr(container, "LLMClient", FakeLLMClient)
+    patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
     async def env_factory(task):
         return FakeEnv(diff="")
@@ -159,19 +157,52 @@ def test_asyncio_run_shutdown_finishes_third_cancel_late_environment_cleanup(
 ):
     marker = tmp_path / "late-environment-cleaned"
     output_dir = tmp_path / "output"
-    package_root = os.path.join(os.path.dirname(os.path.dirname(__file__)), "src")
     script = r'''
 import asyncio
 import pathlib
 import sys
 
-from opencollab.sdk.eval_compat import Environment, ExecResult
+from opencollab.sdk.environment import ExecResult
 from opencollab_eval.engine.evaluator import EvalTask, run_eval_task
 
 
-class LateEnvironment(Environment):
+class LateEnvironment:
+    workspace = "."
+    host_workspace = None
+    source_workspace = None
+    local_filesystem = False
+    process_isolated = False
+
+    def __init__(self):
+        self._revoked = False
+
+    @property
+    def revoked(self):
+        return self._revoked
+
+    def revoke(self):
+        self._revoked = True
+
     async def exec_cmd(self, cmd, timeout=120.0):
         return ExecResult(0, "", "")
+
+    async def read_file(self, path):
+        return ""
+
+    async def write_file(self, path, content):
+        return None
+
+    async def write_temp_file(self, content, *, prefix, suffix=".tmp"):
+        return f"/tmp/{prefix}late{suffix}"
+
+    async def remove_file(self, path):
+        return None
+
+    async def registered_retirement_paths(self):
+        return ()
+
+    async def abort(self):
+        self.revoke()
 
     async def cleanup(self):
         await asyncio.sleep(0.003)
@@ -210,14 +241,11 @@ asyncio.run(main(), debug=True)
 assert cancellations == 3
 assert pathlib.Path(sys.argv[1]).read_text(encoding="utf-8") == "cleaned"
 '''
-    process_env = dict(os.environ)
-    process_env["PYTHONPATH"] = package_root
     completed = subprocess.run(
         [sys.executable, "-c", script, str(marker), str(output_dir)],
         capture_output=True,
         text=True,
         timeout=10,
-        env=process_env,
         check=False,
     )
 
@@ -488,7 +516,7 @@ def test_default_docker_task_without_repo_path_does_not_create_host_backing(
 ):
     observed: dict[str, object] = {}
 
-    class FakeDockerEnvironment(Environment):
+    class FakeDockerEnvironment:
         def __init__(self, *, image, backing_environment=None):
             observed["image"] = image
             observed["backing"] = backing_environment
@@ -623,7 +651,7 @@ def test_default_worktree_rejects_model_file_in_reserved_retirement_namespace(
     assert "unregistered or modified .opencollab-retired-*" in (result.error or "")
 
 def test_non_local_environment_never_maps_host_artifact_paths_into_container():
-    class NonLocalEnv(Environment):
+    class NonLocalEnv:
         workspace = "/testbed"
         local_filesystem = False
 
@@ -633,7 +661,7 @@ def test_non_local_environment_never_maps_host_artifact_paths_into_container():
     ) == []
 
 def test_bind_mapped_environment_maps_host_artifacts_into_container_paths(tmp_path):
-    class BindMappedEnv(Environment):
+    class BindMappedEnv:
         workspace = "/workspace"
         local_filesystem = False
 

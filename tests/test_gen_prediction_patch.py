@@ -4,24 +4,17 @@ import hashlib
 import io
 import shutil
 import subprocess
-import sys
 import tarfile
 from pathlib import Path
 
 import pytest
-from package_test_support import module_path
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_SWEBENCH_DIR = module_path("opencollab_eval.generation.gen_prediction").parent
-if str(_SWEBENCH_DIR) not in sys.path:
-    sys.path.insert(0, str(_SWEBENCH_DIR))
-
-from opencollab_eval.engine.swe_generation_proof import (  # noqa: E402
+from opencollab_eval.engine.swe_generation_proof import (
     current_generation_proof_valid,
     current_generation_summary_proof_valid,
 )
-from opencollab_eval.generation import gen_prediction_patch as patcher  # noqa: E402
-from opencollab_eval.generation.gen_prediction_snapshot import SolverGitSnapshot  # noqa: E402
+from opencollab_eval.generation import gen_prediction_patch as patcher
+from opencollab_eval.generation.gen_prediction_snapshot import SolverGitSnapshot
 
 
 def _git(cwd: Path, *args: str) -> str:

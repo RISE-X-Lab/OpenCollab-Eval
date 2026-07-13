@@ -8,30 +8,21 @@ import fnmatch
 import json
 import os
 import stat
-import sys
 from collections import Counter, deque
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, BinaryIO
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-PKG_ROOT = REPO_ROOT / "opencollab"
-SCRIPT_ROOT = Path(__file__).resolve().parent
-if str(PKG_ROOT) not in sys.path:
-    sys.path.insert(0, str(PKG_ROOT))
-if str(SCRIPT_ROOT) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_ROOT))
-
-from opencollab.sdk.eval_compat import (  # noqa: E402
-    _directory_path_matches_fd,
-    _open_directory_no_symlinks,
+from opencollab.sdk.files import (
+    directory_handle_matches_path,
     ensure_directory_no_symlinks,
+    open_directory_no_symlinks,
     regular_path_identity,
     write_regular_bytes_atomic,
 )
 
-from opencollab_eval.commands import swebench_loop_analysis as loop_analysis  # noqa: E402
+from opencollab_eval.commands import swebench_loop_analysis as loop_analysis
 
 WRITE_TOOLS = {"file_write", "apply_patch"}
 WARN_LOOP_COUNT = 5
@@ -65,7 +56,7 @@ MAX_SESSION_TREE_ENTRIES = 20_000
 def _open_regular_binary(path: Path) -> Iterator[BinaryIO]:
     """Open one stable regular input without waiting on FIFOs or devices."""
     path = _lexical_absolute(path)
-    parent_fd = _open_directory_no_symlinks(path.parent)
+    parent_fd = open_directory_no_symlinks(path.parent)
     fd = -1
     flags = (
         os.O_RDONLY
@@ -115,7 +106,7 @@ def _open_regular_binary(path: Path) -> Iterator[BinaryIO]:
             )
             if opened_identity != after_identity or after_identity != current_identity:
                 raise OSError(f"monitor input changed while reading: {path}")
-            if not _directory_path_matches_fd(path.parent, parent_fd):
+            if not directory_handle_matches_path(path.parent, parent_fd):
                 raise OSError(f"monitor input parent changed while reading: {path}")
     finally:
         if fd >= 0:
@@ -173,12 +164,12 @@ def _session_root_path(value: str) -> Path:
     try:
         inspected = path.lstat()
     except FileNotFoundError:
-        parent_fd = _open_directory_no_symlinks(path.parent)
+        parent_fd = open_directory_no_symlinks(path.parent)
         os.close(parent_fd)
         return path
     if not stat.S_ISDIR(inspected.st_mode):
         raise ValueError(f"session root is not a real directory: {path}")
-    directory_fd = _open_directory_no_symlinks(path)
+    directory_fd = open_directory_no_symlinks(path)
     os.close(directory_fd)
     return path
 

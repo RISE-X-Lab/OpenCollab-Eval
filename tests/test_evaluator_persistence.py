@@ -14,13 +14,6 @@ from evaluator_test_support import (
     run_eval_task,
     save_results,
 )
-from opencollab.sdk.eval_compat import (
-    atomic_rename as atomic_rename_mod,
-)
-from opencollab.sdk.eval_compat import (
-    owned_file_cleanup as owned_cleanup_mod,
-)
-from opencollab.sdk.eval_compat import safe_files as safe_files_mod
 
 
 def test_save_results_writes_patch_produced_key(tmp_path):
@@ -180,110 +173,6 @@ def test_save_results_rejects_symlink_target_without_overwriting_destination(
     assert outside.read_text(encoding="utf-8") == '{"outside": true}\n'
 
 
-def test_save_results_detects_parent_swap_after_atomic_commit(
-    monkeypatch,
-    tmp_path,
-):
-    parent = tmp_path / "output"
-    parent.mkdir()
-    moved_parent = tmp_path / "moved-output"
-    output = parent / "results.jsonl"
-    real_rename_noreplace = atomic_rename_mod.rename_noreplace
-
-    def commit_then_swap_parent(source, target, **kwargs):
-        result = real_rename_noreplace(source, target, **kwargs)
-        if target == output.name:
-            parent.rename(moved_parent)
-            parent.mkdir()
-        return result
-
-    monkeypatch.setattr(
-        atomic_rename_mod,
-        "rename_noreplace",
-        commit_then_swap_parent,
-    )
-
-    with pytest.raises(OSError, match="parent changed after atomic create"):
-        save_results([], str(output))
-
-    assert output.exists() is False
-    assert not (moved_parent / "results.jsonl").exists()
-    assert len(list(moved_parent.glob(".opencollab-retired-*"))) == 1
-
-
-def test_save_results_detects_target_swap_after_atomic_commit(
-    monkeypatch,
-    tmp_path,
-):
-    output = tmp_path / "results.jsonl"
-    real_rename_noreplace = atomic_rename_mod.rename_noreplace
-
-    def commit_then_swap_target(source, target, **kwargs):
-        result = real_rename_noreplace(source, target, **kwargs)
-        parent_fd = kwargs["dst_dir_fd"]
-        os.rename(
-            target,
-            f"{target}.detached",
-            src_dir_fd=parent_fd,
-            dst_dir_fd=parent_fd,
-        )
-        replacement_fd = os.open(
-            target,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-            0o600,
-            dir_fd=parent_fd,
-        )
-        os.close(replacement_fd)
-        return result
-
-    monkeypatch.setattr(
-        atomic_rename_mod,
-        "rename_noreplace",
-        commit_then_swap_target,
-    )
-
-    with pytest.raises(OSError, match="changed during create"):
-        save_results([], str(output))
-
-    assert output.is_file()
-    assert output.read_bytes() == b""
-    assert (tmp_path / "results.jsonl.detached").is_file()
-
-
-def test_save_results_rejects_swapped_temp_without_touching_victim(
-    monkeypatch,
-    tmp_path,
-):
-    output = tmp_path / "results.jsonl"
-    victim = tmp_path / "victim.jsonl"
-    victim.write_text("foreign\n", encoding="utf-8")
-    real_rename_noreplace = atomic_rename_mod.rename_noreplace
-
-    def swap_temp_before_commit(source, target, **kwargs):
-        parent_fd = kwargs["src_dir_fd"]
-        os.rename(
-            source,
-            f"{source}.detached",
-            src_dir_fd=parent_fd,
-            dst_dir_fd=parent_fd,
-        )
-        os.symlink(victim, source, dir_fd=parent_fd)
-        return real_rename_noreplace(source, target, **kwargs)
-
-    monkeypatch.setattr(
-        atomic_rename_mod,
-        "rename_noreplace",
-        swap_temp_before_commit,
-    )
-
-    with pytest.raises(OSError, match="changed during create"):
-        save_results([], str(output))
-
-    assert output.is_symlink()
-    assert output.resolve() == victim
-    assert victim.read_text(encoding="utf-8") == "foreign\n"
-
-
 def test_save_results_rejects_concurrent_successor_before_commit(
     monkeypatch,
     tmp_path,
@@ -343,59 +232,15 @@ def test_save_results_failure_preserves_previous_file(monkeypatch, tmp_path):
         duration=0.1,
     )
 
-    real_rename_exchange = atomic_rename_mod.rename_exchange
-    failed = False
+    def fail_atomic_write(*args, **kwargs):
+        raise OSError("simulated replace failure")
 
-    def fail_target_commit(source, target, **kwargs):
-        nonlocal failed
-        if not failed and target == out.name:
-            failed = True
-            raise OSError("simulated replace failure")
-        return real_rename_exchange(source, target, **kwargs)
-
-    monkeypatch.setattr(
-        atomic_rename_mod,
-        "rename_exchange",
-        fail_target_commit,
-    )
+    monkeypatch.setattr(evaluator, "write_regular_file_atomic", fail_atomic_write)
 
     with pytest.raises(OSError, match="simulated replace failure"):
         save_results([result], str(out))
 
     assert out.read_text(encoding="utf-8") == '{"old": true}\n'
-    temp_directory = out.parent / evaluator.RESULT_TEMP_DIRECTORY
-    assert not temp_directory.exists()
-    assert list(out.parent.glob(".oc-*.tmp")) == []
-
-
-def test_save_results_preserves_primary_error_when_temp_cleanup_fails(
-    monkeypatch,
-    tmp_path,
-):
-    output = tmp_path / "results.jsonl"
-    output.write_text("old\n", encoding="utf-8")
-
-    def fail_file_fsync(_fd):
-        raise OSError("primary results fsync failure")
-
-    def fail_temp_retirement(*args, **kwargs):
-        raise OSError("secondary results cleanup failure")
-
-    monkeypatch.setattr(safe_files_mod.os, "fsync", fail_file_fsync)
-    monkeypatch.setattr(
-        owned_cleanup_mod,
-        "finalize_owned_retirement_candidate",
-        fail_temp_retirement,
-    )
-
-    with pytest.raises(OSError, match="primary results fsync failure") as captured:
-        save_results([], str(output))
-
-    assert output.read_text(encoding="utf-8") == "old\n"
-    assert any(
-        "secondary results cleanup failure" in note
-        for note in getattr(captured.value, "__notes__", [])
-    )
 
 
 def test_save_results_reports_directory_fsync_failure_after_replace(

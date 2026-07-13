@@ -8,17 +8,21 @@ from collections import deque
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
-from opencollab.sdk.eval_compat import (
-    WORKFLOW_MANIFEST_FILENAME,
-    AutoSaveSubscriber,
-    Environment,
-    SessionStore,
-    Tracer,
-    WorkflowContext,
-    WorkflowFn,
+from opencollab.sdk.environment import ExecutionEnvironment
+from opencollab.sdk.lifecycle import (
     abandon_on_timeout,
     force_task_terminal,
     isolate_tasks_from_shutdown,
+)
+from opencollab.sdk.persistence import (
+    WORKFLOW_MANIFEST_FILENAME,
+    AutoSaveSubscriber,
+    SessionStore,
+)
+from opencollab.sdk.tracing import Tracer
+from opencollab.sdk.workflows import (
+    WorkflowContext,
+    WorkflowFn,
 )
 
 from opencollab_eval.engine.swe_checkpoint import WorktreeCheckpoint
@@ -26,7 +30,7 @@ from opencollab_eval.engine.swe_checkpoint import WorktreeCheckpoint
 if TYPE_CHECKING:
     from opencollab_eval.engine.evaluator import EvalTask
 
-EnvFactory = Callable[["EvalTask"], Awaitable[Environment]]
+EnvFactory = Callable[["EvalTask"], Awaitable[ExecutionEnvironment]]
 _EVAL_MANIFEST_OWNER_TASKS: set[asyncio.Task[Any]] = set()
 _LATE_EVAL_RESOURCE_TASKS: set[asyncio.Task[Any]] = set()
 _LATE_EVAL_RESOURCE_FAILURES: deque[BaseException] = deque(maxlen=64)
@@ -91,13 +95,13 @@ async def _wait_for_owned_execution(
 
 
 async def _abort_environment(
-    env: Environment,
+    env: ExecutionEnvironment,
     *,
     cleanup_timeout: float,
 ) -> bool:
     # Revoke the public environment surface synchronously, before an adapter's
     # resource-specific abort hook gets a chance to block or consume cancel.
-    env._aborted = True
+    env.revoke()
     abort = getattr(env, "abort", None)
     if not callable(abort):
         return True
@@ -112,7 +116,7 @@ async def _abort_environment(
 
 
 async def _cleanup_environment_bounded(
-    env: Environment,
+    env: ExecutionEnvironment,
     *,
     cleanup_timeout: float,
 ) -> bool:
@@ -159,19 +163,19 @@ class _EnvironmentSetupOwner:
         self._factory = factory
         self._eval_task = eval_task
         self._cleanup_timeout = cleanup_timeout
-        self._delivery: asyncio.Future[Environment] = loop.create_future()
+        self._delivery: asyncio.Future[ExecutionEnvironment] = loop.create_future()
         self._decision = asyncio.Event()
         self._transferred = False
         self._dispose_requested = False
-        self._environment: Environment | None = None
+        self._environment: ExecutionEnvironment | None = None
         self.disposal_errors: list[tuple[str, BaseException]] = []
         self.task = loop.create_task(self._run())
         self.task.add_done_callback(_consume_background_task)
 
-    async def acquire(self, timeout: float) -> Environment:
+    async def acquire(self, timeout: float) -> ExecutionEnvironment:
         return await abandon_on_timeout(self._delivery, timeout)
 
-    def transfer(self, env: Environment) -> None:
+    def transfer(self, env: ExecutionEnvironment) -> None:
         if env is not self._environment:
             raise RuntimeError("environment setup ownership transfer mismatch")
         if self._dispose_requested:
@@ -231,10 +235,10 @@ class _EnvironmentSetupOwner:
         except BaseException as exc:
             self.disposal_errors.append((stage, exc))
 
-    async def _dispose(self, env: Environment) -> None:
+    async def _dispose(self, env: ExecutionEnvironment) -> None:
         # Revoke the adapter synchronously before any teardown await.  A late
         # factory cannot hand a still-active environment to another consumer.
-        env._aborted = True
+        env.revoke()
         await self._finish_teardown_operation("environment abort failed", env.abort)
         await self._finish_teardown_operation(
             "environment cleanup failed",
@@ -254,9 +258,11 @@ class _EnvironmentSetupOwner:
                 self._delivery.set_exception(exc)
             return
 
-        if not isinstance(env, Environment):
+        if not isinstance(env, ExecutionEnvironment):
             if not self._delivery.done():
-                self._delivery.set_exception(TypeError("env_factory must return an Environment instance"))
+                self._delivery.set_exception(
+                    TypeError("env_factory must return an ExecutionEnvironment instance")
+                )
             return
 
         self._environment = env
@@ -278,7 +284,7 @@ class _EnvironmentSetupOwner:
 
 async def _stop_checkpoint_bounded(
     checkpoint: WorktreeCheckpoint,
-    env: Environment,
+    env: ExecutionEnvironment,
     *,
     exclude_paths: Sequence[str],
     cleanup_timeout: float,
@@ -443,7 +449,7 @@ async def _cleanup_eval_resources_after_tasks(
     *,
     tracer: Tracer,
     timeout: float,
-    env: Environment | None = None,
+    env: ExecutionEnvironment | None = None,
 ) -> None:
     pending = {task for task in dependencies if not task.done()}
     deadline = asyncio.get_running_loop().time() + timeout
@@ -505,7 +511,7 @@ def _defer_eval_resource_cleanup(
     dependencies: Sequence[asyncio.Task[Any]],
     *,
     tracer: Tracer,
-    env: Environment | None,
+    env: ExecutionEnvironment | None,
 ) -> None:
     late_timeout = 2.0
     owner = asyncio.create_task(

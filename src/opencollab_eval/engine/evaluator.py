@@ -24,48 +24,38 @@ from dataclasses import dataclass as dataclass
 from pathlib import Path, PureWindowsPath
 from typing import Any as Any
 
-from opencollab.sdk.eval_compat import (  # noqa: F401 -- retained evaluator facade
-    DEFAULT_MAX_OUTPUT_TOKENS,
+from opencollab.sdk.agents import build_session as build_session
+from opencollab.sdk.config import (
     DEFAULT_TEMPERATURE,
     DEFAULT_THINKING,
-    DEFAULT_THINKING_PARAMS,
     DEFAULT_TOP_P,
-    ORCHESTRATION_FILENAME,
-    WORKFLOW_MANIFEST_FILENAME,
-    Agent,
+)
+from opencollab.sdk.environment import ExecutionEnvironment
+from opencollab.sdk.environments import DockerEnvironment, WorktreeEnvironment
+from opencollab.sdk.files import (
+    ensure_directory_no_symlinks,
+    open_directory_no_symlinks,
+    write_regular_file_atomic,
+)
+from opencollab.sdk.lifecycle import (
+    add_exception_note,
+    await_owned_operation,
+)
+from opencollab.sdk.persistence import ORCHESTRATION_FILENAME as ORCHESTRATION_FILENAME
+from opencollab.sdk.repository import build_repository_map as build_repository_map
+from opencollab.sdk.tools import (  # noqa: F401 -- retained evaluator facade
     ApplyPatchTool,
-    AutoSaveSubscriber,
     BashTool,
-    CallerTimeoutError,
-    DockerEnvironment,
-    Environment,
-    EnvWorkingTreeProbe,
     FileReadTool,
     FileWriteTool,
     GitDiffTool,
     GrepTool,
-    LocalEnvironment,
     RunTestsTool,
-    Session,
-    SessionStore,
     Tool,
-    Tracer,
-    WorkflowBudgetExceeded,
-    WorkflowContext,
-    WorkflowFn,
-    WorktreeEnvironment,
-    _await_owned_operation,
-    _open_directory_no_symlinks,
-    abandon_on_timeout,
-    add_exception_note,
-    build_repo_map_via_env,
-    build_session,
-    ensure_directory_no_symlinks,
-    force_task_terminal,
-    isolate_tasks_from_shutdown,
-    workflow_transcript_path,
-    write_regular_file_atomic,
 )
+from opencollab.sdk.tracing import Tracer as Tracer
+from opencollab.sdk.usage import DEFAULT_MAX_OUTPUT_TOKENS
+from opencollab.sdk.workflows import WorkflowFn
 
 from opencollab_eval.engine.evaluator_models import EvalResult as EvalResult
 from opencollab_eval.engine.evaluator_models import EvalTask as EvalTask
@@ -158,7 +148,7 @@ from opencollab_eval.engine.test_injection import (
     apply_test_patch as apply_test_patch,
 )
 
-EnvFactory = Callable[["EvalTask"], Awaitable[Environment]]
+EnvFactory = Callable[["EvalTask"], Awaitable[ExecutionEnvironment]]
 ToolFactory = Callable[[], Sequence[Tool]]
 
 
@@ -265,7 +255,7 @@ def _mapped_artifact_path_bound_error(paths: Sequence[str]) -> str | None:
     return None
 
 
-def _host_workspace_root(env: Environment) -> Path | None:
+def _host_workspace_root(env: ExecutionEnvironment) -> Path | None:
     raw_workspace = (
         env.workspace
         if env.local_filesystem
@@ -280,7 +270,7 @@ def _host_workspace_root(env: Environment) -> Path | None:
 
 
 def _workspace_relative_host_paths(
-    env: Environment,
+    env: ExecutionEnvironment,
     raw_path: str | os.PathLike[str],
 ) -> list[Path]:
     workspace = _host_workspace_root(env)
@@ -321,7 +311,7 @@ def _workspace_relative_host_paths(
 
 
 def _workspace_relative_host_path(
-    env: Environment,
+    env: ExecutionEnvironment,
     raw_path: str | os.PathLike[str],
 ) -> Path | None:
     paths = _workspace_relative_host_paths(env, raw_path)
@@ -329,7 +319,7 @@ def _workspace_relative_host_path(
 
 
 def _workspace_relative_artifact_paths(
-    env: Environment,
+    env: ExecutionEnvironment,
     paths: Sequence[str | os.PathLike[str]],
 ) -> list[str]:
     relative_paths: list[Path] = []
@@ -389,7 +379,7 @@ def default_tools() -> list[Tool]:
     ]
 
 
-async def default_env_factory(task: EvalTask) -> Environment:
+async def default_env_factory(task: EvalTask) -> ExecutionEnvironment:
     """Build the default environment for a task (docker if imaged, else local)."""
     if task.docker_image:
         backing: WorktreeEnvironment | None = None
@@ -404,7 +394,7 @@ async def default_env_factory(task: EvalTask) -> Environment:
             return env
         except BaseException as original:
             try:
-                await _await_owned_operation(env.cleanup())
+                await await_owned_operation(env.cleanup())
             except BaseException as cleanup_exc:
                 add_exception_note(
                     original,
@@ -543,7 +533,7 @@ def save_results(results: list[EvalResult], output_path: str) -> None:
     if not target.name or target.name in {".", ".."}:
         raise ValueError("output_path must name a results file")
     ensure_directory_no_symlinks(target.parent)
-    parent_fd = _open_directory_no_symlinks(target.parent)
+    parent_fd = open_directory_no_symlinks(target.parent)
     try:
         parent = os.fstat(parent_fd)
         expected_parent_identity = (parent.st_dev, parent.st_ino)

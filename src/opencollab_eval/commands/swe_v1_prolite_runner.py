@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ruff: noqa: E402, F401, F403, F405
+# ruff: noqa: F401, F403, F405
 """Run one bounded SWE v1 pro-lite slice and publish its evaluation report."""
 
 from __future__ import annotations
@@ -15,10 +15,6 @@ import time
 import types
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
 from opencollab_eval.commands import swe_v1_prolite_common as _common
 from opencollab_eval.commands import swe_v1_prolite_config as _config
 from opencollab_eval.commands import swe_v1_prolite_controller as _controller
@@ -31,8 +27,9 @@ from opencollab_eval.commands.swe_v1_prolite_process import *  # noqa: F403
 from opencollab_eval.commands.swe_v1_prolite_report import *  # noqa: F403
 
 
-def main() -> int:
+def main(*, prog: str | None = None) -> int:
     parser = argparse.ArgumentParser(
+        prog=prog,
         description=("Run validation-council on a SWE-batch-pro-lite slice and evaluate it.")
     )
     parser.add_argument("--host", default=DEFAULT_HOST)  # noqa: F405

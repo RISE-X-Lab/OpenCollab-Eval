@@ -57,7 +57,7 @@ def test_workflow_mode_invoked_with_task_args(tmp_path):
 
 
 def test_workflow_manifest_failure_preserves_patch_and_metrics(monkeypatch, tmp_path):
-    import opencollab_eval.engine.evaluator as evaluator_mod
+    import opencollab_eval.engine.evaluator_resources as evaluator_resources
 
     env = FakeEnv()
 
@@ -71,7 +71,7 @@ def test_workflow_manifest_failure_preserves_patch_and_metrics(monkeypatch, tmp_
     def fail_manifest(*args, **kwargs):
         raise OSError("manifest disk failure")
 
-    monkeypatch.setattr(evaluator_mod.SessionStore, "save_manifest", fail_manifest)
+    monkeypatch.setattr(evaluator_resources.SessionStore, "save_manifest", fail_manifest)
 
     result = run(
         run_eval_task(
@@ -94,9 +94,6 @@ def test_eval_workflow_slow_manifest_is_bounded_and_defers_resources(
     monkeypatch,
     tmp_path,
 ):
-    from opencollab.sdk.eval_compat import autosave as autosave_mod
-
-    monkeypatch.setattr(autosave_mod, "MAX_CANCELLED_SAVE_WAIT_SECONDS", 0.01)
     started = threading.Event()
     release = threading.Event()
     order: list[str] = []

@@ -10,6 +10,16 @@ _REQUIRED_FILES = {
     "docs/integrity-coverage.json",
     "scripts/verify_wheel_contract.sh",
 }
+_COMPILED_DOCUMENT_SUFFIXES = (
+    ".aux",
+    ".fdb_latexmk",
+    ".fls",
+    ".log",
+    ".out",
+    ".pdf",
+    ".synctex.gz",
+    ".xdv",
+)
 
 
 def _repository_root() -> Path:
@@ -29,3 +39,13 @@ def test_repository_python_files_stay_within_line_limit() -> None:
         if line_count > 800:
             oversized[path.relative_to(root).as_posix()] = line_count
     assert oversized == {}
+
+
+def test_repository_tracks_document_sources_only() -> None:
+    root = _repository_root()
+    offenders = sorted(
+        path.relative_to(root).as_posix()
+        for path in (root / "docs").rglob("*")
+        if path.is_file() and path.name.endswith(_COMPILED_DOCUMENT_SUFFIXES)
+    )
+    assert offenders == []

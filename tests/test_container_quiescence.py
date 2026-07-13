@@ -4,22 +4,15 @@ import os
 import shutil
 import signal
 import subprocess
-import sys
 import textwrap
 import time
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from package_test_support import module_path
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_SWEBENCH_DIR = module_path("opencollab_eval.generation.gen_prediction").parent
-if str(_SWEBENCH_DIR) not in sys.path:
-    sys.path.insert(0, str(_SWEBENCH_DIR))
-
-from opencollab_eval.generation import container_quiescence as guard  # noqa: E402
-from opencollab_eval.generation import openhands_process_supervisor as supervisor  # noqa: E402
+from opencollab_eval.generation import container_quiescence as guard
+from opencollab_eval.generation import openhands_process_supervisor as supervisor
 
 
 def test_host_quiescer_rechecks_process_churn_until_twice_empty(

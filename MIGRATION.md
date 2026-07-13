@@ -23,8 +23,10 @@ installed packages and repository-root path behavior cannot shadow each other.
 Remote execution installs or synchronizes the package under a `src` layout and
 starts modules with `python -m`.
 
-`opencollab.sdk.eval_compat` preserves the tested OC capabilities used by the
-migrated evaluator. Future refactoring replaces those low-level compatibility
-imports with smaller stable SDK operations. The boundary tests prohibit direct
-imports of OC adapters, application, bootstrap, domain, or retired harness
-modules from both Eval production code and Eval tests.
+The evaluator consumes focused public modules under `opencollab.sdk`: agents,
+configuration, environments, files, lifecycle, models, persistence, repository,
+retirement, runtime, tools, tracing, usage, and workflows. OpenCollab 0.3.0 is
+the first compatible release for this boundary. Eval production code and tests
+cannot import compatibility shims, experimental APIs, private SDK names, or OC
+adapters, application, bootstrap, domain, and retired harness modules. The
+boundary suite enforces these constraints over both source trees.

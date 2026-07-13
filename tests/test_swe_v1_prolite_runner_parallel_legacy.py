@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from package_test_support import module_path
 # ruff: noqa: F401, F403, F405, I001
 
 import hashlib
 import http.server
-import importlib.util
+import importlib
 import inspect
 import json
 import os
@@ -25,13 +24,8 @@ from swe_v1_prolite_runner_test_support import *
 
 
 def load_parallel_retry_module():
-    script = module_path("opencollab_eval.commands.swe_g11_parallel_runner")
-    spec = importlib.util.spec_from_file_location("swe_g11_parallel_runner", script)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    module = importlib.import_module("opencollab_eval.commands.swe_g11_parallel_runner")
+    return importlib.reload(module)
 
 
 def test_parallel_runner_does_not_reuse_technical_failure_reports():

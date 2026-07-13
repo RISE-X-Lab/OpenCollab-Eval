@@ -12,24 +12,21 @@ import threading
 import time
 from pathlib import Path
 
-REPO_ROOT = Path(os.environ.get("OPENCOLLAB_EVAL_WORKSPACE", Path.cwd())).resolve()
-SCRIPT_ROOT = Path(__file__).resolve().parent
-if str(SCRIPT_ROOT) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_ROOT))
-
-from opencollab.sdk.eval_compat import (  # noqa: E402
+from opencollab.sdk.files import (
     ensure_directory_no_symlinks,
 )
 
-from opencollab_eval.commands import swebench_process as process_tools  # noqa: E402
-from opencollab_eval.commands import swebench_smoke_io as smoke_io  # noqa: E402
-from opencollab_eval.commands.swebench_smoke_spec import make_test_spec  # noqa: E402
-from opencollab_eval.engine.swe_eval_records import (  # noqa: E402
+from opencollab_eval.commands import swebench_process as process_tools
+from opencollab_eval.commands import swebench_smoke_io as smoke_io
+from opencollab_eval.commands.swebench_smoke_spec import make_test_spec
+from opencollab_eval.engine.swe_eval_records import (
     MAX_JSONL_LINE_BYTES,
     MAX_JSONL_RETAINED_BYTES,
     MAX_JSONL_RETAINED_ROWS,
     MAX_JSONL_SCAN_BYTES,
 )
+
+REPO_ROOT = Path(os.environ.get("OPENCOLLAB_EVAL_WORKSPACE", Path.cwd())).resolve()
 
 positive_timeout_seconds = process_tools.positive_timeout_seconds
 _ensure_process_tree_quiesced_after_wait = process_tools.ensure_process_tree_quiesced_after_wait

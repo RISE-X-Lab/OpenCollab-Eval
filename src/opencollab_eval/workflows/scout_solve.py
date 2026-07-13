@@ -36,15 +36,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from opencollab.sdk import (
+from opencollab.sdk.tools import (
     ApplyPatchTool,
     BashTool,
     FileReadTool,
     FileWriteTool,
     GrepTool,
     verification_run_tests_tool,
-    workflow,
 )
+from opencollab.sdk.workflows import workflow
 
 MAX_SOLVE_ROUNDS = 3
 

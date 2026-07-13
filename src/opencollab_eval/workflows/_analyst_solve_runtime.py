@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from opencollab.sdk.experimental import format_findings_report
+from opencollab.sdk.workflows import format_findings_report
 
 from ._analyst_solve_defs import (
     CODER_BUDGET,

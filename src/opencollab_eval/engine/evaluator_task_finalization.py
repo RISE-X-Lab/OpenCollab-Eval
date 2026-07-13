@@ -8,7 +8,7 @@ from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from typing import Any
 
-from opencollab.sdk.eval_compat import add_exception_note
+from opencollab.sdk.lifecycle import add_exception_note
 
 from opencollab_eval.engine.evaluator_patch import cleanup_injected_paths_and_extract_patch
 from opencollab_eval.engine.evaluator_task_resources import (
@@ -217,7 +217,7 @@ async def _handle_nonquiescent_execution(
         if not quiesced:
             _record_checkpoint_abort_timeout(facade, state)
     if env is not None:
-        env._aborted = True
+        env.revoke()
 
 
 async def _handle_unsafe_checkpoint(
@@ -291,7 +291,7 @@ async def _finalize_safe_checkpoint(
             facade, state, checkpoint, guard, cleanup_timeout
         ):
             _record_checkpoint_abort_timeout(facade, state)
-        env._aborted = True
+        env.revoke()
         state.execution_quiesced = False
     except Exception as exc:
         state.error = facade._append_harness_error(

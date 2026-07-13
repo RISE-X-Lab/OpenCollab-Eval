@@ -12,7 +12,7 @@ import subprocess
 import uuid
 
 import pytest
-from opencollab.sdk.eval_compat import Environment, ExecResult
+from opencollab.sdk.environment import ExecResult
 
 from opencollab_eval.engine import test_injection as injection
 from opencollab_eval.engine.test_injection import (
@@ -37,8 +37,14 @@ SAMPLE_PATCH = (
 )
 
 
-class FakeEnv(Environment):
+class FakeEnv:
     """Records exec_cmd calls and written files; scriptable git-apply rc."""
+
+    workspace = "/tmp/opencollab-test-worktree"
+    host_workspace = None
+    source_workspace = None
+    local_filesystem = False
+    process_isolated = False
 
     def __init__(
         self,
@@ -61,6 +67,7 @@ class FakeEnv(Environment):
         self.written: dict[str, str] = {}
         self.staged_paths: list[str] = []
         self.removed_paths: list[str] = []
+        self._revoked = False
         self._apply_check_rc = apply_check_rc
         self._apply_rc = apply_rc
         self._apply_exception = apply_exception
@@ -74,6 +81,13 @@ class FakeEnv(Environment):
         self._rollback_status_stdout = rollback_status_stdout
         self._rollback_status_truncated = rollback_status_truncated
         self._remove_exception = remove_exception
+
+    @property
+    def revoked(self) -> bool:
+        return self._revoked
+
+    def revoke(self) -> None:
+        self._revoked = True
 
     async def write_file(self, path: str, content: str) -> None:
         self.written[path] = content
@@ -398,7 +412,7 @@ def test_rollback_task_that_consumes_cancel_has_a_final_deadline(monkeypatch):
     with pytest.raises(TestPatchIsolationError, match="final deadline"):
         run(asyncio.wait_for(apply_test_patch(env, SAMPLE_PATCH), timeout=0.5))
 
-    assert env._aborted is True
+    assert env.revoked is True
 
 
 def test_staging_cleanup_that_consumes_cancel_has_a_final_deadline(monkeypatch):
@@ -422,7 +436,7 @@ def test_staging_cleanup_that_consumes_cancel_has_a_final_deadline(monkeypatch):
     with pytest.raises(TestPatchIsolationError, match="cleanup failed"):
         run(asyncio.wait_for(apply_test_patch(env, SAMPLE_PATCH), timeout=0.5))
 
-    assert env._aborted is True
+    assert env.revoked is True
 
 
 def test_git_apply_exception_rolls_back_before_skipping_injection():
@@ -612,7 +626,7 @@ def test_partial_apply_rollback_uses_literal_pathspecs_for_magic_names():
     assert all(":(glob)tests/" in cmd for cmd in rollback_commands)
 
 
-class LocalEnv(Environment):
+class LocalEnv:
     def __init__(self, root):
         self.root = root
         self.cmds: list[str] = []

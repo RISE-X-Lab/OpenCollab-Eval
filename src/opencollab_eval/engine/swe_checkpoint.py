@@ -13,53 +13,37 @@ from dataclasses import dataclass as dataclass
 from pathlib import Path
 from typing import Any
 
-from opencollab.sdk.eval_compat import (
-    PROCESS_OUTPUT_CAPTURE_BYTES,
-    Environment,
-    ExecResult,
-    _open_directory_no_symlinks,
-    add_exception_note,
+from opencollab.sdk.environment import ExecResult, ExecutionEnvironment
+from opencollab.sdk.environments import PROCESS_OUTPUT_CAPTURE_BYTES
+from opencollab.sdk.files import (
     ensure_directory_no_symlinks,
+    open_directory_no_symlinks,
 )
+from opencollab.sdk.lifecycle import add_exception_note
 
 from opencollab_eval.engine.swe_checkpoint_artifacts import (
     build_checkpoint_meta,
     checkpoint_artifact_exclude_paths,
 )
 from opencollab_eval.engine.swe_checkpoint_io import (
-    CheckpointResult as CheckpointResult,
-)
-from opencollab_eval.engine.swe_checkpoint_io import (
-    _atomic_write as _atomic_write,
-)
-from opencollab_eval.engine.swe_checkpoint_io import (
-    _checkpoint_meta_integrity_error as _checkpoint_meta_integrity_error,
-)
-from opencollab_eval.engine.swe_checkpoint_io import (
-    _patch_sha as _patch_sha,
-)
-from opencollab_eval.engine.swe_checkpoint_io import (
-    _read_bounded_text as _read_bounded_text,
-)
-from opencollab_eval.engine.swe_checkpoint_io import (
-    _truncated_output_error as _truncated_output_error,
-)
-from opencollab_eval.engine.swe_checkpoint_io import (
-    _unlink_durable as _unlink_durable,
-)
-from opencollab_eval.engine.swe_checkpoint_io import (
-    worktree_diff_command as worktree_diff_command,
+    CheckpointResult,
+    _atomic_write,
+    _checkpoint_meta_integrity_error,
+    _patch_sha,
+    _read_bounded_text,
+    _truncated_output_error,
+    _unlink_durable,
+    worktree_diff_command,
 )
 from opencollab_eval.engine.swe_checkpoint_recovery import (
-    ENV_RECOVERY_PATCH_PREFIX as ENV_RECOVERY_PATCH_PREFIX,
+    ENV_RECOVERY_PATCH_PREFIX as _ENV_RECOVERY_PATCH_PREFIX,
 )
 from opencollab_eval.engine.swe_checkpoint_recovery import (
-    _prove_failed_restore_clean as _prove_failed_restore_clean,
-)
-from opencollab_eval.engine.swe_checkpoint_recovery import (
-    _remove_recovery_patch as _remove_recovery_patch,
+    _prove_failed_restore_clean,
+    _remove_recovery_patch,
 )
 
+ENV_RECOVERY_PATCH_PREFIX = _ENV_RECOVERY_PATCH_PREFIX
 CHECKPOINT_PATCH = "checkpoint.worktree.patch"
 CHECKPOINT_META = "checkpoint.worktree.json"
 DEFAULT_CHECKPOINT_ABORT_TIMEOUT = 2.0
@@ -68,8 +52,6 @@ MAX_CHECKPOINT_PATCH_BYTES = PROCESS_OUTPUT_CAPTURE_BYTES + 64 * 1024
 MAX_CHECKPOINT_META_BYTES = 1024 * 1024
 MAX_CHECKPOINT_TEMP_CLEANUP_SECONDS = 10.0
 MAX_FAILED_RESTORE_PROOF_SECONDS = 10.0
-
-
 
 class WorktreeCheckpoint:
     """Periodic host-side checkpoint of the env worktree diff.
@@ -109,7 +91,7 @@ class WorktreeCheckpoint:
 
     async def capture(
         self,
-        env: Environment,
+        env: ExecutionEnvironment,
         *,
         reason: str,
         exclude_paths: Sequence[str] = (),
@@ -294,7 +276,7 @@ class WorktreeCheckpoint:
 
     async def restore_latest(
         self,
-        env: Environment,
+        env: ExecutionEnvironment,
         *,
         exclude_paths: Sequence[str] = (),
     ) -> CheckpointResult:
@@ -547,7 +529,12 @@ class WorktreeCheckpoint:
             worktree_integrity_proven=worktree_integrity_proven,
         )
 
-    async def start(self, env: Environment, *, exclude_paths: Sequence[str] = ()) -> None:
+    async def start(
+        self,
+        env: ExecutionEnvironment,
+        *,
+        exclude_paths: Sequence[str] = (),
+    ) -> None:
         if self.interval_seconds <= 0:
             return
         if self._task is not None:
@@ -555,7 +542,12 @@ class WorktreeCheckpoint:
         self._stop.clear()
         self._task = asyncio.create_task(self._run(env, exclude_paths=tuple(exclude_paths)))
 
-    async def stop(self, env: Environment, *, exclude_paths: Sequence[str] = ()) -> CheckpointResult:
+    async def stop(
+        self,
+        env: ExecutionEnvironment,
+        *,
+        exclude_paths: Sequence[str] = (),
+    ) -> CheckpointResult:
         if self._task is not None:
             self._stop.set()
             try:
@@ -655,7 +647,12 @@ class WorktreeCheckpoint:
         except BaseException:
             pass
 
-    async def _run(self, env: Environment, *, exclude_paths: Sequence[str]) -> None:
+    async def _run(
+        self,
+        env: ExecutionEnvironment,
+        *,
+        exclude_paths: Sequence[str],
+    ) -> None:
         while True:
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=self.interval_seconds)
@@ -690,7 +687,7 @@ class WorktreeCheckpoint:
 
     def _bind_run_directory(self) -> None:
         ensure_directory_no_symlinks(self.run_dir)
-        run_dir_fd = _open_directory_no_symlinks(self.run_dir)
+        run_dir_fd = open_directory_no_symlinks(self.run_dir)
         try:
             run_dir_info = os.fstat(run_dir_fd)
             current = (run_dir_info.st_dev, run_dir_info.st_ino)
@@ -713,7 +710,10 @@ class WorktreeCheckpoint:
         except (OSError, ValueError):
             return False
 
-    def _artifact_exclude_paths(self, env: Environment) -> tuple[str, ...]:
+    def _artifact_exclude_paths(
+        self,
+        env: ExecutionEnvironment,
+    ) -> tuple[str, ...]:
         return checkpoint_artifact_exclude_paths(
             env,
             (self.patch_path, self.meta_path),

@@ -24,7 +24,7 @@ Run with the OpenCollab venv (it must import ``opencollab``)::
         --output /path/to/swebench-eval/predictions-opencollab.jsonl
 """
 
-# ruff: noqa: E402, F401
+# ruff: noqa: F401
 
 from __future__ import annotations
 
@@ -48,35 +48,11 @@ import unicodedata
 import uuid
 from pathlib import Path, PureWindowsPath
 
-# Make the opencollab package importable without an editable install.
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_PKG_ROOT = _REPO_ROOT / "opencollab"
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-if str(_PKG_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PKG_ROOT))
+from opencollab.sdk.config import get_config
+from opencollab.sdk.lifecycle import run_with_bounded_shutdown
+from opencollab.sdk.usage import DEFAULT_MAX_OUTPUT_TOKENS, model_context_window
 
-from opencollab.sdk import model_context_window  # noqa: E402
-from opencollab.sdk.eval_compat import (  # noqa: E402  # noqa: E402  # noqa: E402
-    DEFAULT_MAX_OUTPUT_TOKENS,  # noqa: E402
-    Agent,  # noqa: E402
-    BashTool,  # noqa: E402
-    CallerTimeoutError,
-    DockerEnvironment,  # noqa: E402
-    FileReadTool,
-    FileWriteTool,
-    GrepTool,
-    SessionPhase,  # noqa: E402
-    Tracer,  # noqa: E402
-    abandon_on_timeout,
-    agent_save_path,
-    build_session,
-    get_config,  # noqa: E402
-    make_run_dir,
-    run_with_bounded_shutdown,
-)
-
-from opencollab_eval.engine.swe_eval_records import (  # noqa: E402
+from opencollab_eval.engine.swe_eval_records import (
     MAX_JSONL_SCAN_BYTES,
     open_regular_binary,
     read_bounded_json,
@@ -94,7 +70,6 @@ from . import (
 )
 from .container_quiescence import require_container_quiescence
 from .gen_prediction_agent import (
-    _quiesce_agent_tasks,
     build_task,
     load_instance,
     run_agent,
@@ -210,6 +185,8 @@ from .gen_prediction_snapshot import (
     prepare_solver_git_snapshot,
 )
 
+_CONFIG_ROOT = Path(os.environ.get("OPENCOLLAB_EVAL_WORKSPACE", Path.cwd())).resolve()
+
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Generate one SWE-bench prediction with OpenCollab")
@@ -247,7 +224,7 @@ def main() -> None:
     iid = instance["instance_id"]
     image = args.image or default_container_image(args.arch, iid)
 
-    cfg = get_config(str(_REPO_ROOT))
+    cfg = get_config(str(_CONFIG_ROOT))
     if args.model:
         cfg["model"] = args.model
     if args.provider:
@@ -290,7 +267,17 @@ def main() -> None:
         )
         trusted_baseline = prepare_trusted_patch_baseline(cid, snapshot)
         task = build_task(instance)
-        metrics = run_with_bounded_shutdown(run_agent(task, cid, cfg, args.max_steps, args.budget, args.timeout))
+        metrics = run_with_bounded_shutdown(
+            run_agent(
+                task,
+                cid,
+                cfg,
+                args.max_steps,
+                args.budget,
+                args.timeout,
+                artifact_root=run_dir,
+            )
+        )
         metrics.update(
             {
                 "llm_model": cfg["model"],

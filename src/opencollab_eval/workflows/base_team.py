@@ -10,15 +10,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from opencollab.sdk import (
+from opencollab.sdk.tools import (
     ApplyPatchTool,
     BashTool,
     FileReadTool,
     FileWriteTool,
     GrepTool,
     RunTestsTool,
-    workflow,
 )
+from opencollab.sdk.workflows import workflow
 
 MAX_REPAIR_ROUNDS = 2
 

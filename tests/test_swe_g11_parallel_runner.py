@@ -1,27 +1,20 @@
 from __future__ import annotations
 
 import hashlib
-import importlib.util
+import importlib
 import json
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from generation_proof_test_support import trusted_patch_proof_fields
-from package_test_support import module_path
 
 from opencollab_eval.engine import swe_v1_remote_records as remote_records
 
 
 def _load_module():
-    script = module_path("opencollab_eval.commands.swe_g11_parallel_runner")
-    spec = importlib.util.spec_from_file_location("swe_g11_parallel_runner", script)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    module = importlib.import_module("opencollab_eval.commands.swe_g11_parallel_runner")
+    return importlib.reload(module)
 
 
 def _args(**overrides):

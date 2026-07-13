@@ -12,10 +12,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from opencollab.sdk.eval_compat import (
-    _directory_path_matches_fd,
-    _open_directory_no_symlinks,
+from opencollab.sdk.files import (
+    directory_handle_matches_path,
     ensure_directory_no_symlinks,
+    open_directory_no_symlinks,
     read_regular_bytes,
     regular_path_identity,
 )
@@ -81,7 +81,7 @@ def prediction_has_patch(
 
 
 def fsync_directory(path: Path) -> None:
-    fd = _open_directory_no_symlinks(path)
+    fd = open_directory_no_symlinks(path)
     try:
         os.fsync(fd)
     finally:
@@ -114,7 +114,7 @@ def open_regular_append(path: Path, *, retries: int) -> int:
         | getattr(os, "O_CLOEXEC", 0)
     )
     for _parent_attempt in range(retries):
-        parent_fd = _open_directory_no_symlinks(path.parent)
+        parent_fd = open_directory_no_symlinks(path.parent)
         try:
             try:
                 before = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
@@ -144,7 +144,7 @@ def open_regular_append(path: Path, *, retries: int) -> int:
                     continue
                 if before is not None and (before.st_dev, before.st_ino) != identity:
                     continue
-                if not _directory_path_matches_fd(path.parent, parent_fd):
+                if not directory_handle_matches_path(path.parent, parent_fd):
                     break
                 result_fd = fd
                 fd = -1

@@ -1,23 +1,18 @@
 from __future__ import annotations
 
 import hashlib
-import importlib.util
+import importlib
 import json
 import subprocess
 import sys
 from pathlib import Path
 
 from generation_proof_test_support import trusted_summary_proof_fields
-from package_test_support import module_path
 
 
 def _load_module():
-    script = module_path("opencollab_eval.commands.swe_eval_layer_report")
-    spec = importlib.util.spec_from_file_location("swe_eval_layer_report", script)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+    module = importlib.import_module("opencollab_eval.commands.swe_eval_layer_report")
+    return importlib.reload(module)
 
 
 def _write_json(path: Path, value: dict) -> Path:

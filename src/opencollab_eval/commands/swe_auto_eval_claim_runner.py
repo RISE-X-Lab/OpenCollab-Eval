@@ -12,25 +12,17 @@ import time
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-PKG_ROOT = REPO_ROOT / "opencollab"
-SCRIPT_ROOT = Path(__file__).resolve().parent
-if str(PKG_ROOT) not in sys.path:
-    sys.path.insert(0, str(PKG_ROOT))
-if str(SCRIPT_ROOT) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_ROOT))
-
-from opencollab.sdk.eval_compat import (  # noqa: E402
+from opencollab.sdk.files import write_regular_bytes_atomic
+from opencollab.sdk.retirement import (
     INTERNAL_RETIREMENT_LOG_ENV,
     INTERNAL_RETIREMENT_WORKSPACE_ENV,
-    write_regular_bytes_atomic,  # noqa: E402
 )
 
-from opencollab_eval.commands.swe_auto_eval_constants import (  # noqa: E402
+from opencollab_eval.commands.swe_auto_eval_constants import (
     CLAIM_HEARTBEAT_SECONDS,
     CLAIM_LEASE_SECONDS,
 )
-from opencollab_eval.commands.swebench_process import (  # noqa: E402
+from opencollab_eval.commands.swebench_process import (
     posix_group_exists,
     process_start_identity,
     terminate_process_tree,

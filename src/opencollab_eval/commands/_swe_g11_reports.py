@@ -8,27 +8,13 @@ import time
 from pathlib import Path
 from typing import Any
 
-try:
-    from opencollab_eval.commands._swe_g11_config import (
-        REPO,
-        ParallelConfig,
-        _openhands_command_sha256,
-        range_label,
-    )
-except ModuleNotFoundError:  # Direct execution adds ``scripts`` rather than the repo root.
-    from opencollab_eval.commands._swe_g11_config import (  # type: ignore[no-redef]
-        REPO,
-        ParallelConfig,
-        _openhands_command_sha256,
-        range_label,
-    )
-
-try:
-    from opencollab_eval.commands import _swe_report_io as _report_io
-except ModuleNotFoundError as exc:  # Direct execution adds ``scripts`` rather than the repo root.
-    if exc.name != "scripts":
-        raise
-    from opencollab_eval.commands import _swe_report_io as _report_io  # type: ignore[no-redef]
+from opencollab_eval.commands import _swe_report_io as _report_io
+from opencollab_eval.commands._swe_g11_config import (
+    REPO,
+    ParallelConfig,
+    _openhands_command_sha256,
+    range_label,
+)
 
 
 def write_json(path: Path, value: Any) -> None:

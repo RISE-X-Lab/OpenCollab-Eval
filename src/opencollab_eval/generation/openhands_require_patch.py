@@ -6,15 +6,10 @@ import json
 import os
 import shlex
 import subprocess
-import sys
 from collections.abc import Mapping
 from pathlib import Path
 
-_MODULE_DIR = Path(__file__).resolve().parent
-if str(_MODULE_DIR) not in sys.path:
-    sys.path.insert(0, str(_MODULE_DIR))
-
-from .gen_prediction_workflow import (  # noqa: E402
+from .gen_prediction_workflow import (
     _looks_like_validation_artifact,
     _patch_paths,
 )

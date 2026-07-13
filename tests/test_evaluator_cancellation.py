@@ -5,9 +5,9 @@ from evaluator_test_support import (
     FakeEnv,
     FakeLLMClient,
     asyncio,
-    container,
     evaluator,
     is_worktree_diff_cmd,
+    patch_evaluator_llm,
     pytest,
     run,
     run_eval_task,
@@ -234,7 +234,7 @@ def test_non_quiescent_timeout_is_bounded_and_revokes_environment(monkeypatch, t
 
     result = run(scenario())
 
-    assert env._aborted is True
+    assert env.revoked is True
     assert env.cleaned_up is True
     assert late_write_blocked.is_set() is True
     assert env.writes == []
@@ -313,7 +313,7 @@ def test_repeated_caller_cancel_cannot_interrupt_evaluator_teardown(monkeypatch,
 
     run(scenario())
 
-    assert env._aborted is True
+    assert env.revoked is True
     assert env.cleaned_up is True
     assert late_write_blocked.is_set() is True
     assert env.writes == []
@@ -387,7 +387,7 @@ def test_caller_cancel_owns_stubborn_initial_user_message(monkeypatch, tmp_path)
 
     run(scenario())
 
-    assert env._aborted is True
+    assert env.revoked is True
     assert env.cleaned_up is True
     assert env.writes == []
     assert late_write_blocked.is_set() is True
@@ -449,7 +449,7 @@ def test_task_deadline_bounds_stubborn_initial_user_message(monkeypatch, tmp_pat
     assert add_started.is_set() is True
     assert cancellation_seen.is_set() is True
     assert session.run_loop_called is False
-    assert env._aborted is True
+    assert env.revoked is True
     assert env.cleaned_up is True
     assert result.patch == ""
     assert result.error and result.error.startswith("Task timed out after 0.01s")
@@ -473,7 +473,7 @@ def test_caller_cancel_bounds_stubborn_environment_cleanup(monkeypatch, tmp_path
             cleanup_finished.set()
 
     env = StubbornCleanupEnv()
-    monkeypatch.setattr(container, "LLMClient", FakeLLMClient)
+    patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
     async def env_factory(task):
         return env
@@ -494,7 +494,7 @@ def test_caller_cancel_bounds_stubborn_environment_cleanup(monkeypatch, tmp_path
         await asyncio.wait_for(cleanup_cancelled.wait(), timeout=0.5)
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(eval_task, timeout=0.5)
-        assert env._aborted is True
+        assert env.revoked is True
         release_cleanup.set()
         await asyncio.wait_for(cleanup_finished.wait(), timeout=0.5)
 

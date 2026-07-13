@@ -1,4 +1,4 @@
-"""self-collab — deterministic translation of configs/team.self.collab.yaml.
+"""self-collab — deterministic translation of the packaged team configuration.
 
 The YAML team relies on the analyst LLM to drive the coder/tester GAN loop via
 spawn_agent; here the loop is plain Python, so round caps, never-identical
@@ -17,15 +17,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from opencollab.sdk import (
+from opencollab.sdk.tools import (
     ApplyPatchTool,
     BashTool,
     FileReadTool,
     FileWriteTool,
     GrepTool,
     verification_run_tests_tool,
-    workflow,
 )
+from opencollab.sdk.workflows import workflow
 
 MAX_ROUNDS_PER_PHASE = 3
 
@@ -259,7 +259,7 @@ async def _run_phase(ctx: Any, ph: dict[str, Any], idx: int) -> dict[str, Any]:
 @workflow(
     name="self-collab",
     description="Analyze -> parallel plan review -> per-phase coder/tester GAN loop "
-    "(deterministic port of configs/team.self.collab.yaml)",
+    "(deterministic port of opencollab_eval.configs/team.self.collab.yaml)",
     phases=["analyze", "review", "implement"],
 )
 async def self_collab(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:

@@ -11,18 +11,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-try:
-    from opencollab_eval.commands import _swe_eval_layer_integrity as _eval_integrity
-except ModuleNotFoundError as exc:  # Direct execution adds ``scripts`` rather than the repo root.
-    if exc.name != "scripts":
-        raise
-    from opencollab_eval.commands import _swe_eval_layer_integrity as _eval_integrity  # type: ignore[no-redef]
-
-from opencollab_eval.engine.swe_eval_records import (  # noqa: E402
+from opencollab_eval.commands import _swe_eval_layer_integrity as _eval_integrity
+from opencollab_eval.engine.swe_eval_records import (
     SUBMISSION_INTEGRITY_PROVEN,
     metric_submission_integrity,
 )
-from opencollab_eval.engine.swe_generation_proof import (  # noqa: E402
+from opencollab_eval.engine.swe_generation_proof import (
     current_generation_summary_proof_valid,
     solver_git_snapshot_valid,
 )

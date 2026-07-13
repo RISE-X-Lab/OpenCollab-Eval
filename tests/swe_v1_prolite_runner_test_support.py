@@ -22,10 +22,6 @@ from generation_proof_test_support import trusted_patch_proof_fields
 
 import opencollab_eval
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
 runner = importlib.import_module("opencollab_eval.commands.swe_v1_prolite_runner")
 remote_runner = importlib.import_module("opencollab_eval.engine.swe_v1_remote_runner")
 remote_commands = importlib.import_module("opencollab_eval.engine.swe_v1_remote_commands")

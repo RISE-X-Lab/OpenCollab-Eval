@@ -55,7 +55,7 @@ def test_public_metadata_rejects_sealed_values_under_innocent_keys() -> None:
         task_from_row(row, identity_key=_IDENTITY_KEY)
 
 
-def test_public_metadata_is_deeply_immutable_and_thawed_for_solver_use() -> None:
+def test_public_metadata_is_deeply_immutable() -> None:
     row = _row()
     row["solver_public_metadata"] = {
         "safe": {"language": "Python"},

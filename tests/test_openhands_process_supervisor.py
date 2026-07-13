@@ -8,11 +8,10 @@ import time
 from pathlib import Path
 
 import pytest
-from package_test_support import module_path
 
-_SUPERVISOR = module_path("opencollab_eval.generation.openhands_process_supervisor")
+from opencollab_eval.generation import openhands_process_supervisor as supervisor
 
-from opencollab_eval.generation import openhands_process_supervisor as supervisor  # noqa: E402
+_SUPERVISOR_MODULE = "opencollab_eval.generation.openhands_process_supervisor"
 
 
 def test_supervisor_decodes_wait_status_without_python39_helper(monkeypatch):
@@ -94,7 +93,8 @@ def test_supervisor_captures_double_fork_setsid_escape(tmp_path: Path) -> None:
     result = subprocess.run(
         [
             sys.executable,
-            str(_SUPERVISOR),
+            "-m",
+            _SUPERVISOR_MODULE,
             "--",
             sys.executable,
             "-c",
@@ -143,7 +143,8 @@ def test_supervisor_timeout_cleans_setsid_escape_before_return(
     result = subprocess.run(
         [
             sys.executable,
-            str(_SUPERVISOR),
+            "-m",
+            _SUPERVISOR_MODULE,
             "--timeout-seconds",
             "0.05",
             "--",
@@ -168,7 +169,15 @@ def test_supervisor_timeout_cleans_setsid_escape_before_return(
 )
 def test_supervisor_fails_closed_without_linux_proc() -> None:
     result = subprocess.run(
-        [sys.executable, str(_SUPERVISOR), "--", sys.executable, "-c", "pass"],
+        [
+            sys.executable,
+            "-m",
+            _SUPERVISOR_MODULE,
+            "--",
+            sys.executable,
+            "-c",
+            "pass",
+        ],
         text=True,
         capture_output=True,
         check=False,

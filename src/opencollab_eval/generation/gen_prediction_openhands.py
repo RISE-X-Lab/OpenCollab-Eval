@@ -22,8 +22,8 @@ import time
 import uuid
 from pathlib import Path
 
-from opencollab.sdk.eval_compat import (  # noqa: E402
-    Usage,  # noqa: E402
+from opencollab.sdk.usage import (
+    Usage,
     pricing_for_model,
     usage_cost_usd,
 )
@@ -101,15 +101,10 @@ def _format_command(template: str, values: dict[str, str]) -> str:
 
 
 def _stop_hook_command() -> str:
-    guard_script = shlex.quote(
-        str(Path(__file__).with_name("openhands_require_patch.py"))
-    )
     python_bin = shlex.quote(sys.executable)
     return (
-        f"if [ -f {guard_script} ]; then "
-        f"{python_bin} {guard_script} || exit 1; "
-        "else echo '{\"decision\":\"allow\",\"reason\":"
-        "\"missing_patch_guard_script\"}'; fi"
+        f"{python_bin} -m opencollab_eval.generation.openhands_require_patch "
+        "|| exit 1"
     )
 
 
@@ -372,7 +367,8 @@ def _run_openhands(
     ) as stderr_handle:
         supervised_command = [
             sys.executable,
-            str(Path(__file__).with_name("openhands_process_supervisor.py")),
+            "-m",
+            "opencollab_eval.generation.openhands_process_supervisor",
             "--timeout-seconds",
             str(timeout),
             "--",

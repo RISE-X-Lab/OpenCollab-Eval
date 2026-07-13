@@ -4,7 +4,6 @@ from asyncio_test_support import assert_cancel_note, assert_cancel_reason
 from evaluator_workflow_test_support import (
     Any,
     CheckpointEnv,
-    Environment,
     EvalTask,
     ExecResult,
     FakeEnv,
@@ -18,6 +17,7 @@ from evaluator_workflow_test_support import (
     is_worktree_diff_cmd,
     json,
     os,
+    patch_evaluator_llm,
     pytest,
     run,
     run_eval_task,
@@ -26,7 +26,7 @@ from evaluator_workflow_test_support import (
 
 
 def test_checkpoint_never_maps_host_artifacts_into_non_local_workspace():
-    class NonLocalEnv(Environment):
+    class NonLocalEnv:
         workspace = "/testbed"
         local_filesystem = False
 
@@ -138,10 +138,10 @@ def test_worktree_diff_exclusion_reset_failure_cannot_fall_through_to_diff():
 def test_worktree_diff_excludes_registered_tombstone_and_keeps_real_change(
     tmp_path,
 ):
-    from opencollab.sdk.eval_compat import retirement_registry
+    import opencollab.sdk.retirement as retirement
 
-    register_verified_retirement = retirement_registry.register_verified_retirement
-    registered_retirement_paths = retirement_registry.registered_retirement_paths
+    register_verified_retirement = retirement.register_verified_retirement
+    registered_retirement_paths = retirement.registered_retirement_paths
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -255,11 +255,12 @@ def test_bind_mounted_docker_artifacts_never_enter_patch_or_checkpoint(tmp_path)
         check=True,
     )
 
-    class BindMountedEnv(Environment):
+    class BindMountedEnv(FakeEnv):
         workspace = "/workspace"
         local_filesystem = False
 
         def __init__(self):
+            super().__init__()
             self.host_workspace = str(repo)
             self.host = LocalEnvironment(str(repo))
             self.workspace = str(repo)
@@ -385,7 +386,7 @@ def test_eval_factory_threads_per_role_transcript_path(monkeypatch, tmp_path):
 
 def test_single_session_mode_keeps_flat_trajectory(monkeypatch, tmp_path):
     """workflow=None is unchanged: one flat ``trajectories/<task_id>.jsonl``."""
-    from opencollab.sdk.eval_compat import LLMResponse, Usage, container
+    from opencollab.sdk.usage import LLMResponse, Usage
 
     class FakeLLMClient:
         def __init__(self, *a, **k):
@@ -399,7 +400,7 @@ def test_single_session_mode_keeps_flat_trajectory(monkeypatch, tmp_path):
                 finish_reason="stop",
             )
 
-    monkeypatch.setattr(container, "LLMClient", FakeLLMClient)
+    patch_evaluator_llm(monkeypatch, FakeLLMClient)
     env = FakeEnv()
 
     async def env_factory(task):
@@ -430,7 +431,7 @@ def test_workflow_budget_exceeded_preserves_metrics_and_patch(tmp_path):
     sessions hold the metrics) and the on-disk diff is a real patch regardless of
     how the run ended. Budget-floor exhaustion is BY DESIGN -> no error.
     """
-    from opencollab.sdk.eval_compat import WorkflowBudgetExceeded
+    from opencollab.sdk.workflows import WorkflowBudgetExceeded
 
     env = FakeEnv()
 
@@ -685,7 +686,7 @@ def test_late_environment_cancelled_teardown_is_bounded_and_visible(tmp_path):
 
     result = run(scenario())
 
-    assert env._aborted is True
+    assert env.revoked is True
     assert result.execution_quiesced is False
     assert result.submission_eligible is False
     assert "environment abort failed: CancelledError" in result.error

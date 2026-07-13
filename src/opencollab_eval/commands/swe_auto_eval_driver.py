@@ -6,7 +6,7 @@ separate action and requires an explicit command template, keeping classificatio
 logic testable and side-effect free.
 """
 
-# ruff: noqa: E402, F401
+# ruff: noqa: F401
 
 from __future__ import annotations
 
@@ -25,14 +25,6 @@ import types
 import unicodedata
 import uuid
 from pathlib import Path
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-PKG_ROOT = REPO_ROOT / "opencollab"
-SCRIPT_ROOT = Path(__file__).resolve().parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-if str(PKG_ROOT) not in sys.path:
-    sys.path.insert(0, str(PKG_ROOT))
 
 from opencollab_eval.commands import (
     swe_auto_eval_claims,
@@ -94,16 +86,10 @@ from opencollab_eval.commands.swe_auto_eval_safe_state import (
     _write_json,
     _write_markdown,
 )
-from opencollab_eval.engine.swe_eval_decision import task_status_row  # noqa: E402
-from opencollab_eval.engine.swe_eval_discovery import build_snapshots  # noqa: E402
-from opencollab_eval.engine.swe_eval_records import read_bounded_json  # noqa: E402
+from opencollab_eval.engine.swe_eval_decision import task_status_row
+from opencollab_eval.engine.swe_eval_discovery import build_snapshots
+from opencollab_eval.engine.swe_eval_records import read_bounded_json
 
-_EVAL_WRAPPER = (
-    "import sys;"
-    f"sys.path.insert(0, {str(SCRIPT_ROOT)!r});"
-    "from opencollab_eval.commands.swe_auto_eval_claim_runner import main;"
-    "raise SystemExit(main())"
-)
 
 def build_summary(args: argparse.Namespace) -> dict:
     active_generation = set(args.active_generation_task or [])
@@ -191,8 +177,8 @@ def _wrapped_eval_command(
     claim = {**started, "schema": "opencollab.swe_eval_claim.v1"}
     return [
         sys.executable,
-        "-c",
-        _EVAL_WRAPPER,
+        "-m",
+        "opencollab_eval.commands.swe_auto_eval_claim_runner",
         str(claim_path),
         str(attempt_path),
         json.dumps(claim, ensure_ascii=False),

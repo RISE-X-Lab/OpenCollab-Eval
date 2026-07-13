@@ -3,15 +3,9 @@
 from __future__ import annotations
 
 import hashlib
-import sys
 from types import SimpleNamespace
 
 import pytest
-from package_test_support import module_path
-
-_SWEBENCH_DIR = module_path("opencollab_eval.generation.gen_prediction").parent
-if str(_SWEBENCH_DIR) not in sys.path:
-    sys.path.insert(0, str(_SWEBENCH_DIR))
 
 gpw = pytest.importorskip("opencollab_eval.generation.gen_prediction_workflow")
 

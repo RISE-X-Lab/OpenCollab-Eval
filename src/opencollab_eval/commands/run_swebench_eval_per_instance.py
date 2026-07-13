@@ -23,57 +23,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from pathlib import PureWindowsPath as PureWindowsPath
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-PKG_ROOT = REPO_ROOT / "opencollab"
-if str(PKG_ROOT) not in sys.path:
-    sys.path.insert(0, str(PKG_ROOT))
-
-from opencollab.sdk.eval_compat import (  # noqa: E402
-    _directory_path_matches_fd as _directory_path_matches_fd,
-)
-from opencollab.sdk.eval_compat import (
-    _open_directory_no_symlinks,
+from opencollab.sdk.files import (
     ensure_directory_no_symlinks,
-)
-from opencollab.sdk.eval_compat import (
-    read_regular_bytes as read_regular_bytes,
-)
-from opencollab.sdk.eval_compat import (
-    regular_path_identity as regular_path_identity,
-)
-from opencollab.sdk.eval_compat import (
-    unlink_regular_file_durable as unlink_regular_file_durable,
-)
-from opencollab.sdk.eval_compat import (
-    write_regular_bytes_atomic as write_regular_bytes_atomic,
-)
-
-from opencollab_eval.engine import swe_eval_records as swe_records  # noqa: E402, F401
-from opencollab_eval.engine.swe_eval_records import (  # noqa: E402
-    MAX_JSON_DOCUMENT_BYTES as MAX_JSON_DOCUMENT_BYTES,
-)
-from opencollab_eval.engine.swe_eval_records import (
-    SUBMISSION_INTEGRITY_PROVEN as SUBMISSION_INTEGRITY_PROVEN,
-)
-from opencollab_eval.engine.swe_eval_records import (
-    RecordInputFormatError as RecordInputFormatError,
-)
-from opencollab_eval.engine.swe_eval_records import (
-    RecordInputLimitError as RecordInputLimitError,
-)
-from opencollab_eval.engine.swe_eval_records import (
-    UnsafeRecordInputError as UnsafeRecordInputError,
-)
-from opencollab_eval.engine.swe_eval_records import (
-    embedded_workflow_metric as embedded_workflow_metric,
-)
-from opencollab_eval.engine.swe_eval_records import (
-    is_completed_prediction as is_completed_prediction,
-)
-from opencollab_eval.engine.swe_eval_records import (
-    metric_submission_integrity as metric_submission_integrity,
+    open_directory_no_symlinks,
 )
 
 _PROCESS_IDENTITY_POPEN = subprocess.Popen
@@ -103,9 +55,7 @@ TECHNICAL_REPORT_STATUSES = {
     "blocked_missing_eval_spec",
 }
 
-
-
-from opencollab_eval.commands.swebench_eval_process import (  # noqa: E402
+from opencollab_eval.commands.swebench_eval_process import (
     ActiveProcessRegistry as ActiveProcessRegistry,
 )
 from opencollab_eval.commands.swebench_eval_process import (
@@ -165,7 +115,7 @@ from opencollab_eval.commands.swebench_eval_process import (
 from opencollab_eval.commands.swebench_eval_process import (
     terminate_process_group as terminate_process_group,
 )
-from opencollab_eval.commands.swebench_eval_records import (  # noqa: E402
+from opencollab_eval.commands.swebench_eval_records import (
     _acquire_exclusive_lock as _acquire_exclusive_lock,
 )
 from opencollab_eval.commands.swebench_eval_records import (
@@ -257,6 +207,31 @@ from opencollab_eval.commands.swebench_eval_records import (
 )
 from opencollab_eval.commands.swebench_eval_records import (
     write_identity as write_identity,
+)
+from opencollab_eval.engine import swe_eval_records as swe_records  # noqa: F401
+from opencollab_eval.engine.swe_eval_records import (
+    MAX_JSON_DOCUMENT_BYTES as MAX_JSON_DOCUMENT_BYTES,
+)
+from opencollab_eval.engine.swe_eval_records import (
+    SUBMISSION_INTEGRITY_PROVEN as SUBMISSION_INTEGRITY_PROVEN,
+)
+from opencollab_eval.engine.swe_eval_records import (
+    RecordInputFormatError as RecordInputFormatError,
+)
+from opencollab_eval.engine.swe_eval_records import (
+    RecordInputLimitError as RecordInputLimitError,
+)
+from opencollab_eval.engine.swe_eval_records import (
+    UnsafeRecordInputError as UnsafeRecordInputError,
+)
+from opencollab_eval.engine.swe_eval_records import (
+    embedded_workflow_metric as embedded_workflow_metric,
+)
+from opencollab_eval.engine.swe_eval_records import (
+    is_completed_prediction as is_completed_prediction,
+)
+from opencollab_eval.engine.swe_eval_records import (
+    metric_submission_integrity as metric_submission_integrity,
 )
 
 
@@ -662,7 +637,7 @@ def main() -> int:
     work_dir = Path(os.path.abspath(args.work_dir))
     try:
         for input_path in (dataset_path, predictions_path):
-            parent_fd = _open_directory_no_symlinks(input_path.parent)
+            parent_fd = open_directory_no_symlinks(input_path.parent)
             os.close(parent_fd)
         ensure_directory_no_symlinks(work_dir)
         ensure_directory_no_symlinks(work_dir / "command_logs")

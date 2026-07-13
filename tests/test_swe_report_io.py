@@ -28,7 +28,7 @@ def test_report_reader_maps_a_detected_read_race_to_a_technical_input_error(
     def changed_while_reading(*args, **kwargs):
         raise OSError("input changed while reading")
 
-    monkeypatch.setattr(report_io.safe_files, "read_regular_text", changed_while_reading)
+    monkeypatch.setattr(report_io.files, "read_regular_text", changed_while_reading)
 
     value, error = report_io.load_json_with_error(path)
 

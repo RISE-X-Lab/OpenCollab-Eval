@@ -45,5 +45,5 @@ def test_environment_returning_after_cleanup_bound_is_revoked_and_cleaned(tmp_pa
     result = run(scenario())
 
     assert result.patch == ""
-    assert env._aborted is True
+    assert env.revoked is True
     assert env.cleaned_up is True

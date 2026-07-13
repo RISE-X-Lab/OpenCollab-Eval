@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from opencollab.sdk import (
+from opencollab.sdk.tools import (
     ApplyPatchTool,
     BashTool,
     FileReadTool,

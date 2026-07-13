@@ -5,9 +5,9 @@ from evaluator_test_support import (
     EvalTask,
     FakeEnv,
     FakeLLMClient,
-    container,
     evaluator,
     is_worktree_diff_cmd,
+    patch_evaluator_llm,
     pytest,
     run,
     run_eval_task,
@@ -111,7 +111,7 @@ def test_run_eval_task_rejects_invalid_checkpoint_interval_without_side_effects(
 
 
 def test_run_eval_task_staged_extraction_includes_new_files(monkeypatch, tmp_path):
-    monkeypatch.setattr(container, "LLMClient", FakeLLMClient)
+    patch_evaluator_llm(monkeypatch, FakeLLMClient)
     env = FakeEnv(
         diff=(
             "diff --git a/new_module.py b/new_module.py\n"
@@ -141,7 +141,7 @@ def test_run_eval_task_staged_extraction_includes_new_files(monkeypatch, tmp_pat
 
 
 def test_run_eval_task_honors_injected_params(monkeypatch, tmp_path):
-    monkeypatch.setattr(container, "LLMClient", FakeLLMClient)
+    patch_evaluator_llm(monkeypatch, FakeLLMClient)
     captured = {}
     sentinel_tool = object()
 
@@ -182,7 +182,7 @@ def test_run_eval_task_forwards_top_p_to_agent_and_provider(monkeypatch, tmp_pat
     # ``complete`` call, mirroring temperature. This is the latent eval-gap fix:
     # a configured top_p (like OPENCOLLAB_TOP_P) actually takes effect.
     CapturingLLMClient.last_kwargs = {}
-    monkeypatch.setattr(container, "LLMClient", CapturingLLMClient)
+    patch_evaluator_llm(monkeypatch, CapturingLLMClient)
     captured = {}
 
     real_build_session = evaluator.build_session
@@ -218,7 +218,7 @@ def test_run_eval_task_top_p_unset_omits_it_from_provider_call(monkeypatch, tmp_
     # Default top_p (None) leaves the Agent default None and is NOT forwarded to
     # the provider call — so the request is byte-identical to today's behavior.
     CapturingLLMClient.last_kwargs = {}
-    monkeypatch.setattr(container, "LLMClient", CapturingLLMClient)
+    patch_evaluator_llm(monkeypatch, CapturingLLMClient)
     captured = {}
 
     real_build_session = evaluator.build_session
@@ -247,7 +247,7 @@ def test_run_eval_task_top_p_unset_omits_it_from_provider_call(monkeypatch, tmp_
 
 def test_run_eval_task_forwards_max_output_tokens_to_agent_and_provider(monkeypatch, tmp_path):
     CapturingLLMClient.last_kwargs = {}
-    monkeypatch.setattr(container, "LLMClient", CapturingLLMClient)
+    patch_evaluator_llm(monkeypatch, CapturingLLMClient)
     captured = {}
 
     real_build_session = evaluator.build_session

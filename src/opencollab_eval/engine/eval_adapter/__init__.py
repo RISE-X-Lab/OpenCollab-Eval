@@ -3,7 +3,6 @@
 from opencollab_eval.engine.eval_adapter.models import (
     EvalResult,
     PatchCandidate,
-    PreparedWorkspace,
     RunRecord,
     TaskSpec,
     WorkspaceSpec,
@@ -20,7 +19,6 @@ from opencollab_eval.engine.eval_adapter.prolite import (
     task_spec_from_row,
     workspace_spec_for_task,
 )
-from opencollab_eval.engine.eval_adapter.workspace import docker_environment_for_workspace
 
 __all__ = [
     "DEFAULT_DATASET_NAME",
@@ -28,7 +26,6 @@ __all__ = [
     "PROLITE_IMAGE_PREFIX",
     "EvalResult",
     "PatchCandidate",
-    "PreparedWorkspace",
     "RunRecord",
     "TaskSpec",
     "WorkspaceSpec",
@@ -39,5 +36,4 @@ __all__ = [
     "select_repo_root",
     "task_spec_from_row",
     "workspace_spec_for_task",
-    "docker_environment_for_workspace",
 ]

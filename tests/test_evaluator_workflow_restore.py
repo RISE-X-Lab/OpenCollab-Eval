@@ -141,7 +141,7 @@ def test_checkpoint_failed_restore_proof_has_total_deadline(
     assert result.status == "failed"
     assert result.worktree_integrity_proven is False
     assert "proof exceeded its deadline" in result.error
-    assert env._aborted is True
+    assert env.revoked is True
     assert quiesced is True
 
 

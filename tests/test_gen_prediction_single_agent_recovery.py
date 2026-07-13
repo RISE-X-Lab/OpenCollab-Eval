@@ -6,17 +6,10 @@ import json
 import os
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
-from package_test_support import module_path
 
 from opencollab_eval.engine.swe_eval_records import read_jsonl
-
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_SWEBENCH_DIR = module_path("opencollab_eval.generation.gen_prediction").parent
-if str(_SWEBENCH_DIR) not in sys.path:
-    sys.path.insert(0, str(_SWEBENCH_DIR))
 
 gp = pytest.importorskip("opencollab_eval.generation.gen_prediction")
 
@@ -213,6 +206,7 @@ def test_single_main_cleanup_failure_stages_candidate_before_publish(
     )
 
     async def fake_run_agent(*args, **kwargs):
+        assert kwargs["artifact_root"] == tmp_path
         return {
             "workflow_status": "done",
             "execution_quiesced": True,
@@ -649,8 +643,7 @@ def test_two_processes_recover_one_stale_pending_exactly_once(tmp_path):
     )
     docker.chmod(0o755)
     script = (
-        "import pathlib,sys; "
-        f"sys.path.insert(0, {str(_SWEBENCH_DIR)!r}); "
+        "import pathlib; "
         "from opencollab_eval.generation import gen_prediction as gp; "
         f"raise SystemExit(0 if gp.recover_generation_state(pathlib.Path({str(tmp_path)!r})) else 1)"
     )

@@ -36,7 +36,7 @@ The eval harness runs it unchanged: ``goal`` falls back to the task
 
 from __future__ import annotations
 
-from opencollab.sdk import workflow
+from opencollab.sdk.workflows import workflow
 
 from opencollab_eval.workflows import _analyst_solve_defs as _definitions
 from opencollab_eval.workflows import _analyst_solve_runtime as _runtime

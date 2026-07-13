@@ -4,20 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import re
-import sys
 from collections import defaultdict
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT / "opencollab") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "opencollab"))
-
-from opencollab_eval.engine.swe_eval_discovery import (  # noqa: E402
+from opencollab_eval.engine.swe_eval_discovery import (
     _direct_eval_done_has_execution_proof,
 )
-from opencollab_eval.engine.swe_generation_proof import (  # noqa: E402
+from opencollab_eval.engine.swe_generation_proof import (
     current_generation_summary_proof_valid,
 )
 

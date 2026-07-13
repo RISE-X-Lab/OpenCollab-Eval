@@ -23,7 +23,7 @@ from collections.abc import Sequence
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
 
-from opencollab.sdk.eval_compat import add_exception_note, force_task_terminal
+from opencollab.sdk.lifecycle import add_exception_note, force_task_terminal
 
 logger = logging.getLogger(__name__)
 
@@ -341,7 +341,7 @@ async def _finish_staged_patch_cleanup(
                 cleanup_failure = TimeoutError(
                     "test patch staging-file cleanup exceeded its deadline"
                 )
-                env._aborted = True
+                env.revoke()
                 _stopped, cancellation, stop_error = await _force_stop_task(
                     cleanup_task,
                     cancellation=cancellation,
@@ -362,7 +362,7 @@ async def _finish_staged_patch_cleanup(
                 cleanup_failure = TimeoutError(
                     "test patch staging-file cleanup exceeded its deadline"
                 )
-                env._aborted = True
+                env.revoke()
                 _stopped, cancellation, stop_error = await _force_stop_task(
                     cleanup_task,
                     cancellation=cancellation,
@@ -441,7 +441,7 @@ async def _compensate_failed_mutation(
     while not rollback_task.done():
         remaining = deadline - asyncio.get_running_loop().time()
         if remaining <= 0:
-            env._aborted = True
+            env.revoke()
             _stopped, cancellation, stop_error = await _force_stop_task(
                 rollback_task,
                 cancellation=cancellation,

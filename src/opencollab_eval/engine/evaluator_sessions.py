@@ -6,24 +6,24 @@ import time
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from opencollab.sdk.eval_compat import (
-    DEFAULT_MAX_OUTPUT_TOKENS,
+from opencollab.sdk.agents import Agent, Session
+from opencollab.sdk.config import (
     DEFAULT_TEMPERATURE,
     DEFAULT_THINKING,
     DEFAULT_THINKING_PARAMS,
     DEFAULT_TOP_P,
-    Agent,
-    CallerTimeoutError,
-    Environment,
-    EnvWorkingTreeProbe,
-    Session,
-    Tool,
-    Tracer,
+)
+from opencollab.sdk.environment import ExecutionEnvironment
+from opencollab.sdk.lifecycle import CallerTimeoutError, abandon_on_timeout
+from opencollab.sdk.persistence import workflow_transcript_path
+from opencollab.sdk.repository import WorkingTreeProbe
+from opencollab.sdk.tools import Tool
+from opencollab.sdk.tracing import Tracer
+from opencollab.sdk.usage import DEFAULT_MAX_OUTPUT_TOKENS
+from opencollab.sdk.workflows import (
     WorkflowBudgetExceeded,
     WorkflowContext,
     WorkflowFn,
-    abandon_on_timeout,
-    workflow_transcript_path,
 )
 
 if TYPE_CHECKING:
@@ -51,7 +51,7 @@ class _EvalSessionFactory:
     def __init__(
         self,
         *,
-        env: Environment,
+        env: ExecutionEnvironment,
         tracer: Tracer,
         prompt: str,
         model: str,
@@ -140,7 +140,7 @@ class _EvalSessionFactory:
 
 def _build_eval_session_factory(
     *,
-    env: Environment,
+    env: ExecutionEnvironment,
     tracer: Tracer,
     prompt: str,
     model: str,
@@ -179,7 +179,7 @@ def _build_eval_session_factory(
 async def _run_single_session(
     *,
     task: EvalTask,
-    env: Environment,
+    env: ExecutionEnvironment,
     tracer: Tracer,
     prompt: str,
     tools: Sequence[Tool],
@@ -238,7 +238,7 @@ async def _run_single_session(
 async def _run_workflow_mode(
     *,
     task: EvalTask,
-    env: Environment,
+    env: ExecutionEnvironment,
     tracer: Tracer,
     prompt: str,
     tools: Sequence[Tool],
@@ -297,7 +297,7 @@ async def _run_workflow_mode(
         factory,
         tracer=tracer,
         budget_total=task.max_tokens,
-        tree_probe=EnvWorkingTreeProbe(env),
+        tree_probe=WorkingTreeProbe(env),
         deadline_monotonic=deadline,
     )
     if context_holder is not None:

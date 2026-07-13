@@ -61,7 +61,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from opencollab.sdk import BashTool, FileReadTool, GrepTool, workflow
+from opencollab.sdk.tools import BashTool, FileReadTool, GrepTool
+from opencollab.sdk.workflows import workflow
 
 
 @workflow(
@@ -181,7 +182,7 @@ on a source checkout:
 ```python
 from importlib.resources import files
 
-from opencollab.sdk import discover_workflows
+from opencollab.sdk.workflows import discover_workflows
 
 workflow_dir = files("opencollab_eval.workflows")
 registry = discover_workflows(str(workflow_dir))

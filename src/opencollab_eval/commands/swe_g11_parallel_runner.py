@@ -15,15 +15,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-try:
-    from opencollab_eval.commands import _swe_g11_config as _config
-    from opencollab_eval.commands import _swe_g11_reports as _reports
-except ModuleNotFoundError as exc:
-    if exc.name != "scripts":
-        raise
-    from opencollab_eval.commands import _swe_g11_config as _config  # type: ignore[no-redef]
-    from opencollab_eval.commands import _swe_g11_reports as _reports  # type: ignore[no-redef]
-
+from opencollab_eval.commands import _swe_g11_config as _config
+from opencollab_eval.commands import _swe_g11_reports as _reports
 
 # Preserve the original import surface while keeping implementation modules focused.
 REPO = _config.REPO

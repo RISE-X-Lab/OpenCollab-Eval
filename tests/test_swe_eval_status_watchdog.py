@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from package_test_support import module_path
 from swe_eval_status_support import (
     _patch,
     _write_jsonl,
@@ -11,6 +10,12 @@ from swe_eval_status_support import (
     subprocess,
     sys,
 )
+
+_WATCHDOG_MODULE = "opencollab_eval.commands.swe_v3_wave_watchdog"
+
+
+def _watchdog_command(*args: str) -> list[str]:
+    return [sys.executable, "-m", _WATCHDOG_MODULE, *args]
 
 
 def test_wave_watchdog_summarizes_runs_config_without_actions(tmp_path):
@@ -43,10 +48,8 @@ def test_wave_watchdog_summarizes_runs_config_without_actions(tmp_path):
         ),
         encoding="utf-8",
     )
-    script = module_path("opencollab_eval.commands.swe_v3_wave_watchdog")
-
     result = subprocess.run(
-        [sys.executable, str(script), "--runs-config", str(runs_config)],
+        _watchdog_command("--runs-config", str(runs_config)),
         check=True,
         text=True,
         capture_output=True,
@@ -71,12 +74,11 @@ def test_wave_watchdog_summarizes_runs_config_without_actions(tmp_path):
     ],
 )
 def test_wave_watchdog_bad_run_schema_is_incomplete_and_exit_two(tmp_path, bad_run):
-    script = module_path("opencollab_eval.commands.swe_v3_wave_watchdog")
     config = tmp_path / "runs.json"
     config.write_text(json.dumps([bad_run]), encoding="utf-8")
 
     result = subprocess.run(
-        [sys.executable, str(script), "--runs-config", str(config)],
+        _watchdog_command("--runs-config", str(config)),
         text=True,
         capture_output=True,
         timeout=3,
@@ -91,7 +93,6 @@ def test_wave_watchdog_bad_run_schema_is_incomplete_and_exit_two(tmp_path, bad_r
 
 
 def test_wave_watchdog_rejects_symlinked_base_run_directory(tmp_path):
-    script = module_path("opencollab_eval.commands.swe_v3_wave_watchdog")
     real = tmp_path / "real-run"
     real.mkdir()
     linked = tmp_path / "linked-run"
@@ -103,7 +104,7 @@ def test_wave_watchdog_rejects_symlinked_base_run_directory(tmp_path):
     )
 
     result = subprocess.run(
-        [sys.executable, str(script), "--runs-config", str(config)],
+        _watchdog_command("--runs-config", str(config)),
         text=True,
         capture_output=True,
         timeout=3,
@@ -118,7 +119,6 @@ def test_wave_watchdog_rejects_symlinked_base_run_directory(tmp_path):
 
 @pytest.mark.parametrize("kind", ["fifo", "symlink"])
 def test_wave_watchdog_rejects_unsafe_runs_config_without_blocking(tmp_path, kind):
-    script = module_path("opencollab_eval.commands.swe_v3_wave_watchdog")
     config = tmp_path / "runs.json"
     if kind == "fifo":
         os.mkfifo(config)
@@ -128,7 +128,7 @@ def test_wave_watchdog_rejects_unsafe_runs_config_without_blocking(tmp_path, kin
         config.symlink_to(real)
 
     result = subprocess.run(
-        [sys.executable, str(script), "--runs-config", str(config)],
+        _watchdog_command("--runs-config", str(config)),
         text=True,
         capture_output=True,
         timeout=3,
@@ -140,7 +140,6 @@ def test_wave_watchdog_rejects_unsafe_runs_config_without_blocking(tmp_path, kin
 
 
 def test_wave_watchdog_rejects_symlinked_runs_config_ancestor(tmp_path):
-    script = module_path("opencollab_eval.commands.swe_v3_wave_watchdog")
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "runs.json").write_text("[]", encoding="utf-8")
@@ -148,7 +147,7 @@ def test_wave_watchdog_rejects_symlinked_runs_config_ancestor(tmp_path):
     linked.symlink_to(outside, target_is_directory=True)
 
     result = subprocess.run(
-        [sys.executable, str(script), "--runs-config", str(linked / "runs.json")],
+        _watchdog_command("--runs-config", str(linked / "runs.json")),
         text=True,
         capture_output=True,
         timeout=3,
@@ -166,7 +165,6 @@ def test_wave_watchdog_rejects_unsafe_output_without_blocking(
     flag,
     kind,
 ):
-    script = module_path("opencollab_eval.commands.swe_v3_wave_watchdog")
     config = tmp_path / "runs.json"
     config.write_text("[]", encoding="utf-8")
     output = tmp_path / "summary.out"
@@ -179,14 +177,12 @@ def test_wave_watchdog_rejects_unsafe_output_without_blocking(
         output.symlink_to(real)
 
     result = subprocess.run(
-        [
-            sys.executable,
-            str(script),
+        _watchdog_command(
             "--runs-config",
             str(config),
             flag,
             str(output),
-        ],
+        ),
         text=True,
         capture_output=True,
         timeout=3,
@@ -200,7 +196,6 @@ def test_wave_watchdog_rejects_unsafe_output_without_blocking(
 
 
 def test_wave_watchdog_rejects_symlinked_output_parent(tmp_path):
-    script = module_path("opencollab_eval.commands.swe_v3_wave_watchdog")
     config = tmp_path / "runs.json"
     config.write_text("[]", encoding="utf-8")
     outside = tmp_path / "outside"
@@ -209,14 +204,12 @@ def test_wave_watchdog_rejects_symlinked_output_parent(tmp_path):
     linked.symlink_to(outside, target_is_directory=True)
 
     result = subprocess.run(
-        [
-            sys.executable,
-            str(script),
+        _watchdog_command(
             "--runs-config",
             str(config),
             "--json-output",
             str(linked / "summary.json"),
-        ],
+        ),
         text=True,
         capture_output=True,
         timeout=3,

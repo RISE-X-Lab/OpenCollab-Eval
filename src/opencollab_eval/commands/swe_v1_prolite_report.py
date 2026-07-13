@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from opencollab.sdk.eval_compat import write_regular_bytes_atomic
+from opencollab.sdk.files import write_regular_bytes_atomic
 
 
 def _local_report_target_expectation(path: Path) -> dict[str, object]:

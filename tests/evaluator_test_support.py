@@ -6,14 +6,9 @@ import subprocess
 import sys
 
 import pytest
-from opencollab.sdk.eval_compat import (
-    Environment,
-    ExecResult,
-    LLMResponse,
-    LocalEnvironment,
-    Usage,
-    container,
-)
+from opencollab.sdk.environment import ExecResult
+from opencollab.sdk.environments import LocalEnvironment
+from opencollab.sdk.usage import LLMResponse, Usage
 
 from opencollab_eval.commands import eval_batch as eval_cli
 from opencollab_eval.engine import evaluator
@@ -31,7 +26,6 @@ from opencollab_eval.engine.swe_eval_records import (
 
 __all__ = [
     "CapturingLLMClient",
-    "Environment",
     "EvalResult",
     "EvalTask",
     "ExecResult",
@@ -43,7 +37,6 @@ __all__ = [
     "SUBMISSION_INTEGRITY_PROVEN",
     "Usage",
     "asyncio",
-    "container",
     "eval_cli",
     "evaluator",
     "gc",
@@ -51,6 +44,7 @@ __all__ = [
     "json",
     "metric_submission_integrity",
     "os",
+    "patch_evaluator_llm",
     "pytest",
     "run",
     "run_eval_batch",
@@ -59,6 +53,17 @@ __all__ = [
     "subprocess",
     "sys",
 ]
+
+
+def patch_evaluator_llm(monkeypatch, llm_factory) -> None:
+    """Inject a test LLM through Eval's stable session-construction seam."""
+
+    original_build_session = evaluator.build_session
+
+    def build_with_test_llm(**kwargs):
+        return original_build_session(llm=llm_factory(), **kwargs)
+
+    monkeypatch.setattr(evaluator, "build_session", build_with_test_llm)
 
 
 def run(coro):
@@ -86,13 +91,55 @@ class FakeLLMClient:
         )
 
 
-class FakeEnv(Environment):
+class FakeEnv:
     workspace = "/tmp/opencollab-test-worktree"
+    host_workspace = None
+    source_workspace = None
+    local_filesystem = False
+    process_isolated = False
 
     def __init__(self, diff="diff --git a/x b/x\n+new\n"):
         self.diff = diff
         self.cleaned_up = False
         self.cmds = []
+        self._revoked = False
+
+    @property
+    def revoked(self) -> bool:
+        return self._revoked
+
+    def revoke(self) -> None:
+        self._revoked = True
+
+    def _ensure_active(self) -> None:
+        if self.revoked:
+            raise RuntimeError("execution environment has been revoked")
+
+    async def read_file(self, path: str) -> str:
+        return ""
+
+    async def write_file(self, path: str, content: str) -> None:
+        return None
+
+    async def write_temp_file(
+        self,
+        content: str,
+        *,
+        prefix: str,
+        suffix: str = ".tmp",
+    ) -> str:
+        path = f"/tmp/{prefix}{id(self):x}{suffix}"
+        await self.write_file(path, content)
+        return path
+
+    async def remove_file(self, path: str) -> None:
+        self.cmds.append(f"rm -f -- {path}")
+
+    async def registered_retirement_paths(self) -> tuple[str, ...]:
+        return ()
+
+    async def abort(self) -> None:
+        self.revoke()
 
     async def exec_cmd(self, cmd: str, timeout: float = 120.0) -> ExecResult:
         self.cmds.append(cmd)
@@ -126,7 +173,7 @@ class CapturingLLMClient:
         )
 
 
-class InjectFakeEnv(Environment):
+class InjectFakeEnv:
     """Env that faithfully models git's per-path revert of injected test files.
 
     Models the real driver's contamination surface: the submitted patch is
@@ -140,6 +187,12 @@ class InjectFakeEnv(Environment):
     leak the old always-succeeds fake hid.
     """
 
+    workspace = "/tmp/opencollab-test-worktree"
+    host_workspace = None
+    source_workspace = None
+    local_filesystem = False
+    process_isolated = False
+
     def __init__(self, src_path="src/app.py", mod_path=None, new_path=None):
         self.src_path = src_path
         self.mod_path = mod_path  # injected tracked-file modification (or None)
@@ -151,6 +204,21 @@ class InjectFakeEnv(Environment):
         self.cleaned: set[str] = set()
         self.cmds: list[str] = []
         self.cleaned_up = False
+        self._revoked = False
+
+    @property
+    def revoked(self) -> bool:
+        return self._revoked
+
+    def revoke(self) -> None:
+        self._revoked = True
+
+    def _ensure_active(self) -> None:
+        if self.revoked:
+            raise RuntimeError("execution environment has been revoked")
+
+    async def read_file(self, path: str) -> str:
+        return ""
 
     async def write_file(self, path: str, content: str) -> None:
         pass
@@ -168,6 +236,12 @@ class InjectFakeEnv(Environment):
 
     async def remove_file(self, path: str) -> None:
         return None
+
+    async def registered_retirement_paths(self) -> tuple[str, ...]:
+        return ()
+
+    async def abort(self) -> None:
+        self.revoke()
 
     def _leaks(self, path: str | None, *, untracked: bool) -> bool:
         if not path:

@@ -3,15 +3,11 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT / "opencollab") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "opencollab"))
-
-from opencollab.sdk.eval_compat import retirement_registry, safe_files  # noqa: E402
+import opencollab.sdk.files as files
+import opencollab.sdk.retirement as retirement
 
 MAX_REPORT_BYTES = 64 * 1024 * 1024
 MAX_LOG_BYTES = 128 * 1024 * 1024
@@ -19,14 +15,14 @@ MAX_LOG_BYTES = 128 * 1024 * 1024
 
 def ensure_directory(path: Path) -> None:
     """Create one directory hierarchy while rejecting symlink components."""
-    safe_files.ensure_directory_no_symlinks(path)
+    files.ensure_directory_no_symlinks(path)
 
 
 def configure_retirement_registry(output_dir: Path) -> str:
     """Share verified retirement identities across report writer processes."""
     state_dir = output_dir / ".opencollab"
     ensure_directory(state_dir)
-    return retirement_registry.configure_persistent_retirement_log(
+    return retirement.configure_persistent_retirement_log(
         state_dir / "retirements.jsonl"
     )
 
@@ -34,7 +30,7 @@ def configure_retirement_registry(output_dir: Path) -> str:
 def load_json_with_error(path: Path) -> tuple[dict[str, Any], str | None]:
     """Read one bounded regular JSON object and retain the failure reason."""
     try:
-        text = safe_files.read_regular_text(path, max_bytes=MAX_REPORT_BYTES)
+        text = files.read_regular_text(path, max_bytes=MAX_REPORT_BYTES)
         value = json.loads(text)
     except FileNotFoundError:
         return {}, "missing_report_file"
@@ -57,13 +53,13 @@ def load_json(path: Path) -> dict[str, Any]:
 
 def read_text(path: Path, *, max_bytes: int = MAX_LOG_BYTES) -> str:
     """Read one bounded regular text file without following symlinks."""
-    return safe_files.read_regular_text(path, max_bytes=max_bytes)
+    return files.read_regular_text(path, max_bytes=max_bytes)
 
 
 def write_text(path: Path, value: str, *, max_bytes: int = MAX_LOG_BYTES) -> None:
     """Atomically replace one regular text file without following symlinks."""
     payload = value.encode("utf-8")
-    safe_files.write_regular_bytes_atomic(path, payload, max_bytes=max_bytes)
+    files.write_regular_bytes_atomic(path, payload, max_bytes=max_bytes)
 
 
 def write_json(path: Path, value: Any) -> None:

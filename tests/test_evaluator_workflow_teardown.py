@@ -10,6 +10,7 @@ from evaluator_workflow_test_support import (
     evaluator,
     generate_review_fix,
     is_worktree_diff_cmd,
+    patch_evaluator_llm,
     run,
     run_eval_task,
 )
@@ -112,7 +113,7 @@ def test_non_quiescent_workflow_bounds_checkpoint_abort_and_revokes_env(monkeypa
 
     result = run(scenario())
 
-    assert env._aborted is True
+    assert env.revoked is True
     assert result.patch == ""
     assert result.checkpoint_result["abort"]["status"] == "checkpoint_abort_timed_out"
     assert "checkpoint abort timed out" in result.error
@@ -170,7 +171,7 @@ def test_checkpoint_finalization_is_bounded_when_periodic_capture_stalls(tmp_pat
     result = run(scenario())
 
     assert env.cancellations >= 2
-    assert env._aborted is True
+    assert env.revoked is True
     assert result.patch == ""
     assert result.checkpoint_result["final"]["status"] == ("checkpoint_finalization_timed_out")
     assert "checkpoint finalization timed out" in result.error
@@ -179,7 +180,7 @@ def test_checkpoint_finalization_is_bounded_when_periodic_capture_stalls(tmp_pat
 
 
 def test_workflow_none_path_unchanged(monkeypatch, tmp_path):
-    from opencollab.sdk.eval_compat import LLMResponse, Usage, container
+    from opencollab.sdk.usage import LLMResponse, Usage
 
     class FakeLLMClient:
         def __init__(self, *a, **k):
@@ -193,7 +194,7 @@ def test_workflow_none_path_unchanged(monkeypatch, tmp_path):
                 finish_reason="stop",
             )
 
-    monkeypatch.setattr(container, "LLMClient", FakeLLMClient)
+    patch_evaluator_llm(monkeypatch, FakeLLMClient)
     env = FakeEnv()
 
     async def env_factory(task):

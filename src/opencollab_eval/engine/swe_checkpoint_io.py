@@ -7,13 +7,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from opencollab.sdk.eval_compat import (
-    ExecResult,
-    guarded_staged_diff_command,
+from opencollab.sdk.environment import ExecResult
+from opencollab.sdk.files import (
     read_regular_bytes,
     unlink_regular_file_durable,
     write_regular_bytes_atomic,
 )
+from opencollab.sdk.repository import build_patch_command
 
 
 def _checkpoint_module():
@@ -90,7 +90,7 @@ def worktree_diff_command(
     working_tree: str | None = None,
 ) -> str:
     del object_directory, working_tree
-    return guarded_staged_diff_command(
+    return build_patch_command(
         base_revision=base_revision,
         exclude_paths=exclude_paths,
         registered_retirement_paths=registered_retirement_paths,

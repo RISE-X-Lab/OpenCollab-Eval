@@ -487,7 +487,6 @@ def test_auto_eval_state_writes_reject_symlinked_opencollab_parent(tmp_path):
 
 
 def test_auto_eval_wrapper_rejects_symlinked_state_parent(tmp_path):
-    driver = importlib.import_module("opencollab_eval.commands.swe_auto_eval_driver")
     side_dir = tmp_path / "side"
     outside = tmp_path / "outside"
     side_dir.mkdir()
@@ -508,8 +507,8 @@ def test_auto_eval_wrapper_rejects_symlinked_state_parent(tmp_path):
     result = subprocess.run(
         [
             sys.executable,
-            "-c",
-            driver._EVAL_WRAPPER,
+            "-m",
+            "opencollab_eval.commands.swe_auto_eval_claim_runner",
             str(claim),
             str(attempt),
             json.dumps({**identity, "schema": "opencollab.swe_eval_claim.v1"}),

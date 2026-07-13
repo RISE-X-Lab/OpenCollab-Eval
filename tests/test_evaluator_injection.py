@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from evaluator_test_support import (
-    Environment,
     EvalTask,
     ExecResult,
     FakeEnv,
@@ -241,10 +240,9 @@ def test_injected_path_cleanup_aggregate_deadline_invalidates_submission(tmp_pat
 
 
 def test_failed_partial_test_patch_rollback_stops_agent_and_invalidates_output(tmp_path):
-    class IsolationFailureEnv(Environment):
+    class IsolationFailureEnv(FakeEnv):
         def __init__(self):
-            self.cmds: list[str] = []
-            self.cleaned_up = False
+            super().__init__()
 
         async def write_file(self, path: str, content: str) -> None:
             return None

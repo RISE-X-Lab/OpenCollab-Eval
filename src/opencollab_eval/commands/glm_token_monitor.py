@@ -6,12 +6,16 @@ import json
 import math
 import os
 import stat
-import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import BinaryIO
+
+from opencollab.sdk.files import (
+    directory_handle_matches_path,
+    open_directory_no_symlinks,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_TRAJECTORIES_DIR = REPO_ROOT / ".opencollab" / "logs" / "trajectories"
@@ -27,21 +31,12 @@ MAX_TRAJECTORY_FILES = 4_096
 MAX_TRAJECTORY_DIRECTORY_ENTRIES = 20_000
 MAX_TRAJECTORY_DIRECTORY_DEPTH = 64
 
-PKG_ROOT = REPO_ROOT / "opencollab"
-if str(PKG_ROOT) not in sys.path:
-    sys.path.insert(0, str(PKG_ROOT))
-
-from opencollab.sdk.eval_compat import (  # noqa: E402
-    _directory_path_matches_fd,
-    _open_directory_no_symlinks,
-)
-
 
 @contextmanager
 def _open_regular_binary(path: Path) -> Iterator[BinaryIO]:
     """Open a stable regular trajectory without following its final symlink."""
     path = Path(os.path.abspath(os.fspath(path)))
-    parent_fd = _open_directory_no_symlinks(path.parent)
+    parent_fd = open_directory_no_symlinks(path.parent)
     fd = -1
     flags = (
         os.O_RDONLY
@@ -91,7 +86,7 @@ def _open_regular_binary(path: Path) -> Iterator[BinaryIO]:
             )
             if opened_identity != after_identity or after_identity != current_identity:
                 raise OSError(f"trajectory changed while reading: {path}")
-            if not _directory_path_matches_fd(path.parent, parent_fd):
+            if not directory_handle_matches_path(path.parent, parent_fd):
                 raise OSError(f"trajectory parent changed while reading: {path}")
     finally:
         if fd >= 0:
@@ -190,7 +185,7 @@ def _trajectory_paths(directory: Path) -> list[Path]:
     if not stat.S_ISDIR(inspected.st_mode):
         raise ValueError(f"trajectory directory is not a real directory: {absolute}")
     try:
-        directory_fd = _open_directory_no_symlinks(absolute)
+        directory_fd = open_directory_no_symlinks(absolute)
     except OSError as exc:
         raise ValueError(
             f"trajectory directory is not a real directory: {absolute}"

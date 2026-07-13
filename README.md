@@ -4,9 +4,10 @@ OpenCollab-Eval owns benchmark adaptation, solver isolation, trusted patch
 extraction, official evaluation, evidence, batch orchestration, and reporting for
 OpenCollab-based software-engineering experiments.
 
-This repository requires OpenCollab 0.2.1 or newer in the 0.2 series. Evaluation production code and tests
-import OpenCollab only through `opencollab.sdk` and the temporary
-`opencollab.sdk.eval_compat` migration surface.
+This repository requires OpenCollab 0.3.x and SDK API v2.
+Evaluation production code and tests import capabilities from the focused,
+versioned modules under `opencollab.sdk`. The dependency is limited to public
+SDK names; compatibility shims and framework internals are excluded by tests.
 
 The package contains benchmark contracts, solver workflows, trusted patch and
 process isolation, evidence handling, batch coordination, remote execution,
@@ -18,8 +19,8 @@ oc-eval inspect path/to/tasks.jsonl --identity-key-file path/to/sealed-identity.
 oc-eval run path/to/tasks.jsonl --model MODEL --provider PROVIDER --output results
 ```
 
-See [MIGRATION.md](MIGRATION.md) for the ownership map and compatibility-removal
-sequence.
+See [MIGRATION.md](MIGRATION.md) for the repository ownership map and SDK
+boundary.
 
 Release compatibility is verified from built artifacts rather than editable
 source trees. Build both wheels, then run

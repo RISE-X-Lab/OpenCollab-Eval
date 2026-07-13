@@ -12,13 +12,13 @@ import time
 import uuid
 from pathlib import Path
 
-from opencollab.sdk.eval_compat import (
-    _open_directory_no_symlinks,
-    add_exception_note,
+from opencollab.sdk.files import (
     create_regular_bytes_atomic,
+    open_directory_no_symlinks,
     quarantine_unlink_owned_file,
     write_regular_bytes_atomic,
 )
+from opencollab.sdk.lifecycle import add_exception_note
 
 from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid
 
@@ -75,7 +75,7 @@ def _cleanup_temporary_file(
                 f"refusing temporary-file cleanup without live ownership proof: {path}"
             )
         opened = os.fstat(owned_fd)
-        parent_fd = _open_directory_no_symlinks(path.parent)
+        parent_fd = open_directory_no_symlinks(path.parent)
         quarantine_unlink_owned_file(
             parent_fd,
             path.name,

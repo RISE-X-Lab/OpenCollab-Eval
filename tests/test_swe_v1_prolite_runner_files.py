@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from package_test_support import module_path
 from swe_v1_prolite_runner_test_support import (
     Path,
     _remote_config,
@@ -20,10 +19,8 @@ from swe_v1_prolite_runner_test_support import (
 
 
 def test_g11_compatibility_entry_loads_legacy_runner_in_a_real_process():
-    script = module_path("opencollab_eval.commands.swe_g11_prolite_runner")
-
     result = subprocess.run(
-        [sys.executable, str(script), "--help"],
+        [sys.executable, "-m", "opencollab_eval.commands.swe_g11_prolite_runner", "--help"],
         text=True,
         capture_output=True,
         timeout=10,
@@ -31,7 +28,7 @@ def test_g11_compatibility_entry_loads_legacy_runner_in_a_real_process():
     )
 
     assert result.returncode == 0, result.stderr
-    assert "usage: swe_g11_prolite_runner.py" in result.stdout
+    assert "usage: python -m opencollab_eval.commands.swe_g11_prolite_runner" in result.stdout
     assert "--remote-runtime-repo" in result.stdout
 
 
@@ -249,8 +246,6 @@ def test_remote_run_directory_allows_only_one_live_runner_process(tmp_path):
     )
     owner_code = remote_code + "print('owned', flush=True)\n" + "import time\n" + "time.sleep(30)\n"
     contender_code = remote_code + "print('unexpected-owner', flush=True)\n"
-    child_env = os.environ.copy()
-    child_env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
     first = subprocess.Popen(
         [sys.executable, "-c", owner_code],
         stdin=subprocess.PIPE,
@@ -258,7 +253,6 @@ def test_remote_run_directory_allows_only_one_live_runner_process(tmp_path):
         stderr=subprocess.PIPE,
         text=True,
         start_new_session=True,
-        env=child_env,
     )
     try:
         assert first.stdin is not None
@@ -274,7 +268,6 @@ def test_remote_run_directory_allows_only_one_live_runner_process(tmp_path):
             capture_output=True,
             timeout=5,
             check=False,
-            env=child_env,
         )
 
         assert second.returncode != 0
@@ -500,7 +493,7 @@ def test_local_report_json_commit_marker_rejects_concurrent_replacement(
     md_path = tmp_path / "report.md"
     json_path.write_text('{"status":"old"}\n', encoding="utf-8")
     md_path.write_text("# Old\n", encoding="utf-8")
-    original_write = runner.write_regular_bytes_atomic
+    original_write = runner._report.write_regular_bytes_atomic
 
     def replace_json_after_markdown(path, payload, **kwargs):
         result = original_write(path, payload, **kwargs)
@@ -510,7 +503,11 @@ def test_local_report_json_commit_marker_rejects_concurrent_replacement(
             os.replace(successor, json_path)
         return result
 
-    monkeypatch.setattr(runner, "write_regular_bytes_atomic", replace_json_after_markdown)
+    monkeypatch.setattr(
+        runner._report,
+        "write_regular_bytes_atomic",
+        replace_json_after_markdown,
+    )
 
     with pytest.raises(OSError, match="target identity changed before commit"):
         runner.write_local_report(

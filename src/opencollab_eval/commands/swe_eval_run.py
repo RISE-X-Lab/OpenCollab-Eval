@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
+import importlib
 import json
 import os
 import plistlib
@@ -17,26 +17,20 @@ import time
 import urllib.parse
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT / "opencollab") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "opencollab"))
+from opencollab.sdk.usage import model_context_window
 
-from opencollab.sdk import model_context_window  # noqa: E402
-
-from opencollab_eval.engine.solver_backend import (  # noqa: E402
+from opencollab_eval.engine.solver_backend import (
     DEFAULT_WORKFLOW_SOLVERS,
     workflow_solver_spec,
 )
 
+WORKSPACE_ROOT = Path(
+    os.environ.get("OPENCOLLAB_EVAL_WORKSPACE", Path.cwd())
+).resolve()
 
-def _load_module(path: Path, name: str):
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load {path}")
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
+
+def _load_module(name: str):
+    return importlib.import_module(f"opencollab_eval.commands.{name}")
 
 
 def _normalize_indices(args: argparse.Namespace) -> list[str]:
@@ -121,7 +115,7 @@ def _launchd_plist(
     return {
         "Label": label,
         "ProgramArguments": program_arguments,
-        "WorkingDirectory": str(REPO_ROOT),
+        "WorkingDirectory": str(WORKSPACE_ROOT),
         "EnvironmentVariables": {
             "HOME": str(Path.home()),
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
@@ -244,7 +238,9 @@ def _launch_detached(args: argparse.Namespace, raw_arguments: list[str], remaini
         f"swe_{_safe_label(args.solver)}_{_safe_label(','.join(_normalize_indices(args)))}_"
         + time.strftime("%Y%m%d_%H%M%S")
     )
-    output_dir = (args.output_dir or REPO_ROOT / "docs" / "monitoring" / run_id).resolve()
+    output_dir = (
+        args.output_dir or WORKSPACE_ROOT / "docs" / "monitoring" / run_id
+    ).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     child_arguments = _without_launch_options(raw_arguments)
     if not args.run_id:
@@ -281,7 +277,12 @@ def _launch_detached(args: argparse.Namespace, raw_arguments: list[str], remaini
     installed_path = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
     payload = _launchd_plist(
         label=label,
-        program_arguments=[sys.executable, str(Path(__file__).resolve()), *child_arguments],
+        program_arguments=[
+            sys.executable,
+            "-m",
+            "opencollab_eval.commands.swe_eval_run",
+            *child_arguments,
+        ],
         stdout_path=output_dir / "runner.launch.stdout.log",
         stderr_path=output_dir / "runner.launch.stderr.log",
     )
@@ -319,9 +320,9 @@ def _run_parallel_runner(args: argparse.Namespace, remaining: list[str]) -> int:
         )
     if _has_option(remaining, "--workflow"):
         raise SystemExit("--workflow is selected by --solver and cannot be overridden")
-    runner_path = Path(__file__).with_name("swe_g11_parallel_runner.py")
-    runner = _load_module(runner_path, "swe_g11_parallel_runner")
-    delegated = [str(runner_path)]
+    runner_name = "swe_g11_parallel_runner"
+    runner = _load_module(runner_name)
+    delegated = [f"opencollab_eval.commands.{runner_name}"]
     if args.indices:
         delegated += ["--indices", args.indices]
     else:

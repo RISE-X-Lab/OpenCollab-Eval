@@ -6,10 +6,10 @@ from evaluator_test_support import (
     FakeEnv,
     FakeLLMClient,
     asyncio,
-    container,
     evaluator,
     gc,
     is_worktree_diff_cmd,
+    patch_evaluator_llm,
     pytest,
     run,
     run_eval_task,
@@ -52,7 +52,7 @@ def test_run_eval_task_rejects_invalid_extras_before_side_effects(
 
 
 def test_tracer_close_failure_still_cleans_environment(monkeypatch, tmp_path):
-    monkeypatch.setattr(container, "LLMClient", FakeLLMClient)
+    patch_evaluator_llm(monkeypatch, FakeLLMClient)
     real_tracer = evaluator.Tracer
 
     class FailingCloseTracer:
@@ -105,7 +105,7 @@ def test_tracer_destructor_never_emits_an_unraisable_close_failure(monkeypatch):
 
 
 def test_patch_extraction_exception_is_reported(monkeypatch, tmp_path):
-    monkeypatch.setattr(container, "LLMClient", FakeLLMClient)
+    patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
     class ExtractionFailureEnv(FakeEnv):
         async def exec_cmd(self, cmd: str, timeout: float = 120.0) -> ExecResult:
@@ -135,7 +135,7 @@ def test_patch_extraction_exception_is_reported(monkeypatch, tmp_path):
 
 
 def test_patch_extraction_nonzero_exit_is_reported(monkeypatch, tmp_path):
-    monkeypatch.setattr(container, "LLMClient", FakeLLMClient)
+    patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
     class ExtractionFailureEnv(FakeEnv):
         async def exec_cmd(self, cmd: str, timeout: float = 120.0) -> ExecResult:
@@ -165,7 +165,7 @@ def test_patch_extraction_nonzero_exit_is_reported(monkeypatch, tmp_path):
 
 
 def test_patch_extraction_rejects_truncated_diff(monkeypatch, tmp_path):
-    monkeypatch.setattr(container, "LLMClient", FakeLLMClient)
+    patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
     class TruncatedDiffEnv(FakeEnv):
         async def exec_cmd(self, cmd: str, timeout: float = 120.0) -> ExecResult:
@@ -205,7 +205,7 @@ def test_deferred_patch_extraction_skips_container_diff_without_hiding_cleanup(
     monkeypatch,
     tmp_path,
 ):
-    monkeypatch.setattr(container, "LLMClient", FakeLLMClient)
+    patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
     class DeferredEnv(FakeEnv):
         async def exec_cmd(self, cmd: str, timeout: float = 120.0) -> ExecResult:
@@ -237,7 +237,7 @@ def test_deferred_patch_extraction_skips_container_diff_without_hiding_cleanup(
 
 
 def test_environment_cleanup_failure_is_reported(monkeypatch, tmp_path):
-    monkeypatch.setattr(container, "LLMClient", FakeLLMClient)
+    patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
     class CleanupFailureEnv(FakeEnv):
         async def cleanup(self) -> None:
@@ -262,11 +262,11 @@ def test_environment_cleanup_failure_is_reported(monkeypatch, tmp_path):
     assert result.execution_quiesced is False
     assert result.submission_eligible is False
     assert result.error == ("environment cleanup failed: OSError: container removal failed")
-    assert env._aborted is True
+    assert env.revoked is True
 
 
 def test_environment_cleanup_exception_invokes_abort_hook(monkeypatch, tmp_path):
-    monkeypatch.setattr(container, "LLMClient", FakeLLMClient)
+    patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
     class CleanupFailureEnv(FakeEnv):
         def __init__(self):
@@ -293,7 +293,7 @@ def test_environment_cleanup_exception_invokes_abort_hook(monkeypatch, tmp_path)
         )
     )
 
-    assert env._aborted is True
+    assert env.revoked is True
     assert env.abort_calls == 1
     assert "environment cleanup failed: OSError: container removal failed" in result.error
     assert "environment abort" not in result.error
@@ -303,7 +303,7 @@ def test_environment_cleanup_and_abort_exceptions_are_both_reported(
     monkeypatch,
     tmp_path,
 ):
-    monkeypatch.setattr(container, "LLMClient", FakeLLMClient)
+    patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
     class CleanupAndAbortFailureEnv(FakeEnv):
         async def cleanup(self) -> None:
@@ -326,7 +326,7 @@ def test_environment_cleanup_and_abort_exceptions_are_both_reported(
         )
     )
 
-    assert env._aborted is True
+    assert env.revoked is True
     assert "environment cleanup failed: OSError: cleanup exploded" in result.error
     assert "environment abort failed: RuntimeError: abort exploded" in result.error
 
@@ -335,7 +335,7 @@ def test_environment_cleanup_exception_and_stubborn_abort_are_bounded(
     monkeypatch,
     tmp_path,
 ):
-    monkeypatch.setattr(container, "LLMClient", FakeLLMClient)
+    patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
     class CleanupFailureBlockingAbortEnv(FakeEnv):
         def __init__(self):
@@ -378,13 +378,13 @@ def test_environment_cleanup_exception_and_stubborn_abort_are_bounded(
 
     result = run(scenario())
 
-    assert env._aborted is True
+    assert env.revoked is True
     assert "environment cleanup failed: OSError: cleanup exploded" in result.error
     assert "environment abort timed out" in result.error
 
 
 def test_cancelled_environment_cleanup_is_reported_as_timeout(monkeypatch, tmp_path):
-    monkeypatch.setattr(container, "LLMClient", FakeLLMClient)
+    patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
     class BlockingCleanupEnv(FakeEnv):
         async def cleanup(self) -> None:
@@ -412,5 +412,5 @@ def test_cancelled_environment_cleanup_is_reported_as_timeout(monkeypatch, tmp_p
     assert result.patch == ""
     assert result.execution_quiesced is False
     assert result.submission_eligible is False
-    assert env._aborted is True
+    assert env.revoked is True
     assert "environment cleanup timed out" in result.error

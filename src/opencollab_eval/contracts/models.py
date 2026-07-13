@@ -7,19 +7,22 @@ import re
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
-from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
 _FORBIDDEN_PUBLIC_KEYS = frozenset(
     {
         "basecommit",
+        "beforereposetcmd",
+        "dockerhubtag",
         "dockerimage",
         "failtopass",
         "goldpatch",
         "instanceid",
         "passtopass",
         "referencepatch",
+        "selectedtestfiles",
+        "servicedependencies",
         "testpatch",
     }
 )
@@ -47,16 +50,6 @@ def _freeze_json_value(value: Any) -> Any:
         raise ValueError("public metadata floats must be finite")
     elif value is not None and not isinstance(value, (str, int, float, bool)):
         raise ValueError("public metadata must contain JSON-like values")
-    return value
-
-
-def thaw_public_value(value: Any) -> Any:
-    """Return a detached JSON-compatible copy of immutable public data."""
-
-    if isinstance(value, Mapping):
-        return {str(key): thaw_public_value(item) for key, item in value.items()}
-    if isinstance(value, tuple):
-        return [thaw_public_value(item) for item in value]
     return value
 
 
@@ -101,49 +94,3 @@ class JudgeSpec:
 class BenchmarkTask:
     public: PublicTask
     judge: JudgeSpec
-
-
-@dataclass(frozen=True, slots=True)
-class PreparedWorkspace:
-    container_id: str
-    repo_root: str
-
-
-@dataclass(frozen=True, slots=True)
-class SolverBudget:
-    max_tokens: int | None = None
-    timeout_seconds: float | None = None
-    max_concurrency: int = 4
-
-    def __post_init__(self) -> None:
-        if self.max_tokens is not None and (
-            isinstance(self.max_tokens, bool)
-            or not isinstance(self.max_tokens, int)
-            or self.max_tokens <= 0
-        ):
-            raise ValueError("max_tokens must be a positive integer")
-        if self.timeout_seconds is not None and (
-            isinstance(self.timeout_seconds, bool)
-            or not math.isfinite(float(self.timeout_seconds))
-            or self.timeout_seconds <= 0
-        ):
-            raise ValueError("timeout_seconds must be positive and finite")
-        if (
-            isinstance(self.max_concurrency, bool)
-            or not isinstance(self.max_concurrency, int)
-            or self.max_concurrency <= 0
-        ):
-            raise ValueError("max_concurrency must be a positive integer")
-
-
-@dataclass(frozen=True, slots=True)
-class SolverRun:
-    """Runtime completion record; patch and verdict evidence are separate."""
-
-    task_id: str
-    solver_name: str
-    output: Any
-    tokens_spent: int
-    session_count: int
-    artifact_dir: Path
-    sdk_api_version: int

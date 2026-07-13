@@ -273,9 +273,7 @@ _run_generator(
     kill_timeout=0.5,
 )
 """
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
-    parent = subprocess.Popen([sys.executable, "-c", script], env=env)
+    parent = subprocess.Popen([sys.executable, "-c", script])
     for _ in range(300):
         if started.exists():
             break

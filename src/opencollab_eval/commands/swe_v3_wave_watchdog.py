@@ -11,24 +11,18 @@ import argparse
 import json
 import os
 import stat
-import sys
 import unicodedata
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-PKG_ROOT = REPO_ROOT / "opencollab"
-if str(PKG_ROOT) not in sys.path:
-    sys.path.insert(0, str(PKG_ROOT))
-
-from opencollab.sdk.eval_compat import (  # noqa: E402
-    _open_directory_no_symlinks,
+from opencollab.sdk.files import (
     ensure_directory_no_symlinks,
+    open_directory_no_symlinks,
     read_regular_bytes,
     write_regular_bytes_atomic,
 )
 
-from opencollab_eval.engine.swe_eval_decision import task_status_row  # noqa: E402
-from opencollab_eval.engine.swe_eval_discovery import build_snapshots  # noqa: E402
+from opencollab_eval.engine.swe_eval_decision import task_status_row
+from opencollab_eval.engine.swe_eval_discovery import build_snapshots
 
 MAX_SIDE_NAME_BYTES = 128
 MAX_RUNS_CONFIG_BYTES = 16 * 1024 * 1024
@@ -76,7 +70,7 @@ def _real_absolute_directory(value: object, *, name: str) -> Path:
     if not path.is_absolute():
         raise ValueError(f"{name} must be an absolute real directory")
     path = Path(os.path.abspath(os.fspath(path)))
-    fd = _open_directory_no_symlinks(path)
+    fd = open_directory_no_symlinks(path)
     try:
         opened = os.fstat(fd)
         if not stat.S_ISDIR(opened.st_mode):

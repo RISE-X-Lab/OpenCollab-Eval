@@ -16,10 +16,10 @@ import time
 import unicodedata
 from pathlib import Path, PureWindowsPath
 
-from opencollab.sdk.eval_compat import (
-    _directory_path_matches_fd,
-    _open_directory_no_symlinks,
+from opencollab.sdk.files import (
+    directory_handle_matches_path,
     ensure_directory_no_symlinks,
+    open_directory_no_symlinks,
     read_regular_bytes,
     regular_path_identity,
     unlink_regular_file_durable,
@@ -245,7 +245,7 @@ def _read_bounded_json_safe(
 ) -> tuple[object, os.stat_result] | None:
     target = Path(os.path.abspath(os.fspath(path)))
     try:
-        parent_fd = _open_directory_no_symlinks(target.parent)
+        parent_fd = open_directory_no_symlinks(target.parent)
     except OSError:
         return None
     fd = -1
@@ -294,7 +294,7 @@ def _read_bounded_json_safe(
 
         if identity(opened) != identity(after) or identity(after) != identity(current):
             return None
-        if not _directory_path_matches_fd(target.parent, parent_fd):
+        if not directory_handle_matches_path(target.parent, parent_fd):
             return None
         try:
             return json.loads(payload.decode("utf-8")), after
@@ -321,7 +321,7 @@ def _stat_fingerprint(opened: os.stat_result) -> str:
 
 
 def _fsync_directory(path: Path) -> None:
-    fd = _open_directory_no_symlinks(path)
+    fd = open_directory_no_symlinks(path)
     try:
         os.fsync(fd)
     finally:
@@ -348,7 +348,7 @@ def _open_regular_file(path: Path, flags: int, mode: int) -> tuple[int, bool]:
     ensure_directory_no_symlinks(path.parent)
     safe_flags = flags | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
     for _attempt in range(_runner().SAFE_FILE_OPEN_RETRIES):
-        parent_fd = _open_directory_no_symlinks(path.parent)
+        parent_fd = open_directory_no_symlinks(path.parent)
         try:
             try:
                 before = os.stat(
@@ -388,7 +388,7 @@ def _open_regular_file(path: Path, flags: int, mode: int) -> tuple[int, bool]:
                     continue
                 if before is not None and (before.st_dev, before.st_ino) != opened_identity:
                     continue
-                if not _directory_path_matches_fd(path.parent, parent_fd):
+                if not directory_handle_matches_path(path.parent, parent_fd):
                     break
                 if created:
                     os.fsync(parent_fd)

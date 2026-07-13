@@ -4,26 +4,14 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import sys
 import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT / "opencollab") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "opencollab"))
-
-from opencollab_eval.engine.token_cost import WORKFLOW_RE  # noqa: E402
-
-try:
-    from opencollab_eval.commands import _swe_eval_layer_integrity as _integrity  # noqa: E402
-    from opencollab_eval.commands import _swe_report_io as _report_io  # noqa: E402
-except ModuleNotFoundError as exc:  # Direct execution adds ``scripts`` to sys.path.
-    if exc.name != "scripts":
-        raise
-    from opencollab_eval.commands import _swe_eval_layer_integrity as _integrity  # type: ignore[no-redef]
-    from opencollab_eval.commands import _swe_report_io as _report_io  # type: ignore[no-redef]
+from opencollab_eval.commands import _swe_eval_layer_integrity as _integrity
+from opencollab_eval.commands import _swe_report_io as _report_io
+from opencollab_eval.engine.token_cost import WORKFLOW_RE
 
 
 def _now() -> str:

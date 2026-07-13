@@ -11,17 +11,11 @@ import uuid
 from typing import Any
 
 import pytest
-from opencollab.sdk.eval_compat import (
-    Environment,
-    ExecResult,
-    LLMResponse,
-    LocalEnvironment,
-    SessionStore,
-    Usage,
-)
-from opencollab.sdk.eval_compat import (
-    build_session as real_build_session,
-)
+from opencollab.sdk.agents import build_session as real_build_session
+from opencollab.sdk.environment import ExecResult
+from opencollab.sdk.environments import LocalEnvironment
+from opencollab.sdk.persistence import SessionStore
+from opencollab.sdk.usage import LLMResponse, Usage
 
 from opencollab_eval.engine import evaluator
 from opencollab_eval.engine import swe_checkpoint as checkpoint_mod
@@ -32,7 +26,6 @@ from opencollab_eval.engine.workflows import generate_review_fix
 __all__ = [
     "Any",
     "CheckpointEnv",
-    "Environment",
     "EvalResult",
     "EvalTask",
     "ExecResult",
@@ -54,6 +47,7 @@ __all__ = [
     "is_worktree_diff_cmd",
     "json",
     "os",
+    "patch_evaluator_llm",
     "pytest",
     "real_build_session",
     "run",
@@ -63,6 +57,17 @@ __all__ = [
     "threading",
     "uuid",
 ]
+
+
+def patch_evaluator_llm(monkeypatch, llm_factory) -> None:
+    """Inject a test LLM through Eval's stable session-construction seam."""
+
+    original_build_session = evaluator.build_session
+
+    def build_with_test_llm(**kwargs):
+        return original_build_session(llm=llm_factory(), **kwargs)
+
+    monkeypatch.setattr(evaluator, "build_session", build_with_test_llm)
 
 
 def run(coro):
@@ -76,13 +81,55 @@ def is_worktree_diff_cmd(cmd: str) -> bool:
     )
 
 
-class FakeEnv(Environment):
+class FakeEnv:
     workspace = "/tmp/opencollab-test-worktree"
+    host_workspace = None
+    source_workspace = None
+    local_filesystem = False
+    process_isolated = False
 
     def __init__(self, diff="diff --git a/x b/x\n+new\n"):
         self.diff = diff
         self.cleaned_up = False
         self.cmds = []
+        self._revoked = False
+
+    @property
+    def revoked(self) -> bool:
+        return self._revoked
+
+    def revoke(self) -> None:
+        self._revoked = True
+
+    def _ensure_active(self) -> None:
+        if self.revoked:
+            raise RuntimeError("execution environment has been revoked")
+
+    async def read_file(self, path: str) -> str:
+        return ""
+
+    async def write_file(self, path: str, content: str) -> None:
+        return None
+
+    async def write_temp_file(
+        self,
+        content: str,
+        *,
+        prefix: str,
+        suffix: str = ".tmp",
+    ) -> str:
+        path = f"/tmp/{prefix}{id(self):x}{suffix}"
+        await self.write_file(path, content)
+        return path
+
+    async def remove_file(self, path: str) -> None:
+        self.cmds.append(f"rm -f -- {path}")
+
+    async def registered_retirement_paths(self) -> tuple[str, ...]:
+        return ()
+
+    async def abort(self) -> None:
+        self.revoke()
 
     async def exec_cmd(self, cmd: str, timeout: float = 120.0) -> ExecResult:
         self.cmds.append(cmd)

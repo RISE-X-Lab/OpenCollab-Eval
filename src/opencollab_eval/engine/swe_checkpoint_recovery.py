@@ -5,7 +5,7 @@ import sys
 from collections.abc import Sequence
 from typing import Any
 
-from opencollab.sdk.eval_compat import Environment, ExecResult
+from opencollab.sdk.environment import ExecResult, ExecutionEnvironment
 
 ENV_RECOVERY_PATCH_PREFIX = "/tmp/opencollab-checkpoint-recovery-"
 
@@ -15,7 +15,7 @@ def _checkpoint_module():
 
 
 async def _remove_recovery_patch(
-    env: Environment,
+    env: ExecutionEnvironment,
     path: str,
     *,
     cancellation: asyncio.CancelledError | None,
@@ -72,7 +72,7 @@ async def _remove_recovery_patch(
 
 
 async def _prove_failed_restore_clean(
-    env: Environment,
+    env: ExecutionEnvironment,
     *,
     exclude_paths: Sequence[str],
     cancellation: asyncio.CancelledError | None,
@@ -104,7 +104,7 @@ async def _prove_failed_restore_clean(
     while not proof_task.done():
         remaining = deadline - asyncio.get_running_loop().time()
         if remaining <= 0:
-            env._aborted = True
+            env.revoke()
             proof_task.cancel()
             proof_task.add_done_callback(
                 lambda finished: (

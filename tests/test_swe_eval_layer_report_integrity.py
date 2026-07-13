@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 
 from test_swe_eval_layer_report import (
     _as_verified_empty,
@@ -70,7 +71,7 @@ def test_cli_preserves_duplicate_expected_index_as_technical_evidence(
     output = tmp_path / "report.json"
     markdown = tmp_path / "report.md"
     monkeypatch.setattr(
-        module.sys,
+        sys,
         "argv",
         [
             "swe_eval_layer_report.py",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from opencollab.sdk import workflow
+from opencollab.sdk.workflows import workflow
 
 from ._validation_council_solve_defs import (
     BASELINE_TRIAGE_PROMPT,

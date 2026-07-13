@@ -38,7 +38,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from opencollab.sdk import (
+from opencollab.sdk.tools import (
     ApplyPatchTool,
     BashTool,
     FileReadTool,
@@ -46,7 +46,7 @@ from opencollab.sdk import (
     GrepTool,
     verification_run_tests_tool,
 )
-from opencollab.sdk.experimental import (
+from opencollab.sdk.workflows import (
     ENFORCEMENT_OFF,
 )
 
@@ -103,7 +103,7 @@ MAX_SCOUTS = 4
 # which they do not need (they re-read one core file 12-26x well under cap).
 RECON_FLOOR = 600_000
 
-# Shared rules — every role gets them (lifted from configs/team.self.collab.yaml,
+# Shared rules — every role gets them (lifted from the packaged team.self.collab.yaml,
 # the SWE-bench-tuned variant: it warns off chasing not-yet-existing tests).
 SHARED_RULES = """\
 Rules:
