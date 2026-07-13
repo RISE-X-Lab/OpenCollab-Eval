@@ -262,6 +262,80 @@ def test_prolite_go_dynamic_build_failure_requires_unique_discovery_binding(tmp_
     assert namespace["_plan_log_failure_proof_matches"](proof, duplicate) is False
 
 
+def _go_dynamic_two_package_log(*, action: str, swap_packages: bool) -> str:
+    markers = [
+        {
+            "package": "./pkg/a",
+            "tests": ["TestA"],
+            "test_files": ["pkg/a/a_test.go"],
+        },
+        {
+            "package": "./pkg/b",
+            "tests": ["TestB"],
+            "test_files": ["pkg/b/b_test.go"],
+        },
+    ]
+    owners = {
+        "TestA": "example.org/project/pkg/a",
+        "TestB": "example.org/project/pkg/b",
+    }
+    if swap_packages:
+        owners = {"TestA": owners["TestB"], "TestB": owners["TestA"]}
+    return "".join(
+        [
+            *(
+                "OPENCOLLAB_GO_TARGET_DISCOVERY "
+                + json.dumps(marker, sort_keys=True)
+                + "\n"
+                for marker in markers
+            ),
+            *(
+                json.dumps(
+                    {"Action": action, "Package": owners[test], "Test": test}
+                )
+                + "\n"
+                for test in ("TestA", "TestB")
+            ),
+        ]
+    )
+
+
+def test_prolite_go_dynamic_pass_binds_each_test_to_unique_owner_package(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    proof = {
+        "kind": "go_json_test_pass",
+        "tests": ["TestA", "TestB"],
+        "dynamic_discovery": True,
+    }
+
+    assert namespace["_plan_log_proof_matches"](
+        proof,
+        _go_dynamic_two_package_log(action="pass", swap_packages=False),
+    ) is True
+    assert namespace["_plan_log_proof_matches"](
+        proof,
+        _go_dynamic_two_package_log(action="pass", swap_packages=True),
+    ) is False
+
+
+def test_prolite_go_dynamic_failure_binds_each_test_to_unique_owner_package(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    proof = {
+        "kind": "go_json_test_pass",
+        "tests": ["TestA", "TestB"],
+        "dynamic_discovery": True,
+    }
+
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        _go_dynamic_two_package_log(action="fail", swap_packages=False),
+    ) is True
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        _go_dynamic_two_package_log(action="fail", swap_packages=True),
+    ) is False
+
+
 def test_go_build_failure_execution_evidence_still_requires_exact_plan_command(tmp_path):
     namespace = _remote_namespace(tmp_path)
     f2p_plan = namespace["prolite_test_plan"](

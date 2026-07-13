@@ -141,6 +141,30 @@ def _events_match_bindings(
     )
 
 
+def _dynamic_test_events_match_owners(
+    events: list[dict[str, Any]],
+    bindings: list[dict[str, Any]],
+) -> bool:
+    owners = {
+        test: binding["package"]
+        for binding in bindings
+        for test in binding["tests"]
+    }
+    matched = False
+    for event in events:
+        test = event.get("Test")
+        if not isinstance(test, str):
+            continue
+        owner = owners.get(test.split("/", 1)[0])
+        if owner is None:
+            continue
+        matched = True
+        package = event.get("Package")
+        if not isinstance(package, str) or not _package_matches(owner, package):
+            return False
+    return matched
+
+
 def _legacy_dynamic_command_matches(
     proof: dict[str, Any],
     expected_command: str,
@@ -188,7 +212,11 @@ def go_pass_proof_matches(proof: dict[str, Any], log_text: str) -> bool:
     events, discoveries = parsed
     if proof.get("dynamic_discovery") is True:
         bindings = _dynamic_bindings(discoveries, declared_tests)
-        if not bindings or not _events_match_bindings(events, bindings):
+        if (
+            not bindings
+            or not _events_match_bindings(events, bindings)
+            or not _dynamic_test_events_match_owners(events, bindings)
+        ):
             return False
     elif discoveries:
         return False
@@ -243,7 +271,11 @@ def go_failure_proof_matches(
                 )
             )
         bindings = _dynamic_bindings(discoveries, declared_tests)
-        return bool(bindings and _events_match_bindings(events, bindings))
+        return bool(
+            bindings
+            and _events_match_bindings(events, bindings)
+            and _dynamic_test_events_match_owners(events, bindings)
+        )
     if any(event.get("Test") in expected for event in events):
         return False
     legacy_dynamic = _legacy_dynamic_command_matches(
