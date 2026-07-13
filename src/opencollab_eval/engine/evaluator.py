@@ -32,11 +32,6 @@ from opencollab.sdk.config import (
 )
 from opencollab.sdk.environment import ExecutionEnvironment
 from opencollab.sdk.environments import DockerEnvironment, WorktreeEnvironment
-from opencollab.sdk.files import (
-    ensure_directory_no_symlinks,
-    open_directory_no_symlinks,
-    write_regular_file_atomic,
-)
 from opencollab.sdk.lifecycle import (
     add_exception_note,
     await_owned_operation,
@@ -146,6 +141,11 @@ from opencollab_eval.engine.test_injection import (
 )
 from opencollab_eval.engine.test_injection import (
     apply_test_patch as apply_test_patch,
+)
+from opencollab_eval.safe_files import (
+    ensure_directory_no_symlinks,
+    open_directory_no_symlinks,
+    write_regular_file_atomic,
 )
 
 EnvFactory = Callable[["EvalTask"], Awaitable[ExecutionEnvironment]]

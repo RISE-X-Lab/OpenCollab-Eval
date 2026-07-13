@@ -12,10 +12,6 @@ import threading
 import time
 from pathlib import Path
 
-from opencollab.sdk.files import (
-    ensure_directory_no_symlinks,
-)
-
 from opencollab_eval.commands import swebench_process as process_tools
 from opencollab_eval.commands import swebench_smoke_io as smoke_io
 from opencollab_eval.commands.swebench_smoke_spec import make_test_spec
@@ -24,6 +20,9 @@ from opencollab_eval.engine.swe_eval_records import (
     MAX_JSONL_RETAINED_BYTES,
     MAX_JSONL_RETAINED_ROWS,
     MAX_JSONL_SCAN_BYTES,
+)
+from opencollab_eval.safe_files import (
+    ensure_directory_no_symlinks,
 )
 
 REPO_ROOT = Path(os.environ.get("OPENCOLLAB_EVAL_WORKSPACE", Path.cwd())).resolve()

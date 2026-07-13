@@ -10,21 +10,8 @@ import stat
 import time
 from pathlib import Path
 
-import opencollab.sdk.retirement as retirement
-from opencollab.sdk.files import (
-    ensure_directory_no_symlinks,
-    write_regular_bytes_atomic,
-)
-
 from opencollab_eval.commands.swe_auto_eval_constants import HARNESS_LOCK_TIMEOUT_SECONDS
-
-
-def _configure_retirement_registry(run_dir: Path, side_name: str) -> str:
-    state_dir = run_dir / side_name / ".opencollab"
-    ensure_directory_no_symlinks(state_dir)
-    return retirement.configure_persistent_retirement_log(
-        state_dir / "retirements.jsonl"
-    )
+from opencollab_eval.safe_files import write_regular_bytes_atomic
 
 
 def _fsync_directory(path: Path) -> None:

@@ -29,17 +29,6 @@ def _driver_command(*args: str) -> list[str]:
     return [sys.executable, "-m", _DRIVER_MODULE, *args]
 
 
-def test_claim_runner_hides_retirement_registry_from_evaluator(monkeypatch, tmp_path):
-    runner = importlib.import_module("opencollab_eval.commands.swe_auto_eval_claim_runner")
-    monkeypatch.setenv(runner.INTERNAL_RETIREMENT_LOG_ENV, str(tmp_path / "registry"))
-    monkeypatch.setenv(runner.INTERNAL_RETIREMENT_WORKSPACE_ENV, str(tmp_path))
-
-    environment = runner.evaluator_environment()
-
-    assert runner.INTERNAL_RETIREMENT_LOG_ENV not in environment
-    assert runner.INTERNAL_RETIREMENT_WORKSPACE_ENV not in environment
-
-
 def test_status_script_defaults_to_read_only_summary(tmp_path):
     run_dir = tmp_path / "run"
     run_dir.mkdir()

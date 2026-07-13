@@ -271,8 +271,8 @@ def test_save_results_reports_directory_fsync_failure_after_replace(
     with pytest.raises(OSError, match="results directory fsync failed"):
         save_results([result], str(out))
 
-    assert fsync_calls == 3
-    assert not out.exists()
+    assert fsync_calls == 2
+    assert out.is_file()
     temp_directory = tmp_path / evaluator.RESULT_TEMP_DIRECTORY
     assert not temp_directory.exists()
     assert list(tmp_path.glob(".oc-*.tmp")) == []

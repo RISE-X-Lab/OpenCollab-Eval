@@ -14,15 +14,14 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, BinaryIO
 
-from opencollab.sdk.files import (
+from opencollab_eval.commands import swebench_loop_analysis as loop_analysis
+from opencollab_eval.safe_files import (
     directory_handle_matches_path,
     ensure_directory_no_symlinks,
     open_directory_no_symlinks,
     regular_path_identity,
     write_regular_bytes_atomic,
 )
-
-from opencollab_eval.commands import swebench_loop_analysis as loop_analysis
 
 WRITE_TOOLS = {"file_write", "apply_patch"}
 WARN_LOOP_COUNT = 5

@@ -77,16 +77,9 @@ async def cleanup_injected_paths_and_extract_patch(
     extraction_succeeded = False
     if execution_quiesced and env and not defer_patch_extraction:
         try:
-            retirement_collector = getattr(env, "registered_retirement_paths", None)
-            registered_retirements = (
-                await await_teardown(retirement_collector()) if callable(retirement_collector) else ()
-            )
             patch_result = await await_teardown(
                 env.exec_cmd(
-                    facade.worktree_diff_command(
-                        (*injected_paths, *harness_artifact_paths),
-                        registered_retirement_paths=registered_retirements,
-                    )
+                    facade.worktree_diff_command((*injected_paths, *harness_artifact_paths))
                 )
             )
             patch = patch_result.stdout
@@ -106,13 +99,6 @@ async def cleanup_injected_paths_and_extract_patch(
                 )
                 error = facade._append_harness_error(error, "patch extraction failed", failure)
             else:
-                refreshed_retirements = (
-                    await await_teardown(retirement_collector())
-                    if callable(retirement_collector)
-                    else ()
-                )
-                if tuple(refreshed_retirements) != tuple(registered_retirements):
-                    raise RuntimeError("retirement artifacts changed during patch extraction")
                 extraction_succeeded = True
                 if (
                     test_patch_isolation_failed

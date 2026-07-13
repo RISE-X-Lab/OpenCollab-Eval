@@ -198,9 +198,6 @@ class LateEnvironment:
     async def remove_file(self, path):
         return None
 
-    async def registered_retirement_paths(self):
-        return ()
-
     async def abort(self):
         self.revoke()
 

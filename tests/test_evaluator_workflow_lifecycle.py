@@ -135,62 +135,6 @@ def test_worktree_diff_exclusion_reset_failure_cannot_fall_through_to_diff():
     assert 'git diff --cached --binary ' in command
 
 
-def test_worktree_diff_excludes_registered_tombstone_and_keeps_real_change(
-    tmp_path,
-):
-    import opencollab.sdk.retirement as retirement
-
-    register_verified_retirement = retirement.register_verified_retirement
-    registered_retirement_paths = retirement.registered_retirement_paths
-
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-    (repo / "source.py").write_text("old\n", encoding="utf-8")
-    subprocess.run(["git", "add", "source.py"], cwd=repo, check=True)
-    subprocess.run(
-        [
-            "git",
-            "-c",
-            "user.name=OpenCollab",
-            "-c",
-            "user.email=test@example.com",
-            "commit",
-            "-qm",
-            "base",
-        ],
-        cwd=repo,
-        check=True,
-    )
-    (repo / "source.py").write_text("new\n", encoding="utf-8")
-    tombstone = repo / ".opencollab-retired-framework"
-    tombstone.write_text("old\n", encoding="utf-8")
-    parent_fd = os.open(repo, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    try:
-        register_verified_retirement(parent_fd, tombstone.name)
-    finally:
-        os.close(parent_fd)
-
-    base, objects = _git_patch_context(repo)
-    command = checkpoint_mod.worktree_diff_command(
-        registered_retirement_paths=registered_retirement_paths(repo),
-        base_revision=base,
-        object_directory=objects,
-        working_tree=str(repo),
-    )
-    result = subprocess.run(
-        ["bash", "-lc", command],
-        cwd=repo,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert "source.py" in result.stdout
-    assert tombstone.name not in result.stdout
-
-
 def test_worktree_diff_rejects_unregistered_reserved_prefix(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()

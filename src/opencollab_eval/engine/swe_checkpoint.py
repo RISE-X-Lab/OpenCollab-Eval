@@ -15,10 +15,6 @@ from typing import Any
 
 from opencollab.sdk.environment import ExecResult, ExecutionEnvironment
 from opencollab.sdk.environments import PROCESS_OUTPUT_CAPTURE_BYTES
-from opencollab.sdk.files import (
-    ensure_directory_no_symlinks,
-    open_directory_no_symlinks,
-)
 from opencollab.sdk.lifecycle import add_exception_note
 
 from opencollab_eval.engine.swe_checkpoint_artifacts import (
@@ -41,6 +37,10 @@ from opencollab_eval.engine.swe_checkpoint_recovery import (
 from opencollab_eval.engine.swe_checkpoint_recovery import (
     _prove_failed_restore_clean,
     _remove_recovery_patch,
+)
+from opencollab_eval.safe_files import (
+    ensure_directory_no_symlinks,
+    open_directory_no_symlinks,
 )
 
 ENV_RECOVERY_PATCH_PREFIX = _ENV_RECOVERY_PATCH_PREFIX
@@ -107,13 +107,8 @@ class WorktreeCheckpoint:
             )
         exclude_paths = tuple(exclude_paths) + self._artifact_exclude_paths(env)
         try:
-            retirement_collector = getattr(env, "registered_retirement_paths", None)
-            registered_retirements = await retirement_collector() if callable(retirement_collector) else ()
             result = await env.exec_cmd(
-                worktree_diff_command(
-                    exclude_paths,
-                    registered_retirement_paths=registered_retirements,
-                ),
+                worktree_diff_command(exclude_paths),
                 timeout=120,
             )
         except Exception as exc:  # noqa: BLE001
@@ -123,20 +118,6 @@ class WorktreeCheckpoint:
             return self._write_failure(reason=reason, error=truncation_error)
         if result.returncode != 0:
             return self._write_failure(reason=reason, error=result.stderr[:1000])
-        if callable(retirement_collector):
-            try:
-                refreshed_snapshot = await retirement_collector()
-            except Exception as exc:
-                return self._write_failure(
-                    reason=reason,
-                    error=f"retirement artifact validation failed: {type(exc).__name__}: {exc}",
-                )
-            if tuple(refreshed_snapshot) != tuple(registered_retirements):
-                return self._write_failure(
-                    reason=reason,
-                    error="retirement artifacts changed during checkpoint extraction",
-                )
-
         patch = result.stdout
         patch_bytes = len(patch.encode("utf-8", errors="surrogatepass"))
         if patch_bytes > MAX_CHECKPOINT_PATCH_BYTES:
@@ -337,21 +318,8 @@ class WorktreeCheckpoint:
             *exclude_paths,
             *self._artifact_exclude_paths(env),
         )
-        try:
-            retirement_collector = getattr(env, "registered_retirement_paths", None)
-            registered_retirements = await retirement_collector() if callable(retirement_collector) else ()
-        except Exception as exc:
-            return CheckpointResult(
-                status="failed",
-                reason="restore",
-                error=f"retirement artifact validation failed: {type(exc).__name__}: {exc}",
-                submission_eligible=False,
-            )
         precheck = await env.exec_cmd(
-            worktree_diff_command(
-                restore_exclude_paths,
-                registered_retirement_paths=registered_retirements,
-            ),
+            worktree_diff_command(restore_exclude_paths),
             timeout=120,
         )
         truncation_error = _truncated_output_error(

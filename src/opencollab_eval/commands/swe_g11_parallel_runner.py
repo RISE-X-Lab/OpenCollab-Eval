@@ -54,7 +54,6 @@ scheduler_snapshot = _config.scheduler_snapshot
 write_json = _reports.write_json
 write_text = _reports.write_text
 ensure_directory = _reports.ensure_directory
-configure_retirement_registry = _reports.configure_retirement_registry
 load_json = _reports.load_json
 _compact_token_summary = _reports._compact_token_summary
 build_token_summary = _reports.build_token_summary
@@ -415,7 +414,6 @@ def run_remote_health_checks(config: ParallelConfig) -> dict[str, Any]:
 
 def run_parallel(config: ParallelConfig) -> dict[str, Any]:
     ensure_directory(config.output_dir)
-    configure_retirement_registry(config.output_dir)
     prepare_runtime(config)
     remote_health = run_remote_health_checks(config)
     per_task_config = config

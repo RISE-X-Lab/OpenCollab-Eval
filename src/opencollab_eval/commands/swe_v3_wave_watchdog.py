@@ -14,15 +14,14 @@ import stat
 import unicodedata
 from pathlib import Path
 
-from opencollab.sdk.files import (
+from opencollab_eval.engine.swe_eval_decision import task_status_row
+from opencollab_eval.engine.swe_eval_discovery import build_snapshots
+from opencollab_eval.safe_files import (
     ensure_directory_no_symlinks,
     open_directory_no_symlinks,
     read_regular_bytes,
     write_regular_bytes_atomic,
 )
-
-from opencollab_eval.engine.swe_eval_decision import task_status_row
-from opencollab_eval.engine.swe_eval_discovery import build_snapshots
 
 MAX_SIDE_NAME_BYTES = 128
 MAX_RUNS_CONFIG_BYTES = 16 * 1024 * 1024

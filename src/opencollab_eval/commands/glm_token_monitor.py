@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import BinaryIO
 
-from opencollab.sdk.files import (
+from opencollab_eval.safe_files import (
     directory_handle_matches_path,
     open_directory_no_symlinks,
 )

@@ -76,7 +76,6 @@ from opencollab_eval.commands.swe_auto_eval_reports import (
 )
 from opencollab_eval.commands.swe_auto_eval_safe_state import (
     _acquire_exclusive_lock,
-    _configure_retirement_registry,
     _fsync_directory,
     _open_secure_parent,
     _stat_at,
@@ -193,8 +192,6 @@ def maybe_start_eval(args: argparse.Namespace, summary: dict) -> list[dict]:
     if not args.eval_command_template:
         raise SystemExit("--start-eval requires --eval-command-template")
     _validate_side_directory(args.run_dir, args.side_name)
-    if not args.dry_run:
-        _configure_retirement_registry(args.run_dir, args.side_name)
     actions: list[dict] = []
     starts = 0
     for row in summary["tasks"]:
@@ -334,8 +331,6 @@ def main() -> int:
         _validate_side_directory(args.run_dir, args.side_name)
     except ValueError as exc:
         parser.error(str(exc))
-    if (args.start_eval and not args.dry_run) or args.json_output or args.markdown_output:
-        _configure_retirement_registry(args.run_dir, args.side_name)
     summary = build_summary(args)
     actions = maybe_start_eval(args, summary)
     if actions:

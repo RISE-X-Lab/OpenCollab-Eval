@@ -183,6 +183,17 @@ def test_eval_container_binding_waits_for_zero_length_regular_cidfile(tmp_path):
     assert json.loads(marker.read_text(encoding="utf-8"))["state"] == "active"
 
 
+def test_cleanup_reader_accepts_zero_length_regular_file(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    cidfile = tmp_path / "empty.cid"
+    cidfile.touch()
+
+    assert namespace["remote_cleanup"].read_bounded_regular(
+        cidfile,
+        max_bytes=128,
+    ) == b""
+
+
 def test_eval_timeout_returns_technical_result(monkeypatch, tmp_path):
     namespace = _remote_namespace(tmp_path, eval_timeout=1)
     _bypass_container_binding(namespace)

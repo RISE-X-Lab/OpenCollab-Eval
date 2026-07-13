@@ -12,15 +12,15 @@ import time
 import uuid
 from pathlib import Path
 
-from opencollab.sdk.files import (
+from opencollab.sdk.lifecycle import add_exception_note
+
+from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid
+from opencollab_eval.safe_files import (
     create_regular_bytes_atomic,
     open_directory_no_symlinks,
     quarantine_unlink_owned_file,
     write_regular_bytes_atomic,
 )
-from opencollab.sdk.lifecycle import add_exception_note
-
-from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid
 
 from .gen_prediction_constants import (
     HARNESS_LOCK_TIMEOUT_SECONDS,

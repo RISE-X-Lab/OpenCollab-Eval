@@ -12,12 +12,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-from opencollab.sdk.files import write_regular_bytes_atomic
-from opencollab.sdk.retirement import (
-    INTERNAL_RETIREMENT_LOG_ENV,
-    INTERNAL_RETIREMENT_WORKSPACE_ENV,
-)
-
 from opencollab_eval.commands.swe_auto_eval_constants import (
     CLAIM_HEARTBEAT_SECONDS,
     CLAIM_LEASE_SECONDS,
@@ -27,6 +21,7 @@ from opencollab_eval.commands.swebench_process import (
     process_start_identity,
     terminate_process_tree,
 )
+from opencollab_eval.safe_files import write_regular_bytes_atomic
 
 HEARTBEAT_SECONDS = CLAIM_HEARTBEAT_SECONDS
 LEASE_SECONDS = CLAIM_LEASE_SECONDS
@@ -60,10 +55,7 @@ def terminate_child(child: subprocess.Popen[Any]) -> bool:
 
 
 def evaluator_environment() -> dict[str, str]:
-    environment = os.environ.copy()
-    environment.pop(INTERNAL_RETIREMENT_LOG_ENV, None)
-    environment.pop(INTERNAL_RETIREMENT_WORKSPACE_ENV, None)
-    return environment
+    return os.environ.copy()
 
 
 def _publish_both(

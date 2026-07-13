@@ -6,8 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-import opencollab.sdk.files as files
-import opencollab.sdk.retirement as retirement
+from opencollab_eval import safe_files as files
 
 MAX_REPORT_BYTES = 64 * 1024 * 1024
 MAX_LOG_BYTES = 128 * 1024 * 1024
@@ -16,15 +15,6 @@ MAX_LOG_BYTES = 128 * 1024 * 1024
 def ensure_directory(path: Path) -> None:
     """Create one directory hierarchy while rejecting symlink components."""
     files.ensure_directory_no_symlinks(path)
-
-
-def configure_retirement_registry(output_dir: Path) -> str:
-    """Share verified retirement identities across report writer processes."""
-    state_dir = output_dir / ".opencollab"
-    ensure_directory(state_dir)
-    return retirement.configure_persistent_retirement_log(
-        state_dir / "retirements.jsonl"
-    )
 
 
 def load_json_with_error(path: Path) -> tuple[dict[str, Any], str | None]:
@@ -79,7 +69,6 @@ def write_json(path: Path, value: Any) -> None:
 __all__ = [
     "MAX_LOG_BYTES",
     "MAX_REPORT_BYTES",
-    "configure_retirement_registry",
     "ensure_directory",
     "load_json",
     "load_json_with_error",

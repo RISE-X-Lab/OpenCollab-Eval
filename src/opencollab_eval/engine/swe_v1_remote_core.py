@@ -2,9 +2,8 @@
 
 # ruff: noqa: F403, F405
 
-from opencollab.sdk.files import write_regular_bytes_atomic
-
 from opencollab_eval.engine.swe_v1_remote_state import *
+from opencollab_eval.safe_files import write_regular_bytes_atomic
 
 
 class RecordInputLimitError(ValueError):

@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from pathlib import PureWindowsPath as PureWindowsPath
 
-from opencollab.sdk.files import (
+from opencollab_eval.safe_files import (
     ensure_directory_no_symlinks,
     open_directory_no_symlinks,
 )

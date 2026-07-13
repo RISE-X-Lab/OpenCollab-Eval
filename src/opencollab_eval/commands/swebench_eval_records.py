@@ -16,16 +16,6 @@ import time
 import unicodedata
 from pathlib import Path, PureWindowsPath
 
-from opencollab.sdk.files import (
-    directory_handle_matches_path,
-    ensure_directory_no_symlinks,
-    open_directory_no_symlinks,
-    read_regular_bytes,
-    regular_path_identity,
-    unlink_regular_file_durable,
-    write_regular_bytes_atomic,
-)
-
 from opencollab_eval.engine import swe_eval_records as swe_records
 from opencollab_eval.engine.swe_eval_records import (
     MAX_JSON_DOCUMENT_BYTES,
@@ -36,6 +26,15 @@ from opencollab_eval.engine.swe_eval_records import (
     embedded_workflow_metric,
     is_completed_prediction,
     metric_submission_integrity,
+)
+from opencollab_eval.safe_files import (
+    directory_handle_matches_path,
+    ensure_directory_no_symlinks,
+    open_directory_no_symlinks,
+    read_regular_bytes,
+    regular_path_identity,
+    unlink_regular_file_durable,
+    write_regular_bytes_atomic,
 )
 
 

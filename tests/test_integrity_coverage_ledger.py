@@ -88,7 +88,7 @@ def test_integrity_coverage_ledger_is_complete_and_truthful() -> None:
     platforms = _platforms()
     expected_ids = [f"H-{index:02d}" for index in range(1, 79)]
     assert list(coverage) == expected_ids
-    assert platforms == {"H-68": "darwin"}
+    assert platforms == {}
     assert set(platforms) <= set(coverage)
     roots = _roots()
     for control_id, record in coverage.items():
@@ -156,24 +156,3 @@ def test_integrity_coverage_nodeids_execute_successfully() -> None:
             )
             assert skipped == 0, f"{owner} integrity tests were skipped"
         assert result.returncode == 0, f"{owner} integrity tests failed:\n{result.stdout}\n{result.stderr}"
-
-
-def test_platform_specific_integrity_controls_have_ci_probes() -> None:
-    eval_workflow = (_eval_root() / ".github" / "workflows" / "ci.yml").read_text(
-        encoding="utf-8"
-    )
-    opencollab_root, _pytest_root = _roots()["OpenCollab"]
-    owner_workflow = (opencollab_root / ".github" / "workflows" / "ci.yml").read_text(
-        encoding="utf-8"
-    )
-    h68 = _load()["H-68"]
-
-    assert h68["owner"] == "OpenCollab"
-    assert eval_workflow.count("repository: YihongDong/OpenCollab") == 1
-    assert "KaiEureka/OpenCollab" not in eval_workflow
-    assert "runs-on: macos-latest" not in eval_workflow
-    assert h68["nodeid"] not in eval_workflow
-    assert "runs-on: macos-latest" in owner_workflow
-    assert h68["nodeid"] in owner_workflow
-    assert '--junitxml="$RUNNER_TEMP/h68.xml"' in owner_workflow
-    assert '"skipped": 0' in owner_workflow

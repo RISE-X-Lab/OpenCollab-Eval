@@ -12,19 +12,18 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from opencollab.sdk.files import (
-    directory_handle_matches_path,
-    ensure_directory_no_symlinks,
-    open_directory_no_symlinks,
-    read_regular_bytes,
-    regular_path_identity,
-)
-
 from opencollab_eval.engine.swe_eval_records import (
     RecordInputFormatError,
     RecordInputLimitError,
     is_completed_prediction,
     read_bounded_json,
+)
+from opencollab_eval.safe_files import (
+    directory_handle_matches_path,
+    ensure_directory_no_symlinks,
+    open_directory_no_symlinks,
+    read_regular_bytes,
+    regular_path_identity,
 )
 
 

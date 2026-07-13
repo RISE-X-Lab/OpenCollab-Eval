@@ -40,7 +40,7 @@ class CleanupInputError(RuntimeError):
 
 def read_bounded_regular(path: pathlib.Path, *, max_bytes: int) -> bytes:
     before = path.lstat()
-    if not stat.S_ISREG(before.st_mode) or before.st_size <= 0 or before.st_size > max_bytes:
+    if not stat.S_ISREG(before.st_mode) or before.st_size > max_bytes:
         raise CleanupInputError(f"cleanup marker is not a bounded regular file: {path}")
     fd = os.open(
         path,

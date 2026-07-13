@@ -125,9 +125,6 @@ class FakeEnv:
     async def remove_file(self, path: str) -> None:
         self.cmds.append(f"rm -f -- {path}")
 
-    async def registered_retirement_paths(self) -> tuple[str, ...]:
-        return ()
-
     async def abort(self) -> None:
         self.revoke()
 

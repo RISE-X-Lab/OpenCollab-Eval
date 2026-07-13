@@ -108,11 +108,8 @@ def test_auto_eval_markdown_write_reports_directory_fsync_failure(
     with pytest.raises(OSError, match="markdown directory fsync failed"):
         driver._write_markdown(output, _auto_eval_summary())
 
-    assert not output.exists()
-    retired = list(tmp_path.glob(".opencollab-retired-*"))
-    assert len(retired) == 1
-    assert retired[0].is_file()
-    assert retired[0].stat().st_nlink == 1
+    assert output.is_file()
+    assert list(tmp_path.glob(".opencollab-retired-*")) == []
     assert list(tmp_path.glob(".oc-*.tmp")) == []
 
 
@@ -161,54 +158,6 @@ def test_auto_eval_atomic_write_rejects_parent_replacement(tmp_path, monkeypatch
 
     assert output.read_text(encoding="utf-8") == "foreign\n"
     assert (moved_parent / "status.json").read_text(encoding="utf-8") == '{"status":"old"}\n'
-
-
-def test_per_instance_atomic_write_preserves_primary_error_when_retirement_sync_fails(
-    tmp_path,
-    monkeypatch,
-):
-    runner = importlib.import_module("opencollab_eval.commands.run_swebench_eval_per_instance")
-    calls = 0
-
-    def fail_fsync(_fd):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            raise OSError("primary file fsync failure")
-        raise OSError("secondary retirement fsync failure")
-
-    monkeypatch.setattr(runner.os, "fsync", fail_fsync)
-    output = tmp_path / "record.json"
-
-    with pytest.raises(OSError, match="primary file fsync failure") as captured:
-        runner._write_json_atomic(output, {"status": "new"})
-
-    assert any("secondary retirement fsync failure" in note for note in getattr(captured.value, "__notes__", []))
-    assert len(list(tmp_path.glob(".opencollab-retired-*"))) == 1
-
-
-def test_auto_eval_atomic_write_preserves_primary_error_when_retirement_sync_fails(
-    tmp_path,
-    monkeypatch,
-):
-    driver = importlib.import_module("opencollab_eval.commands.swe_auto_eval_driver")
-    calls = 0
-
-    def fail_fsync(_fd):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            raise OSError("primary file fsync failure")
-        raise OSError("secondary retirement fsync failure")
-
-    monkeypatch.setattr(driver.os, "fsync", fail_fsync)
-    output = tmp_path / "record.json"
-
-    with pytest.raises(OSError, match="primary file fsync failure") as captured:
-        driver._write_json(output, {"status": "new"})
-
-    assert any("secondary retirement fsync failure" in note for note in getattr(captured.value, "__notes__", []))
-    assert len(list(tmp_path.glob(".opencollab-retired-*"))) == 1
 
 
 def test_smoke_instance_reader_rejects_symlink(tmp_path):

@@ -8,12 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from opencollab.sdk.environment import ExecResult
-from opencollab.sdk.files import (
+from opencollab.sdk.repository import build_patch_command
+
+from opencollab_eval.safe_files import (
     read_regular_bytes,
     unlink_regular_file_durable,
     write_regular_bytes_atomic,
 )
-from opencollab.sdk.repository import build_patch_command
 
 
 def _checkpoint_module():
@@ -84,7 +85,6 @@ def _truncated_output_error(result: ExecResult, *, label: str) -> str:
 def worktree_diff_command(
     exclude_paths: Sequence[str] = (),
     *,
-    registered_retirement_paths: Sequence[str] = (),
     base_revision: str = "HEAD",
     object_directory: str | None = None,
     working_tree: str | None = None,
@@ -93,7 +93,6 @@ def worktree_diff_command(
     return build_patch_command(
         base_revision=base_revision,
         exclude_paths=exclude_paths,
-        registered_retirement_paths=registered_retirement_paths,
     )
 
 

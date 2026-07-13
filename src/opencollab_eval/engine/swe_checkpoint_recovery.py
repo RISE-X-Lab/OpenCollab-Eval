@@ -79,21 +79,9 @@ async def _prove_failed_restore_clean(
     pending_tasks: set[asyncio.Task[Any]],
 ) -> tuple[bool, str, asyncio.CancelledError | None]:
     """Prove a failed/cancelled apply left no worktree mutation."""
-    try:
-        retirement_collector = getattr(env, "registered_retirement_paths", None)
-        registered_retirements = await retirement_collector() if callable(retirement_collector) else ()
-    except BaseException as exc:
-        return (
-            False,
-            f"failed restore retirement validation raised {type(exc).__name__}: {exc}",
-            cancellation,
-        )
     proof_task = asyncio.create_task(
         env.exec_cmd(
-            _checkpoint_module().worktree_diff_command(
-                exclude_paths,
-                registered_retirement_paths=registered_retirements,
-            ),
+            _checkpoint_module().worktree_diff_command(exclude_paths),
             timeout=120,
         )
     )
@@ -159,19 +147,4 @@ async def _prove_failed_restore_clean(
             "failed checkpoint restore left the worktree dirty",
             cancellation,
         )
-    if callable(retirement_collector):
-        try:
-            refreshed_snapshot = await retirement_collector()
-        except BaseException as exc:
-            return (
-                False,
-                f"failed restore retirement revalidation raised {type(exc).__name__}: {exc}",
-                cancellation,
-            )
-        if tuple(refreshed_snapshot) != tuple(registered_retirements):
-            return (
-                False,
-                "retirement artifacts changed during failed restore proof",
-                cancellation,
-            )
     return True, "", cancellation

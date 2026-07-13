@@ -230,7 +230,6 @@ def test_sdk_import_boundary_rejects_root_and_internal_import_forms() -> None:
         "from opencollab.adapters import tools\n"
     )
     allowed = ast.parse(
-        "import opencollab.sdk.files as files\n"
         "from opencollab.sdk.models import SDK_API_VERSION\n"
         "from opencollab.sdk.environments import LocalEnvironment\n"
     )

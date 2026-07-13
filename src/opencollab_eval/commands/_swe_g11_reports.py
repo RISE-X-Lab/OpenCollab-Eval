@@ -29,10 +29,6 @@ def ensure_directory(path: Path) -> None:
     _report_io.ensure_directory(path)
 
 
-def configure_retirement_registry(path: Path) -> str:
-    return _report_io.configure_retirement_registry(path)
-
-
 def load_json(path: Path) -> dict[str, Any]:
     return _report_io.load_json(path)
 
