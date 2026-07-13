@@ -215,6 +215,7 @@ def test_go_plan_discovers_packages_for_bare_test_names():
     assert plan["coverage_verified"] is True
     assert plan["target_batches"] == [["TestColumn", "TestMessage"]]
     assert len(plan["commands"]) == 1
+    assert plan["commands"][0].startswith("python3 -I -c ")
     assert "unable to map Go tests to packages" in plan["commands"][0]
     assert plan["proofs"] == [
         {

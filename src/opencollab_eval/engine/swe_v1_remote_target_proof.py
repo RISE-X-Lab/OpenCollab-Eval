@@ -205,7 +205,7 @@ raise SystemExit(status)
             ),
             1,
         )
-        return "python3 -c " + shlex.quote(launcher) + " " + shlex.quote(target_file)
+        return "python3 -I -c " + shlex.quote(launcher) + " " + shlex.quote(target_file)
     files = canonical_js_test_files(tests, selected)
     requested_by_file = {}
     for item in tests:
@@ -258,7 +258,7 @@ if needle not in text:
 path.write_text(text.replace(needle, injected, 1), encoding="utf-8")
 """.replace("__OPENCOLLAB_SUITE_JSON__", repr(suites_json), 1)
     return (
-        "python3 -c "
+        "python3 -I -c "
         + shlex.quote(reporter_patch)
         + " && npm_config_nodedir=/usr/local npm run test:app"
     )
@@ -342,7 +342,7 @@ for package in sorted(packages):
         status = result.returncode
 raise SystemExit(status)
 """.replace("__OPENCOLLAB_GO_NAMES__", repr(json.dumps(names)), 1)
-    return "python3 -c " + shlex.quote(discovery)
+    return "python3 -I -c " + shlex.quote(discovery)
 
 def ansible_python_test_command(targets, target_file=""):
     probe = """from pathlib import Path

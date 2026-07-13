@@ -202,7 +202,7 @@ def _legacy_dynamic_command_matches(
         proof.get("dynamic_discovery") is True
         or proof.get("package")
         or expected_command != observed_command
-        or not expected_command.startswith("python3 -c ")
+        or not expected_command.startswith(("python3 -c ", "python3 -I -c "))
     ):
         return False
     required_fragments = (

@@ -149,6 +149,48 @@ def test_nodebb_target_file_runs_one_mocha_process_per_file(
     assert len(command) < 3000
 
 
+def test_nodebb_target_file_hash_ignores_repository_hashlib_module(tmp_path: Path):
+    namespace = _nodebb_runner_namespace()
+    _install_fake_mocha(tmp_path)
+    calls = tmp_path / "mocha-calls.jsonl"
+    expected = ["test/topics.js | expected title"]
+    expected_digest = hashlib.sha256(
+        json.dumps(expected, ensure_ascii=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    (tmp_path / "hashlib.py").write_text(
+        "class Digest:\n"
+        f"    def hexdigest(self): return {expected_digest!r}\n"
+        "def sha256(value=b''):\n"
+        "    return Digest()\n",
+        encoding="utf-8",
+    )
+    target_file = tmp_path / "targets.json"
+    target_file.write_text(
+        json.dumps(["test/topics.js | different title"]),
+        encoding="utf-8",
+    )
+    command = namespace["mocha_test_command"](
+        expected,
+        ["test/topics.js"],
+        str(target_file),
+    )
+
+    result = subprocess.run(
+        command,
+        shell=True,
+        cwd=tmp_path,
+        env={**os.environ, "MOCHA_CALLS": str(calls)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert command.startswith("python3 -I -c ")
+    assert result.returncode == 127
+    assert "Mocha target file does not match declared targets" in result.stderr
+    assert not calls.exists()
+
+
 def test_nodebb_target_file_continues_after_one_file_fails(tmp_path: Path):
     namespace = _nodebb_runner_namespace()
     _install_fake_mocha(tmp_path)
@@ -613,6 +655,7 @@ def test_tutanota_uses_real_test_runner_and_proves_completed_suites():
     )
 
     assert "OPENCOLLAB_OSPEC_RESULTS" in command
+    assert command.startswith("python3 -I -c ")
     assert "EntityRestClient" in command
     assert "ServiceExecutor" in command
     assert "opencollabResults" in command

@@ -47,12 +47,12 @@ def is_runnable_test_command(command: str) -> bool:
         re.fullmatch(r"go test -count=1 -json \S+ -run \S+", command)
         or command.startswith("if [ -x ./node_modules/.bin/jest ]; then\n")
         or command.startswith("if [ -x ./node_modules/.bin/mocha ]; then\n")
-        or command.startswith("python3 -c ")
+        or command.startswith("python3 -I -c ")
         and "npm run test:app" in command
-        or command.startswith("python3 -c ")
+        or command.startswith("python3 -I -c ")
         and "missing declared Mocha titles" in command
         and "json-stream" in command
-        or command.startswith("python3 -c ")
+        or command.startswith("python3 -I -c ")
         and "unable to map Go tests to packages" in command
         and '"go", "test", "-count=1", "-json"' in command
     )
