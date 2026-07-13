@@ -7,6 +7,7 @@ from opencollab_eval.contracts.models import (
     PublicTask,
     SolverBudget,
     SolverRun,
+    thaw_public_value,
 )
 
 __all__ = [
@@ -16,5 +17,5 @@ __all__ = [
     "PublicTask",
     "SolverBudget",
     "SolverRun",
+    "thaw_public_value",
 ]
-

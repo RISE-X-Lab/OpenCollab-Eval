@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from opencollab_eval import __version__
-from opencollab_eval.benchmarks.swe_batch_pro import load_jsonl_dataset, task_from_row
+from opencollab_eval.benchmarks.swe_batch_pro import load_identity_key, load_jsonl_dataset, tasks_from_rows
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -17,13 +17,15 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     inspect_parser = subparsers.add_parser("inspect", help="Inspect a SWE-Batch Pro JSONL dataset")
     inspect_parser.add_argument("dataset", type=Path)
+    inspect_parser.add_argument("--identity-key-file", required=True, type=Path)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "inspect":
-        tasks = [task_from_row(row) for row in load_jsonl_dataset(args.dataset)]
+        identity_key = load_identity_key(args.identity_key_file)
+        tasks = tasks_from_rows(load_jsonl_dataset(args.dataset), identity_key=identity_key)
         print(
             json.dumps(
                 {
@@ -38,4 +40,3 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 __all__ = ["build_parser", "main"]
-

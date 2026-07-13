@@ -27,24 +27,37 @@ _FORBIDDEN_PUBLIC_KEYS = frozenset(
 
 def _freeze_public_metadata(value: Mapping[str, Any]) -> Mapping[str, Any]:
     copied = deepcopy(dict(value))
+    frozen: dict[str, Any] = {}
     for key, item in copied.items():
         if not isinstance(key, str):
             raise ValueError("public metadata keys must be strings")
         normalized = re.sub(r"[^a-z0-9]", "", key.casefold())
         if normalized in _FORBIDDEN_PUBLIC_KEYS or normalized == "patch":
             raise ValueError(f"public metadata contains a sealed field: {key}")
-        _validate_json_value(item)
-    return MappingProxyType(copied)
+        frozen[key] = _freeze_json_value(item)
+    return MappingProxyType(frozen)
 
 
-def _validate_json_value(value: Any) -> None:
+def _freeze_json_value(value: Any) -> Any:
     if isinstance(value, Mapping):
-        _freeze_public_metadata(value)
+        return _freeze_public_metadata(value)
     elif isinstance(value, (list, tuple)):
-        for item in value:
-            _validate_json_value(item)
+        return tuple(_freeze_json_value(item) for item in value)
+    elif isinstance(value, float) and not math.isfinite(value):
+        raise ValueError("public metadata floats must be finite")
     elif value is not None and not isinstance(value, (str, int, float, bool)):
         raise ValueError("public metadata must contain JSON-like values")
+    return value
+
+
+def thaw_public_value(value: Any) -> Any:
+    """Return a detached JSON-compatible copy of immutable public data."""
+
+    if isinstance(value, Mapping):
+        return {str(key): thaw_public_value(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [thaw_public_value(item) for item in value]
+    return value
 
 
 @dataclass(frozen=True, slots=True)

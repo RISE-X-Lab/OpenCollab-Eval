@@ -20,10 +20,16 @@ def test_inspect_reports_only_public_task_ids(tmp_path, capsys) -> None:
         encoding="utf-8",
     )
 
-    assert main(["inspect", str(dataset)]) == 0
+    identity_key = tmp_path / "identity.key"
+    identity_key.write_bytes(b"k" * 32)
+
+    assert main(["inspect", str(dataset), "--identity-key-file", str(identity_key)]) == 0
     output = capsys.readouterr().out
     payload = json.loads(output)
     assert payload["count"] == 1
     assert payload["public_task_ids"][0].startswith("solver-")
     assert "secret" not in output
 
+    assert main(["inspect", str(dataset), "--identity-key-file", str(identity_key)]) == 0
+    repeated = json.loads(capsys.readouterr().out)
+    assert repeated["public_task_ids"] == payload["public_task_ids"]

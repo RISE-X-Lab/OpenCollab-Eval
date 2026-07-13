@@ -13,7 +13,7 @@ from opencollab.sdk import (
     discover_workflows,
 )
 
-from opencollab_eval.contracts import PreparedWorkspace, PublicTask, SolverBudget, SolverRun
+from opencollab_eval.contracts import PreparedWorkspace, PublicTask, SolverBudget, SolverRun, thaw_public_value
 
 
 class OpenCollabWorkflowSolver:
@@ -54,7 +54,7 @@ class OpenCollabWorkflowSolver:
                     "instance_id": task.task_id,
                     "repo": task.repo,
                     "hints": list(task.hints),
-                    "public_metadata": dict(task.metadata),
+                    "public_metadata": thaw_public_value(task.metadata),
                 },
                 budget=RunBudget(
                     max_tokens=budget.max_tokens,
@@ -80,4 +80,3 @@ class OpenCollabWorkflowSolver:
 
 
 __all__ = ["OpenCollabWorkflowSolver"]
-

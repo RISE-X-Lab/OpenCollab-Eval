@@ -37,6 +37,7 @@ async def test_solver_uses_sdk_and_returns_runtime_evidence(tmp_path: Path) -> N
         task_id="solver-0123456789abcdef0123456789abcdef",
         repo="owner/repo",
         problem_statement="Fix it.",
+        metadata={"nested": {"items": ["public"]}},
     )
     result = await solver.run(
         task,
@@ -49,5 +50,6 @@ async def test_solver_uses_sdk_and_returns_runtime_evidence(tmp_path: Path) -> N
     assert result.tokens_spent == 17
     assert result.session_count == 2
     assert runtime.request.inputs["instance_id"] == task.task_id
+    assert runtime.request.inputs["public_metadata"] == {"nested": {"items": ["public"]}}
+    assert runtime.request.inputs["public_metadata"] is not task.metadata
     assert runtime.request.budget.max_tokens == 100
-

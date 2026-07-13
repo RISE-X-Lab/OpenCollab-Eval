@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import stat
@@ -17,27 +18,10 @@ PROLITE_IMAGE_PREFIX = "docker.1panel.live/jefzda/sweap-images:"
 
 
 def load_jsonl_dataset(path: Path) -> list[dict[str, Any]]:
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(path, flags)
-    try:
-        opened = os.fstat(fd)
-        if not stat.S_ISREG(opened.st_mode):
-            raise ValueError("dataset must be a regular file")
-        if opened.st_size > MAX_DATASET_BYTES:
-            raise ValueError("dataset exceeds the size limit")
-        payload = bytearray()
-        while len(payload) <= MAX_DATASET_BYTES:
-            chunk = os.read(fd, min(1024 * 1024, MAX_DATASET_BYTES + 1 - len(payload)))
-            if not chunk:
-                break
-            payload.extend(chunk)
-        if len(payload) > MAX_DATASET_BYTES:
-            raise ValueError("dataset exceeds the size limit")
-    finally:
-        os.close(fd)
+    payload = _read_regular_bytes(path, max_bytes=MAX_DATASET_BYTES, label="dataset")
 
     rows: list[dict[str, Any]] = []
-    for line_number, line in enumerate(bytes(payload).splitlines(), 1):
+    for line_number, line in enumerate(payload.splitlines(), 1):
         if not line.strip():
             continue
         value = json.loads(line)
@@ -47,14 +31,46 @@ def load_jsonl_dataset(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def task_from_row(row: Mapping[str, Any]) -> BenchmarkTask:
+def load_identity_key(path: Path) -> bytes:
+    """Load an evaluator-owned raw 32-byte HMAC key without following symlinks."""
+
+    key = _read_regular_bytes(path, max_bytes=32, label="identity key")
+    if len(key) != 32:
+        raise ValueError("identity key must contain exactly 32 raw bytes")
+    return key
+
+
+def _read_regular_bytes(path: Path, *, max_bytes: int, label: str) -> bytes:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags)
+    try:
+        opened = os.fstat(fd)
+        if not stat.S_ISREG(opened.st_mode):
+            raise ValueError(f"{label} must be a regular file")
+        if opened.st_size > max_bytes:
+            raise ValueError(f"{label} exceeds the size limit")
+        payload = bytearray()
+        while len(payload) <= max_bytes:
+            chunk = os.read(fd, min(1024 * 1024, max_bytes + 1 - len(payload)))
+            if not chunk:
+                break
+            payload.extend(chunk)
+        if len(payload) > max_bytes:
+            raise ValueError(f"{label} exceeds the size limit")
+    finally:
+        os.close(fd)
+    return bytes(payload)
+
+
+def task_from_row(row: Mapping[str, Any], *, identity_key: bytes) -> BenchmarkTask:
+    if not isinstance(identity_key, bytes) or len(identity_key) < 32:
+        raise ValueError("identity_key must contain at least 32 bytes")
     instance_id = _first_string(row, "instance_id", "task_id", "id")
     repo = _first_string(row, "repo", "repository", "repo_name")
     problem = _first_string(row, "problem_statement", "problem", "description")
     if not instance_id or not repo or not problem:
         raise ValueError("task row requires instance_id, repo, and problem statement")
-    identity = f"{repo}\0{problem}".encode()
-    public_id = "solver-" + hashlib.sha256(identity).hexdigest()[:32]
+    public_id = "solver-" + hmac.new(identity_key, instance_id.encode(), hashlib.sha256).hexdigest()[:32]
     image = _first_string(row, "docker_image", "image")
     tag = _first_string(row, "dockerhub_tag", "image_tag")
     if not image and tag:
@@ -78,6 +94,20 @@ def task_from_row(row: Mapping[str, Any]) -> BenchmarkTask:
     )
     _reject_sealed_values(public, judge)
     return BenchmarkTask(public=public, judge=judge)
+
+
+def tasks_from_rows(rows: Iterable[Mapping[str, Any]], *, identity_key: bytes) -> list[BenchmarkTask]:
+    """Normalize a batch and reject any ambiguous public identifier."""
+
+    tasks: list[BenchmarkTask] = []
+    identities: set[str] = set()
+    for row in rows:
+        task = task_from_row(row, identity_key=identity_key)
+        if task.public.task_id in identities:
+            raise ValueError("task batch contains a duplicate public identity")
+        identities.add(task.public.task_id)
+        tasks.append(task)
+    return tasks
 
 
 def _reject_sealed_values(public: PublicTask, judge: JudgeSpec) -> None:
@@ -147,4 +177,4 @@ def _string_tuple(value: Any) -> tuple[str, ...]:
     return (str(value),)
 
 
-__all__ = ["load_jsonl_dataset", "task_from_row"]
+__all__ = ["load_identity_key", "load_jsonl_dataset", "task_from_row", "tasks_from_rows"]
