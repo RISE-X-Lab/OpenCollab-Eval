@@ -6,7 +6,10 @@ from opencollab_eval.engine.swe_eval_records import SUBMISSION_INTEGRITY_PROVEN
 from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid
 from opencollab_eval.engine.swe_v1_remote_core import *
 from opencollab_eval.engine.swe_v1_remote_state import *
-from opencollab_eval.patch_paths import is_generated_dependency_artifact_path
+from opencollab_eval.patch_paths import (
+    is_generated_dependency_artifact_path,
+    is_generated_python_bytecode_path,
+)
 
 
 def now():
@@ -214,6 +217,8 @@ def is_eval_test_path(path):
 def model_patch_filter_reason(path):
     if is_eval_test_path(path):
         return "eval_test_path"
+    if is_generated_python_bytecode_path(path):
+        return "generated_python_bytecode"
     if is_generated_dependency_artifact_path(path):
         return "generated_dependency_artifact"
     return ""

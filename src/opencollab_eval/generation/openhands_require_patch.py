@@ -16,6 +16,7 @@ if str(_MODULE_DIR) not in sys.path:
 
 from opencollab_eval.patch_paths import (  # noqa: E402
     is_generated_dependency_artifact_path,
+    is_generated_python_bytecode_path,
 )
 
 from .gen_prediction_workflow import (  # noqa: E402
@@ -66,7 +67,12 @@ def _container_patch(container_id: str, workspace: str) -> str:
 def _source_paths(patch: str) -> tuple[list[str], list[str], list[str]]:
     paths = _patch_paths(patch)
     validation = [path for path in paths if _looks_like_validation_artifact(path)]
-    generated = [path for path in paths if is_generated_dependency_artifact_path(path)]
+    generated = [
+        path
+        for path in paths
+        if is_generated_dependency_artifact_path(path)
+        or is_generated_python_bytecode_path(path)
+    ]
     source = [path for path in paths if path not in validation and path not in generated]
     return source, validation, generated
 
@@ -140,7 +146,7 @@ def evaluate_stop(env: Mapping[str, str] | None = None) -> dict:
     if validation_paths:
         detail = "Only validation/test files changed: " + ", ".join(validation_paths)
     elif generated_paths:
-        detail = "Only dependency-generated files changed: " + ", ".join(generated_paths)
+        detail = "Only generated files changed: " + ", ".join(generated_paths)
     else:
         detail = "No tracked source file has changed."
     return {

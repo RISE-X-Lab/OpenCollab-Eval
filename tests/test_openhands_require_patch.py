@@ -81,9 +81,64 @@ def test_stop_guard_rejects_yarn_install_state_as_generated_artifact(
 
     assert result["decision"] == "deny"
     assert result["reason"] == "empty_source_patch"
-    assert "Only dependency-generated files changed: .yarn/install-state.gz" in result["additionalContext"]
+    assert "Only generated files changed: .yarn/install-state.gz" in result["additionalContext"]
     state = json.loads((tmp_path / "empty_patch_stop_guard.json").read_text())
     assert state["generated_paths"] == [".yarn/install-state.gz"]
+
+
+def test_stop_guard_rejects_python_bytecode_but_accepts_similar_source_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    patch = (
+        "diff --git a/openlibrary/solr/__pycache__/query_utils.cpython-311.pyc "
+        "b/openlibrary/solr/__pycache__/query_utils.cpython-311.pyc\n"
+        "new file mode 100644\n"
+        "Binary files /dev/null and "
+        "b/openlibrary/solr/__pycache__/query_utils.cpython-311.pyc differ\n"
+        "diff --git a/openlibrary/solr/__pycache__/metadata.json "
+        "b/openlibrary/solr/__pycache__/metadata.json\n"
+        "--- a/openlibrary/solr/__pycache__/metadata.json\n"
+        "+++ b/openlibrary/solr/__pycache__/metadata.json\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+        "diff --git a/openlibrary/solr/standalone.pyc "
+        "b/openlibrary/solr/standalone.pyc\n"
+        "--- a/openlibrary/solr/standalone.pyc\n"
+        "+++ b/openlibrary/solr/standalone.pyc\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+        "diff --git a/openlibrary/solr/query_utils.py "
+        "b/openlibrary/solr/query_utils.py\n"
+        "--- a/openlibrary/solr/query_utils.py\n"
+        "+++ b/openlibrary/solr/query_utils.py\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+        "diff --git a/openlibrary/solr/cache.pyc.py "
+        "b/openlibrary/solr/cache.pyc.py\n"
+        "--- a/openlibrary/solr/cache.pyc.py\n"
+        "+++ b/openlibrary/solr/cache.pyc.py\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+    )
+    monkeypatch.setattr(guard, "_container_patch", lambda *args: patch)
+
+    result = guard.evaluate_stop(_env(tmp_path, rejections=1))
+
+    assert result == {"decision": "allow", "reason": "source_patch_present"}
+    state = json.loads((tmp_path / "empty_patch_stop_guard.json").read_text())
+    assert state["source_paths"] == [
+        "openlibrary/solr/__pycache__/metadata.json",
+        "openlibrary/solr/standalone.pyc",
+        "openlibrary/solr/query_utils.py",
+        "openlibrary/solr/cache.pyc.py",
+    ]
+    assert state["generated_paths"] == [
+        "openlibrary/solr/__pycache__/query_utils.cpython-311.pyc",
+    ]
 
 
 def test_stop_guard_allows_hook_infrastructure_error(

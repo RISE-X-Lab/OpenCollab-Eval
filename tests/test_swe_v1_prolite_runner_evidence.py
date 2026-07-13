@@ -400,6 +400,76 @@ def test_filter_model_patch_removes_yarn_install_state_with_parent_child_sha(tmp
     }
 
 
+def test_filter_model_patch_removes_python_bytecode_with_parent_child_sha(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    patch = (
+        "diff --git a/openlibrary/solr/__pycache__/query_utils.cpython-311.pyc "
+        "b/openlibrary/solr/__pycache__/query_utils.cpython-311.pyc\n"
+        "new file mode 100644\n"
+        "index 0000000..1111111\n"
+        "Binary files /dev/null and "
+        "b/openlibrary/solr/__pycache__/query_utils.cpython-311.pyc differ\n"
+        "diff --git a/openlibrary/solr/__pycache__/metadata.json "
+        "b/openlibrary/solr/__pycache__/metadata.json\n"
+        "new file mode 100644\n"
+        "--- /dev/null\n"
+        "+++ b/openlibrary/solr/__pycache__/metadata.json\n"
+        "@@ -0,0 +1 @@\n"
+        "+{}\n"
+        "diff --git a/build/standalone.pyc b/build/standalone.pyc\n"
+        "new file mode 100644\n"
+        "index 0000000..2222222\n"
+        "Binary files /dev/null and b/build/standalone.pyc differ\n"
+        "diff --git a/build/legacy.pyo b/build/legacy.pyo\n"
+        "new file mode 100644\n"
+        "index 0000000..3333333\n"
+        "Binary files /dev/null and b/build/legacy.pyo differ\n"
+        "diff --git a/openlibrary/solr/query_utils.py "
+        "b/openlibrary/solr/query_utils.py\n"
+        "--- a/openlibrary/solr/query_utils.py\n"
+        "+++ b/openlibrary/solr/query_utils.py\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+        "diff --git a/openlibrary/solr/cache.pyc.py "
+        "b/openlibrary/solr/cache.pyc.py\n"
+        "--- a/openlibrary/solr/cache.pyc.py\n"
+        "+++ b/openlibrary/solr/cache.pyc.py\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+        "diff --git a/openlibrary/solr/__pycache___helper.py "
+        "b/openlibrary/solr/__pycache___helper.py\n"
+        "--- a/openlibrary/solr/__pycache___helper.py\n"
+        "+++ b/openlibrary/solr/__pycache___helper.py\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+    )
+    prediction = {"model_patch": patch}
+
+    filtered = namespace["filter_model_patch_for_eval"](patch)
+    evidence = namespace["model_patch_filter_evidence"](prediction)
+
+    assert "query_utils.cpython-311.pyc" not in filtered
+    assert "__pycache__/metadata.json" in filtered
+    assert "build/standalone.pyc" in filtered
+    assert "build/legacy.pyo" in filtered
+    assert "openlibrary/solr/query_utils.py" in filtered
+    assert "openlibrary/solr/cache.pyc.py" in filtered
+    assert "openlibrary/solr/__pycache___helper.py" in filtered
+    assert evidence == {
+        "source_patch_sha256": namespace["patch_sha"](patch),
+        "eval_patch_sha256": namespace["patch_sha"](filtered),
+        "filtered_patch_paths": [
+            {
+                "path": "openlibrary/solr/__pycache__/query_utils.cpython-311.pyc",
+                "reason": "generated_python_bytecode",
+            },
+        ],
+    }
+
+
 def test_yarn_install_state_only_patch_is_not_a_completed_generation(tmp_path):
     namespace = _remote_namespace(tmp_path)
     task = "instance_org__repo-1"
