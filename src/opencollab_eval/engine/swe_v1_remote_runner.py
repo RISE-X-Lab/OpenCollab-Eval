@@ -12,21 +12,37 @@ from contextlib import contextmanager
 from typing import Any
 
 from opencollab_eval.engine import (
+    swe_v1_go_failure_proof,
     swe_v1_remote_artifacts,
     swe_v1_remote_commands,
     swe_v1_remote_core,
+    swe_v1_remote_eval_patch,
+    swe_v1_remote_eval_retry,
     swe_v1_remote_evaluation,
     swe_v1_remote_generation,
+    swe_v1_remote_gitlink_probe,
+    swe_v1_remote_go_targets,
+    swe_v1_remote_javascript_proof,
+    swe_v1_remote_pytest_proof,
     swe_v1_remote_records,
     swe_v1_remote_state,
+    swe_v1_remote_test_plan,
 )
 
 _RUNTIME_MODULES = (
     swe_v1_remote_core,
     swe_v1_remote_records,
+    swe_v1_remote_gitlink_probe,
+    swe_v1_go_failure_proof,
+    swe_v1_remote_go_targets,
+    swe_v1_remote_javascript_proof,
+    swe_v1_remote_pytest_proof,
+    swe_v1_remote_test_plan,
     swe_v1_remote_commands,
     swe_v1_remote_generation,
     swe_v1_remote_artifacts,
+    swe_v1_remote_eval_patch,
+    swe_v1_remote_eval_retry,
     swe_v1_remote_evaluation,
 )
 

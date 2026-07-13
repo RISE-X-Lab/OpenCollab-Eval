@@ -157,12 +157,72 @@ def test_go_test_command_discovers_each_named_test_package(tmp_path):
     env["GO_CALLS"] = str(calls)
 
     command = namespace["go_test_command"](["TestA", "TestB/subcase"])
-    proc = subprocess.run(["bash", "-c", command], cwd=tmp_path, env=env, text=True)
+    proc = subprocess.run(
+        ["bash", "-c", command],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
 
     assert proc.returncode == 0
+    assert proc.stdout.count("OPENCOLLAB_GO_TARGET_DISCOVERY ") == 2
     lines = calls.read_text(encoding="utf-8").splitlines()
     assert any("-json ./pkg/a" in line and "TestA" in line for line in lines)
     assert any("-json ./pkg/b" in line and "TestB" in line for line in lines)
+
+
+def test_go_test_command_rejects_ambiguous_named_test_packages(tmp_path):
+    namespace = _command_namespace()
+    for package in ("pkg/a", "pkg/b"):
+        path = tmp_path / package
+        path.mkdir(parents=True)
+        (path / "feature_test.go").write_text(
+            "package feature\nfunc TestSame(t *testing.T) {}\n",
+            encoding="utf-8",
+        )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake_go = bin_dir / "go"
+    fake_go.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_go.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = str(bin_dir) + os.pathsep + env["PATH"]
+
+    command = namespace["go_test_command"](["TestSame"])
+    proc = subprocess.run(
+        ["bash", "-c", command],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+    assert proc.returncode == 127
+    assert "ambiguous Go test package mapping: TestSame" in proc.stderr
+    assert "OPENCOLLAB_GO_TARGET_DISCOVERY" not in proc.stdout
+
+
+def test_go_plan_discovers_packages_for_bare_test_names():
+    namespace = _command_namespace()
+
+    plan = namespace["prolite_test_plan"](
+        {"repo_language": "go", "repo": "gravitational/teleport"},
+        ["TestColumn", "TestMessage"],
+    )
+
+    assert plan["adapter"] == "go-test-json-discovery"
+    assert plan["coverage_verified"] is True
+    assert plan["target_batches"] == [["TestColumn", "TestMessage"]]
+    assert len(plan["commands"]) == 1
+    assert "unable to map Go tests to packages" in plan["commands"][0]
+    assert plan["proofs"] == [
+        {
+            "kind": "go_json_test_pass",
+            "tests": ["TestColumn", "TestMessage"],
+            "dynamic_discovery": True,
+        }
+    ]
 
 
 def test_ansible_test_command_forces_repository_import_root():
@@ -194,6 +254,32 @@ def test_python_test_targets_are_batched_without_file_level_expansion():
     ]
     assert namespace["compact_python_test_targets"](malformed, []) == [
         "tests/test_many.py::test_case"
+    ]
+
+
+def test_python_parameter_targets_use_bounded_parent_fallback():
+    namespace = _command_namespace()
+    targets = [
+        "tests/test_many.py::test_case[dataset-repr-a]",
+        "tests/test_many.py::test_case[dataset-repr-b]",
+        "tests/test_many.py::test_stable",
+    ]
+
+    plan = namespace["prolite_test_plan"]({"repo_language": "python"}, targets)
+
+    assert plan["coverage_verified"] is True
+    assert plan["coverage"] == "parameter_parent_targets"
+    assert plan["target_batches"] == [targets]
+    assert plan["commands"] == [
+        "pytest -p opencollab_pytest_proof -q -rA -o addopts= "
+        "tests/test_many.py::test_case tests/test_many.py::test_stable"
+    ]
+    assert plan["proofs"] == [
+        {
+            "kind": "pytest_structured_reports",
+            "targets": targets,
+            "parameter_fallback_parents": ["tests/test_many.py::test_case"],
+        }
     ]
 
 

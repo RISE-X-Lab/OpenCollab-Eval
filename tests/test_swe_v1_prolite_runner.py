@@ -12,6 +12,7 @@ from package_test_support import resource_path
 
 import opencollab_eval.commands.swe_v1_prolite_runner as runner
 from opencollab_eval.engine import swe_v1_remote_commands as remote_commands
+from opencollab_eval.engine import swe_v1_remote_eval_retry as remote_eval_retry
 from opencollab_eval.engine import swe_v1_remote_eval_script as remote_eval_script
 from opencollab_eval.engine import swe_v1_remote_evaluation as remote_evaluation
 from opencollab_eval.engine import swe_v1_remote_generation as remote_generation
@@ -430,8 +431,44 @@ def test_remote_runner_caps_eval_attempts_and_retries_environment_eval_failures(
     )
     remote_state.configure(config)
     assert remote_state.max_eval_attempts == 2
-    source = inspect.getsource(remote_evaluation.eval_for_task)
+    source = inspect.getsource(remote_eval_retry.eval_for_task_with_retries)
     assert 'retry_statuses = {"technical_eval_failed", "blocked_missing_eval_image"}' in source
+
+
+def test_remote_runner_allows_empty_model_token_only_for_eval_only():
+    config = _complete_remote_config(
+        {
+            "token": "",
+            "remote_root": "/tmp/remote",
+            "remote_repo": "/tmp/repo",
+            "base_run_dir": "/tmp/run",
+            "workflow": "openhands-external",
+            "model_name": "model",
+            "session_prefix": "session",
+            "remote_proxy_base_url": "http://127.0.0.1:1",
+            "start_index": 1,
+            "limit": 1,
+            "budget": 1,
+            "max_steps": 1,
+            "swe_timeout": 1,
+            "task_wall_timeout": 1,
+            "eval_timeout": 1,
+            "llm_timeout": 1,
+            "checkpoint_interval": 0,
+            "max_task_starts": 1,
+            "max_eval_attempts": 1,
+            "eval_only": True,
+            "dry_run": False,
+        }
+    )
+
+    remote_state.configure(config)
+    assert remote_state.eval_only is True
+    assert remote_state.token == ""
+
+    config["eval_only"] = False
+    with pytest.raises(ValueError, match="missing remote runner configuration: token"):
+        remote_state.configure(config)
 
 
 def test_remote_runner_prepares_optional_redis_before_eval_tests():
@@ -443,8 +480,8 @@ def test_remote_runner_prepares_optional_redis_before_eval_tests():
 
 
 def test_remote_runner_does_not_count_non_executed_eval_states():
-    source = inspect.getsource(remote_evaluation.eval_for_task)
-    assert 'final["attempt_count"] = eval_attempt_count(run_dir, prediction, task)' in source
+    source = inspect.getsource(remote_eval_retry.eval_for_task_with_retries)
+    assert 'final["attempt_count"] = eval_attempt_count(' in source
     once_source = inspect.getsource(remote_evaluation.eval_for_task_once)
     assert '"executed": False' in once_source
 

@@ -6,6 +6,7 @@ from opencollab_eval.engine import swe_v1_remote_cleanup as remote_cleanup
 from opencollab_eval.engine.swe_eval_records import direct_eval_done_has_execution_proof
 from opencollab_eval.engine.swe_v1_remote_commands import *
 from opencollab_eval.engine.swe_v1_remote_core import *
+from opencollab_eval.engine.swe_v1_remote_gitlink_probe import *
 from opencollab_eval.engine.swe_v1_remote_records import *
 from opencollab_eval.engine.swe_v1_remote_state import *
 
@@ -22,7 +23,23 @@ def bind_eval_container_marker(cidfile, marker_path, container_name, proc, timeo
             container_id = raw.decode("ascii").strip().lower()
         except FileNotFoundError:
             container_id = ""
-        except (OSError, UnicodeDecodeError, remote_cleanup.CleanupInputError) as exc:
+        except remote_cleanup.CleanupInputError as exc:
+            try:
+                cid_status = cidfile.lstat()
+            except FileNotFoundError:
+                container_id = ""
+            except OSError as status_error:
+                return {
+                    "ok": False,
+                    "status": "invalid_cidfile",
+                    "details": str(status_error),
+                }
+            else:
+                if remote_cleanup.stat.S_ISREG(cid_status.st_mode) and cid_status.st_size == 0:
+                    container_id = ""
+                else:
+                    return {"ok": False, "status": "invalid_cidfile", "details": str(exc)}
+        except (OSError, UnicodeDecodeError) as exc:
             return {"ok": False, "status": "invalid_cidfile", "details": str(exc)}
         if remote_cleanup.FULL_CONTAINER_ID_RE.fullmatch(container_id):
             try:
@@ -100,6 +117,51 @@ GENERATION_RETRY_STATUSES = {
 }
 
 
+def _generation_patch_result(row, task, prediction, metric, pairing, **extra):
+    selection = prepare_eval_patch_selection(row, prediction, metric)
+    if not selection.get("ok"):
+        return {
+            "status": "technical_generation_patch_filter_failed",
+            "task": task,
+            "pairing": pairing,
+            "patch_sha256": row_patch_sha(prediction),
+            "record_id": row_record_id(prediction),
+            "patch_filter_status": selection.get("status"),
+            "gitlink_probe": selection.get("gitlink_probe"),
+            **extra,
+        }
+    evidence = {
+        "source_patch_sha256": selection["source_patch_sha256"],
+        "eval_patch_sha256": selection["eval_patch_sha256"],
+        "filtered_patch_paths": selection["filtered_patch_paths"],
+        "gitlink_probe": selection.get("gitlink_probe"),
+    }
+    if not selection["model_patch"].strip():
+        result = {
+            "status": "empty_patch",
+            "task": task,
+            "pairing": pairing,
+            "patch_len": 0,
+            "original_patch_len": len(prediction_patch(prediction)),
+            "workflow_status": workflow_status(metric),
+            "record_id": row_record_id(prediction),
+            "patch_sha256": row_patch_sha(prediction),
+            "submission_integrity": "filtered_empty_patch_proven",
+            **evidence,
+        }
+        result.update(generation_integrity_evidence(metric))
+        result.update(extra)
+        return result
+    result = generation_done_result(task, prediction, metric, pairing, **extra)
+    result.update(
+        {
+            "patch_len": len(selection["model_patch"]),
+            **evidence,
+        }
+    )
+    return result
+
+
 def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
     task = row["instance_id"]
     run_dir = base_run_dir / task
@@ -110,7 +172,9 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
         require_identity=not eval_only,
     )
     if done:
-        return generation_done_result(task, prediction, metric, pairing)
+        result = _generation_patch_result(row, task, prediction, metric, pairing)
+        if result.get("status") != "empty_patch" or reuse_existing_empty_patch:
+            return result
     if (
         reuse_existing_empty_patch
         and workflow_status(metric) == "empty_patch_after_done"
@@ -263,7 +327,8 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
                 done, prediction, metric, pairing = generation_done(run_dir, task)
                 cleanup_fifo(fifo)
                 if done:
-                    return generation_done_result(
+                    return _generation_patch_result(
+                        row,
                         task,
                         prediction,
                         metric,
@@ -298,7 +363,8 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
         require_identity=not eval_only,
     )
     if done:
-        return generation_done_result(
+        return _generation_patch_result(
+            row,
             task,
             prediction,
             metric,
@@ -397,6 +463,8 @@ def eval_summary_matches_prediction(
     eval_spec_sha256="",
     f2p_plan=None,
     p2p_plan=None,
+    expected_eval_patch_sha256="",
+    expected_eval_image_id="",
 ):
     if not isinstance(summary, dict) or not direct_eval_done_has_execution_proof(
         summary,
@@ -409,9 +477,17 @@ def eval_summary_matches_prediction(
         return False
     if summary.get("task") != task:
         return False
+    if expected_eval_image_id and summary.get("eval_image_id") != expected_eval_image_id:
+        return False
     current_sha = row_patch_sha(prediction)
     previous_sha = str(summary.get("patch_sha256") or "")
     if not patch_sha_matches(previous_sha, current_sha):
+        return False
+    current_eval_sha = str(expected_eval_patch_sha256 or patch_sha(eval_model_patch(prediction)))
+    previous_eval_sha = str(
+        summary.get("eval_patch_sha256") or summary.get("patch_sha256") or ""
+    )
+    if not patch_sha_matches(previous_eval_sha, current_eval_sha):
         return False
     current_record = row_record_id(prediction)
     previous_record = str(summary.get("record_id") or "")

@@ -6,6 +6,12 @@ from opencollab_eval.engine.swe_eval_records import SUBMISSION_INTEGRITY_PROVEN
 from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid
 from opencollab_eval.engine.swe_v1_remote_core import *
 from opencollab_eval.engine.swe_v1_remote_state import *
+from opencollab_eval.patch_diff import *
+from opencollab_eval.patch_paths import (
+    is_generated_dependency_artifact_path,
+    is_generated_python_bytecode_path,
+    is_generated_python_test_artifact_path,
+)
 
 
 def now():
@@ -210,121 +216,67 @@ def is_eval_test_path(path):
     )
 
 
-GIT_C_ESCAPES = {
-    "a": 0x07,
-    "b": 0x08,
-    "t": 0x09,
-    "n": 0x0A,
-    "v": 0x0B,
-    "f": 0x0C,
-    "r": 0x0D,
-    '"': 0x22,
-    "\\": 0x5C,
-}
-
-
-def decode_git_c_path(value):
-    value = str(value or "")
-    quoted = value.startswith('"')
-    index = 1 if quoted else 0
-    decoded = bytearray()
-    while index < len(value):
-        char = value[index]
-        if quoted and char == '"':
-            break
-        if char != "\\":
-            decoded.extend(char.encode("utf-8", errors="surrogatepass"))
-            index += 1
-            continue
-        index += 1
-        if index >= len(value):
-            decoded.append(ord("\\"))
-            break
-        escaped = value[index]
-        if escaped in "01234567":
-            end = index
-            while end < len(value) and end < index + 3 and value[end] in "01234567":
-                end += 1
-            decoded.append(int(value[index:end], 8))
-            index = end
-            continue
-        decoded.append(GIT_C_ESCAPES.get(escaped, ord(escaped)))
-        index += 1
-    return decoded.decode("utf-8", errors="surrogateescape")
-
-
-def git_header_tokens(header):
-    text = str(header or "").strip()
-    prefix = "diff --git "
-    if not text.startswith(prefix):
-        return []
-    text = text[len(prefix) :]
-    tokens = []
-    index = 0
-    while index < len(text) and len(tokens) < 2:
-        while index < len(text) and text[index].isspace():
-            index += 1
-        if index >= len(text):
-            break
-        start = index
-        if text[index] == '"':
-            index += 1
-            while index < len(text):
-                if text[index] == "\\":
-                    index += 2
-                    continue
-                if text[index] == '"':
-                    index += 1
-                    break
-                index += 1
-        else:
-            while index < len(text) and not text[index].isspace():
-                index += 1
-        tokens.append(text[start:index])
-    return tokens
-
-
-def diff_target_path(header):
-    match = re.match(r"^diff --git a/(.*) b/(.*)$", str(header or "").strip())
-    if match:
-        return match.group(2)
-    paths = git_header_tokens(header)
-    if len(paths) >= 2:
-        target = decode_git_c_path(paths[1])
-        if target.startswith("b/"):
-            return target[2:]
-    if paths:
-        source = decode_git_c_path(paths[0])
-        if source.startswith("a/"):
-            return source[2:]
+def model_patch_filter_reason(path):
+    if is_eval_test_path(path):
+        return "eval_test_path"
+    if is_generated_python_bytecode_path(path):
+        return "generated_python_bytecode"
+    if is_generated_python_test_artifact_path(path):
+        return "generated_python_test_artifact"
+    if is_generated_dependency_artifact_path(path):
+        return "generated_dependency_artifact"
     return ""
 
 
-def filter_model_patch_for_eval(patch):
+def filter_model_patch_with_evidence(patch):
     if not patch.strip():
-        return patch
-    blocks = []
-    current = []
-    for line in patch.splitlines(keepends=True):
-        if line.startswith("diff --git ") and current:
-            blocks.append(current)
-            current = [line]
-        else:
-            current.append(line)
-    if current:
-        blocks.append(current)
+        return patch, []
     kept = []
-    for block in blocks:
+    filtered_paths = []
+    for block in split_patch_blocks(patch):
         header = block[0] if block else ""
         path = diff_target_path(header)
-        if path and is_eval_test_path(path):
+        reason = model_patch_filter_reason(path) if path else ""
+        if reason:
+            filtered_paths.append({"path": path, "reason": reason})
             continue
         kept.extend(block)
-    return "".join(kept)
+    return "".join(kept), filtered_paths
+
+
+def filter_model_patch_for_eval(patch):
+    filtered, _evidence = filter_model_patch_with_evidence(patch)
+    return filtered
 
 
 def eval_model_patch(prediction):
     return filter_model_patch_for_eval(prediction_patch(prediction))
+
+
+def eval_python_source_paths(prediction):
+    paths = []
+    for block in split_patch_blocks(eval_model_patch(prediction)):
+        path = diff_target_path(block[0] if block else "")
+        if (
+            path
+            and path.endswith(".py")
+            and not is_eval_test_path(path)
+            and path not in paths
+        ):
+            paths.append(path)
+    if len(paths) > 1024 or sum(len(path.encode("utf-8")) for path in paths) > 128 * 1024:
+        return []
+    return paths
+
+
+def model_patch_filter_evidence(prediction):
+    source_patch = prediction_patch(prediction)
+    filtered_patch, filtered_paths = filter_model_patch_with_evidence(source_patch)
+    return {
+        "source_patch_sha256": patch_sha(source_patch),
+        "eval_patch_sha256": patch_sha(filtered_patch),
+        "filtered_patch_paths": filtered_paths,
+    }
 
 
 def workflow_status(row):
@@ -545,6 +497,7 @@ def generation_done_result(task, prediction, metric, pairing, **extra):
         "patch_sha256": row_patch_sha(prediction),
         "submission_integrity": metric_submission_integrity(metric),
     }
+    result.update(model_patch_filter_evidence(prediction))
     result.update(generation_integrity_evidence(metric))
     result.update({key: value for key, value in extra.items() if value is not None})
     return result
@@ -585,15 +538,39 @@ def empty_patch_result(task, prediction, metric, pairing, **extra):
     return result
 
 
-def eval_attempt_count(run_dir, prediction, task):
-    patch_sha256 = row_patch_sha(prediction)
+def eval_attempt_count(
+    run_dir,
+    prediction,
+    task,
+    *,
+    expected_eval_patch_sha256="",
+    expected_eval_image_id="",
+):
+    source_patch_sha256 = row_patch_sha(prediction)
+    eval_patch_sha256 = str(
+        expected_eval_patch_sha256 or patch_sha(eval_model_patch(prediction))
+    )
     record_id = row_record_id(prediction)
     return sum(
         1
         for item in read_jsonl(run_dir / "eval_attempts.jsonl")
         if item.get("phase") == "eval_attempt_started"
         and item.get("task") == task
-        and patch_sha_matches(str(item.get("patch_sha256") or ""), patch_sha256)
+        and (
+            not expected_eval_image_id
+            or item.get("eval_image_id") == expected_eval_image_id
+        )
+        and patch_sha_matches(
+            str(item.get("eval_patch_sha256") or item.get("patch_sha256") or ""),
+            eval_patch_sha256,
+        )
+        and (
+            item.get("eval_patch_sha256")
+            or patch_sha_matches(
+                str(item.get("patch_sha256") or ""),
+                source_patch_sha256,
+            )
+        )
         and (not record_id or item.get("record_id") == record_id)
     )
 

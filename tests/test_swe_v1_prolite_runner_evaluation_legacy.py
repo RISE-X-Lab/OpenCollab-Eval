@@ -234,6 +234,7 @@ def test_remote_runner_persists_eval_attempt_cap_across_resume(tmp_path):
     assert first.returncode == 1, first.stderr
     assert docker_runs.read_text(encoding="utf-8").strip() == "2"
     assert json.loads(first.stdout)["rows"][0]["eval"]["attempt_count"] == 2
+    (run_dir / "official_eval_resume" / "summary.json").unlink()
 
     cfg["invocation_id"] = "e" * 32
     resumed = subprocess.run(
@@ -248,6 +249,7 @@ def test_remote_runner_persists_eval_attempt_cap_across_resume(tmp_path):
     resumed_eval = json.loads(resumed.stdout)["rows"][0]["eval"]
     assert resumed_eval["attempt_count"] == 2
     assert resumed_eval["retry_budget_exhausted"] is True
+    assert resumed_eval["summary"] is None
     assert docker_runs.read_text(encoding="utf-8").strip() == "2"
 
 

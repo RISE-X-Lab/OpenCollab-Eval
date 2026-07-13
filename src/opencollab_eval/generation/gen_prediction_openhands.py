@@ -295,6 +295,7 @@ def _run_openhands(
     token_budget: int | None = None,
     max_steps: int | None = None,
     empty_patch_rejections: int = 0,
+    removed_gitlinks: tuple[tuple[str, str], ...] = (),
 ) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
     container_python = _prepare_openhands_container_guard(container_id)
@@ -342,6 +343,14 @@ def _run_openhands(
             "OPENHANDS_WORK_DIR": str(output_dir),
             "OPENHANDS_CONTAINER_PYTHON": container_python,
             "OPENHANDS_CONTAINER_GUARD_ROOT": _CONTAINER_GUARD_ROOT,
+            "OPENHANDS_REMOVED_GITLINKS_JSON": json.dumps(
+                [
+                    {"path": path, "old_oid": old_oid}
+                    for path, old_oid in removed_gitlinks
+                ],
+                ensure_ascii=True,
+                separators=(",", ":"),
+            ),
         }
     )
     runtime_values = {
@@ -580,6 +589,7 @@ def main() -> None:
                     token_budget=args.budget,
                     max_steps=args.max_steps,
                     empty_patch_rejections=max(0, args.empty_patch_rejections),
+                    removed_gitlinks=snapshot_evidence.removed_gitlinks,
                 ),
             }
             process_quiesced = _openhands_patch_extraction_allowed(metrics)

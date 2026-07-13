@@ -18,7 +18,9 @@ _CONTAINER_HELPER = "/tmp/opencollab_gen_prediction_snapshot.py"
 _CONTAINER_HELPER_SOURCE = Path(__file__).with_name("gen_prediction_snapshot_container.py")
 _CONTAINER_CONFIG_HELPER = "/tmp/gen_prediction_snapshot_config.py"
 _CONTAINER_CONFIG_HELPER_SOURCE = Path(__file__).with_name("gen_prediction_snapshot_config.py")
-_MAX_EVIDENCE_BYTES = 16 * 1024
+_MAX_EVIDENCE_BYTES = 256 * 1024
+_MAX_REMOVED_GITLINKS = 1024
+_MAX_REMOVED_GITLINK_PATH_BYTES = 128 * 1024
 
 
 def _docker_with_stdin(*args: str, input_text: str) -> subprocess.CompletedProcess[str]:
@@ -40,8 +42,9 @@ class SolverGitSnapshot:
     remote_count: int
     extra_git_metadata: int
     removed_git_metadata: int
+    removed_gitlinks: tuple[tuple[str, str], ...] = ()
 
-    def as_dict(self) -> dict[str, str | int | bool]:
+    def as_dict(self) -> dict[str, object]:
         return {
             "enabled": True,
             "anonymous_head": self.anonymous_head,
@@ -50,6 +53,10 @@ class SolverGitSnapshot:
             "remote_count": self.remote_count,
             "extra_git_metadata": self.extra_git_metadata,
             "removed_git_metadata": self.removed_git_metadata,
+            "removed_gitlinks": [
+                {"path": path, "old_oid": old_oid}
+                for path, old_oid in self.removed_gitlinks
+            ],
         }
 
 
@@ -68,6 +75,7 @@ def _parse_snapshot_output(output: str) -> SolverGitSnapshot:
         "remote_count",
         "extra_git_metadata",
         "removed_git_metadata",
+        "removed_gitlinks",
     }
     if not isinstance(values, dict) or set(values) != expected or values.get("enabled") is not True:
         raise RuntimeError("solver Git snapshot returned incomplete evidence")
@@ -82,6 +90,25 @@ def _parse_snapshot_output(output: str) -> SolverGitSnapshot:
             raise RuntimeError("solver Git snapshot returned non-integer evidence")
         if values[key] < 0:
             raise RuntimeError("solver Git snapshot returned negative evidence")
+    removed_gitlinks = values["removed_gitlinks"]
+    if (
+        not isinstance(removed_gitlinks, list)
+        or len(removed_gitlinks) > _MAX_REMOVED_GITLINKS
+        or any(
+            not isinstance(item, dict)
+            or set(item) != {"path", "old_oid"}
+            or not isinstance(item.get("path"), str)
+            or not item["path"]
+            or "\x00" in item["path"]
+            or not isinstance(item.get("old_oid"), str)
+            or _COMMIT_RE.fullmatch(item["old_oid"]) is None
+            for item in removed_gitlinks
+        )
+        or len({item["path"] for item in removed_gitlinks}) != len(removed_gitlinks)
+        or sum(len(item["path"].encode("utf-8")) for item in removed_gitlinks)
+        > _MAX_REMOVED_GITLINK_PATH_BYTES
+    ):
+        raise RuntimeError("solver Git snapshot returned invalid removed Gitlink evidence")
     snapshot = SolverGitSnapshot(
         anonymous_head=str(values["anonymous_head"]).lower(),
         base_tree=str(values["base_tree"]).lower(),
@@ -89,6 +116,10 @@ def _parse_snapshot_output(output: str) -> SolverGitSnapshot:
         remote_count=values["remote_count"],
         extra_git_metadata=values["extra_git_metadata"],
         removed_git_metadata=values["removed_git_metadata"],
+        removed_gitlinks=tuple(
+            (item["path"], item["old_oid"].lower())
+            for item in removed_gitlinks
+        ),
     )
     if snapshot.commit_count != 1 or snapshot.remote_count != 0 or snapshot.extra_git_metadata != 0:
         raise RuntimeError("solver Git snapshot integrity verification failed")

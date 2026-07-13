@@ -175,3 +175,20 @@ def test_cleanup_tree_scan_does_not_follow_directory_symlinks(tmp_path):
 
     assert candidates == []
     assert errors == []
+
+
+def test_cleanup_tree_scan_ignores_retired_generation_markers(tmp_path):
+    owners = tmp_path / ".opencollab" / "container_owners"
+    owners.mkdir(parents=True)
+    (owners / ".opencollab-retired-deadbeef").write_text(
+        "retired marker payload",
+        encoding="utf-8",
+    )
+
+    candidates, errors = cleanup.discover_owned_containers(
+        tmp_path,
+        runner_nonce="f" * 32,
+    )
+
+    assert candidates == []
+    assert errors == []

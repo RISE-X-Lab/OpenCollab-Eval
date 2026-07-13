@@ -202,7 +202,11 @@ def _marker_paths(
     for path in _bounded_paths(base):
         if path.name == "container.marker.json":
             eval_paths.append(path)
-        elif path.parent.name == "container_owners" and path.parent.parent.name == ".opencollab":
+        elif (
+            path.parent.name == "container_owners"
+            and path.parent.parent.name == ".opencollab"
+            and not path.name.startswith(".opencollab-retired-")
+        ):
             generation_paths.append(path)
         elif path.name in {"container.id", "container.cid"}:
             reference_paths.append(path)

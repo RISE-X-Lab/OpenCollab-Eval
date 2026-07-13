@@ -5,7 +5,10 @@ from __future__ import annotations
 import os
 import re
 
-from opencollab_eval.engine.swe_v1_remote_commands import _plan_log_proof_matches
+from opencollab_eval.engine.swe_v1_remote_commands import (
+    _plan_log_failure_proof_matches,
+    _plan_log_proof_matches,
+)
 from opencollab_eval.engine.swe_v1_remote_core import (
     RecordInputFormatError,
     RecordInputLimitError,
@@ -107,6 +110,13 @@ def _read_plan_evidence(output_dir, errors, prefix, plan, proof_nonce):
                     log_text,
                     proof_text,
                 ),
+                "target_failure_proof_matches_plan": _plan_log_failure_proof_matches(
+                    proof,
+                    log_text,
+                    proof_text,
+                    expected_command,
+                    observed_command,
+                ),
                 "artifact_safe": len(errors) == error_count,
             }
         )
@@ -127,9 +137,28 @@ def _plan_evidence_complete(plan, evidence):
     )
 
 
+def _plan_execution_evidence_complete(plan, evidence):
+    return (
+        bool(plan["commands"])
+        and len(evidence) == len(plan["commands"])
+        and all(
+            item["command_matches_plan"]
+            and item["log_artifact_safe"]
+            and item["artifact_safe"]
+            and (
+                item["target_proof_matches_plan"]
+                if item["status"] == 0
+                else item["target_failure_proof_matches_plan"]
+            )
+            for item in evidence
+        )
+    )
+
+
 def read_eval_output_artifacts(output_dir, f2p_plan, p2p_plan, proof_nonce):
     """Read every verdict-relevant artifact before returning one snapshot."""
     errors = []
+    diagnostic_errors = []
     base_commit_status = _read_exit(output_dir, errors, "base_commit.exit")
     service_status = _read_exit(output_dir, errors, "service_bootstrap.exit", 0)
     before_status = _read_exit(output_dir, errors, "before_repo.exit")
@@ -179,8 +208,25 @@ def read_eval_output_artifacts(output_dir, f2p_plan, p2p_plan, proof_nonce):
         "f2p_evidence_complete": _plan_evidence_complete(f2p_plan, f2p_evidence),
         "p2p_evidence_complete": not p2p_plan["commands"]
         or _plan_evidence_complete(p2p_plan, p2p_evidence),
-        "f2p_command": _read_text(output_dir, errors, "f2p.command", 1000),
-        "p2p_command": _read_text(output_dir, errors, "p2p.command", 1000),
+        "f2p_execution_evidence_complete": _plan_execution_evidence_complete(
+            f2p_plan,
+            f2p_evidence,
+        ),
+        "p2p_execution_evidence_complete": not p2p_plan["commands"]
+        or _plan_execution_evidence_complete(p2p_plan, p2p_evidence),
+        "f2p_command": _read_text(
+            output_dir,
+            diagnostic_errors,
+            "f2p.command",
+            1000,
+        ),
+        "p2p_command": _read_text(
+            output_dir,
+            diagnostic_errors,
+            "p2p.command",
+            1000,
+        ),
+        "diagnostic_artifact_errors": diagnostic_errors,
         "service_bootstrap_log_tail": _read_text(
             output_dir,
             errors,
@@ -200,7 +246,7 @@ def _plan_evidence_mismatch(artifacts, prefix):
         (item["status"] for item in evidence if item["status"] != 0),
         0,
     )
-    return not artifacts[f"{prefix}_evidence_complete"] or bool(
+    return not artifacts[f"{prefix}_execution_evidence_complete"] or bool(
         evidence and aggregate_status != status
     )
 

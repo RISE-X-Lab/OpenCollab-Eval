@@ -36,6 +36,7 @@ def isolated_solver_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
             "remote_count": 0,
             "extra_git_metadata": 0,
             "removed_git_metadata": 0,
+            "removed_gitlinks": [],
         }
     )
     monkeypatch.setattr(

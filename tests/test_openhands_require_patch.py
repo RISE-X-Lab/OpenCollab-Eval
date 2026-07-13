@@ -32,6 +32,23 @@ def test_stop_guard_allows_non_test_source_patch(
     assert result["reason"] == "source_patch_present"
 
 
+def test_stop_guard_treats_root_python_test_runtime_artifacts_as_generated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    patch = (
+        "diff --git a/.pytest_cache/v/cache/nodeids b/.pytest_cache/v/cache/nodeids\n"
+        "new file mode 100644\n--- /dev/null\n+++ b/.pytest_cache/v/cache/nodeids\n"
+        "@@ -0,0 +1 @@\n+[]\n"
+    )
+    monkeypatch.setattr(guard, "_container_patch", lambda *args: patch)
+
+    result = guard.evaluate_stop(_env(tmp_path, rejections=1))
+
+    assert result["decision"] == "deny"
+    state = json.loads((tmp_path / "empty_patch_stop_guard.json").read_text())
+    assert state["generated_paths"] == [".pytest_cache/v/cache/nodeids"]
+
+
 def test_stop_guard_rejects_empty_or_test_only_patch_then_allows_at_limit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -58,6 +75,83 @@ def test_stop_guard_rejects_empty_or_test_only_patch_then_allows_at_limit(
     assert state["exhausted"] is True
 
 
+def test_stop_guard_rejects_yarn_install_state_as_generated_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        guard,
+        "_container_patch",
+        lambda *args: (
+            "diff --git a/.yarn/install-state.gz b/.yarn/install-state.gz\n"
+            "new file mode 100644\n"
+            "Binary files /dev/null and b/.yarn/install-state.gz differ\n"
+        ),
+    )
+
+    result = guard.evaluate_stop(_env(tmp_path, rejections=1))
+
+    assert result["decision"] == "deny"
+    assert result["reason"] == "empty_source_patch"
+    assert "Only generated files changed: .yarn/install-state.gz" in result["additionalContext"]
+    state = json.loads((tmp_path / "empty_patch_stop_guard.json").read_text())
+    assert state["generated_paths"] == [".yarn/install-state.gz"]
+
+
+def test_stop_guard_rejects_python_bytecode_but_accepts_similar_source_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    patch = (
+        "diff --git a/openlibrary/solr/__pycache__/query_utils.cpython-311.pyc "
+        "b/openlibrary/solr/__pycache__/query_utils.cpython-311.pyc\n"
+        "new file mode 100644\n"
+        "Binary files /dev/null and "
+        "b/openlibrary/solr/__pycache__/query_utils.cpython-311.pyc differ\n"
+        "diff --git a/openlibrary/solr/__pycache__/metadata.json "
+        "b/openlibrary/solr/__pycache__/metadata.json\n"
+        "--- a/openlibrary/solr/__pycache__/metadata.json\n"
+        "+++ b/openlibrary/solr/__pycache__/metadata.json\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+        "diff --git a/openlibrary/solr/standalone.pyc "
+        "b/openlibrary/solr/standalone.pyc\n"
+        "--- a/openlibrary/solr/standalone.pyc\n"
+        "+++ b/openlibrary/solr/standalone.pyc\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+        "diff --git a/openlibrary/solr/query_utils.py "
+        "b/openlibrary/solr/query_utils.py\n"
+        "--- a/openlibrary/solr/query_utils.py\n"
+        "+++ b/openlibrary/solr/query_utils.py\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+        "diff --git a/openlibrary/solr/cache.pyc.py "
+        "b/openlibrary/solr/cache.pyc.py\n"
+        "--- a/openlibrary/solr/cache.pyc.py\n"
+        "+++ b/openlibrary/solr/cache.pyc.py\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+    )
+    monkeypatch.setattr(guard, "_container_patch", lambda *args: patch)
+
+    result = guard.evaluate_stop(_env(tmp_path, rejections=1))
+
+    assert result == {"decision": "allow", "reason": "source_patch_present"}
+    state = json.loads((tmp_path / "empty_patch_stop_guard.json").read_text())
+    assert state["source_paths"] == [
+        "openlibrary/solr/__pycache__/metadata.json",
+        "openlibrary/solr/standalone.pyc",
+        "openlibrary/solr/query_utils.py",
+        "openlibrary/solr/cache.pyc.py",
+    ]
+    assert state["generated_paths"] == [
+        "openlibrary/solr/__pycache__/query_utils.cpython-311.pyc",
+    ]
+
+
 def test_stop_guard_allows_hook_infrastructure_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -70,3 +164,108 @@ def test_stop_guard_allows_hook_infrastructure_error(
 
     assert result["decision"] == "allow"
     assert result["reason"] == "patch_guard_error"
+
+
+def test_stop_guard_rejects_only_verified_missing_baseline_gitlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    oid = "1" * 40
+    patch = (
+        "diff --git a/e b/e\n"
+        "deleted file mode 160000\n"
+        f"index {oid}..{'0' * 40}\n"
+        "--- a/e\n"
+        "+++ /dev/null\n"
+        "@@ -1 +0,0 @@\n"
+        f"-Subproject commit {oid}\n"
+    )
+    monkeypatch.setattr(guard, "_container_patch", lambda *args: patch)
+    monkeypatch.setattr(
+        guard,
+        "_container_gitlink_probe",
+        lambda *args: {
+            "status": "verified",
+            "source_patch_sha256": "2" * 64,
+            "paths": [
+                {
+                    "path": "e",
+                    "old_oid": oid,
+                    "base_oid": oid,
+                    "probe_status": "verified",
+                }
+            ],
+        },
+    )
+
+    result = guard.evaluate_stop(_env(tmp_path, rejections=1))
+
+    assert result["decision"] == "deny"
+    assert result["reason"] == "empty_source_patch"
+    state = json.loads((tmp_path / "empty_patch_stop_guard.json").read_text())
+    assert state.get("source_paths", []) == []
+    assert state["generated_paths"] == ["e"]
+    assert state["gitlink_probe"]["paths"][0]["probe_status"] == "verified"
+
+
+def test_stop_guard_keeps_gitlink_when_baseline_oid_does_not_match(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    oid = "1" * 40
+    patch = (
+        "diff --git a/e b/e\n"
+        "deleted file mode 160000\n"
+        f"index {oid}..{'0' * 40}\n"
+        "--- a/e\n"
+        "+++ /dev/null\n"
+        "@@ -1 +0,0 @@\n"
+        f"-Subproject commit {oid}\n"
+    )
+    monkeypatch.setattr(guard, "_container_patch", lambda *args: patch)
+    monkeypatch.setattr(
+        guard,
+        "_container_gitlink_probe",
+        lambda *args: {
+            "status": "baseline_mismatch",
+            "source_patch_sha256": "2" * 64,
+            "paths": [
+                {
+                    "path": "e",
+                    "old_oid": oid,
+                    "base_oid": "3" * 40,
+                    "probe_status": "mismatch",
+                }
+            ],
+        },
+    )
+
+    result = guard.evaluate_stop(_env(tmp_path, rejections=1))
+
+    assert result == {"decision": "allow", "reason": "source_patch_present"}
+    state = json.loads((tmp_path / "empty_patch_stop_guard.json").read_text())
+    assert state["source_paths"] == ["e"]
+    assert state["generated_paths"] == []
+
+
+def test_stop_guard_keeps_gitlink_absent_from_snapshot_allowlist(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    oid = "1" * 40
+    patch = (
+        "diff --git a/e b/e\n"
+        "deleted file mode 160000\n"
+        f"index {oid}..{'0' * 40}\n"
+        "--- a/e\n"
+        "+++ /dev/null\n"
+        "@@ -1 +0,0 @@\n"
+        f"-Subproject commit {oid}\n"
+    )
+    monkeypatch.setattr(guard, "_container_patch", lambda *args: patch)
+
+    result = guard.evaluate_stop(_env(tmp_path, rejections=1))
+
+    assert result == {"decision": "allow", "reason": "source_patch_present"}
+    state = json.loads((tmp_path / "empty_patch_stop_guard.json").read_text())
+    assert state["source_paths"] == ["e"]
+    assert state["generated_paths"] == []
+    assert state["gitlink_probe"]["status"] == "no_eligible_candidates"
+    assert state["gitlink_probe"]["paths"][0]["probe_status"] == "not_snapshot_removed"

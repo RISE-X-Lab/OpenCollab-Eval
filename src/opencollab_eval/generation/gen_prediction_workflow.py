@@ -45,7 +45,19 @@ from opencollab_eval.engine.evaluator import EvalTask, run_eval_task  # noqa: E4
 from opencollab_eval.engine.swe_generation_proof import (  # noqa: E402
     current_generation_proof_valid,
 )
-from opencollab_eval.engine.test_injection import _decode_git_c_path  # noqa: E402
+from opencollab_eval.patch_diff import (  # noqa: E402
+    normalize_patch_path as _normalize_patch_path,
+)
+from opencollab_eval.patch_diff import (
+    patch_entries as _patch_entries,
+)
+from opencollab_eval.patch_diff import (
+    patch_paths as _patch_paths,
+)
+from opencollab_eval.patch_diff import (
+    remove_generated_python_bytecode_blocks as _remove_generated_bytecode_blocks,
+)
+from opencollab_eval.patch_paths import is_generated_python_bytecode_path  # noqa: E402
 
 from . import gen_prediction as gp  # noqa: E402 — shared container plumbing
 from .container_quiescence import require_container_quiescence  # noqa: E402
@@ -123,75 +135,6 @@ VALIDATION_ARTIFACT_MARKERS = (
     "tmp-validation",
 )
 TEST_DIR_NAMES = {"test", "tests", "testing"}
-
-
-def _patch_entries(patch: str) -> list[tuple[str, str]]:
-    entries: list[tuple[str, str]] = []
-    for line in patch.splitlines():
-        if not line.startswith("diff --git "):
-            continue
-        tokens = _git_diff_header_tokens(line)
-        if len(tokens) < 2:
-            continue
-        old_path = _git_diff_endpoint(tokens[0], "a")
-        new_path = _git_diff_endpoint(tokens[1], "b")
-        if old_path or new_path:
-            entries.append((old_path, new_path))
-    return entries
-
-
-def _patch_paths(patch: str) -> list[str]:
-    paths: dict[str, None] = {}
-    for old_path, new_path in _patch_entries(patch):
-        for path in (old_path, new_path):
-            if path:
-                paths.setdefault(path, None)
-    return list(paths)
-
-
-def _git_diff_header_tokens(header: str) -> list[str]:
-    text = str(header or "").strip()
-    prefix = "diff --git "
-    if not text.startswith(prefix):
-        return []
-    text = text[len(prefix) :]
-    tokens: list[str] = []
-    index = 0
-    while index < len(text) and len(tokens) < 2:
-        while index < len(text) and text[index].isspace():
-            index += 1
-        if index >= len(text):
-            break
-        start = index
-        if text[index] == '"':
-            index += 1
-            while index < len(text):
-                if text[index] == "\\":
-                    index += 2
-                    continue
-                if text[index] == '"':
-                    index += 1
-                    break
-                index += 1
-        else:
-            while index < len(text) and not text[index].isspace():
-                index += 1
-        tokens.append(text[start:index])
-    return tokens
-
-
-def _git_diff_endpoint(token: str, side: str) -> str:
-    path = _decode_git_c_path(token)
-    if path == "/dev/null":
-        return ""
-    prefix = f"{side}/"
-    if path.startswith(prefix):
-        path = path[len(prefix) :]
-    return path
-
-
-def _normalize_patch_path(path: str) -> str:
-    return path.strip().replace("\\", "/").lstrip("/")
 
 
 def _workflow_allowed_patch_paths(workflow_result: object) -> set[str] | None:
@@ -373,17 +316,33 @@ def extract_patch_guarded(
     patch, extraction = gp.extract_patch_trusted(cid, trusted_baseline)
     if not guard_validation_artifacts:
         return patch, [], extraction.as_dict()
-    violations = _patch_paths_to_remove(
+    generated_bytecode = {
+        path
+        for entry in _patch_entries(patch)
+        for path in entry
+        if path and is_generated_python_bytecode_path(path)
+    }
+    filtered_patch, removed = _remove_generated_bytecode_blocks(
         patch,
+        generated_bytecode,
+    )
+    violations = _patch_paths_to_remove(
+        filtered_patch,
         allowed_paths=allowed_paths,
         disallowed_paths=disallowed_paths,
     )
-    if not violations:
-        return patch, [], extraction.as_dict()
-    raise RuntimeError(
-        "trusted host patch contains disallowed paths: "
-        + ", ".join(sorted(set(violations)))
-    )
+    if violations:
+        raise RuntimeError(
+            "trusted host patch contains disallowed paths: "
+            + ", ".join(sorted(set(violations)))
+        )
+    if not removed:
+        return filtered_patch, [], extraction.as_dict()
+    proof = extraction.as_dict()
+    encoded = filtered_patch.encode("utf-8", errors="surrogatepass")
+    proof["patch_sha256"] = hashlib.sha256(encoded).hexdigest()
+    proof["patch_bytes"] = len(encoded)
+    return filtered_patch, removed, proof
 
 
 async def generate(

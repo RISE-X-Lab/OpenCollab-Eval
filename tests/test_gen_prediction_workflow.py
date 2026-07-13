@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 
 import pytest
@@ -199,6 +200,107 @@ def test_patch_paths_to_remove_honors_disallowed_paths():
         allowed_paths={"pkg/widget.py", "tmp/check.py"},
         disallowed_paths={"tmp/check.py"},
     ) == ["tmp/check.py"]
+
+
+@pytest.mark.parametrize(
+    "bytecode_path",
+    [
+        "pkg/__pycache__/widget.cpython-311.pyc",
+        "tests/__pycache__/test_widget.cpython-311-pytest-8.4.1.pyc",
+    ],
+)
+def test_guarded_extraction_removes_generated_python_bytecode(
+    monkeypatch,
+    bytecode_path,
+):
+    source_patch = (
+        "diff --git a/pkg/widget.py b/pkg/widget.py\n"
+        "--- a/pkg/widget.py\n"
+        "+++ b/pkg/widget.py\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+    )
+    patch = source_patch + (
+        f"diff --git a/{bytecode_path} b/{bytecode_path}\n"
+        "new file mode 100644\n"
+        f"Binary files /dev/null and b/{bytecode_path} differ\n"
+    )
+
+    class Extraction:
+        @staticmethod
+        def as_dict():
+            return {"patch_sha256": "0" * 64, "patch_bytes": len(patch)}
+
+    monkeypatch.setattr(
+        gpw.gp,
+        "extract_patch_trusted",
+        lambda *_args: (patch, Extraction()),
+    )
+
+    filtered, removed, proof = gpw.extract_patch_guarded(
+        "container",
+        object(),
+        guard_validation_artifacts=True,
+    )
+
+    encoded = source_patch.encode("utf-8")
+    assert filtered == source_patch
+    assert removed == [bytecode_path]
+    assert proof["patch_sha256"] == hashlib.sha256(encoded).hexdigest()
+    assert proof["patch_bytes"] == len(encoded)
+
+
+def test_guarded_extraction_still_rejects_test_source(monkeypatch):
+    patch = (
+        "diff --git a/tests/test_widget.py b/tests/test_widget.py\n"
+        "--- a/tests/test_widget.py\n"
+        "+++ b/tests/test_widget.py\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+    )
+
+    class Extraction:
+        @staticmethod
+        def as_dict():
+            return {"patch_sha256": "0" * 64, "patch_bytes": len(patch)}
+
+    monkeypatch.setattr(
+        gpw.gp,
+        "extract_patch_trusted",
+        lambda *_args: (patch, Extraction()),
+    )
+
+    with pytest.raises(RuntimeError, match="tests/test_widget.py"):
+        gpw.extract_patch_guarded(
+            "container",
+            object(),
+            guard_validation_artifacts=True,
+        )
+
+
+def test_generated_bytecode_filter_rejects_mixed_path_rename():
+    bytecode_path = "tests/__pycache__/test_widget.cpython-311.pyc"
+    patch = (
+        f"diff --git a/{bytecode_path} b/pkg/widget.py\n"
+        "similarity index 100%\n"
+        f"rename from {bytecode_path}\n"
+        "rename to pkg/widget.py\n"
+    )
+
+    with pytest.raises(RuntimeError, match="mixed-path entry"):
+        gpw._remove_generated_bytecode_blocks(patch, {bytecode_path})
+
+
+def test_generated_bytecode_filter_rejects_unmatched_path():
+    patch = "diff --git a/pkg/widget.py b/pkg/widget.py\n"
+
+    with pytest.raises(RuntimeError, match="filtering was incomplete"):
+        gpw._remove_generated_bytecode_blocks(
+            patch,
+            {"tests/__pycache__/test_widget.cpython-311.pyc"},
+        )
 
 
 def test_empty_allowlist_removes_every_patch_path_for_guarded_workflow():
