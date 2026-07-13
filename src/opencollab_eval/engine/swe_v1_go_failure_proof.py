@@ -36,11 +36,17 @@ def _declared_tests(proof: dict[str, Any]) -> list[str]:
 
 def _parse_go_log(
     log_text: str,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], list[str]] | None:
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[tuple[str, str]],
+    list[str],
+] | None:
     events: list[dict[str, Any]] = []
     discoveries: list[dict[str, Any]] = []
-    plain_diagnostics: list[str] = []
+    plain_diagnostics: list[tuple[str, str]] = []
     build_headers: list[str] = []
+    current_build_header = ""
     for raw_line in str(log_text or "").splitlines():
         line = raw_line.strip()
         if not line:
@@ -61,9 +67,12 @@ def _parse_go_log(
             diagnostic = _PLAIN_TEST_DIAGNOSTIC_RE.fullmatch(line)
             header = _GO_BUILD_HEADER_RE.fullmatch(line)
             if diagnostic is not None:
-                plain_diagnostics.append(diagnostic.group("path"))
+                plain_diagnostics.append(
+                    (current_build_header, diagnostic.group("path"))
+                )
             elif header is not None and header.group("package") == header.group("test_package"):
-                build_headers.append(header.group("package"))
+                current_build_header = header.group("package")
+                build_headers.append(current_build_header)
             else:
                 return None
             continue
@@ -325,27 +334,70 @@ def go_failure_proof_matches(
     if plain_diagnostics and (
         not expected_command
         or expected_command != observed_command
-        or len(failed_packages) != 1
     ):
         return False
-    if build_headers and (
-        len(set(build_headers)) != 1
-        or len(failed_packages) != 1
-        or not _package_matches(next(iter(failed_packages)), build_headers[0])
-    ):
-        return False
+    if build_headers:
+        unique_headers = set(build_headers)
+        if len(unique_headers) != len(failed_packages) or any(
+            sum(_package_matches(failed_package, header) for header in unique_headers) != 1
+            for failed_package in failed_packages
+        ) or any(
+            sum(_package_matches(failed_package, header) for failed_package in failed_packages) != 1
+            for header in unique_headers
+        ):
+            return False
     if legacy_dynamic and len(failed_packages) != 1:
         return False
+    if legacy_dynamic:
+        failed_package = next(iter(failed_packages))
+        package_output = "".join(
+            str(event.get("Output") or "")
+            for event in events
+            if event.get("Package") == failed_package and event.get("Action") == "output"
+        )
+        build_output = _build_output_for_package(events, failed_package)
+        return bool(
+            "[build failed]" in package_output
+            and any(
+                event.get("Action") == "build-fail"
+                and _package_matches(
+                    failed_package,
+                    str(event.get("ImportPath") or "").split(" [", 1)[0],
+                )
+                for event in events
+            )
+            and _TEST_DIAGNOSTIC_RE.search(build_output)
+        )
+    proven_packages = []
     for failed_package in failed_packages:
+        matching_bindings = [
+            binding
+            for binding in bindings
+            if _package_matches(binding["package"], failed_package)
+        ]
+        if len(matching_bindings) != 1:
+            return False
+        binding = matching_bindings[0]
         package_output = "".join(
             str(event.get("Output") or "")
             for event in events
             if event.get("Package") == failed_package and event.get("Action") == "output"
         )
         if "[build failed]" not in package_output:
-            continue
+            return False
         if plain_diagnostics:
-            diagnostics = plain_diagnostics
+            matching_headers = [
+                header
+                for header in build_headers
+                if _package_matches(failed_package, header)
+            ]
+            if len(matching_headers) != 1:
+                return False
+            diagnostics = [
+                path
+                for header, path in plain_diagnostics
+                if header == matching_headers[0]
+            ]
         else:
             build_output = _build_output_for_package(events, failed_package)
             build_failed = any(
@@ -357,24 +409,18 @@ def go_failure_proof_matches(
                 for event in events
             )
             if not build_failed:
-                continue
+                return False
             diagnostics = [
                 match.group("path")
                 for match in _TEST_DIAGNOSTIC_RE.finditer(build_output)
             ]
-        if legacy_dynamic:
-            if diagnostics and not plain_diagnostics:
-                return True
-            continue
-        for binding in bindings:
-            if not _package_matches(binding["package"], failed_package):
-                continue
-            if diagnostics and all(
-                _diagnostic_belongs_to_package(path, binding["package"])
-                for path in diagnostics
-            ):
-                return True
-    return False
+        if not diagnostics or not all(
+            _diagnostic_belongs_to_package(path, binding["package"])
+            for path in diagnostics
+        ):
+            return False
+        proven_packages.append(failed_package)
+    return bool(proven_packages)
 
 
 __all__ = [

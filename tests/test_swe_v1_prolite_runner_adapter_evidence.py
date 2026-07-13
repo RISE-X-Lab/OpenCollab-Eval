@@ -122,6 +122,80 @@ def test_prolite_js_file_target_uses_positive_event_parser(
     ]
 
 
+def test_task9_jest_suite_load_failure_binds_official_mock_and_exact_command(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    suite = (
+        "packages/components/components/drawer/views/SecurityCenter/PassAliases/"
+        "PassAliases.test.tsx"
+    )
+    declared_suite = suite.removeprefix("packages/components/")
+    missing_module = (
+        "@proton/components/components/drawer/views/SecurityCenter/PassAliases/"
+        "usePassAliasesProviderSetup"
+    )
+    target = declared_suite + " | PassAliases renders the aliases list"
+    test_patch = (
+        f"diff --git a/{suite} b/{suite}\n"
+        f"--- a/{suite}\n"
+        f"+++ b/{suite}\n"
+        "@@ -1 +1,2 @@\n"
+        "+jest.mock('"
+        + missing_module
+        + "', () => ({ usePassAliasesSetup: () => {} }));\n"
+    )
+    plan = namespace["prolite_test_plan"](
+        {
+            "repo_language": "js",
+            "repo": "protonmail/webclients",
+            "selected_test_files_to_run": json.dumps([suite]),
+            "test_patch": test_patch,
+        },
+        [target],
+    )
+    proof = plan["proofs"][0]
+    command = plan["commands"][0]
+    result = {
+        "numFailedTestSuites": 1,
+        "numRuntimeErrorTestSuites": 1,
+        "numTotalTestSuites": 1,
+        "numTotalTests": 0,
+        "success": False,
+        "testResults": [
+            {
+                "assertionResults": [],
+                "name": "/app/" + suite,
+                "status": "failed",
+                "message": (
+                    "  ● Test suite failed to run\n\n"
+                    f"    Cannot find module '{missing_module}' from '{declared_suite}'\n"
+                ),
+            }
+        ],
+    }
+    log = f"FAIL {suite}\n" + json.dumps(result) + "\n"
+
+    assert proof["suite_module_mocks"] == [
+        {"suite": suite, "modules": [missing_module]}
+    ]
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof, log, "", command, command
+    ) is True
+    rejected = (
+        log.replace(missing_module, "@proton/components/unbound", 1),
+        log.replace(declared_suite, "components/other.test.tsx", 1),
+        log.replace("numRuntimeErrorTestSuites\": 1", "numRuntimeErrorTestSuites\": 0"),
+        log.replace("Cannot find module", "Validation Error"),
+        log.replace("FAIL " + suite, "FAIL packages/components/other.test.tsx"),
+    )
+    for bad_log in rejected:
+        assert namespace["_plan_log_failure_proof_matches"](
+            proof, bad_log, "", command, command
+        ) is False
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof, log, "", command, command + " changed"
+    ) is False
+
+
 def test_prolite_go_log_proof_rejects_package_pass_without_test_event(tmp_path):
     namespace = _remote_namespace(tmp_path)
     proof = {"kind": "go_json_test_pass", "test": "TestWidget"}
@@ -587,6 +661,76 @@ def test_task76_fresh_discovery_accepts_same_package_test_compile_error(tmp_path
         "",
         command,
         command,
+    ) is False
+
+
+def test_task97_dynamic_build_failure_proves_each_failed_package(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    proof = {
+        "kind": "go_json_test_pass",
+        "tests": ["TestAI", "TestModel"],
+        "dynamic_discovery": True,
+    }
+    packages = (
+        ("./lib/ai", "TestAI", "lib/ai/ai_test.go"),
+        ("./lib/ai/model", "TestModel", "lib/ai/model/model_test.go"),
+    )
+    parts = []
+    for package, test, test_file in packages:
+        import_path = "example.org/project/" + package.removeprefix("./")
+        parts.append(
+            "OPENCOLLAB_GO_TARGET_DISCOVERY "
+            + json.dumps(
+                {"package": package, "tests": [test], "test_files": [test_file]},
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        parts.append(f"# {import_path} [{import_path}.test]\n")
+        parts.append(f"{test_file}:21:7: undefined: missingSymbol\n")
+        parts.append(
+            json.dumps(
+                {
+                    "Action": "output",
+                    "Package": import_path,
+                    "Output": f"FAIL\t{import_path} [build failed]\n",
+                }
+            )
+            + "\n"
+        )
+        parts.append(json.dumps({"Action": "fail", "Package": import_path}) + "\n")
+    log = "".join(parts)
+    command = "exact two-package discovery command"
+
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof, log, "", command, command
+    ) is True
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        log.replace("lib/ai/ai_test.go:21", "lib/ai/model/ai_test.go:21", 1),
+        "",
+        command,
+        command,
+    ) is False
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        log.replace(
+            "# example.org/project/lib/ai/model [example.org/project/lib/ai/model.test]",
+            "# example.org/project/lib/wrong [example.org/project/lib/wrong.test]",
+        ),
+        "",
+        command,
+        command,
+    ) is False
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        log + json.dumps({"Action": "fail", "Package": "example.org/project/other"}),
+        "",
+        command,
+        command,
+    ) is False
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof, log, "", command, command + " changed"
     ) is False
 
 
