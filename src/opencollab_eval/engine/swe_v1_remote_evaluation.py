@@ -532,7 +532,7 @@ def eval_for_task(row):
                 "attempt": current_attempts + 1,
                 "previous_status": result.get("status"),
                 "technical_reasons": (
-                    result.get("summary", {}).get("technical_reasons", [])
+                    (result.get("summary") or {}).get("technical_reasons", [])
                 ),
             },
         )
@@ -568,7 +568,7 @@ def write_markdown(summary):
         report = row.get("eval", {}).get("report_path") or ""
         patch_sha = (
             row.get("generation", {}).get("patch_sha256")
-            or row.get("eval", {}).get("summary", {}).get("patch_sha256")
+            or (row.get("eval", {}).get("summary") or {}).get("patch_sha256")
             or ""
         )
         lines.append(
@@ -577,7 +577,7 @@ def write_markdown(summary):
                 task=row["task"],
                 gen=row.get("generation", {}).get("status", ""),
                 ev=row.get("eval", {}).get("status", ""),
-                resolved=row.get("eval", {}).get("summary", {}).get("resolved", ""),
+                resolved=(row.get("eval", {}).get("summary") or {}).get("resolved", ""),
                 patch=patch_sha[:12],
                 report=report,
             )
@@ -730,11 +730,12 @@ def main():
         "eval_done": sum(1 for row in result_rows if row["eval"].get("status") == "eval_done"),
         "would_eval": sum(1 for row in result_rows if row["eval"].get("status") == "would_eval"),
         **eval_attempt_summary(result_rows),
-        "resolved": sum(1 for row in result_rows if row["eval"].get("summary", {}).get("resolved") is True),
+        "resolved": sum(1 for row in result_rows if (row["eval"].get("summary") or {}).get("resolved") is True),
         "unresolved": sum(
             1
             for row in result_rows
-            if row["eval"].get("status") == "eval_done" and row["eval"].get("summary", {}).get("resolved") is False
+            if row["eval"].get("status") == "eval_done"
+            and (row["eval"].get("summary") or {}).get("resolved") is False
         ),
         "technical_failed": sum(
             1

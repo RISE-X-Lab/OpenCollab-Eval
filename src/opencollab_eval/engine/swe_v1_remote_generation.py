@@ -22,7 +22,23 @@ def bind_eval_container_marker(cidfile, marker_path, container_name, proc, timeo
             container_id = raw.decode("ascii").strip().lower()
         except FileNotFoundError:
             container_id = ""
-        except (OSError, UnicodeDecodeError, remote_cleanup.CleanupInputError) as exc:
+        except remote_cleanup.CleanupInputError as exc:
+            try:
+                cid_status = cidfile.lstat()
+            except FileNotFoundError:
+                container_id = ""
+            except OSError as status_error:
+                return {
+                    "ok": False,
+                    "status": "invalid_cidfile",
+                    "details": str(status_error),
+                }
+            else:
+                if remote_cleanup.stat.S_ISREG(cid_status.st_mode) and cid_status.st_size == 0:
+                    container_id = ""
+                else:
+                    return {"ok": False, "status": "invalid_cidfile", "details": str(exc)}
+        except (OSError, UnicodeDecodeError) as exc:
             return {"ok": False, "status": "invalid_cidfile", "details": str(exc)}
         if remote_cleanup.FULL_CONTAINER_ID_RE.fullmatch(container_id):
             try:

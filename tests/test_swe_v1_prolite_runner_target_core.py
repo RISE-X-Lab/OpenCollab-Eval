@@ -165,6 +165,24 @@ def test_go_test_command_discovers_each_named_test_package(tmp_path):
     assert any("-json ./pkg/b" in line and "TestB" in line for line in lines)
 
 
+def test_go_plan_discovers_packages_for_bare_test_names():
+    namespace = _command_namespace()
+
+    plan = namespace["prolite_test_plan"](
+        {"repo_language": "go", "repo": "gravitational/teleport"},
+        ["TestColumn", "TestMessage"],
+    )
+
+    assert plan["adapter"] == "go-test-json-discovery"
+    assert plan["coverage_verified"] is True
+    assert plan["target_batches"] == [["TestColumn", "TestMessage"]]
+    assert len(plan["commands"]) == 1
+    assert "unable to map Go tests to packages" in plan["commands"][0]
+    assert plan["proofs"] == [
+        {"kind": "go_json_test_pass", "tests": ["TestColumn", "TestMessage"]}
+    ]
+
+
 def test_ansible_test_command_forces_repository_import_root():
     namespace = _command_namespace()
 

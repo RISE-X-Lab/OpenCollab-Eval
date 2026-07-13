@@ -95,10 +95,17 @@ def _plan_log_proof_matches(proof, log_text, proof_text=""):
         return result.get("ok") is True
     if proof.get("kind") != "go_json_test_pass":
         return False
-    expected_test = proof.get("test")
-    if not isinstance(expected_test, str) or not expected_test:
+    declared_tests = proof.get("tests")
+    if declared_tests is None:
+        declared_tests = [proof.get("test")]
+    if (
+        not isinstance(declared_tests, list)
+        or not declared_tests
+        or any(not isinstance(test, str) or not test for test in declared_tests)
+    ):
         return False
-    matched = False
+    expected_tests = set(declared_tests)
+    passed_tests = set()
     for raw_line in log_text.splitlines():
         if not raw_line.strip():
             continue
@@ -108,9 +115,9 @@ def _plan_log_proof_matches(proof, log_text, proof_text=""):
             return False
         if not isinstance(event, dict):
             return False
-        if event.get("Action") == "pass" and event.get("Test") == expected_test:
-            matched = True
-    return matched
+        if event.get("Action") == "pass" and event.get("Test") in expected_tests:
+            passed_tests.add(event["Test"])
+    return passed_tests == expected_tests
 
 
 def task_session(task):
@@ -354,6 +361,9 @@ def _is_runnable_test_command(cmd):
         or cmd.startswith("python3 -c ")
         and "missing declared Mocha titles" in cmd
         and "json-stream" in cmd
+        or cmd.startswith("python3 -c ")
+        and "unable to map Go tests to packages" in cmd
+        and "go\", \"test\", \"-count=1\", \"-json\"" in cmd
     )
 
 
@@ -460,6 +470,18 @@ def prolite_test_plan(
     if language == "go" or repo.endswith("/vuls") or repo.endswith("/teleport") or repo.endswith("/navidrome"):
         specs = [go_exact_test_spec(item) for item in tests]
         if any(spec is None for spec in specs):
+            if all(
+                re.fullmatch(r"Test[A-Za-z0-9_]*(?:/[A-Za-z0-9_.-]+)*", item)
+                for item in tests
+            ):
+                return _test_plan(
+                    "go-test-json-discovery",
+                    tests,
+                    [tests],
+                    [go_test_command(tests)],
+                    "runtime_discovered_exact_test_events",
+                    proofs=[{"kind": "go_json_test_pass", "tests": tests}],
+                )
             return _unsupported_test_plan(tests)
         exact_specs = [spec for spec in specs if spec is not None]
         target_batches = [[spec["declared_target"]] for spec in exact_specs]

@@ -128,6 +128,22 @@ def test_prolite_go_log_proof_rejects_package_pass_without_test_event(tmp_path):
     ) is True
 
 
+def test_prolite_go_log_proof_requires_every_discovered_target(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    proof = {
+        "kind": "go_json_test_pass",
+        "tests": ["TestColumn", "TestMessage"],
+    }
+    complete = (
+        '{"Action":"pass","Test":"TestColumn"}\n'
+        '{"Action":"pass","Test":"TestMessage"}\n'
+    )
+    partial = '{"Action":"pass","Test":"TestColumn"}\n'
+
+    assert namespace["_plan_log_proof_matches"](proof, complete) is True
+    assert namespace["_plan_log_proof_matches"](proof, partial) is False
+
+
 def test_prolite_test_command_never_falls_back_to_a_passing_noop(tmp_path):
     namespace = _remote_namespace(tmp_path)
     command = namespace["prolite_test_command"]

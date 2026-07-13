@@ -154,6 +154,39 @@ def test_pending_marker_with_wrong_owner_is_preserved(tmp_path):
     assert marker.exists()
 
 
+def test_eval_container_binding_waits_for_zero_length_regular_cidfile(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    cidfile = tmp_path / "container.cid"
+    marker = tmp_path / "container.marker.json"
+    container_name = "opencollab-prolite-delayed-cid"
+    cidfile.touch()
+    _owned_eval_marker(namespace, marker, "", container_name, state="pending")
+
+    class RunningProcess:
+        @staticmethod
+        def poll():
+            return None
+
+    def finish_cidfile():
+        threading.Event().wait(0.03)
+        cidfile.write_text("a" * 64 + "\n", encoding="ascii")
+
+    writer = threading.Thread(target=finish_cidfile)
+    writer.start()
+    try:
+        result = namespace["bind_eval_container_marker"](
+            cidfile,
+            marker,
+            container_name,
+            RunningProcess(),
+        )
+    finally:
+        writer.join()
+
+    assert result == {"ok": True, "container_id": "a" * 64}
+    assert json.loads(marker.read_text(encoding="utf-8"))["state"] == "active"
+
+
 def test_eval_timeout_returns_technical_result(monkeypatch, tmp_path):
     namespace = _remote_namespace(tmp_path, eval_timeout=1)
     _bypass_container_binding(namespace)

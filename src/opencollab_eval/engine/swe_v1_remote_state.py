@@ -122,8 +122,8 @@ def configure(config: dict[str, Any]) -> None:
     global ACTIVE_CHILD_PGIDS, ACTIVE_FIFO_PATHS
     global RUNNER_LOCK_FD, RUNNER_OWNER_RECORD, RUNNER_STATE_THREAD_LOCK
 
+    requested_eval_only = bool(config.get("eval_only", False))
     required = (
-        "token",
         "owner_nonce",
         "remote_root",
         "remote_repo",
@@ -135,10 +135,12 @@ def configure(config: dict[str, Any]) -> None:
         "remote_proxy_base_url",
     )
     missing = [name for name in required if not str(config.get(name) or "").strip()]
+    if not requested_eval_only and not str(config.get("token") or "").strip():
+        missing.insert(0, "token")
     if missing:
         raise ValueError("missing remote runner configuration: " + ", ".join(missing))
     cfg = dict(config)
-    token = str(cfg["token"])
+    token = str(cfg.get("token") or "")
     owner_nonce = str(cfg["owner_nonce"])
     remote_root = pathlib.Path(cfg["remote_root"])
     remote_repo = pathlib.Path(cfg["remote_repo"])

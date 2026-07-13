@@ -93,8 +93,9 @@ def test_eval_only_parent_budget_allows_only_the_remaining_attempt(tmp_path):
 
     budget = runner.apply_parent_eval_budget(args)
 
-    assert budget["effective_max_eval_attempts"] == 1
-    assert args.max_eval_attempts == 1
+    assert budget["effective_additional_eval_attempts"] == 1
+    assert budget["effective_max_eval_attempts"] == 2
+    assert args.max_eval_attempts == 2
 
 
 def test_eval_only_parent_budget_rejects_an_extra_retry(tmp_path):
