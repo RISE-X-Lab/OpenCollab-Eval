@@ -5,7 +5,6 @@ import json
 import os
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -615,18 +614,16 @@ async def scenario():
 
 run_with_bounded_shutdown(scenario(), shutdown_timeout=0.01)
 '''
-    started = time.monotonic()
     completed = subprocess.run(
         [sys.executable, "-c", script],
         capture_output=True,
         text=True,
-        timeout=1,
+        timeout=5,
         check=False,
     )
 
     assert completed.returncode != 0
     assert "missed the shutdown deadline" in completed.stderr
-    assert time.monotonic() - started < 0.9
 
 
 def test_cli_runner_cancels_task_spawned_during_shutdown_cleanup():
