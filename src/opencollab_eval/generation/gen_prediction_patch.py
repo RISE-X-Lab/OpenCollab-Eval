@@ -396,6 +396,26 @@ def _reject_harness_paths(
             raise RuntimeError("trusted host patch contains a harness-owned path")
 
 
+def _restore_absent_gitlinks(
+    git: str,
+    common: list[str],
+    root: Path,
+    snapshot: SolverGitSnapshot,
+    *,
+    env: dict[str, str],
+    timeout: float,
+) -> None:
+    args = [*common, "update-index", "--add"]
+    for path, oid in snapshot.removed_gitlinks:
+        relative = PurePosixPath(path)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise RuntimeError("snapshot contains an unsafe Gitlink path")
+        if not root.joinpath(*relative.parts).exists():
+            args.extend(("--cacheinfo", "160000", oid, path))
+    if len(args) > len(common) + 2:
+        _run_git(git, args, env=env, timeout=timeout)
+
+
 def _extract_patch_from_copy(root: Path, baseline: TrustedPatchBaseline) -> str:
     snapshot = baseline.snapshot
     source_git = root / ".git"
@@ -438,6 +458,14 @@ def _extract_patch_from_copy(root: Path, baseline: TrustedPatchBaseline) -> str:
                 ":(exclude).opencollab",
                 ":(exclude).opencollab/**",
             ],
+            env=env,
+            timeout=timeout,
+        )
+        _restore_absent_gitlinks(
+            git,
+            common,
+            root,
+            snapshot,
             env=env,
             timeout=timeout,
         )

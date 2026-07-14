@@ -242,7 +242,7 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
             "OPENCOLLAB_REMOTE_REPO": str(remote_repo),
         }
     )
-    env.update({str(key): str(value) for key, value in workflow_env.items()})
+    env.update(effective_workflow_env())
     if openhands_command:
         env["OPENCOLLAB_OPENHANDS_COMMAND"] = openhands_command
     cmd = [

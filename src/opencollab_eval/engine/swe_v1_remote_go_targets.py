@@ -2,6 +2,7 @@
 
 # ruff: noqa: F403, F405
 
+from opencollab_eval.engine.swe_test_plan_contract import is_go_test_name
 from opencollab_eval.engine.swe_v1_remote_state import *
 
 
@@ -36,10 +37,7 @@ def go_exact_test_spec(raw):
     if "::" not in declared:
         return None
     path, test_name = (part.strip() for part in declared.split("::", 1))
-    if not path.endswith(".go") or re.fullmatch(
-        r"Test[A-Za-z0-9_]*(?:/[A-Za-z0-9_.-]+)*",
-        test_name,
-    ) is None:
+    if not path.endswith(".go") or not is_go_test_name(test_name):
         return None
     parent = str(pathlib.PurePosixPath(path.replace("\\", "/")).parent)
     if parent in {"", "."}:

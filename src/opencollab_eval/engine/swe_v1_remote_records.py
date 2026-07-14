@@ -323,7 +323,7 @@ def generation_runtime_identity():
         "llm_base_url_sha256": hashlib.sha256(
             remote_proxy_base_url.encode("utf-8")
         ).hexdigest(),
-        "workflow_env": dict(sorted(workflow_env.items())),
+        "workflow_env": effective_workflow_env(),
     }
     for key, value in (
         ("llm_model", llm_model),
@@ -341,6 +341,12 @@ def generation_runtime_identity():
         )
         identity["openhands_command_sha256"] = openhands_command_sha256
     return identity
+
+
+def effective_workflow_env():
+    values = {"OPENCOLLAB_THINKING": "false"}
+    values.update({str(key): str(value) for key, value in workflow_env.items()})
+    return dict(sorted(values.items()))
 
 
 def generation_identity_matches(prediction, metric):

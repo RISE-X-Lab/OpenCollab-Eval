@@ -23,6 +23,7 @@ def _run_runtime_sync_command_locally(command, *, timeout=120, input_text=None):
     assert command[:2] == ["ssh", "remote-host"]
     result = subprocess.run(
         ["sh", "-c", command[-1]],
+        env={**os.environ, "PATH": f"{Path(sys.executable).parent}:{os.environ.get('PATH', '')}"},
         text=True,
         capture_output=True,
         check=False,
@@ -186,8 +187,9 @@ def test_runtime_archive_imports_generation_entrypoints_from_clean_directory(mon
                 [
                     sys.executable,
                     "-c",
-                    "import opencollab_eval.generation.gen_prediction; "
-                    "import opencollab_eval.generation.gen_prediction_workflow",
+                    "import opencollab, opencollab_eval.generation.gen_prediction; "
+                    "import opencollab_eval.generation.gen_prediction_workflow; "
+                    "print(opencollab.__file__)",
                 ],
                 cwd=extracted,
                 env={**os.environ, "PYTHONPATH": str(extracted / "src")},
@@ -197,6 +199,7 @@ def test_runtime_archive_imports_generation_entrypoints_from_clean_directory(mon
                 timeout=30,
             )
             assert probe.returncode == 0, probe.stderr
+            assert str(extracted / "src" / "opencollab") in probe.stdout
             imported = True
         return subprocess.CompletedProcess(command, 0, "", "")
 
@@ -210,6 +213,9 @@ def test_runtime_archive_imports_generation_entrypoints_from_clean_directory(mon
 
     assert imported is True
     assert "src/opencollab_eval" in summary["synced_dirs"]
+    assert "src/opencollab" in summary["synced_dirs"]
+    assert summary["opencollab"]["sdk_api_version"] == 2
+    assert (extracted / "src" / "opencollab" / "sdk" / "__init__.py").is_file()
     for name in (
         "gen_prediction_agent.py",
         "gen_prediction_config.py",
@@ -263,7 +269,9 @@ def test_runtime_sync_replaces_reused_directory_with_manifested_snapshot(monkeyp
     manifest = json.loads((remote_runtime / "runtime-manifest.json").read_text(encoding="utf-8"))
     assert manifest["synced"] == summary["synced"]
     assert manifest["synced_dirs"] == summary["synced_dirs"]
+    assert manifest["opencollab"] == summary["opencollab"]
     assert "src/opencollab_eval/generation/gen_prediction.py" in manifest["archive_members"]
+    assert "src/opencollab/sdk/__init__.py" in manifest["archive_members"]
     assert not list(tmp_path.glob("remote-runtime.*"))
 
 

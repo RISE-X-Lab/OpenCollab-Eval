@@ -4,6 +4,7 @@
 
 from opencollab_eval.engine.swe_test_plan_contract import (
     NOOP_TEST_COMMANDS as _NOOP_TEST_COMMANDS,
+    is_go_test_name,
     is_runnable_test_command as _is_runnable_test_command,
     validated_test_plan_kind,
 )
@@ -191,10 +192,7 @@ def prolite_test_plan(
     if language == "go" or repo.endswith("/vuls") or repo.endswith("/teleport") or repo.endswith("/navidrome"):
         specs = [go_exact_test_spec(item) for item in tests]
         if any(spec is None for spec in specs):
-            if all(
-                re.fullmatch(r"Test[A-Za-z0-9_]*(?:/[A-Za-z0-9_.-]+)*", item)
-                for item in tests
-            ):
+            if all(is_go_test_name(item) for item in tests):
                 return _test_plan(
                     "go-test-json-discovery",
                     tests,

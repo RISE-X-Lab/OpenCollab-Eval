@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import importlib.util
 import json
 import os
 import re
@@ -17,6 +18,7 @@ import time
 import unicodedata
 import urllib.parse
 import urllib.request
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +50,25 @@ def _runtime_input_path(relative_path: str) -> Path:
     if relative_path.startswith(package_prefix + "/"):
         return PACKAGE_ROOT / relative_path.removeprefix(package_prefix + "/")
     return REPO_ROOT / relative_path
+
+
+def _runtime_directory_sources() -> tuple[dict[str, Path], str]:
+    from opencollab.sdk.models import SDK_API_VERSION
+
+    sources = {relative: _runtime_input_path(relative) for relative in SYNC_DIRS}
+    spec = importlib.util.find_spec("opencollab")
+    if spec is None or not spec.submodule_search_locations:
+        raise RuntimeError("the OpenCollab SDK package is not installed")
+    sources["src/opencollab"] = Path(next(iter(spec.submodule_search_locations))).resolve()
+    try:
+        sdk_version = version("opencollab")
+    except PackageNotFoundError as exc:
+        raise RuntimeError("the OpenCollab distribution metadata is missing") from exc
+    if tuple(int(part) for part in sdk_version.split(".")[:2]) != (0, 3):
+        raise RuntimeError(f"OpenCollab 0.3.x is required, found {sdk_version}")
+    if SDK_API_VERSION != 2:
+        raise RuntimeError(f"OpenCollab SDK API v2 is required, found v{SDK_API_VERSION}")
+    return sources, sdk_version
 
 
 def normalize_workflow_env(
@@ -387,16 +408,15 @@ def ensure_remote_proxy(
 
 def sync_runtime(*, ssh_command: list[str], host: str, remote_runtime_repo: str) -> dict[str, Any]:
     synced = list(SYNC_FILES)
-    synced_dirs = list(SYNC_DIRS)
+    directory_sources, sdk_version = _runtime_directory_sources()
+    synced_dirs = list(directory_sources)
     missing = [
         rel
         for rel in synced
         if not _runtime_input_path(rel).is_file()
     ]
     missing.extend(
-        rel
-        for rel in synced_dirs
-        if not _runtime_input_path(rel).is_dir()
+        rel for rel, local_path in directory_sources.items() if not local_path.is_dir()
     )
     if missing:
         raise RuntimeError("required runtime inputs are missing: " + ", ".join(sorted(missing)))
@@ -425,12 +445,13 @@ def sync_runtime(*, ssh_command: list[str], host: str, remote_runtime_repo: str)
                 local_path = _runtime_input_path(rel)
                 archive.add(local_path, arcname=rel, filter=archive_filter)
             for rel in synced_dirs:
-                local_path = _runtime_input_path(rel)
+                local_path = directory_sources[rel]
                 archive.add(local_path, arcname=rel, filter=archive_filter)
             manifest = {
                 "version": 1,
                 "synced": synced,
                 "synced_dirs": synced_dirs,
+                "opencollab": {"distribution_version": sdk_version, "sdk_api_version": 2},
                 "archive_members": sorted(
                     member.name
                     for member in archive.getmembers()
@@ -486,6 +507,13 @@ def sync_runtime(*, ssh_command: list[str], host: str, remote_runtime_repo: str)
         prepare_commands.append(
             "python3 -m compileall -q " + " ".join(shlex.quote(rel) for rel in compile_targets)
         )
+    prepare_commands.append(
+        "PYTHONPATH=src python3 -c "
+        + shlex.quote(
+            "import opencollab, opencollab_eval; "
+            "assert opencollab.__version__.startswith('0.3.')"
+        )
+    )
     if prepare_commands:
         install_lines.append('(cd "$stage" && ' + " && ".join(prepare_commands) + ")")
     install_lines.extend(
@@ -508,6 +536,7 @@ def sync_runtime(*, ssh_command: list[str], host: str, remote_runtime_repo: str)
         "synced_dirs": synced_dirs,
         "compile_targets": compile_targets,
         "manifest": "runtime-manifest.json",
+        "opencollab": {"distribution_version": sdk_version, "sdk_api_version": 2},
     }
 
 

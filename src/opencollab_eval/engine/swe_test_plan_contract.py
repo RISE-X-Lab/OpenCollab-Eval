@@ -36,6 +36,11 @@ _ADAPTER_COVERAGE = {
     "ospec-structured-results": "parser_backed_exact_targets",
 }
 _JAVASCRIPT_LANGUAGES = {"js", "javascript", "ts", "typescript"}
+_GO_TEST_NAME = re.compile(r"Test[A-Za-z0-9_]*(?:/[A-Za-z0-9_.:-]+)*")
+
+
+def is_go_test_name(value: str) -> bool:
+    return _GO_TEST_NAME.fullmatch(value) is not None
 
 
 def is_runnable_test_command(command: str) -> bool:
@@ -72,10 +77,7 @@ def _exact_go_binding(target: str) -> tuple[str, str, str, str] | None:
         return None
     raw_path, test = (part.strip() for part in declared.split("::", 1))
     path = raw_path.replace("\\", "/").removeprefix("./")
-    if not path.endswith("_test.go") or re.fullmatch(
-        r"Test[A-Za-z0-9_]*(?:/[A-Za-z0-9_.-]+)*",
-        test,
-    ) is None:
+    if not path.endswith("_test.go") or not is_go_test_name(test):
         return None
     parent = pathlib.PurePosixPath(path).parent.as_posix()
     package = "." if parent in {"", "."} else "./" + parent.strip("/")
@@ -119,11 +121,7 @@ def _valid_dynamic_go_plan(plan: dict[str, Any]) -> bool:
         plan["target_batches"] != [targets]
         or len(plan["commands"]) != 1
         or len(plan["proofs"]) != 1
-        or any(
-            re.fullmatch(r"Test[A-Za-z0-9_]*(?:/[A-Za-z0-9_.-]+)*", target)
-            is None
-            for target in targets
-        )
+        or any(not is_go_test_name(target) for target in targets)
     ):
         return False
     proof = plan["proofs"][0]
@@ -271,5 +269,6 @@ __all__ = [
     "NOOP_TEST_COMMANDS",
     "PLAN_SCHEMA",
     "is_runnable_test_command",
+    "is_go_test_name",
     "validated_test_plan_kind",
 ]

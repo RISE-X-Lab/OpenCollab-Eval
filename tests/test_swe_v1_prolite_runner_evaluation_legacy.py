@@ -111,14 +111,18 @@ def test_remote_runner_eval_only_uses_existing_patch_without_starting_generation
     }
     env = os.environ.copy()
     env["PATH"] = str(fake_bin) + os.pathsep + env.get("PATH", "")
-    proc = subprocess.run(
-        [sys.executable, "-c", REMOTE_TEST_RUNNER],
-        input=json.dumps(_complete_remote_config(cfg)),
-        text=True,
-        capture_output=True,
-        timeout=30,
-        env=env,
-    )
+    previous_umask = os.umask(0o077)
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", REMOTE_TEST_RUNNER],
+            input=json.dumps(_complete_remote_config(cfg)),
+            text=True,
+            capture_output=True,
+            timeout=30,
+            env=env,
+        )
+    finally:
+        os.umask(previous_umask)
 
     assert proc.returncode == 0, proc.stdout + proc.stderr
     summary = json.loads(proc.stdout)
@@ -131,6 +135,12 @@ def test_remote_runner_eval_only_uses_existing_patch_without_starting_generation
     assert summary["solver_attribution"] == "historical_artifact"
     assert summary["rows"][0]["generation"]["eval_only"] is True
     assert summary["rows"][0]["generation"]["artifact_identity_status"] == "legacy_unknown"
+    eval_dir = run_dir / "official_eval_fresh"
+    assert eval_dir.stat().st_mode & 0o777 == 0o755
+    assert (eval_dir / "input").stat().st_mode & 0o777 == 0o755
+    assert (eval_dir / "reports").stat().st_mode & 0o777 == 0o755
+    assert (eval_dir / "input" / "base_commit").stat().st_mode & 0o777 == 0o644
+    assert (eval_dir / "input" / "run_prolite_direct_eval.sh").stat().st_mode & 0o777 == 0o755
     assert (run_dir / "official_eval_fresh" / "summary.json").exists()
 
 

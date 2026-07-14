@@ -27,6 +27,14 @@ def test_remote_runner_rejects_excessive_slice_limit(tmp_path):
     assert "limit must be <= 1000" in namespace["validate_runner_config"]()
 
 
+def test_remote_generation_identity_includes_effective_thinking_default(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+
+    assert namespace["generation_runtime_identity"]()["workflow_env"] == {
+        "OPENCOLLAB_THINKING": "false"
+    }
+
+
 def test_remote_runner_allows_eval_only_mode_with_existing_generation(tmp_path):
     namespace = _remote_namespace(tmp_path, max_task_starts=0, eval_only=True)
     task = "task-1"

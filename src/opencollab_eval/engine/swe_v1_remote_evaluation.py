@@ -158,9 +158,15 @@ def eval_for_task_once(row, patch_selection=None):
             "eval_patch_sha256": patch_selection["eval_patch_sha256"],
         }
     input_dir = eval_dir / "input"
+    reports_dir = eval_dir / "reports"
     output_dir = report_path.parent
-    input_dir.mkdir(parents=True, exist_ok=True)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    eval_dir.mkdir(parents=True, exist_ok=True)
+    eval_dir.chmod(0o755)
+    input_dir.mkdir(exist_ok=True)
+    input_dir.chmod(0o755)
+    reports_dir.mkdir(exist_ok=True)
+    reports_dir.chmod(0o755)
+    output_dir.mkdir(exist_ok=True)
     output_dir.chmod(0o777)
     proof_nonce = uuid.uuid4().hex
     original_model_patch = prediction_patch(prediction)
@@ -200,6 +206,9 @@ def eval_for_task_once(row, patch_selection=None):
     inner = direct_eval_script()
     script_path = input_dir / "run_prolite_direct_eval.sh"
     atomic_write_bytes(script_path, inner.encode("utf-8"))
+    for input_path in input_dir.iterdir():
+        if input_path.is_file():
+            input_path.chmod(0o644)
     script_path.chmod(0o755)
     command_log = eval_dir / "command.log"
     cidfile = eval_dir / "container.cid"

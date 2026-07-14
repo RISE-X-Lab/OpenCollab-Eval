@@ -69,6 +69,23 @@ def test_dynamic_go_plan_rejects_a_command_suffix_after_the_trusted_program(tmp_
     assert validated_test_plan_kind(plan, require_commands=True) is None
 
 
+def test_dynamic_go_plan_supports_colons_in_subtest_names(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    targets = [
+        "Test_redhatBase_parseInstalledPackagesLine/old:_package_1",
+        "Test_redhatBase_parseInstalledPackagesLine/new:_package_2",
+    ]
+
+    plan = namespace["prolite_test_plan"]({"repo_language": "go"}, targets)
+
+    assert plan["adapter"] == "go-test-json-discovery"
+    assert plan["coverage_verified"] is True
+    assert plan["declared_targets"] == targets
+    assert validated_test_plan_kind(plan, require_commands=True) == (
+        "go-test-json-discovery"
+    )
+
+
 def test_prolite_go_log_proof_rejects_package_pass_without_test_event(tmp_path):
     namespace = _remote_namespace(tmp_path)
     proof = {"kind": "go_json_test_pass", "test": "TestWidget"}

@@ -124,6 +124,32 @@ def test_host_extractor_forces_new_files_ignored_by_solver(tmp_path: Path) -> No
     assert "+fixed = True" in extracted
 
 
+def test_host_extractor_preserves_absent_baseline_gitlink(tmp_path: Path) -> None:
+    baseline, repo = _baseline(tmp_path)
+    gitlink = "integration"
+    oid = "1" * len(baseline.snapshot.anonymous_head)
+    _git(repo, "update-index", "--add", "--cacheinfo", "160000", oid, gitlink)
+    _git(repo, "commit", "--quiet", "-m", "add gitlink")
+    head = _git(repo, "rev-parse", "HEAD")
+    tree = _git(repo, "rev-parse", "HEAD^{tree}")
+    shutil.rmtree(baseline.git_dir)
+    _git(tmp_path, "clone", "--quiet", "--bare", str(repo), str(baseline.git_dir))
+    snapshot = SolverGitSnapshot(head, tree, 1, 0, 0, 1, ((gitlink, oid),))
+    baseline = patcher.TrustedPatchBaseline(
+        snapshot=snapshot,
+        temporary_directory=None,
+        git_dir=baseline.git_dir,
+        archive_sha256=baseline.archive_sha256,
+        archive_bytes=baseline.archive_bytes,
+        archive_entries=baseline.archive_entries,
+        extracted_bytes=baseline.extracted_bytes,
+    )
+    worktree = _worktree(repo, tmp_path / "gitlink-worktree")
+    shutil.rmtree(worktree / ".git")
+
+    assert patcher._extract_patch_from_copy(worktree, baseline) == ""
+
+
 def test_host_extractor_excludes_opencollab_state(tmp_path: Path) -> None:
     baseline, repo = _baseline(tmp_path)
     worktree = _worktree(repo, tmp_path / "state")
