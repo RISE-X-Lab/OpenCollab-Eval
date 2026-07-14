@@ -12,7 +12,7 @@ from opencollab.sdk.environment import ExecutionEnvironment
 from opencollab.sdk.lifecycle import (
     abandon_on_timeout,
     force_task_terminal,
-    isolate_tasks_from_shutdown,
+    terminate_tasks,
 )
 from opencollab.sdk.persistence import (
     WORKFLOW_MANIFEST_FILENAME,
@@ -85,12 +85,12 @@ async def _wait_for_owned_execution(
     forced_timeout = min(2.0, max(0.1, cleanup_timeout))
     if await wait_phase(forced_timeout):
         return True
-    await isolate_tasks_from_shutdown(
+    await terminate_tasks(
         pending_tasks(),
         timeout=forced_timeout,
     )
-    # Non-terminal results were removed from loop-shutdown ownership. The false
-    # return keeps submission eligibility conservative while teardown continues.
+    # A remaining task stays visible to loop shutdown and makes the evaluation
+    # ineligible for submission.
     return False
 
 
@@ -436,7 +436,7 @@ async def _persist_eval_workflow_manifest_owned(
             pending_task.cancel()
         _done, pending = await asyncio.wait(pending, timeout=cleanup_timeout)
     if pending:
-        await isolate_tasks_from_shutdown(pending, timeout=cleanup_timeout)
+        await terminate_tasks(pending, timeout=cleanup_timeout)
     write_owners = _track_eval_manifest_daemon_writes(subscriber)
     if write_owners:
         _done, write_owners = await asyncio.wait(write_owners, timeout=0)
@@ -469,7 +469,7 @@ async def _cleanup_eval_resources_after_tasks(
         _done, pending = waiter.result()
     if pending:
         remaining = max(deadline - asyncio.get_running_loop().time(), 1e-6)
-        await isolate_tasks_from_shutdown(pending, timeout=remaining)
+        await terminate_tasks(pending, timeout=remaining)
         _LATE_EVAL_RESOURCE_FAILURES.append(
             TimeoutError(
                 "late evaluator resource dependencies did not quiesce; "

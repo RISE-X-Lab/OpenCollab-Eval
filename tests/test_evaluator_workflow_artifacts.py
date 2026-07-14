@@ -258,7 +258,7 @@ def test_workflow_checkpoint_excludes_injected_test_paths(tmp_path):
     checkpoint_cmds = [cmd for cmd in env.cmds if is_worktree_diff_cmd(cmd)]
     assert checkpoint_cmds
     assert (
-        'GIT_INDEX_FILE="$idx" git --literal-pathspecs reset -q HEAD -- tests/test_x.py'
+        '--literal-pathspecs reset -q HEAD -- tests/test_x.py'
         in checkpoint_cmds[-1]
     )
 
@@ -295,11 +295,11 @@ def test_workflow_checkpoint_excludes_own_artifacts_inside_workspace(tmp_path):
     assert checkpoint_cmds
     assert result.checkpoint_result["restore"]["status"] == "restored"
     assert (
-        'GIT_INDEX_FILE="$idx" git --literal-pathspecs reset -q HEAD -- '
+        '--literal-pathspecs reset -q HEAD -- '
         "eval_results/trajectories/inside/checkpoint.worktree.patch" in checkpoint_cmds[0]
     )
     assert (
-        'GIT_INDEX_FILE="$idx" git --literal-pathspecs reset -q HEAD -- '
+        '--literal-pathspecs reset -q HEAD -- '
         "eval_results/trajectories/inside/checkpoint.worktree.json" in checkpoint_cmds[0]
     )
 

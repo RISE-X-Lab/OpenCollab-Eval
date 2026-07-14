@@ -72,6 +72,9 @@ def run(coro):
 
 def is_worktree_diff_cmd(cmd: str) -> bool:
     return (
+        'GIT_INDEX_FILE="$idx"' in cmd
+        and " diff --no-ext-diff --no-textconv --cached --binary " in cmd
+    ) or (
         "git diff --cached --binary HEAD" in cmd
         or "trusted_git diff --cached --binary --no-ext-diff --no-textconv" in cmd
     )

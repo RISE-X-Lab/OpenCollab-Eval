@@ -130,9 +130,9 @@ def test_worktree_diff_exclusion_reset_failure_cannot_fall_through_to_diff():
     )
 
     assert "|| true" not in command
-    assert 'git --literal-pathspecs reset -q ' in command
+    assert '--literal-pathspecs reset -q ' in command
     assert "unregistered or modified .opencollab-retired-*" in command
-    assert 'git diff --cached --binary ' in command
+    assert " diff --no-ext-diff --no-textconv --cached --binary " in command
 
 
 def test_worktree_diff_rejects_unregistered_reserved_prefix(tmp_path):

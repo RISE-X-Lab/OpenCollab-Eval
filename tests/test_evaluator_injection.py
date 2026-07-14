@@ -341,7 +341,7 @@ def test_failed_partial_test_patch_rollback_stops_agent_and_invalidates_output(t
     assert result.checkpoint_result["final"]["status"] == ("skipped_test_patch_isolation_failure")
     assert checkpoint_path.read_text(encoding="utf-8") == old_checkpoint
     diff_command = diff_commands[0]
-    assert "git --literal-pathspecs reset -q HEAD -- tests/test_new.py" in diff_command
+    assert "--literal-pathspecs reset -q HEAD -- tests/test_new.py" in diff_command
     assert "tests/test_new.py.orig" not in diff_command
     assert "tests/test_new.py.rej" not in diff_command
 

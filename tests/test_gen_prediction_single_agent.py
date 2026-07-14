@@ -598,38 +598,47 @@ def test_pending_staging_rejects_symlink_target_before_owner_state_change(
 
 
 def test_cli_runner_bounds_shutdown_of_task_that_refuses_cancellation():
-    async def scenario():
-        async def stubborn_task():
-            while True:
-                try:
-                    await asyncio.Event().wait()
-                except asyncio.CancelledError:
-                    continue
+    script = r'''
+import asyncio
+from opencollab.sdk.lifecycle import run_with_bounded_shutdown
 
-        asyncio.create_task(stubborn_task())
-        await asyncio.sleep(0)
-        return "completed"
+async def stubborn_task():
+    while True:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            continue
 
+async def scenario():
+    asyncio.create_task(stubborn_task())
+    await asyncio.sleep(0)
+
+run_with_bounded_shutdown(scenario(), shutdown_timeout=0.01)
+'''
     started = time.monotonic()
-    result = gp.run_with_bounded_shutdown(
-        scenario(),
-        shutdown_timeout=0.01,
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=1,
+        check=False,
     )
 
-    assert result == "completed"
-    assert time.monotonic() - started < 0.5
+    assert completed.returncode != 0
+    assert "missed the shutdown deadline" in completed.stderr
+    assert time.monotonic() - started < 0.9
 
 
-def test_cli_runner_does_not_run_task_spawning_shutdown_cleanup():
+def test_cli_runner_cancels_task_spawned_during_shutdown_cleanup():
     child_cancelled = []
 
     async def scenario():
         async def stubborn_child():
-            while True:
-                try:
-                    await asyncio.Event().wait()
-                except asyncio.CancelledError:
-                    child_cancelled.append(True)
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                child_cancelled.append(True)
+                raise
 
         async def parent():
             try:
@@ -647,7 +656,7 @@ def test_cli_runner_does_not_run_task_spawning_shutdown_cleanup():
     )
 
     assert result == "completed"
-    assert child_cancelled == []
+    assert child_cancelled == [True]
 
 
 def test_output_commit_recovers_when_metrics_projection_crashes(monkeypatch, tmp_path):

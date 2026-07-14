@@ -397,20 +397,26 @@ def test_rollback_task_that_consumes_cancel_has_a_final_deadline(monkeypatch):
     class StubbornRollbackEnv(FakeEnv):
         def __init__(self):
             super().__init__(apply_rc=1)
+            self.release = asyncio.Event()
 
         async def exec_cmd(self, cmd: str, timeout: float = 120.0) -> ExecResult:
             if cmd.startswith("git --literal-pathspecs checkout -- "):
-                while True:
+                while not self.release.is_set():
                     try:
-                        await asyncio.Event().wait()
+                        await self.release.wait()
                     except asyncio.CancelledError:
                         continue
             return await super().exec_cmd(cmd, timeout)
 
     env = StubbornRollbackEnv()
 
-    with pytest.raises(TestPatchIsolationError, match="final deadline"):
-        run(asyncio.wait_for(apply_test_patch(env, SAMPLE_PATCH), timeout=0.5))
+    async def scenario():
+        with pytest.raises(TestPatchIsolationError, match="final deadline"):
+            await asyncio.wait_for(apply_test_patch(env, SAMPLE_PATCH), timeout=0.5)
+        env.release.set()
+        await asyncio.sleep(0)
+
+    run(scenario())
 
     assert env.revoked is True
 
@@ -424,17 +430,26 @@ def test_staging_cleanup_that_consumes_cancel_has_a_final_deadline(monkeypatch):
     )
 
     class StubbornRemovalEnv(FakeEnv):
+        def __init__(self):
+            super().__init__()
+            self.release = asyncio.Event()
+
         async def remove_file(self, path: str) -> None:
-            while True:
+            while not self.release.is_set():
                 try:
-                    await asyncio.Event().wait()
+                    await self.release.wait()
                 except asyncio.CancelledError:
                     continue
 
     env = StubbornRemovalEnv()
 
-    with pytest.raises(TestPatchIsolationError, match="cleanup failed"):
-        run(asyncio.wait_for(apply_test_patch(env, SAMPLE_PATCH), timeout=0.5))
+    async def scenario():
+        with pytest.raises(TestPatchIsolationError, match="cleanup failed"):
+            await asyncio.wait_for(apply_test_patch(env, SAMPLE_PATCH), timeout=0.5)
+        env.release.set()
+        await asyncio.sleep(0)
+
+    run(scenario())
 
     assert env.revoked is True
 
