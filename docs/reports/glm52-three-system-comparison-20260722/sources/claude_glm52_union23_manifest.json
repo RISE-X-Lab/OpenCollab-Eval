@@ -1,0 +1,157 @@
+{
+  "schema": "opencollab.swe_frozen_task_manifest.v1",
+  "manifest_id": "claude-code-glm52-union23-20260718",
+  "dataset": {
+    "name": "swe-batch-pro-lite",
+    "index_base": 1,
+    "row_count": 100,
+    "sha256": "5def90f5fdb1874f957c340a31db166ef3a5805df079b6691a2eef45bb74e7ba"
+  },
+  "selection": {
+    "rule": "resolved_by_g11_or_openhands",
+    "comparison_markdown_path": "mydocs/2026-07-15/g11-openhands-final-comparison-group-meeting/g11_openhands_prolite_1_100_final_comparison_20260715.md",
+    "comparison_markdown_sha256": "9bb7966f69413c3318aa31bb59e8e85436725045b21ddf1045bc356827997204",
+    "machine_report_path": "mydocs/2026-07-15/g11-openhands-final-comparison-group-meeting/g11_openhands_prolite_1_100_final_machine_report.json",
+    "machine_report_sha256": "7a0bceb09a5a618aebe89ce55056646d297a52a214cceb1bded4782f028a1725"
+  },
+  "tasks": [
+    {
+      "index": 7,
+      "instance_id": "instance_future-architect__vuls-2c84be80b65d022c262956cd26fc79d8bb2f7010",
+      "g11_resolved": true,
+      "openhands_resolved": true
+    },
+    {
+      "index": 11,
+      "instance_id": "instance_internetarchive__openlibrary-b4f7c185ae5f1824ac7f3a18e8adf6a4b468459c-v08d8e8889ec945ab821fb156c04c7d2e2810debb",
+      "g11_resolved": true,
+      "openhands_resolved": true
+    },
+    {
+      "index": 21,
+      "instance_id": "instance_qutebrowser__qutebrowser-de4a1c1a2839b5b49c3d4ce21d39de48d24e2091-v2ef375ac784985212b1805e1d0431dc8f1b3c171",
+      "g11_resolved": true,
+      "openhands_resolved": true
+    },
+    {
+      "index": 32,
+      "instance_id": "instance_NodeBB__NodeBB-82562bec444940608052f3e4149e0c61ec80bf3f-vd59a5728dfc977f44533186ace531248c2917516",
+      "g11_resolved": true,
+      "openhands_resolved": true
+    },
+    {
+      "index": 33,
+      "instance_id": "instance_internetarchive__openlibrary-6a117fab6c963b74dc1ba907d838e74f76d34a4b-v13642507b4fc1f8d234172bf8129942da2c2ca26",
+      "g11_resolved": false,
+      "openhands_resolved": true
+    },
+    {
+      "index": 34,
+      "instance_id": "instance_internetarchive__openlibrary-fdbc0d8f418333c7e575c40b661b582c301ef7ac-v13642507b4fc1f8d234172bf8129942da2c2ca26",
+      "g11_resolved": true,
+      "openhands_resolved": true
+    },
+    {
+      "index": 35,
+      "instance_id": "instance_element-hq__element-web-27139ca68eb075a4438c18fca184887002a4ffbc-vnan",
+      "g11_resolved": true,
+      "openhands_resolved": false
+    },
+    {
+      "index": 36,
+      "instance_id": "instance_gravitational__teleport-87a593518b6ce94624f6c28516ce38cc30cbea5a",
+      "g11_resolved": true,
+      "openhands_resolved": false
+    },
+    {
+      "index": 37,
+      "instance_id": "instance_protonmail__webclients-8142704f447df6e108d53cab25451c8a94976b92",
+      "g11_resolved": true,
+      "openhands_resolved": false
+    },
+    {
+      "index": 43,
+      "instance_id": "instance_future-architect__vuls-dc496468b9e9fb73371f9606cdcdb0f8e12e70ca",
+      "g11_resolved": true,
+      "openhands_resolved": false
+    },
+    {
+      "index": 46,
+      "instance_id": "instance_gravitational__teleport-eda668c30d9d3b56d9c69197b120b01013611186",
+      "g11_resolved": true,
+      "openhands_resolved": false
+    },
+    {
+      "index": 47,
+      "instance_id": "instance_navidrome__navidrome-1e96b858a91c640fe64e84c5e5ad8cc0954ea38d",
+      "g11_resolved": true,
+      "openhands_resolved": false
+    },
+    {
+      "index": 50,
+      "instance_id": "instance_protonmail__webclients-4feccbc9990980aee26ea29035f8f931d6089895",
+      "g11_resolved": true,
+      "openhands_resolved": false
+    },
+    {
+      "index": 53,
+      "instance_id": "instance_future-architect__vuls-d576b6c6c15e56c47cc3e26f5878867677d4a9ea",
+      "g11_resolved": true,
+      "openhands_resolved": true
+    },
+    {
+      "index": 55,
+      "instance_id": "instance_protonmail__webclients-caf10ba9ab2677761c88522d1ba8ad025779c492",
+      "g11_resolved": false,
+      "openhands_resolved": true
+    },
+    {
+      "index": 60,
+      "instance_id": "instance_flipt-io__flipt-cf06f4ebfab7fa21eed3e5838592e8e44566957f",
+      "g11_resolved": true,
+      "openhands_resolved": true
+    },
+    {
+      "index": 69,
+      "instance_id": "instance_future-architect__vuls-edb324c3d9ec3b107bf947f00e38af99d05b3e16",
+      "g11_resolved": true,
+      "openhands_resolved": true
+    },
+    {
+      "index": 70,
+      "instance_id": "instance_navidrome__navidrome-ee21f3957e0de91624427e93c62b8ee390de72e3",
+      "g11_resolved": false,
+      "openhands_resolved": true
+    },
+    {
+      "index": 74,
+      "instance_id": "instance_future-architect__vuls-cc63a0eccfdd318e67c0a6edeffc7bf09b6025c0",
+      "g11_resolved": true,
+      "openhands_resolved": true
+    },
+    {
+      "index": 75,
+      "instance_id": "instance_navidrome__navidrome-87d4db7638b37eeb754b217440ab7a372f669205",
+      "g11_resolved": true,
+      "openhands_resolved": true
+    },
+    {
+      "index": 78,
+      "instance_id": "instance_internetarchive__openlibrary-d8162c226a9d576f094dc1830c4c1ffd0be2dd17-v76304ecdb3a5954fcf13feb710e8c40fcf24b73c",
+      "g11_resolved": false,
+      "openhands_resolved": true
+    },
+    {
+      "index": 92,
+      "instance_id": "instance_flipt-io__flipt-15b76cada1ef29cfa56b0fba36754be36243dded",
+      "g11_resolved": true,
+      "openhands_resolved": true
+    },
+    {
+      "index": 93,
+      "instance_id": "instance_internetarchive__openlibrary-e010b2a13697de70170033902ba2e27a1e1acbe9-v0f5aece3601a5b4419f7ccec1dbda2071be28ee4",
+      "g11_resolved": true,
+      "openhands_resolved": true
+    }
+  ]
+}

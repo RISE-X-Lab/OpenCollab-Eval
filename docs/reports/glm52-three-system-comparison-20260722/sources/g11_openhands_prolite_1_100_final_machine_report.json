@@ -1,0 +1,939 @@
+{
+  "schema": "opencollab.g11_openhands_prolite100_comparison.v1",
+  "generated_at": "2026-07-15",
+  "author": "拱垲",
+  "dataset": "swe-batch-pro-lite",
+  "status": "final_g11_and_openhands_100_terminal",
+  "counts": {
+    "tasks": 100,
+    "g11": {
+      "resolved": 19,
+      "unresolved": 81,
+      "technical": 0,
+      "confirmed_terminal": 100
+    },
+    "openhands": {
+      "resolved": 16,
+      "unresolved": 84,
+      "technical": 0,
+      "abandoned": 0,
+      "confirmed_terminal": 100
+    }
+  },
+  "indices": {
+    "g11_resolved": [
+      7,
+      11,
+      21,
+      32,
+      34,
+      35,
+      36,
+      37,
+      43,
+      46,
+      47,
+      50,
+      53,
+      60,
+      69,
+      74,
+      75,
+      92,
+      93
+    ],
+    "g11_unresolved": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      8,
+      9,
+      10,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      33,
+      38,
+      39,
+      40,
+      41,
+      42,
+      44,
+      45,
+      48,
+      49,
+      51,
+      52,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      70,
+      71,
+      72,
+      73,
+      76,
+      77,
+      78,
+      79,
+      80,
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      90,
+      91,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99,
+      100
+    ],
+    "openhands_resolved": [
+      7,
+      11,
+      21,
+      32,
+      33,
+      34,
+      53,
+      55,
+      60,
+      69,
+      70,
+      74,
+      75,
+      78,
+      92,
+      93
+    ],
+    "openhands_unresolved": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      8,
+      9,
+      10,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      54,
+      56,
+      57,
+      58,
+      59,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      71,
+      72,
+      73,
+      76,
+      77,
+      79,
+      80,
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      90,
+      91,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99,
+      100
+    ],
+    "openhands_abandoned": [],
+    "common_resolved": [
+      7,
+      11,
+      21,
+      32,
+      34,
+      53,
+      60,
+      69,
+      74,
+      75,
+      92,
+      93
+    ],
+    "only_g11_resolved": [
+      35,
+      36,
+      37,
+      43,
+      46,
+      47,
+      50
+    ],
+    "only_openhands_resolved": [
+      33,
+      55,
+      70,
+      78
+    ],
+    "neither_resolved": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      8,
+      9,
+      10,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      38,
+      39,
+      40,
+      41,
+      42,
+      44,
+      45,
+      48,
+      49,
+      51,
+      52,
+      54,
+      56,
+      57,
+      58,
+      59,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      71,
+      72,
+      73,
+      76,
+      77,
+      79,
+      80,
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      90,
+      91,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99,
+      100
+    ]
+  },
+  "integrity": {
+    "openhands_selected_trajectory_coverage": "100/100",
+    "openhands_replacement_required_indices": [
+      6,
+      9,
+      10,
+      11,
+      13,
+      18,
+      24,
+      27,
+      40,
+      41,
+      43,
+      50,
+      51,
+      54,
+      55,
+      56,
+      57,
+      59,
+      65,
+      67,
+      68,
+      76,
+      77,
+      78,
+      80,
+      81,
+      85,
+      93,
+      97
+    ],
+    "openhands_clean_replacement_resolved_indices": [
+      11,
+      55,
+      78,
+      93
+    ],
+    "openhands_clean_replacement_unresolved_indices": [
+      6,
+      9,
+      10,
+      13,
+      18,
+      24,
+      27,
+      40,
+      41,
+      43,
+      50,
+      51,
+      54,
+      56,
+      57,
+      59,
+      65,
+      67,
+      68,
+      76,
+      77,
+      80,
+      81,
+      85,
+      97
+    ],
+    "openhands_replacement_abandoned_indices": [],
+    "openhands_original_patch_results_excluded_from_final_for_replacement_indices": true,
+    "g11_resolved_execution_proof": "19/19",
+    "g11_resolved_clean_trajectory": "19/19",
+    "candidate_identity_rule": "raw patch SHA must bind prediction and metric; eval patch SHA must equal the deterministic filtered evaluation patch",
+    "pass_rule": "resolved requires all declared FAIL_TO_PASS and PASS_TO_PASS targets to be observed and passed",
+    "openhands_resolved_execution_proof": "16/16",
+    "openhands_resolved_clean_trajectory": "16/16"
+  },
+  "comparison": {
+    "common_resolved_count": 12,
+    "only_g11_resolved_count": 7,
+    "only_openhands_resolved_count": 4,
+    "neither_resolved_count": 77
+  },
+  "evidence": {
+    "g11_task21": "OpenCollab-g11-run/docs/monitoring/g11_task21_hardened_corrected_20260712_v2/task_21_report.json",
+    "g11_task93": "OpenCollab-g11-run/docs/monitoring/g11_task93_hardened_20260712_v2/task_93_report.json",
+    "g11_replacements": "OpenCollab-g11-run/docs/monitoring/g11_replacement_hardened_20260712_v1/",
+    "g11_technical_replay": "OpenCollab-g11-run/docs/monitoring/swe_trusted_final_replay_20260712_v1/",
+    "openhands_clean13": "OpenCollab-g11-run/docs/monitoring/swe_openhands_clean13_candidate_replay_20260712_v3/",
+    "openhands_task6_selected": "OpenCollab-g11-run/docs/monitoring/swe_openhands_clean_6_76_isolated_20260712_v4/task_6_selected_adjudication.json",
+    "openhands_task10": "OpenCollab-g11-run/docs/monitoring/swe_openhands_clean_10_13_59_97_isolated_20260712_v6/task_10_report.json",
+    "openhands_task27_selected": "OpenCollab-g11-run/docs/monitoring/swe_openhands_clean27_selected_20260712_v1/task_27_selected_report.json",
+    "openhands_task50_selected": "OpenCollab-g11-run/docs/monitoring/swe_openhands_clean7_isolated_20260712_v1/task_50_selected_report.json",
+    "openhands_task51_selected": "OpenCollab-g11-run/docs/monitoring/swe_openhands_clean_remaining_isolated_20260712_v3/task_51_selected_adjudication.json",
+    "openhands_task55": "OpenCollab-g11-run/docs/monitoring/swe_openhands_clean7_isolated_20260712_v1/task_55_report.json",
+    "openhands_final_nine": "mydocs/2026-07-12/openhands-glm-prolite-evaluation/openhands_final_nine_evidence.json"
+  },
+  "tasks": [
+    {
+      "index": 1,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 2,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 3,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 4,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 5,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 6,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 7,
+      "g11": "resolved",
+      "openhands": "resolved"
+    },
+    {
+      "index": 8,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 9,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 10,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 11,
+      "g11": "resolved",
+      "openhands": "resolved"
+    },
+    {
+      "index": 12,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 13,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 14,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 15,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 16,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 17,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 18,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 19,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 20,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 21,
+      "g11": "resolved",
+      "openhands": "resolved"
+    },
+    {
+      "index": 22,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 23,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 24,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 25,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 26,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 27,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 28,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 29,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 30,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 31,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 32,
+      "g11": "resolved",
+      "openhands": "resolved"
+    },
+    {
+      "index": 33,
+      "g11": "unresolved",
+      "openhands": "resolved"
+    },
+    {
+      "index": 34,
+      "g11": "resolved",
+      "openhands": "resolved"
+    },
+    {
+      "index": 35,
+      "g11": "resolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 36,
+      "g11": "resolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 37,
+      "g11": "resolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 38,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 39,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 40,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 41,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 42,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 43,
+      "g11": "resolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 44,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 45,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 46,
+      "g11": "resolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 47,
+      "g11": "resolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 48,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 49,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 50,
+      "g11": "resolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 51,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 52,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 53,
+      "g11": "resolved",
+      "openhands": "resolved"
+    },
+    {
+      "index": 54,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 55,
+      "g11": "unresolved",
+      "openhands": "resolved"
+    },
+    {
+      "index": 56,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 57,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 58,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 59,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 60,
+      "g11": "resolved",
+      "openhands": "resolved"
+    },
+    {
+      "index": 61,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 62,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 63,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 64,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 65,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 66,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 67,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 68,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 69,
+      "g11": "resolved",
+      "openhands": "resolved"
+    },
+    {
+      "index": 70,
+      "g11": "unresolved",
+      "openhands": "resolved"
+    },
+    {
+      "index": 71,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 72,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 73,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 74,
+      "g11": "resolved",
+      "openhands": "resolved"
+    },
+    {
+      "index": 75,
+      "g11": "resolved",
+      "openhands": "resolved"
+    },
+    {
+      "index": 76,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 77,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 78,
+      "g11": "unresolved",
+      "openhands": "resolved"
+    },
+    {
+      "index": 79,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 80,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 81,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 82,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 83,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 84,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 85,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 86,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 87,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 88,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 89,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 90,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 91,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 92,
+      "g11": "resolved",
+      "openhands": "resolved"
+    },
+    {
+      "index": 93,
+      "g11": "resolved",
+      "openhands": "resolved"
+    },
+    {
+      "index": 94,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 95,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 96,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 97,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 98,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 99,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    },
+    {
+      "index": 100,
+      "g11": "unresolved",
+      "openhands": "unresolved"
+    }
+  ]
+}

@@ -1,0 +1,831 @@
+{
+  "schema": "opencollab.glm52-three-system-comparison.v1",
+  "generated_at": "2026-07-22",
+  "author": "拱垲",
+  "dataset": "SWE-bench Pro-Lite tasks 1-100",
+  "systems": {
+    "oc_g11": {
+      "evaluated": 100,
+      "resolved": 19,
+      "unresolved": 81,
+      "technical": 0
+    },
+    "openhands": {
+      "evaluated": 100,
+      "resolved": 16,
+      "unresolved": 84,
+      "technical": 0
+    },
+    "claude_code": {
+      "evaluated": 100,
+      "resolved": 15,
+      "unresolved": 85,
+      "technical": 0,
+      "not_evaluated": 0
+    }
+  },
+  "resolved_indices": {
+    "oc_g11": [
+      7,
+      11,
+      21,
+      32,
+      34,
+      35,
+      36,
+      37,
+      43,
+      46,
+      47,
+      50,
+      53,
+      60,
+      69,
+      74,
+      75,
+      92,
+      93
+    ],
+    "openhands": [
+      7,
+      11,
+      21,
+      32,
+      33,
+      34,
+      53,
+      55,
+      60,
+      69,
+      70,
+      74,
+      75,
+      78,
+      92,
+      93
+    ],
+    "claude_code": [
+      7,
+      11,
+      21,
+      32,
+      33,
+      34,
+      37,
+      53,
+      55,
+      60,
+      69,
+      70,
+      74,
+      92,
+      93
+    ]
+  },
+  "comparison": {
+    "all_three": [
+      7,
+      11,
+      21,
+      32,
+      34,
+      53,
+      60,
+      69,
+      74,
+      92,
+      93
+    ],
+    "only_oc_g11": [
+      35,
+      36,
+      43,
+      46,
+      47,
+      50
+    ],
+    "only_openhands": [
+      78
+    ],
+    "only_claude_code": [],
+    "oc_g11_and_openhands_only": [
+      75
+    ],
+    "oc_g11_and_claude_code_only": [
+      37
+    ],
+    "openhands_and_claude_code_only": [
+      33,
+      55,
+      70
+    ]
+  },
+  "sources": {
+    "docs/reports/glm52-three-system-comparison-20260722/sources/g11_openhands_prolite_1_100_final_machine_report.json": "7a0bceb09a5a618aebe89ce55056646d297a52a214cceb1bded4782f028a1725",
+    "docs/reports/glm52-three-system-comparison-20260722/sources/claude_code_glm52_union23_final_results.md": "dbc63943aab9627b428771d90b5f8a015472f0f41565c2684b13d333d1086577",
+    "docs/reports/glm52-three-system-comparison-20260722/sources/claude_glm52_union23_manifest.json": "5a5aafc945e5a7e586730f5198235986a4763c84252a1b7bfcc944a39bf2b088",
+    "docs/reports/glm52-three-system-comparison-20260722/claude_code_glm52_prolite_1_100_scope_20260722.json": "629df217a96551bdc8bb47b1032f5c713cb54ca25b26ab8cee38f9e5c4ca2068"
+  },
+  "tasks": [
+    {
+      "index": 1,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 2,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 3,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 4,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 5,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 6,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 7,
+      "g11": "通过",
+      "openhands": "通过",
+      "claude_code": "通过",
+      "resolved_by": "G1.1、OpenHands、Claude Code"
+    },
+    {
+      "index": 8,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 9,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 10,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 11,
+      "g11": "通过",
+      "openhands": "通过",
+      "claude_code": "通过",
+      "resolved_by": "G1.1、OpenHands、Claude Code"
+    },
+    {
+      "index": 12,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 13,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 14,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 15,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 16,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 17,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 18,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 19,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 20,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 21,
+      "g11": "通过",
+      "openhands": "通过",
+      "claude_code": "通过",
+      "resolved_by": "G1.1、OpenHands、Claude Code"
+    },
+    {
+      "index": 22,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 23,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 24,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 25,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 26,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 27,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 28,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 29,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 30,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 31,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 32,
+      "g11": "通过",
+      "openhands": "通过",
+      "claude_code": "通过",
+      "resolved_by": "G1.1、OpenHands、Claude Code"
+    },
+    {
+      "index": 33,
+      "g11": "未通过",
+      "openhands": "通过",
+      "claude_code": "通过",
+      "resolved_by": "OpenHands、Claude Code"
+    },
+    {
+      "index": 34,
+      "g11": "通过",
+      "openhands": "通过",
+      "claude_code": "通过",
+      "resolved_by": "G1.1、OpenHands、Claude Code"
+    },
+    {
+      "index": 35,
+      "g11": "通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "G1.1"
+    },
+    {
+      "index": 36,
+      "g11": "通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "G1.1"
+    },
+    {
+      "index": 37,
+      "g11": "通过",
+      "openhands": "未通过",
+      "claude_code": "通过",
+      "resolved_by": "G1.1、Claude Code"
+    },
+    {
+      "index": 38,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 39,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 40,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 41,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 42,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 43,
+      "g11": "通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "G1.1"
+    },
+    {
+      "index": 44,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 45,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 46,
+      "g11": "通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "G1.1"
+    },
+    {
+      "index": 47,
+      "g11": "通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "G1.1"
+    },
+    {
+      "index": 48,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 49,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 50,
+      "g11": "通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "G1.1"
+    },
+    {
+      "index": 51,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 52,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 53,
+      "g11": "通过",
+      "openhands": "通过",
+      "claude_code": "通过",
+      "resolved_by": "G1.1、OpenHands、Claude Code"
+    },
+    {
+      "index": 54,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 55,
+      "g11": "未通过",
+      "openhands": "通过",
+      "claude_code": "通过",
+      "resolved_by": "OpenHands、Claude Code"
+    },
+    {
+      "index": 56,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 57,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 58,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 59,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 60,
+      "g11": "通过",
+      "openhands": "通过",
+      "claude_code": "通过",
+      "resolved_by": "G1.1、OpenHands、Claude Code"
+    },
+    {
+      "index": 61,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 62,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 63,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 64,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 65,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 66,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 67,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 68,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 69,
+      "g11": "通过",
+      "openhands": "通过",
+      "claude_code": "通过",
+      "resolved_by": "G1.1、OpenHands、Claude Code"
+    },
+    {
+      "index": 70,
+      "g11": "未通过",
+      "openhands": "通过",
+      "claude_code": "通过",
+      "resolved_by": "OpenHands、Claude Code"
+    },
+    {
+      "index": 71,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 72,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 73,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 74,
+      "g11": "通过",
+      "openhands": "通过",
+      "claude_code": "通过",
+      "resolved_by": "G1.1、OpenHands、Claude Code"
+    },
+    {
+      "index": 75,
+      "g11": "通过",
+      "openhands": "通过",
+      "claude_code": "未通过",
+      "resolved_by": "G1.1、OpenHands"
+    },
+    {
+      "index": 76,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 77,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 78,
+      "g11": "未通过",
+      "openhands": "通过",
+      "claude_code": "未通过",
+      "resolved_by": "OpenHands"
+    },
+    {
+      "index": 79,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 80,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 81,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 82,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 83,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 84,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 85,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 86,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 87,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 88,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 89,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 90,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 91,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 92,
+      "g11": "通过",
+      "openhands": "通过",
+      "claude_code": "通过",
+      "resolved_by": "G1.1、OpenHands、Claude Code"
+    },
+    {
+      "index": 93,
+      "g11": "通过",
+      "openhands": "通过",
+      "claude_code": "通过",
+      "resolved_by": "G1.1、OpenHands、Claude Code"
+    },
+    {
+      "index": 94,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 95,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 96,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 97,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 98,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 99,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    },
+    {
+      "index": 100,
+      "g11": "未通过",
+      "openhands": "未通过",
+      "claude_code": "未通过",
+      "resolved_by": "三者均未通过"
+    }
+  ]
+}
