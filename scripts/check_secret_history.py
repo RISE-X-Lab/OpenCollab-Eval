@@ -33,6 +33,26 @@ _APPROVED_BASELINE_SHA256 = {
 _ZERO_SHA = "0" * 40
 _PATTERNS = (
     (
+        "personal macOS path",
+        re.compile(rb"(?<![A-Za-z0-9])/(?:Users|Volumes)/[^/\x00\s\"']+"),
+    ),
+    (
+        "personal email",
+        re.compile(
+            rb"\b[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@"
+            rb"(?:gmail|outlook|hotmail|qq|163)\.(?:com|cn)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "private IPv4 address",
+        re.compile(
+            rb"(?<![0-9])(?:10(?:\.[0-9]{1,3}){3}|"
+            rb"192\.168(?:\.[0-9]{1,3}){2}|"
+            rb"172\.(?:1[6-9]|2[0-9]|3[01])(?:\.[0-9]{1,3}){2})(?![0-9])"
+        ),
+    ),
+    (
         "private key",
         re.compile(
             rb"-----BEGIN (?:PGP PRIVATE KEY BLOCK|"

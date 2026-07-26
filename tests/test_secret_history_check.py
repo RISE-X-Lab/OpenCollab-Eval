@@ -165,6 +165,26 @@ def test_secret_history_rejects_private_keys_and_assigned_credentials(tmp_path):
     assert "Potential assigned credential" in result.stdout
 
 
+def test_secret_history_rejects_personal_environment_details(tmp_path):
+    repository, base = _repository(tmp_path)
+    content = "\n".join(
+        (
+            "workspace = /" + "Users/alice/project",
+            "volume = /" + "Volumes/private-data/results",
+            "owner = alice" + "@gmail.com",
+            "host = 192" + ".168.12.34",
+        )
+    )
+    _commit(repository, "environment.txt", content + "\n")
+
+    result = _run(repository, base, "HEAD")
+
+    assert result.returncode == 1
+    assert "Potential personal macOS path" in result.stdout
+    assert "Potential personal email" in result.stdout
+    assert "Potential private IPv4 address" in result.stdout
+
+
 def test_secret_history_rejects_zero_commit_range(tmp_path):
     repository, base = _repository(tmp_path)
 
