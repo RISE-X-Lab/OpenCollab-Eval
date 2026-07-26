@@ -230,9 +230,7 @@ def wait_for_terminal_remote_summary(
         time.sleep(min(REMOTE_COMPLETION_POLL_SECONDS, remaining))
 
 
-def remote_summary_matches_payload(
-    summary: dict[str, Any], payload: dict[str, Any]
-) -> bool:
+def remote_summary_matches_payload(summary: dict[str, Any], payload: dict[str, Any]) -> bool:
     start_index = int(payload["start_index"])
     end_index = start_index + max(int(payload["limit"]), 0) - 1
     expected_slice = (
@@ -244,6 +242,7 @@ def remote_summary_matches_payload(
         "slice": expected_slice,
         "base_run_dir": payload["base_run_dir"],
         "remote_runtime_repo": payload["remote_repo"],
+        "remote_python": payload["remote_python"],
         "invocation_id": payload["invocation_id"],
         "workflow": payload["workflow"],
         "workflow_env": payload["workflow_env"],
@@ -395,6 +394,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
         "owner_nonce": owner_nonce,
         "remote_root": args.remote_root,
         "remote_repo": args.remote_runtime_repo,
+        "remote_python": str(args.remote_python),
         "base_run_dir": args.base_run_dir,
         "workflow": args.workflow,
         "workflow_env": normalize_workflow_env(args.workflow_env),

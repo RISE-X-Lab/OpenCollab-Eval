@@ -202,6 +202,7 @@ def _reusable_summary(config, index: int, *, openhands: bool = False) -> dict:
         "eval_only": False,
         "solver_attribution": "current_run",
         "remote_runtime_repo": config.remote_runtime_repo,
+        "remote_python": config.remote_python,
         "base_run_dir": f"{config.remote_base}/task_{index}",
         "counts": _terminal_counts(),
         "rows": [row],
@@ -664,6 +665,15 @@ def test_run_one_reuses_completed_report_without_subprocess(tmp_path):
     assert result["reused_existing_report"] is True
     assert result["attempts"] == 0
     assert result["elapsed_seconds"] == 0.0
+
+
+def test_completed_report_reuse_requires_same_remote_python():
+    module = _load_module()
+    config = replace(module.resolve_config(_args()), runtime_tree_sha256="a" * 64)
+    summary = _reusable_summary(config, 51)
+    assert module.report_is_reusable(summary, config, 51) is True
+    other = replace(config, remote_python="/another/runtime/bin/python")
+    assert module.report_is_reusable(summary, other, 51) is False
 
 
 def test_scheduler_decreases_only_on_direct_shared_failure_and_recovers():

@@ -418,6 +418,7 @@ def _expected_summary_identity(
         "eval_only": False,
         "solver_attribution": "current_run",
         "remote_runtime_repo": config.remote_runtime_repo,
+        "remote_python": config.remote_python,
         "base_run_dir": f"{config.remote_base}/task_{expected_index}",
     }
     if config.workflow == "openhands-external":

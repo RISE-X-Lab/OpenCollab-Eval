@@ -591,7 +591,6 @@ def write_markdown(summary):
         )
     summary["markdown"] = "\n".join(lines) + "\n"
 
-
 def main():
     config_errors = validate_runner_config()
     if config_errors:
@@ -761,6 +760,7 @@ def main():
         "slice": slice_label(),
         "base_run_dir": str(base_run_dir),
         "remote_runtime_repo": str(remote_repo),
+        "remote_python": str(cfg.get("remote_python") or "python3"),
         "workflow": workflow,
         "workflow_env": workflow_env,
         "openhands_command_sha256": openhands_command_sha256,

@@ -489,6 +489,7 @@ def test_remote_summary_matches_payload_rejects_stale_runtime_identity():
         "limit": 1,
         "base_run_dir": "/remote/run/task_31",
         "remote_repo": "/remote/runtime",
+        "remote_python": "/remote/venv/bin/python",
         "invocation_id": "a" * 32,
         "workflow": "team-pro",
         "workflow_env": {},
@@ -511,6 +512,7 @@ def test_remote_summary_matches_payload_rejects_stale_runtime_identity():
         "slice": "31",
         "base_run_dir": "/remote/run/task_31",
         "remote_runtime_repo": "/remote/runtime",
+        "remote_python": "/remote/venv/bin/python",
         "invocation_id": "a" * 32,
         "workflow": "team-pro",
         "workflow_env": {},
@@ -536,6 +538,9 @@ def test_remote_summary_matches_payload_rejects_stale_runtime_identity():
     assert runner.remote_summary_matches_payload(summary, payload) is False
     summary["invocation_id"] = "a" * 32
     summary["budget"] = 16000000
+    assert runner.remote_summary_matches_payload(summary, payload) is False
+    summary["budget"] = 4000000
+    summary["remote_python"] = "/another/runtime/bin/python"
     assert runner.remote_summary_matches_payload(summary, payload) is False
 
 
