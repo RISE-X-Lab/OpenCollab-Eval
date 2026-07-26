@@ -312,6 +312,24 @@ def test_secret_history_rejects_payload_in_generated_timestamp(tmp_path):
     assert "generated_at must be a UTC timestamp" in result.stdout
 
 
+def test_secret_history_rejects_duplicate_generated_timestamp(tmp_path):
+    repository, base = _repository(tmp_path)
+    baseline_path = repository / ".secrets.baseline"
+    trusted = baseline_path.read_text(encoding="utf-8")
+    hidden_value = "concealed-" + "Y" * 64
+    baseline_path.write_text(
+        trusted.replace("{", f'{{\n  "generated_at": "{hidden_value}",', 1),
+        encoding="utf-8",
+    )
+    _git(repository, "add", ".secrets.baseline")
+    _git(repository, "commit", "-m", "test: duplicate generated timestamp")
+
+    result = _run(repository, base, "HEAD")
+
+    assert result.returncode == 2
+    assert "repeats JSON key 'generated_at'" in result.stdout
+
+
 def test_secret_history_rejects_unreviewed_baseline_finding(tmp_path):
     repository, base = _repository(tmp_path)
     baseline_path = repository / ".secrets.baseline"

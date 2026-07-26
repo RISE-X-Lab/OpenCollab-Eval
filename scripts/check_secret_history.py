@@ -178,9 +178,18 @@ def _tree_file(repository: Path, commit: str, path: str) -> bytes | None:
     return _git(repository, "cat-file", "blob", object_id)
 
 
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    document: dict[str, object] = {}
+    for key, value in pairs:
+        if key in document:
+            raise ValueError(f"the secret baseline repeats JSON key {key!r}")
+        document[key] = value
+    return document
+
+
 def _baseline_document(content: bytes, *, require_audit: bool) -> dict:
     try:
-        baseline = json.loads(content)
+        baseline = json.loads(content, object_pairs_hook=_unique_json_object)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("the secret baseline is not valid UTF-8 JSON") from exc
     if not isinstance(baseline, dict) or baseline.get("version") != _DETECT_SECRETS_VERSION:
