@@ -27,11 +27,17 @@ def test_remote_cleanup_ps_scan_and_container_markers_are_bounded(monkeypatch):
         ssh_command=["ssh"],
         host="host",
         base_run_dir="/remote/run",
+        remote_python="/remote/venv with space/bin/python",
     )
     remote_parts = shlex.split(calls[0][0][-1])
 
     assert result["returncode"] == 0
-    assert remote_parts[:4] == ["env", "PYTHONPATH=/remote/run/_runtime/repo/src", "python3", "-m"]
+    assert remote_parts[:4] == [
+        "env",
+        "PYTHONPATH=/remote/run/_runtime/repo/src",
+        "/remote/venv with space/bin/python",
+        "-m",
+    ]
     assert remote_parts[4:] == [
         "opencollab_eval.engine.swe_v1_remote_cleanup",
         "/remote/run",

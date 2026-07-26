@@ -86,6 +86,7 @@ def probe_remote_execution_state(
     host: str,
     base_run_dir: str,
     remote_runtime_repo: str = "",
+    remote_python: str = "python3",
     owner_nonce: str = "",
 ) -> dict[str, Any] | None:
     probe = r'''import json,pathlib,sys
@@ -123,17 +124,18 @@ except (FileNotFoundError, OSError, CleanupInputError):
     summary = None
 print(json.dumps({"runner_state": runner_state, "summary": summary}, ensure_ascii=False))
 '''
-    remote_python = "python3"
+    remote_interpreter = shlex.quote(remote_python)
     if remote_runtime_repo:
-        remote_python = (
+        remote_interpreter = (
             "env PYTHONPATH="
             + shlex.quote(str(Path(remote_runtime_repo) / "src"))
-            + " python3"
+            + " "
+            + shlex.quote(remote_python)
         )
     command = [
         *ssh_command,
         host,
-        remote_python + " -c " + shlex.quote(probe) + " "
+        remote_interpreter + " -c " + shlex.quote(probe) + " "
         + shlex.quote(base_run_dir) + " " + shlex.quote(owner_nonce),
     ]
     try:
@@ -165,6 +167,7 @@ def probe_terminal_remote_summary(
     host: str,
     base_run_dir: str,
     remote_runtime_repo: str = "",
+    remote_python: str = "python3",
     owner_nonce: str = "",
 ) -> dict[str, Any] | None:
     observed = probe_remote_execution_state(
@@ -172,6 +175,7 @@ def probe_terminal_remote_summary(
         host=host,
         base_run_dir=base_run_dir,
         remote_runtime_repo=remote_runtime_repo,
+        remote_python=remote_python,
         owner_nonce=owner_nonce,
     )
     if observed is None or observed.get("runner_state") not in {
@@ -195,6 +199,7 @@ def wait_for_terminal_remote_summary(
     owner_nonce: str,
     payload: dict[str, Any],
     deadline: float,
+    remote_python: str = "python3",
 ) -> dict[str, Any] | None:
     """Wait through a transport outage without starting or stopping the remote run."""
     while True:
@@ -203,6 +208,7 @@ def wait_for_terminal_remote_summary(
             host=host,
             base_run_dir=base_run_dir,
             remote_runtime_repo=remote_runtime_repo,
+            remote_python=remote_python,
             owner_nonce=owner_nonce,
         )
         if observed is not None:
@@ -298,7 +304,7 @@ def prepare_runtime_summary(
             ssh_command=ssh_command,
             host=args.host,
             remote_runtime_repo=args.remote_runtime_repo,
-            remote_python=args.remote_python,
+            remote_python=str(getattr(args, "remote_python", "python3")),
         )
     if not expected:
         raise RuntimeError("--no-sync-runtime requires --expected-runtime-tree-sha256")
@@ -307,6 +313,7 @@ def prepare_runtime_summary(
         host=args.host,
         remote_runtime_repo=args.remote_runtime_repo,
         expected=None,
+        remote_python=str(getattr(args, "remote_python", "python3")),
     )
     if observed.get("sha256") != expected:
         raise RuntimeError(
@@ -361,6 +368,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             host=args.host,
             local_proxy_base_url=args.local_proxy_base_url,
             remote_proxy_base_url=args.remote_proxy_base_url,
+            remote_python=str(args.remote_python),
             enabled=not args.no_ensure_remote_proxy,
         )
     sync_summary = prepare_runtime_summary(
@@ -376,6 +384,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             host=args.host,
             remote_runtime_repo=args.remote_runtime_repo,
             expected=source_tree["local"],
+            remote_python=str(args.remote_python),
         )
     owner_nonce = uuid.uuid4().hex
     llm_transport = "direct" if remote_api_env_file else "reverse_proxy"
@@ -486,6 +495,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
                 host=args.host,
                 base_run_dir=args.base_run_dir,
                 remote_runtime_repo=args.remote_runtime_repo,
+                remote_python=str(args.remote_python),
                 owner_nonce=owner_nonce,
             )
             if observed is not None and observed.get("runner_state") != "alive":
@@ -504,6 +514,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
                 host=args.host,
                 base_run_dir=args.base_run_dir,
                 remote_runtime_repo=args.remote_runtime_repo,
+                remote_python=str(args.remote_python),
                 proc=proc,
             )
             if interruption is not None:
@@ -520,6 +531,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
                 host=args.host,
                 base_run_dir=args.base_run_dir,
                 remote_runtime_repo=args.remote_runtime_repo,
+                remote_python=str(args.remote_python),
                 owner_nonce=owner_nonce,
                 payload=payload,
                 deadline=completion_deadline,
@@ -537,6 +549,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
                 host=args.host,
                 base_run_dir=args.base_run_dir,
                 remote_runtime_repo=args.remote_runtime_repo,
+                remote_python=str(args.remote_python),
                 owner_nonce=owner_nonce,
                 payload=payload,
                 deadline=completion_deadline,
@@ -569,6 +582,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             host=args.host,
             base_run_dir=args.base_run_dir,
             remote_runtime_repo=args.remote_runtime_repo,
+            remote_python=str(args.remote_python),
             proc=proc,
         )
         if interruption is not None:
@@ -583,6 +597,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             host=args.host,
             base_run_dir=args.base_run_dir,
             remote_runtime_repo=args.remote_runtime_repo,
+            remote_python=str(args.remote_python),
             owner_nonce=owner_nonce,
         )
         if recovered_summary is not None and remote_summary_matches_payload(
@@ -595,6 +610,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             host=args.host,
             base_run_dir=args.base_run_dir,
             remote_runtime_repo=args.remote_runtime_repo,
+            remote_python=str(args.remote_python),
             proc=proc,
         )
         if interruption is not None:
@@ -606,6 +622,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             host=args.host,
             base_run_dir=args.base_run_dir,
             remote_runtime_repo=args.remote_runtime_repo,
+            remote_python=str(args.remote_python),
             proc=proc,
         )
         print(

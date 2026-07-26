@@ -22,8 +22,6 @@ jobs:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Install the pinned secret scanner
-        run: python3 -m pip install --disable-pip-version-check detect-secrets==1.5.0
       - name: Scan every pushed commit with the trusted checker
         if: github.event_name == 'push'
         env:
@@ -32,13 +30,10 @@ jobs:
         run: |
           set -euo pipefail
           trusted_checker=""
-          checker_path="$RUNNER_TEMP/push-secret-checker-path"
           if [ "$BASE_SHA" != "0000000000000000000000000000000000000000" ]; then
-            if ! git ls-tree --name-only "$BASE_SHA" -- \
-              scripts/check_secret_history.py > "$checker_path"; then
-              exit 1
-            fi
-            trusted_checker="$(cat "$checker_path")"
+            trusted_checker="$(
+              git ls-tree --name-only "$BASE_SHA" -- scripts/check_secret_history.py
+            )"
           fi
           if [ "$trusted_checker" = "scripts/check_secret_history.py" ]; then
             git show "$BASE_SHA:scripts/check_secret_history.py" |

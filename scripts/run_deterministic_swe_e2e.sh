@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+usage() {
+  echo "usage: $0 --output DIRECTORY [--runs COUNT]"
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 opencollab_root="${OPENCOLLAB_SOURCE_ROOT:-$repo_root/../OpenCollab}"
 if [[ -f "$opencollab_root/opencollab/pyproject.toml" ]]; then
@@ -22,7 +31,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 if [[ -z "$output" || ! "$runs" =~ ^[1-9][0-9]*$ ]]; then
-  echo "usage: $0 --output DIRECTORY [--runs COUNT]" >&2
+  usage >&2
   exit 2
 fi
 

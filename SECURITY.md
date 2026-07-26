@@ -1,5 +1,7 @@
 # Security Policy
 
+**English** | [简体中文](SECURITY.zh-CN.md)
+
 ## Reporting a vulnerability
 
 Report suspected vulnerabilities through
@@ -17,6 +19,12 @@ each worker access only to the current run.
 Evaluation records can contain source patches, model transcripts, task
 identities, runtime paths, and provider metadata. Store them outside the source
 checkout and review them before publication.
+
+The [SWE Pro-Lite operations guide](docs/swe-prolite-operations.md) describes
+run-scoped credentials, workers, storage, and outputs. The
+[evaluation integrity guide](docs/evaluation-integrity.md) describes the trust
+boundary between benchmark data, Solver workspaces, candidate construction,
+official execution, and reports.
 
 ## Supported versions
 

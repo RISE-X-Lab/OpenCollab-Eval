@@ -27,6 +27,13 @@ _CONTROLLED_STOP_REASONS = frozenset(
 )
 
 
+def _runtime_session_quiesced(result: RunResult[Any]) -> bool:
+    metrics = result.metrics
+    if "session_quiesced" in metrics:
+        return metrics.get("session_quiesced") is True
+    return metrics.get("execution_quiesced") is True
+
+
 def _reserve_artifacts(run_dir: str | None) -> Path | None:
     if run_dir is None:
         return None
@@ -91,12 +98,12 @@ class _EvalRunRecord:
 
     @property
     def execution_quiesced(self) -> bool:
-        return self.result.metrics.get("execution_quiesced") is True
+        return _runtime_session_quiesced(self.result)
 
     @property
     def workflow_error(self) -> str | None:
-        if self.result.metrics.get("execution_quiesced") is not True:
-            return "OpenCollab execution did not quiesce"
+        if not self.execution_quiesced:
+            return "OpenCollab session did not quiesce"
         if self.result.status == "completed":
             return None
         if (

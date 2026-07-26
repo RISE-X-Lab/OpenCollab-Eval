@@ -62,7 +62,9 @@ def _runtime_failure_metrics(exc: Exception) -> dict[str, Any]:
         "step_count": 0,
         "used_tokens": 0,
         "wall_clock_timeout": False,
+        "session_quiesced": False,
         "execution_quiesced": False,
+        "candidate_probe_eligible": False,
         "submission_eligible": False,
         "error_type": type(exc).__name__,
         "error": str(exc),
@@ -71,10 +73,13 @@ def _runtime_failure_metrics(exc: Exception) -> dict[str, Any]:
 
 def _result_metrics(result: RunResult[str]) -> dict[str, Any]:
     values = result.metrics
-    execution_quiesced = values.get("execution_quiesced") is True
+    if "session_quiesced" in values:
+        session_quiesced = values.get("session_quiesced") is True
+    else:
+        session_quiesced = values.get("execution_quiesced") is True
     phase = str(values.get("phase") or result.status)
     timed_out = result.status == "stopped" and result.reason == "timeout"
-    if not execution_quiesced:
+    if not session_quiesced:
         workflow_status = "error"
     elif timed_out:
         workflow_status = "done_with_timeout_patch"
@@ -84,23 +89,26 @@ def _result_metrics(result: RunResult[str]) -> dict[str, Any]:
         workflow_status = str(result.reason or phase)
     else:
         workflow_status = "error"
+    candidate_probe_eligible = (
+        session_quiesced
+        and result.status in {"completed", "stopped"}
+        and workflow_status in {"done", "done_with_timeout_patch"}
+    )
     metrics = {
         "workflow_status": workflow_status,
         "session_phase": phase,
         "step_count": int(values.get("steps") or 0),
         "used_tokens": int(result.tokens or 0),
         "wall_clock_timeout": timed_out,
-        "execution_quiesced": execution_quiesced,
-        "submission_eligible": (
-            execution_quiesced
-            and result.status in {"completed", "stopped"}
-            and workflow_status in {"done", "done_with_timeout_patch"}
-        ),
+        "session_quiesced": session_quiesced,
+        "execution_quiesced": False,
+        "candidate_probe_eligible": candidate_probe_eligible,
+        "submission_eligible": False,
     }
     error = result.error
-    if not execution_quiesced:
-        metrics["error_type"] = "ExecutionNotQuiesced"
-        metrics["error"] = "agent execution remained active after bounded cleanup"
+    if not session_quiesced:
+        metrics["error_type"] = "SessionNotQuiesced"
+        metrics["error"] = "agent session remained active after bounded cleanup"
     elif result.status == "failed":
         metrics["error_type"] = type(error).__name__ if error else "AgentRunError"
         metrics["error"] = str(error or result.reason or "agent execution failed")

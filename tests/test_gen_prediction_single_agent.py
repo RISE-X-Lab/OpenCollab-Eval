@@ -178,7 +178,8 @@ def _runtime_result(
         metrics={
             "phase": phase,
             "steps": step_count,
-            "execution_quiesced": cleanup_quiesced,
+            "session_quiesced": cleanup_quiesced,
+            "execution_quiesced": None,
         },
     )
 
@@ -363,8 +364,10 @@ def test_single_agent_timeout_preserves_partial_patch_metrics(monkeypatch, tmp_p
 
     assert metrics["workflow_status"] == "done_with_timeout_patch"
     assert metrics["wall_clock_timeout"] is True
-    assert metrics["execution_quiesced"] is True
-    assert metrics["submission_eligible"] is True
+    assert metrics["session_quiesced"] is True
+    assert metrics["execution_quiesced"] is False
+    assert metrics["candidate_probe_eligible"] is True
+    assert metrics["submission_eligible"] is False
     assert metrics["session_phase"] == "cancelled"
     assert metrics["step_count"] == 7
     assert metrics["used_tokens"] == 321
@@ -394,9 +397,10 @@ def test_single_agent_rejects_non_quiescent_runtime_result(monkeypatch, tmp_path
     )
 
     assert metrics["execution_quiesced"] is False
+    assert metrics["candidate_probe_eligible"] is False
     assert metrics["submission_eligible"] is False
     assert metrics["workflow_status"] == "error"
-    assert metrics["error_type"] == "ExecutionNotQuiesced"
+    assert metrics["error_type"] == "SessionNotQuiesced"
     assert gp.metrics_have_completed_identity(metrics, "+candidate") is False
 
 
@@ -420,7 +424,9 @@ def test_single_agent_failed_done_phase_cannot_become_submission_eligible(
     )
 
     assert metrics["workflow_status"] == "error"
-    assert metrics["execution_quiesced"] is True
+    assert metrics["session_quiesced"] is True
+    assert metrics["execution_quiesced"] is False
+    assert metrics["candidate_probe_eligible"] is False
     assert metrics["submission_eligible"] is False
     assert metrics["error_type"] == "RuntimeError"
 

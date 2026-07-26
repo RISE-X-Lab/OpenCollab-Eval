@@ -1,5 +1,7 @@
 # eval_adapter
 
+**English** | [简体中文](README.zh-CN.md)
+
 `eval_adapter` is the benchmark boundary for the evaluation harness. It converts
 dataset rows into evaluation records, then classifies official-evaluation
 infrastructure failures into stable fields.
@@ -18,3 +20,7 @@ Pro-Lite-specific rules live in `prolite.py`. They cover JSONL dataset loading,
 Docker image names, `/app`-first repository discovery, NodeBB Redis requirements,
 empty-patch records, and technical-failure classification for Redis, SSH, Docker,
 timeouts, test-patch application, and missing reports.
+
+See [the architecture guide](../../../../docs/architecture.md) for the package
+boundary and [the evaluation integrity guide](../../../../docs/evaluation-integrity.md)
+for candidate, target-proof, and verdict requirements.

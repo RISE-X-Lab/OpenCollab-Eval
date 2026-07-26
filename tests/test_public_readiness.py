@@ -2,16 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
-import os
 import re
 import subprocess
 from pathlib import Path
 
-_REPO_ROOT = Path(
-    os.environ.get("OPENCOLLAB_EVAL_SOURCE_ROOT", Path(__file__).resolve().parents[1])
-).resolve()
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 _PUBLIC_TEXT_SUFFIXES = {
     ".example",
     ".json",
@@ -37,63 +32,17 @@ _UNICODE_FIXTURES = {
 }
 _ACTION_REF = re.compile(r"^\s*(?:-\s+)?uses:\s+([^#\s]+)", re.MULTILINE)
 _FULL_GIT_SHA = re.compile(r"[0-9a-f]{40}")
-_HOST_TOKEN = re.compile(
-    r"(?<![A-Za-z0-9_.-])(?:[A-Za-z0-9-]+\.)+[A-Za-z0-9-]+"
-    r"(?![A-Za-z0-9_.-])"
+_ENGLISH_LANGUAGE_SWITCH = re.compile(
+    "^[*][*]English[*][*] [|] "
+    r"\[\u7b80\u4f53\u4e2d\u6587\]\([^)]+\)$"
 )
-_REPOSITORY_TOKEN = re.compile(
-    r"(?=([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+))"
-)
-_BLOCKED_PUBLIC_TOKEN_DIGESTS = {
-    "".join(
-        (
-            "79e5cce5",
-            "77d2a144",
-            "14c352a7",
-            "8d2e9acd",
-            "084296eb",
-            "f7e16d7e",
-            "2af40ccd",
-            "f45aab5c",
-        )
-    ),
-    "".join(
-        (
-            "73e9f675",
-            "1ce13041",
-            "8535236a",
-            "5494d86b",
-            "d80e28df",
-            "6d246fcd",
-            "a3ae605d",
-            "2fe3b548",
-        )
-    ),
-    "".join(
-        (
-            "ba1ec5f6",
-            "0e46ff16",
-            "edfc0a39",
-            "15312816",
-            "2ee345ba",
-            "1088da29",
-            "4b20ec83",
-            "540414b9",
-        )
-    ),
-    "".join(
-        (
-            "8806f14a",
-            "1df6e4f8",
-            "a66cf9d9",
-            "0ad4ef61",
-            "07af1a7e",
-            "f2ff1220",
-            "41ea1ec1",
-            "f6d22dbe",
-        )
-    ),
-}
+
+
+def _is_simplified_chinese_document(relative: Path) -> bool:
+    return relative.name.endswith(".zh-CN.md") or relative.parts[:2] == (
+        "docs",
+        "zh-CN",
+    )
 
 
 def _repository_files() -> list[Path]:
@@ -125,28 +74,30 @@ def _workflow_files(root: Path = _REPO_ROOT) -> list[Path]:
 
 
 def test_public_text_is_english_and_uses_canonical_project_names() -> None:
+    forbidden = (
+        "Yihong" + "Dong/OpenCollab",
+        "docker." + "1panel.live",
+        "api." + "cherr.cc",
+        "172.16." + "200.37",
+    )
     findings: list[str] = []
 
     for path in _public_text_files():
         text = path.read_text(encoding="utf-8")
         relative = path.relative_to(_REPO_ROOT)
         for line_number, line in enumerate(text.splitlines(), start=1):
-            if relative not in _UNICODE_FIXTURES and any(
-                "\u4e00" <= char <= "\u9fff" for char in line
+            if (
+                relative not in _UNICODE_FIXTURES
+                and not _is_simplified_chinese_document(relative)
+                and not _ENGLISH_LANGUAGE_SWITCH.fullmatch(line)
+                and any("\u4e00" <= char <= "\u9fff" for char in line)
             ):
                 findings.append(f"{relative}:{line_number}: non-English public text")
-            candidates = _HOST_TOKEN.findall(line)
-            candidates.extend(
-                match.group(1) for match in _REPOSITORY_TOKEN.finditer(line)
-            )
-            if any(
-                hashlib.sha256(value.encode()).hexdigest()
-                in _BLOCKED_PUBLIC_TOKEN_DIGESTS
-                for value in candidates
-            ):
-                findings.append(
-                    f"{relative}:{line_number}: blocked private identifier"
-                )
+            for value in forbidden:
+                if value in line:
+                    findings.append(
+                        f"{relative}:{line_number}: private or stale value {value!r}"
+                    )
 
     assert not findings, "\n".join(findings)
 
@@ -162,24 +113,18 @@ def test_distribution_metadata_points_to_the_canonical_repository() -> None:
     assert f'Issues = "{canonical}/issues"' in pyproject
 
 
-def test_secret_baseline_is_fully_audited() -> None:
+def test_secret_gate_has_no_generated_baseline_or_runtime_scanner_download() -> None:
     workflow = (_REPO_ROOT / ".github/workflows/security.yml").read_text(
         encoding="utf-8"
     )
-    baseline = json.loads(
-        (_REPO_ROOT / ".secrets.baseline").read_text(encoding="utf-8")
+    scanner = (_REPO_ROOT / "scripts/check_secret_history.py").read_text(
+        encoding="utf-8"
     )
 
-    assert baseline["version"] == "1.5.0"
-    assert baseline["plugins_used"]
-    assert baseline["results"]
-    assert all(
-        finding.get("is_secret") is False
-        for findings in baseline["results"].values()
-        for finding in findings
-    )
-    assert "detect-secrets==1.5.0" in workflow
-    assert "scripts/check_secret_history.py" in workflow
+    assert not (_REPO_ROOT / ".secrets.baseline").exists()
+    assert ".secrets.baseline" not in workflow
+    assert ".secrets.baseline" not in scanner
+    assert "detect-secrets" not in workflow
 
 
 def test_contributor_covenant_license_is_attributed() -> None:

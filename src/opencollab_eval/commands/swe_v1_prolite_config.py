@@ -200,6 +200,7 @@ def verify_remote_runtime(
     host: str,
     remote_runtime_repo: str,
     expected: dict[str, Any] | None,
+    remote_python: str = "python3",
 ) -> dict[str, Any]:
     """Re-read and verify the installed remote runtime tree over SSH."""
     probe = (
@@ -210,7 +211,9 @@ def verify_remote_runtime(
     command = (
         "cd "
         + shlex.quote(remote_runtime_repo)
-        + " && PYTHONPATH=src python3 -c "
+        + " && PYTHONPATH=src "
+        + shlex.quote(remote_python)
+        + " -c "
         + shlex.quote(probe)
         + " "
         + shlex.quote(remote_runtime_repo)
@@ -386,11 +389,14 @@ def local_http_ok(base_url: str, timeout: float = 5.0) -> bool:
         return False
 
 
-def remote_http_ok(*, ssh_command: list[str], host: str, base_url: str, timeout: int = 10) -> bool:
+def remote_http_ok(
+    *, ssh_command: list[str], host: str, base_url: str, remote_python: str = "python3", timeout: int = 10
+) -> bool:
     probe = "import sys,urllib.request;urllib.request.urlopen(sys.argv[1], timeout=" + str(timeout) + ").read()"
+    remote_command = f"{shlex.quote(remote_python)} -c {shlex.quote(probe)} {shlex.quote(url_with_healthz(base_url))}"
     try:
         result = subprocess.run(
-            [*ssh_command, host, "python3 -c " + shlex.quote(probe) + " " + shlex.quote(url_with_healthz(base_url))],
+            [*ssh_command, host, remote_command],
             text=True,
             capture_output=True,
             timeout=max(REMOTE_HEALTH_SSH_TIMEOUT_FLOOR, timeout + 8),
@@ -502,11 +508,12 @@ def ensure_remote_proxy(
     host: str,
     local_proxy_base_url: str,
     remote_proxy_base_url: str,
+    remote_python: str = "python3",
     enabled: bool,
 ) -> dict[str, Any]:
     if not enabled:
         return {"status": "disabled"}
-    if remote_http_ok(ssh_command=ssh_command, host=host, base_url=remote_proxy_base_url):
+    if remote_http_ok(ssh_command=ssh_command, host=host, base_url=remote_proxy_base_url, remote_python=remote_python):
         return {"status": "already_healthy", "remote_proxy_base_url": remote_proxy_base_url}
     if not local_http_ok(local_proxy_base_url):
         raise RuntimeError(f"local proxy health check failed: {url_with_healthz(local_proxy_base_url)}")
@@ -534,10 +541,8 @@ def ensure_remote_proxy(
             attempts.append(f"{candidate_port}: {message}")
             if remote_forward_port_conflict(message):
                 if remote_http_ok(
-                    ssh_command=ssh_command,
-                    host=host,
-                    base_url=candidate_base_url,
-                    timeout=2,
+                    ssh_command=ssh_command, host=host, base_url=candidate_base_url,
+                    remote_python=remote_python, timeout=2,
                 ):
                     return {
                         "status": "already_healthy",
@@ -547,7 +552,10 @@ def ensure_remote_proxy(
                 continue
             raise RuntimeError(message)
         for _ in range(6):
-            if remote_http_ok(ssh_command=ssh_command, host=host, base_url=candidate_base_url, timeout=2):
+            if remote_http_ok(
+                ssh_command=ssh_command, host=host, base_url=candidate_base_url,
+                remote_python=remote_python, timeout=2,
+            ):
                 return {
                     "status": "started" if candidate_port == remote_port else "started_fallback_port",
                     "local_proxy_base_url": local_proxy_base_url,
@@ -700,16 +708,16 @@ def sync_runtime(
         'tar -xzf "$archive" -C "$stage"',
     ]
     prepare_commands: list[str] = []
-    python_command = shlex.quote(remote_python)
+    quoted_remote_python = shlex.quote(remote_python)
     if sh_files:
         prepare_commands.append("chmod +x " + " ".join(shlex.quote(rel) for rel in sh_files))
     if compile_targets:
         prepare_commands.append(
-            f"{python_command} -m compileall -q "
+            quoted_remote_python + " -m compileall -q "
             + " ".join(shlex.quote(rel) for rel in compile_targets)
         )
     prepare_commands.append(
-        f"PYTHONPATH=src {python_command} -c "
+        "PYTHONPATH=src " + quoted_remote_python + " -c "
         + shlex.quote(
             "import opencollab, opencollab_eval; "
             "from opencollab import OpenCollab, RunResult; "
@@ -721,7 +729,7 @@ def sync_runtime(
         )
     )
     prepare_commands.append(
-        f"PYTHONPATH=src {python_command} -c "
+        "PYTHONPATH=src " + quoted_remote_python + " -c "
         + shlex.quote(
             "import sys; "
             "from opencollab_eval.commands.swe_v1_prolite_config import verify_runtime_manifest; "
@@ -751,6 +759,7 @@ def sync_runtime(
         "synced": synced,
         "synced_dirs": synced_dirs,
         "compile_targets": compile_targets,
+        "remote_python": remote_python,
         "manifest": "runtime-manifest.json",
         "opencollab": {
             "distribution_version": distribution_version,

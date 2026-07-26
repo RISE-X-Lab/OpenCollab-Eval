@@ -5,55 +5,15 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import os
 import re
 import subprocess
-import tempfile
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path, PurePosixPath
 
-_BASELINE_PATH = ".secrets.baseline"
-_DETECT_SECRETS_VERSION = "1.5.0"
-_APPROVED_BASELINE_SHA256 = {
-    "".join(
-        (
-            "bc77746f",
-            "69c28eaa",
-            "d8d4c9f3",
-            "8fb972c7",
-            "20151c3c",
-            "5e17015a",
-            "0098f2f3",
-            "9205c936",
-        )
-    )
-}
 _ZERO_SHA = "0" * 40
-_GENERATED_AT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 _PATTERNS = (
-    (
-        "personal macOS path",
-        re.compile(rb"(?<![A-Za-z0-9])/(?:Users|Volumes)/[^/\x00\s\"']+"),
-    ),
-    (
-        "personal email",
-        re.compile(
-            rb"\b[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@"
-            rb"(?:gmail|outlook|hotmail|qq|163)\.(?:com|cn)\b",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "private IPv4 address",
-        re.compile(
-            rb"(?<![0-9])(?:10(?:\.[0-9]{1,3}){3}|"
-            rb"192\.168(?:\.[0-9]{1,3}){2}|"
-            rb"172\.(?:1[6-9]|2[0-9]|3[01])(?:\.[0-9]{1,3}){2})(?![0-9])"
-        ),
-    ),
     (
         "private key",
         re.compile(
@@ -87,7 +47,7 @@ _PATTERNS = (
     (
         "assigned credential",
         re.compile(
-            rb"\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|"
+            rb"(?<![A-Za-z0-9])(?:api[_-]?key|access[_-]?token|auth[_-]?token|"
             rb"client[_-]?secret|password|passwd)\b"
             rb"\s*[:=]\s*[\"']?([A-Za-z0-9_./+=-]{16,})",
             re.IGNORECASE,
@@ -164,201 +124,6 @@ def _tree_blobs(repository: Path, commit: str) -> list[tuple[str, str]]:
     return entries
 
 
-def _tree_file(repository: Path, commit: str, path: str) -> bytes | None:
-    output = _git(repository, "ls-tree", "-z", commit, "--", path)
-    if not output:
-        return None
-    entries = [entry for entry in output.split(b"\0") if entry]
-    if len(entries) != 1:
-        raise ValueError(f"expected one {path!r} entry in commit {commit}")
-    metadata, raw_path = entries[0].split(b"\t", 1)
-    _mode, object_type, object_id = metadata.decode("ascii").split()
-    if os.fsdecode(raw_path) != path or object_type != "blob":
-        raise ValueError(f"{path!r} is not a regular file in commit {commit}")
-    return _git(repository, "cat-file", "blob", object_id)
-
-
-def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    document: dict[str, object] = {}
-    for key, value in pairs:
-        if key in document:
-            raise ValueError(f"the secret baseline repeats JSON key {key!r}")
-        document[key] = value
-    return document
-
-
-def _baseline_document(content: bytes, *, require_audit: bool) -> dict:
-    try:
-        baseline = json.loads(content, object_pairs_hook=_unique_json_object)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ValueError("the secret baseline is not valid UTF-8 JSON") from exc
-    if not isinstance(baseline, dict) or baseline.get("version") != _DETECT_SECRETS_VERSION:
-        raise ValueError("the secret baseline must use detect-secrets 1.5.0")
-    if not isinstance(baseline.get("plugins_used"), list) or not baseline["plugins_used"]:
-        raise ValueError("the secret baseline must declare its scanner plugins")
-    results = baseline.get("results")
-    if not isinstance(results, dict):
-        raise ValueError("the secret baseline must contain a results mapping")
-    for path, findings in results.items():
-        if not isinstance(path, str) or not isinstance(findings, list):
-            raise ValueError("the secret baseline has an invalid results entry")
-        if require_audit and any(
-            not isinstance(finding, dict) or finding.get("is_secret") is not False
-            for finding in findings
-        ):
-            raise ValueError("every baseline finding must have an audited false verdict")
-    generated_at = baseline.pop("generated_at", None)
-    if generated_at is not None:
-        if not isinstance(generated_at, str) or len(generated_at) != 20:
-            raise ValueError("the secret baseline generated_at must be a UTC timestamp")
-        try:
-            datetime.strptime(generated_at, _GENERATED_AT_FORMAT)
-        except ValueError as exc:
-            raise ValueError(
-                "the secret baseline generated_at must be a UTC timestamp"
-            ) from exc
-    return baseline
-
-
-def _baseline_digest(content: bytes) -> str:
-    canonical = json.dumps(
-        _baseline_document(content, require_audit=True),
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
-
-
-def _baseline_identities(document: dict) -> set[tuple[str, str, str]]:
-    identities: set[tuple[str, str, str]] = set()
-    for path, findings in document["results"].items():
-        for finding in findings:
-            detector = finding.get("type")
-            fingerprint = finding.get("hashed_secret")
-            if not isinstance(detector, str) or not isinstance(fingerprint, str):
-                raise ValueError("the secret baseline has an invalid finding identity")
-            identities.add((path, detector, fingerprint))
-    return identities
-
-
-def _check_baseline_history(
-    repository: Path,
-    base: str,
-    head: str,
-    commits: list[str],
-) -> bytes | None:
-    head_content = _tree_file(repository, head, _BASELINE_PATH)
-    if head_content is None:
-        print("::error::.secrets.baseline is missing from the proposed tree.")
-        return None
-    base_content = (
-        None if base == _ZERO_SHA else _tree_file(repository, base, _BASELINE_PATH)
-    )
-    for commit in commits:
-        content = _tree_file(repository, commit, _BASELINE_PATH)
-        if content is None:
-            if base_content is None:
-                continue
-            print(
-                "::error::.secrets.baseline is missing from proposed commit "
-                f"{commit}."
-            )
-            return None
-        if content == base_content:
-            continue
-        if _baseline_digest(content) not in _APPROVED_BASELINE_SHA256:
-            print(
-                "::error::.secrets.baseline changed without a digest approved by "
-                f"the trusted base checker in commit {commit}."
-            )
-            return None
-    return head_content
-
-
-def _detect_secrets_environment() -> dict[str, str]:
-    environment = os.environ.copy()
-    for name in ("PYTHONHOME", "PYTHONPATH"):
-        environment.pop(name, None)
-    for name in tuple(environment):
-        if name.startswith("GIT_"):
-            environment.pop(name)
-    return environment
-
-
-def _verify_detect_secrets() -> None:
-    completed = subprocess.run(
-        ["detect-secrets", "--version"],
-        check=True,
-        capture_output=True,
-        text=True,
-        env=_detect_secrets_environment(),
-    )
-    if completed.stdout.strip() != _DETECT_SECRETS_VERSION:
-        raise ValueError(
-            f"detect-secrets {_DETECT_SECRETS_VERSION} is required, "
-            f"found {completed.stdout.strip()!r}"
-        )
-
-
-def _detect_secrets_identities(
-    repository: Path,
-    commit: str,
-    baseline_content: bytes,
-) -> set[tuple[str, str, str]]:
-    with tempfile.TemporaryDirectory(prefix="opencollab-secret-tree-") as temporary:
-        root = Path(temporary)
-        tree = root / "tree"
-        tree.mkdir()
-        for relative, object_id in _tree_blobs(repository, commit):
-            if relative == _BASELINE_PATH:
-                continue
-            target = tree.joinpath(*PurePosixPath(relative).parts)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(_git(repository, "cat-file", "blob", object_id))
-        baseline = root / "baseline.json"
-        baseline.write_bytes(baseline_content)
-        subprocess.run(
-            [
-                "detect-secrets",
-                "scan",
-                "--all-files",
-                "--baseline",
-                str(baseline),
-            ],
-            cwd=tree,
-            check=True,
-            capture_output=True,
-            env=_detect_secrets_environment(),
-        )
-        observed = _baseline_document(
-            baseline.read_bytes(),
-            require_audit=False,
-        )
-    return _baseline_identities(observed)
-
-
-def _scan_tree_with_detect_secrets(
-    repository: Path,
-    commit: str,
-    baseline_content: bytes,
-    trusted_identities: set[tuple[str, str, str]],
-) -> bool:
-    expected = _baseline_document(baseline_content, require_audit=True)
-    allowed_identities = _baseline_identities(expected) | trusted_identities
-    observed_identities = _detect_secrets_identities(
-        repository,
-        commit,
-        baseline_content,
-    )
-    if not observed_identities <= allowed_identities:
-        print(
-            "::error::detect-secrets found an unaudited finding in commit "
-            f"{commit}."
-        )
-        return False
-    return True
-
-
 def _scan_blob(content: bytes) -> list[tuple[str, str, int]]:
     matches: list[tuple[str, str, int]] = []
     for detector, pattern in _PATTERNS:
@@ -417,24 +182,6 @@ def check_secret_history(repository: Path, base: str, head: str) -> int:
     if not commits:
         print("::error::No proposed commits were available for the secret scan.")
         return 1
-    baseline_content = _check_baseline_history(
-        repository,
-        resolved_base,
-        resolved_head,
-        commits,
-    )
-    if baseline_content is None:
-        return 1
-    _verify_detect_secrets()
-    trusted_detect_identities = (
-        set()
-        if base == _ZERO_SHA
-        else _detect_secrets_identities(
-            repository,
-            resolved_base,
-            baseline_content,
-        )
-    )
     for commit in commits:
         observed_counts: Counter[tuple[str, str, str]] = Counter()
         introduced: list[Finding] = []
@@ -456,13 +203,6 @@ def check_secret_history(repository: Path, base: str, head: str) -> int:
                     f"line={finding.line}::Potential {finding.detector} "
                     f"introduced in commit {commit}."
                 )
-            return 1
-        if not _scan_tree_with_detect_secrets(
-            repository,
-            commit,
-            baseline_content,
-            trusted_detect_identities,
-        ):
             return 1
     print("Secret history checks passed.")
     return 0

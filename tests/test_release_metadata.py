@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import hashlib
-import os
 from pathlib import Path
 
 import opencollab_eval
 
-_REPO_ROOT = Path(
-    os.environ.get("OPENCOLLAB_EVAL_SOURCE_ROOT", Path(__file__).resolve().parents[1])
-).resolve()
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 _PACKAGE_ROOT = _REPO_ROOT / "src" / "opencollab_eval"
 _MULAN_PSL_2_SHA256 = (
     "eb7a1d713eb919b146787629e22e4c975cb701f529a65d4d7e0fcd417558bf1c"

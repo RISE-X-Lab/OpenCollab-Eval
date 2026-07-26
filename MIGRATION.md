@@ -1,12 +1,14 @@
-# Repository ownership and compatibility plan
+# OpenCollab compatibility and repository ownership
 
-OpenCollab-Eval owns benchmark contracts, evaluator orchestration, solver
-workflows, SWE-bench generation, process isolation, evidence, reporting, remote
-execution, and every test that targets those components. OpenCollab owns the
-domain, application services, adapters, bootstrap composition, the compact
-public Python API, and their tests.
+**English** | [简体中文](MIGRATION.zh-CN.md)
 
-The migrated implementation uses package namespaces throughout:
+OpenCollab-Eval owns benchmark contracts, evaluator orchestration, Solver
+workflows, candidate construction, SWE-bench generation, process isolation,
+execution evidence, reporting, and remote evaluation. OpenCollab owns the agent
+framework, domain and application services, adapters, composition, compact
+public Python API, and framework tests.
+
+## Package ownership
 
 | Owner | Package |
 | --- | --- |
@@ -18,19 +20,26 @@ The migrated implementation uses package namespaces throughout:
 | Solver workflows | `opencollab_eval.workflows` |
 | Shell and configuration assets | `opencollab_eval.resources`, `opencollab_eval.configs` |
 
-Top-level `scripts`, `swebench`, and `workflows` Python packages are avoided so
-installed packages and repository-root path behavior cannot shadow each other.
-Remote execution installs or synchronizes the package under a `src` layout and
-starts modules with `python -m`.
+The evaluator uses a `src` package layout. Installed commands start modules with
+`python -m` or the `oc-eval` console script. Remote execution synchronizes the
+declared OpenCollab public package and OpenCollab-Eval runtime, verifies their
+tree identity, and then imports from that synchronized package root.
 
-The evaluator consumes the compact public API introduced by OpenCollab 0.4.
-The package root provides `OpenCollab`, `RunResult`, `RunError`, and `workflow`.
-Optional public contracts and composition helpers live in
-`opencollab.environments`, `opencollab.tools`, and `opencollab.workflows`.
+## OpenCollab version boundary
 
-OpenCollab 0.4.0 is the first compatible release for this boundary. Eval
-production code and tests cannot import the retired `opencollab.sdk.*`
-namespace or the internal `opencollab.adapters`, `opencollab.application`,
+OpenCollab 0.4.0 is the first compatible public API release. The package root
+provides `OpenCollab`, `RunResult`, `RunError`, and `workflow`. Optional public
+contracts and composition helpers live in `opencollab.environments`,
+`opencollab.tools`, and `opencollab.workflows`.
+
+Production code and tests cannot import the retired `opencollab.sdk` namespace
+or internal `opencollab.adapters`, `opencollab.application`,
 `opencollab.bootstrap`, `opencollab.domain`, and `opencollab.harness`
-namespaces. The boundary suite enforces these constraints over both source
-trees.
+namespaces. Boundary tests enforce the rule over source and installed wheels.
+
+Evaluation programs, benchmark data, model outputs, predictions, patches,
+reports, and integration tests belong to OpenCollab-Eval. Framework behavior
+and public API tests belong to OpenCollab.
+
+See [the architecture guide](docs/architecture.md) for the current data flow
+and [the wheel contract](CONTRIBUTING.md) for compatibility verification.

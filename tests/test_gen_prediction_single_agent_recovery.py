@@ -213,8 +213,10 @@ def test_single_main_cleanup_failure_stages_candidate_before_publish(
         assert kwargs["artifact_root"] == tmp_path
         return {
             "workflow_status": "done",
-            "execution_quiesced": True,
-            "submission_eligible": True,
+            "session_quiesced": True,
+            "execution_quiesced": False,
+            "candidate_probe_eligible": True,
+            "submission_eligible": False,
         }
 
     monkeypatch.setattr(gp, "run_agent", fake_run_agent)
@@ -288,8 +290,10 @@ def test_single_main_output_symlink_race_cleans_active_container(
     async def fake_run_agent(*args, **kwargs):
         return {
             "workflow_status": "done",
-            "execution_quiesced": True,
-            "submission_eligible": True,
+            "session_quiesced": True,
+            "execution_quiesced": False,
+            "candidate_probe_eligible": True,
+            "submission_eligible": False,
         }
 
     monkeypatch.setattr(gp, "run_agent", fake_run_agent)

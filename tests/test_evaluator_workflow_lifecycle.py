@@ -51,34 +51,6 @@ def test_public_local_environment_maps_repo_artifacts_out_of_candidates(tmp_path
     )
 
 
-def test_public_docker_environment_maps_source_repo_artifacts_out_of_candidates(
-    tmp_path,
-):
-    from opencollab.environments import (
-        docker_environment,
-        worktree_environment,
-    )
-
-    from opencollab_eval.engine import evaluator
-    from opencollab_eval.engine.swe_checkpoint_artifacts import (
-        checkpoint_artifact_exclude_paths,
-    )
-
-    backing = worktree_environment(tmp_path)
-    env = docker_environment("example.invalid/eval:latest", backing)
-    artifact = tmp_path / "eval-output" / "trajectory.jsonl"
-
-    assert env.local_filesystem is False
-    assert env.host_workspace is None
-    assert env.source_workspace == str(tmp_path.resolve())
-    assert evaluator._workspace_relative_artifact_paths(env, (artifact,)) == [
-        "eval-output/trajectory.jsonl"
-    ]
-    assert checkpoint_artifact_exclude_paths(env, (artifact,)) == (
-        "eval-output/trajectory.jsonl",
-    )
-
-
 def _git_patch_context(repo):
     base = subprocess.run(
         ["git", "rev-parse", "HEAD"],

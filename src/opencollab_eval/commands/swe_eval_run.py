@@ -654,20 +654,30 @@ def _run_parallel_runner(args: argparse.Namespace, remaining: list[str]) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run SWE evaluation with a selected solver.")
-    parser.add_argument("--dataset", default="swe-batch-pro-lite")
-    parser.add_argument("--indices")
-    parser.add_argument("--start-index", type=int)
-    parser.add_argument("--end-index", type=int)
-    parser.add_argument("--solver", default="g11", choices=tuple(DEFAULT_WORKFLOW_SOLVERS))
-    parser.add_argument("--workers", type=int)
-    parser.add_argument("--run-id")
-    parser.add_argument("--output-dir", type=Path)
-    parser.add_argument("--detach", action="store_true")
-    parser.add_argument("--launchd-label")
-    parser.add_argument("--no-persistent-proxy", action="store_true")
+    parser.add_argument("--dataset", default="swe-batch-pro-lite", help="Supported benchmark adapter")
+    parser.add_argument("--indices", help="Comma-separated task indices and inclusive ranges")
+    parser.add_argument("--start-index", type=int, help="First task index when --indices is omitted")
+    parser.add_argument("--end-index", type=int, help="Last task index when --indices is omitted")
+    parser.add_argument(
+        "--solver",
+        default="g11",
+        choices=tuple(DEFAULT_WORKFLOW_SOLVERS),
+        help="Bundled workflow or external Solver profile",
+    )
+    parser.add_argument("--workers", type=int, help="Maximum concurrent task controllers")
+    parser.add_argument("--run-id", help="Run-scoped identity used by every delegated task")
+    parser.add_argument("--output-dir", type=Path, help="Controller reports and task logs")
+    parser.add_argument("--detach", action="store_true", help="Launch the coordinator through macOS launchd")
+    parser.add_argument("--launchd-label", help="Explicit launchd service label for detached mode")
+    parser.add_argument(
+        "--no-persistent-proxy",
+        action="store_true",
+        help="Use direct transport or an externally managed provider relay",
+    )
     parser.add_argument(
         "--proxy-upstream-base-url",
         default=os.environ.get("OPENCOLLAB_PROXY_UPSTREAM_BASE_URL", ""),
+        help="Upstream provider URL used by the managed authenticated relay",
     )
     return parser
 

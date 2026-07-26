@@ -18,29 +18,51 @@ from opencollab_eval.commands.swe_final_report import run_from_args as run_final
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="oc-eval")
+    parser = argparse.ArgumentParser(
+        prog="oc-eval",
+        description=(
+            "Inspect benchmark inputs, generate evidence-bound candidates, "
+            "run bounded official SWE evaluation, and publish validated reports."
+        ),
+    )
     parser.add_argument("--version", action="version", version=__version__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     inspect_parser = subparsers.add_parser("inspect", help="Inspect a SWE-Batch Pro JSONL dataset")
-    inspect_parser.add_argument("dataset", type=Path)
-    inspect_parser.add_argument("--identity-key-file", required=True, type=Path)
+    inspect_parser.add_argument("dataset", type=Path, help="Bounded benchmark JSONL file")
+    inspect_parser.add_argument(
+        "--identity-key-file",
+        required=True,
+        type=Path,
+        help="Evaluator-owned file containing exactly 32 random bytes",
+    )
     inspect_parser.add_argument(
         "--image-repository",
         default=os.environ.get("OPENCOLLAB_SWE_IMAGE_REPOSITORY"),
         help="Repository prefix for rows that provide only dockerhub_tag",
     )
-    run_parser = subparsers.add_parser("run", help="Run the migrated JSONL evaluation engine")
-    run_parser.add_argument("tasks_file", type=Path)
-    run_parser.add_argument("--model", default=os.environ.get("OPENCOLLAB_MODEL"))
-    run_parser.add_argument("--provider", default=os.environ.get("OPENCOLLAB_PROVIDER"))
-    run_parser.add_argument("--api-key", default=os.environ.get("OPENCOLLAB_API_KEY"))
-    run_parser.add_argument("--base-url", default=os.environ.get("OPENCOLLAB_BASE_URL"))
-    run_parser.add_argument("--output", type=Path, default=Path("eval_results"))
-    run_parser.add_argument("--concurrency", type=int, default=4)
-    run_parser.add_argument("--max-tokens", type=int, default=1_000_000)
-    run_parser.add_argument("--timeout", type=float, default=600.0)
-    run_parser.add_argument("--temperature", type=float, default=0.2)
-    run_parser.add_argument("--top-p", type=float)
+    run_parser = subparsers.add_parser(
+        "run",
+        help="Generate candidates from generic task JSONL and report submission eligibility",
+    )
+    run_parser.add_argument("tasks_file", type=Path, help="Generic evaluator task JSONL file")
+    run_parser.add_argument("--model", default=os.environ.get("OPENCOLLAB_MODEL"), help="Provider model identifier")
+    run_parser.add_argument(
+        "--provider",
+        default=os.environ.get("OPENCOLLAB_PROVIDER"),
+        help="OpenCollab provider adapter",
+    )
+    run_parser.add_argument(
+        "--api-key",
+        default=os.environ.get("OPENCOLLAB_API_KEY"),
+        help="Provider credential, preferably supplied through OPENCOLLAB_API_KEY",
+    )
+    run_parser.add_argument("--base-url", default=os.environ.get("OPENCOLLAB_BASE_URL"), help="Provider base URL")
+    run_parser.add_argument("--output", type=Path, default=Path("eval_results"), help="Candidate result directory")
+    run_parser.add_argument("--concurrency", type=int, default=4, help="Maximum concurrent tasks")
+    run_parser.add_argument("--max-tokens", type=int, default=1_000_000, help="Default task token budget")
+    run_parser.add_argument("--timeout", type=float, default=600.0, help="Default task timeout in seconds")
+    run_parser.add_argument("--temperature", type=float, default=0.2, help="Model sampling temperature")
+    run_parser.add_argument("--top-p", type=float, help="Optional nucleus-sampling value")
     final_parser = subparsers.add_parser(
         "final-report",
         help="Build a final comparison report from two terminal SWE fact reports",

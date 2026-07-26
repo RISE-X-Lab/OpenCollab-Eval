@@ -1,0 +1,139 @@
+# CLI reference
+
+**English** | [简体中文](zh-CN/cli-reference.md)
+
+This document separates stable installed commands from advanced module
+entrypoints. Run `--help` on the installed revision for the complete option
+list.
+
+## Installed command
+
+Both forms below invoke the same package.
+
+```bash
+oc-eval --help
+python -m opencollab_eval --help
+```
+
+### `oc-eval inspect`
+
+```text
+oc-eval inspect DATASET --identity-key-file KEY
+                       [--image-repository REPOSITORY]
+```
+
+This command validates a bounded SWE-Batch Pro JSONL file, separates public and
+sealed fields, and prints anonymous public task IDs. It performs no generation
+or official evaluation.
+
+### `oc-eval run`
+
+```text
+oc-eval run TASKS_FILE --model MODEL --provider PROVIDER
+            [--api-key KEY] [--base-url URL] [--output DIRECTORY]
+            [--concurrency COUNT] [--max-tokens COUNT] [--timeout SECONDS]
+            [--temperature VALUE] [--top-p VALUE]
+```
+
+This command runs the generic evaluator and writes `results.jsonl`. Its summary
+contains task count, eligible candidate count, and ineligible count. It does
+not publish an official SWE resolved verdict.
+
+### `oc-eval swe-v1-prolite`
+
+This command runs one bounded remote Pro-Lite slice through generation and
+official evaluation. The main option groups are shown below.
+
+| Group | Options |
+| --- | --- |
+| Remote runtime | `--host`, `--ssh-command`, `--remote-python`, `--remote-root`, `--remote-runtime-repo` |
+| Task selection | `--start-index`, `--limit`, `--run-id`, `--base-run-dir` |
+| Solver | `--workflow`, `--model-name`, `--llm-model`, `--llm-provider`, `--budget`, `--max-steps` |
+| Model identity | `--context-window`, `--temperature`, `--top-p`, `--max-output-tokens` |
+| Provider transport | `--remote-proxy-base-url`, `--local-proxy-base-url`, `--proxy-env-file`, `--remote-api-env-file` |
+| Evidence limits | `--max-task-starts`, `--max-eval-attempts`, `--checkpoint-interval` |
+| Output | `--json-output`, `--markdown-output`, `--parent-output-dir` |
+| Maintenance | `--dry-run`, `--eval-only`, `--no-sync-runtime`, `--expected-runtime-tree-sha256` |
+
+Run the installed help before constructing automation.
+
+```bash
+oc-eval swe-v1-prolite --help
+```
+
+### `oc-eval final-report`
+
+This command validates two complete fact reports, their clean-run audit
+manifests, the canonical dataset, and all referenced evidence before publishing
+JSON, Markdown, TeX, PDF, and a final manifest.
+
+```bash
+oc-eval final-report \
+  --method-a-report METHOD_A.json \
+  --method-a-audit-manifest METHOD_A_AUDIT.json \
+  --method-b-report METHOD_B.json \
+  --method-b-audit-manifest METHOD_B_AUDIT.json \
+  --dataset-file DATASET.jsonl \
+  --meeting-date YYYY-MM-DD \
+  --author AUTHOR \
+  --output-dir DIRECTORY
+```
+
+See [final-report.md](final-report.md) for the complete evidence contract.
+
+## Solver coordinator
+
+```bash
+python -m opencollab_eval.commands.swe_eval_run --help
+```
+
+The coordinator selects `g11`, `g1.1`, `baseTeam`, `TeamPro`, `openhands`, or
+`claude-code`, applies its fixed defaults, and delegates to the parallel
+Pro-Lite runner. Its own options select the dataset, indices, Solver, workers,
+run ID, output directory, and detached process mode. Additional recognized
+Pro-Lite options are forwarded to the parallel runner.
+
+Detached mode is a macOS operator convenience implemented through `launchd`.
+Direct provider transport can run in the foreground across supported
+platforms. Other provider transports use the persistent `launchd` relay by
+default. CI and Linux automation should pass `--no-persistent-proxy` and
+provide an already managed relay and tunnel.
+
+## Advanced module entrypoints
+
+Advanced commands are installed package modules. Their interfaces are intended
+for repository operators and tests, and they can evolve faster than the
+top-level CLI.
+
+| Module | Use |
+| --- | --- |
+| `opencollab_eval.generation.gen_prediction` | Generate one single-agent prediction |
+| `opencollab_eval.generation.gen_prediction_workflow` | Generate one workflow prediction |
+| `opencollab_eval.generation.gen_prediction_openhands` | Generate one OpenHands prediction |
+| `opencollab_eval.commands.swe_g11_parallel_runner` | Coordinate a parallel G1.1-compatible batch |
+| `opencollab_eval.commands.swe_eval_layer_report` | Merge bounded evaluation rounds into one fact report |
+| `opencollab_eval.commands.swe_rejudge_direct_eval` | Re-evaluate an explicitly bound existing candidate |
+| `opencollab_eval.commands.swe_token_cost_summary` | Summarize recorded model usage and configured prices |
+| `opencollab_eval.commands.swe_frozen_manifest` | Validate a frozen task manifest before Solver launch |
+
+Invoke a module through the installed interpreter.
+
+```bash
+python -m opencollab_eval.generation.gen_prediction_workflow --help
+```
+
+Candidate projection helpers, process guards, relay helpers, report renderers,
+and sidecar builders are implementation interfaces. Production automation
+should call the top-level commands or the documented advanced modules instead
+of composing private helpers.
+
+## Exit and result semantics
+
+Argument or validation errors use a nonzero exit. A completed command can also
+write task-level technical failures. Read the generated JSON rather than
+inferring all task outcomes from the process exit code.
+
+`resolved`, `unresolved`, and `technical_failed` are mutually exclusive
+terminal classifications for an officially evaluated task. Candidate
+eligibility from `oc-eval run` is a generation classification and does not
+belong to that terminal set.

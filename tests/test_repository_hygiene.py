@@ -49,14 +49,3 @@ def test_repository_tracks_document_sources_only() -> None:
         if path.is_file() and path.name.endswith(_COMPILED_DOCUMENT_SUFFIXES)
     )
     assert offenders == []
-
-
-def test_wheel_contract_copies_repository_test_support() -> None:
-    root = _repository_root()
-    script = (root / "scripts" / "verify_wheel_contract.sh").read_text(
-        encoding="utf-8"
-    )
-
-    assert 'cp -R "$repo_root/scripts" "$venv_dir/scripts"' in script
-    assert 'PYTHONPATH="$venv_dir:$venv_dir/eval-tests"' in script
-    assert "detect-secrets==1.5.0" in script

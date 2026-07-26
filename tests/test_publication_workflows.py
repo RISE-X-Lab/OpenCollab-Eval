@@ -1,11 +1,8 @@
 """Static contracts for publication-critical GitHub workflows."""
 
-import os
 from pathlib import Path
 
-_ROOT = Path(
-    os.environ.get("OPENCOLLAB_EVAL_SOURCE_ROOT", Path(__file__).resolve().parents[1])
-).resolve()
+_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _workflow(name: str) -> str:
@@ -56,14 +53,8 @@ def test_security_uses_the_trusted_base_and_scans_every_proposed_commit() -> Non
     assert 'python3 scripts/check_secret_history.py "$BASE_SHA" "$HEAD_SHA"' in workflow
     assert "check_secret_history.py" in workflow
     assert "git ls-tree --name-only" in workflow
-    assert "detect-secrets==1.5.0" in workflow
-    assert workflow.index("detect-secrets==1.5.0") < workflow.index(
-        "Scan every pushed commit"
-    )
-    assert workflow.count("if ! git ls-tree --name-only") == 2
-    assert ".secrets.baseline" in (
-        _ROOT / "scripts" / "check_secret_history.py"
-    ).read_text(encoding="utf-8")
+    assert ".secrets.baseline" not in workflow
+    assert "detect-secrets" not in workflow
     assert 'elif [ -z "$trusted_checker" ]; then' in workflow
     assert "persist-credentials: false" in workflow
 
@@ -82,3 +73,21 @@ def test_ci_uses_verified_action_release_commits() -> None:
     assert workflow.count(
         "OPENCOLLAB_EVAL_SOURCE_ROOT: ${{ github.workspace }}/eval"
     ) == 2
+
+
+def test_wheel_contract_excludes_only_source_repository_governance_tests() -> None:
+    script = (_ROOT / "scripts" / "verify_wheel_contract.sh").read_text(
+        encoding="utf-8"
+    )
+    source_only = {
+        "test_conventional_title_check.py",
+        "test_hygiene_check.py",
+        "test_public_readiness.py",
+        "test_publication_workflows.py",
+        "test_release_metadata.py",
+        "test_secret_history_check.py",
+    }
+
+    for filename in source_only:
+        assert f'--ignore="$venv_dir/eval-tests/{filename}"' in script
+    assert script.count('--ignore="$venv_dir/eval-tests/') == len(source_only)

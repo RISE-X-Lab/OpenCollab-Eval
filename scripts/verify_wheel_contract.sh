@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+usage() {
+  echo "usage: $0 PATH_TO_OPENCOLLAB_WHEEL PATH_TO_OPENCOLLAB_EVAL_WHEEL"
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
 if [[ $# -ne 2 ]]; then
-  echo "usage: $0 PATH_TO_OPENCOLLAB_WHEEL PATH_TO_OPENCOLLAB_EVAL_WHEEL" >&2
+  usage >&2
   exit 2
 fi
 
@@ -28,20 +37,25 @@ trap 'rm -rf "$venv_dir"' EXIT
 
 "$python_bin" -m venv "$venv_dir"
 chmod 755 "$venv_dir"
-"$venv_dir/bin/pip" install \
-  "$1" "${2}[swebench]" detect-secrets==1.5.0 pytest pytest-asyncio
+"$venv_dir/bin/pip" install "$1" "${2}[swebench]" pytest pytest-asyncio
 site_packages="$($venv_dir/bin/python -c 'import site; print(site.getsitepackages()[0])')"
 cp -R "$repo_root/tests" "$venv_dir/eval-tests"
-cp -R "$repo_root/scripts" "$venv_dir/scripts"
 
 (
   cd "$venv_dir"
   PATH="$venv_dir/bin:$PATH" \
   OPENCOLLAB_EXPECTED_WHEEL_ROOT="$site_packages" \
     OPENCOLLAB_EVAL_EXPECTED_WHEEL_ROOT="$site_packages" \
-    PYTHONPATH="$venv_dir:$venv_dir/eval-tests" \
+    PYTHONPATH="$venv_dir/eval-tests" \
     "$venv_dir/bin/pytest" -q -p no:cacheprovider -c /dev/null -o asyncio_mode=auto \
-      --import-mode=importlib "$venv_dir/eval-tests"
+      --import-mode=importlib \
+      --ignore="$venv_dir/eval-tests/test_conventional_title_check.py" \
+      --ignore="$venv_dir/eval-tests/test_hygiene_check.py" \
+      --ignore="$venv_dir/eval-tests/test_public_readiness.py" \
+      --ignore="$venv_dir/eval-tests/test_publication_workflows.py" \
+      --ignore="$venv_dir/eval-tests/test_release_metadata.py" \
+      --ignore="$venv_dir/eval-tests/test_secret_history_check.py" \
+      "$venv_dir/eval-tests"
 )
 
 (

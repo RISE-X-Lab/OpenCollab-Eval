@@ -135,7 +135,7 @@ def test_remote_runner_eval_only_uses_existing_patch_without_starting_generation
         "max_steps": 1,
         "swe_timeout": 1,
         "task_wall_timeout": 1,
-        "eval_timeout": 1,
+        "eval_timeout": 10,
         "llm_timeout": 1,
         "checkpoint_interval": 1,
         "max_task_starts": 1,

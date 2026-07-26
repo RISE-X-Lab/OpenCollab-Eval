@@ -1,34 +1,42 @@
-# SWE-bench generation and batch evaluation
+# Evaluation runtime map
 
-OpenCollab-Eval owns the host-side bridge between OpenCollab solvers and the
-official SWE-bench harness. Generation starts an official `sweb.eval` image,
-runs the selected solver against the isolated `/testbed` workspace, waits for
-container-wide process quiescence, and extracts a bounded patch with trusted
-host Git against the anonymous pre-solver snapshot.
+**English** | [简体中文](zh-CN/evaluation-runtime.md)
 
-Run one single-agent task through the installed module:
+OpenCollab-Eval exposes several execution layers. Choose the highest-level
+entrypoint that matches the required result.
+
+| Entry | Input | Output | Official verdict |
+| --- | --- | --- | --- |
+| `oc-eval inspect` | SWE-Batch Pro dataset and identity key | Anonymous census | No |
+| `oc-eval run` | Generic evaluator task JSONL | Candidate eligibility records | No |
+| `oc-eval swe-v1-prolite` | One bounded remote Pro-Lite slice | Generation and official reports | Yes |
+| `opencollab_eval.commands.swe_eval_run` | Solver name and task indices | Coordinated Pro-Lite batch | Yes |
+| `oc-eval final-report` | Two terminal fact reports and audit manifests | Validated publication set | Consumes verdicts |
+
+The remote production runner synchronizes complete declared source trees for
+OpenCollab's public package and OpenCollab-Eval. It writes a runtime manifest,
+verifies the local and remote tree SHA-256 values, probes the selected remote
+Python interpreter, and repeats the identity check immediately before
+generation.
+
+Generation starts from a verified task image and a disposable Solver-visible
+repository. Candidate construction uses controller-owned Git state after
+process quiescence. Official evaluation applies the bound patch to a fresh
+workspace and records exact target execution proof.
+
+Single-instance generator modules remain available for operators and tests.
 
 ```bash
-python -m opencollab_eval.generation.gen_prediction \
-  --instance-file /path/to/instance.json \
-  --output /path/to/predictions.jsonl
+python -m opencollab_eval.generation.gen_prediction --help
+python -m opencollab_eval.generation.gen_prediction_workflow --help
+python -m opencollab_eval.generation.gen_prediction_openhands --help
 ```
 
-Run one workflow task through
-`python -m opencollab_eval.generation.gen_prediction_workflow`. Remote
-Pro-Lite batches use
-`python -m opencollab_eval.commands.swe_v1_prolite_runner`; parallel G1.1
-coordination uses
-`python -m opencollab_eval.commands.swe_g11_parallel_runner`.
+The packaged `run_team_batch.sh` and `start_team_run.sh` resources are legacy
+gates. They return technical status 125 before Solver launch because their
+historical mount design cannot provide the current isolation and trusted
+candidate evidence. Use `oc-eval swe-v1-prolite` or the Solver coordinator.
 
-Python command modules are launched with `python -m`. They use package imports
-from the installed OpenCollab-Eval distribution and do not add repository or
-package directories to `sys.path`. The remote v1 runner is the sole bootstrap
-exception: after the packaged runner source is embedded on an evaluation host,
-it adds that host's synchronized `remote_repo/src` directory before importing
-the transferred runtime modules.
-
-The packaged `run_team_batch.sh` and `start_team_run.sh` resources preserve
-their explicit legacy gates. They return technical status 125 before starting
-a solver because their historical mount design cannot establish the current
-isolation and trusted-extraction evidence.
+See [SWE Pro-Lite operations](swe-prolite-operations.md) for runnable commands,
+[CLI reference](cli-reference.md) for command selection, and
+[Evaluation integrity](evaluation-integrity.md) for result semantics.

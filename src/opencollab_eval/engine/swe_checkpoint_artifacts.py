@@ -9,54 +9,6 @@ from pathlib import Path
 from typing import Any
 
 
-def _workspace_roots(env: Any) -> tuple[Path, ...]:
-    raw_roots = [
-        env.workspace
-        if env.local_filesystem
-        else getattr(env, "host_workspace", None),
-        getattr(env, "source_workspace", None),
-    ]
-    roots: list[Path] = []
-    for raw_root in raw_roots:
-        if not raw_root:
-            continue
-        try:
-            root = Path(os.path.abspath(os.fspath(raw_root)))
-        except (OSError, TypeError, ValueError):
-            continue
-        if root not in roots:
-            roots.append(root)
-    return tuple(roots)
-
-
-def workspace_relative_host_paths(
-    env: Any,
-    raw_path: str | os.PathLike[str],
-) -> tuple[Path, ...]:
-    """Map a host path through every declared host-side workspace root."""
-    try:
-        target = Path(os.path.abspath(os.fspath(raw_path)))
-    except (OSError, TypeError, ValueError):
-        return ()
-    relative_paths: list[Path] = []
-    for root in _workspace_roots(env):
-        pairs = [(target, root)]
-        try:
-            pairs.append(
-                (target.resolve(strict=False), root.resolve(strict=False))
-            )
-        except (OSError, RuntimeError):
-            pass
-        for candidate, candidate_root in pairs:
-            try:
-                relative = candidate.relative_to(candidate_root)
-            except ValueError:
-                continue
-            if relative not in relative_paths:
-                relative_paths.append(relative)
-    return tuple(relative_paths)
-
-
 def build_checkpoint_meta(
     *,
     status: str,
@@ -91,9 +43,44 @@ def checkpoint_artifact_exclude_paths(
     artifact_paths: Sequence[Path],
 ) -> tuple[str, ...]:
     """Return checkpoint artifact paths relative to an environment workspace."""
+    host_workspace = (
+        env.workspace
+        if env.local_filesystem
+        else getattr(env, "host_workspace", None)
+    )
+    if not host_workspace:
+        return ()
+    try:
+        lexical_root = Path(os.path.abspath(os.fspath(host_workspace)))
+    except (OSError, TypeError, ValueError):
+        return ()
+    root_candidates = [lexical_root]
+    try:
+        resolved_root = lexical_root.resolve(strict=False)
+        if resolved_root not in root_candidates:
+            root_candidates.append(resolved_root)
+    except (OSError, RuntimeError):
+        pass
+
     paths: dict[str, None] = {}
     for artifact_path in artifact_paths:
-        for relative in workspace_relative_host_paths(env, artifact_path):
-            if relative != Path("."):
-                paths.setdefault(relative.as_posix(), None)
+        try:
+            lexical_artifact = Path(os.path.abspath(os.fspath(artifact_path)))
+        except (OSError, TypeError, ValueError):
+            continue
+        artifact_candidates = [lexical_artifact]
+        try:
+            resolved_artifact = lexical_artifact.resolve(strict=False)
+            if resolved_artifact not in artifact_candidates:
+                artifact_candidates.append(resolved_artifact)
+        except (OSError, RuntimeError):
+            pass
+        for candidate in artifact_candidates:
+            for root in root_candidates:
+                try:
+                    rel = candidate.relative_to(root)
+                except ValueError:
+                    continue
+                if rel != Path("."):
+                    paths.setdefault(rel.as_posix(), None)
     return tuple(paths)

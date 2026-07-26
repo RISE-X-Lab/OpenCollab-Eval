@@ -108,9 +108,6 @@ from opencollab_eval.engine.swe_checkpoint import (
 from opencollab_eval.engine.swe_checkpoint import (
     worktree_diff_command as worktree_diff_command,
 )
-from opencollab_eval.engine.swe_checkpoint_artifacts import (
-    workspace_relative_host_paths,
-)
 from opencollab_eval.engine.test_injection import (
     TestPatchIsolationError as TestPatchIsolationError,
 )
@@ -259,7 +256,41 @@ def _workspace_relative_host_paths(
     env: ExecutionEnvironment,
     raw_path: str | os.PathLike[str],
 ) -> list[Path]:
-    return list(workspace_relative_host_paths(env, raw_path))
+    workspace = _host_workspace_root(env)
+    if workspace is None:
+        return []
+    relative_paths: list[Path] = []
+    try:
+        target = Path(os.path.abspath(os.fspath(raw_path)))
+    except (OSError, TypeError, ValueError):
+        return []
+    roots = [workspace]
+    raw_source_workspace = getattr(env, "source_workspace", None)
+    if raw_source_workspace:
+        try:
+            source_workspace = Path(
+                os.path.abspath(os.fspath(raw_source_workspace))
+            )
+        except (OSError, TypeError, ValueError):
+            source_workspace = None
+        if source_workspace is not None and source_workspace not in roots:
+            roots.append(source_workspace)
+    for root in roots:
+        pairs = [(target, root)]
+        try:
+            pairs.append(
+                (target.resolve(strict=False), root.resolve(strict=False))
+            )
+        except (OSError, RuntimeError):
+            pass
+        for candidate, candidate_root in pairs:
+            try:
+                relative = candidate.relative_to(candidate_root)
+            except ValueError:
+                continue
+            if relative not in relative_paths:
+                relative_paths.append(relative)
+    return relative_paths
 
 
 def _workspace_relative_host_path(

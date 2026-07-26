@@ -1,5 +1,7 @@
 # Final SWE comparison reports
 
+**English** | [简体中文](zh-CN/final-report.md)
+
 `oc-eval final-report` publishes one comparison from two completed 100-task
 SWE-bench Pro-Lite runs. Every output format is rendered from one validated JSON
 model. The command exits successfully only after the PDF and all source files
@@ -50,11 +52,11 @@ model and publication manifest.
 
 Plans are independently derived from the trusted dataset row. Adapter,
 coverage mode, target batches, commands, and proof bindings must equal that
-derived plan. Python rows currently derive an unsupported plan because an
-in-process Pytest plugin shares the candidate interpreter. Such rows remain a
-technical failure until an external result boundary supplies independent
-execution evidence; stored exit codes or plugin events cannot make them
-publishable.
+derived plan. Python targets run through an evaluator-owned controller that
+separates the trusted Pytest protocol from the candidate interpreter and emits
+structured per-node evidence. Go targets use `go test -json`, and JavaScript
+targets use framework-specific parser-backed evidence. Stored exit codes,
+console text, or unbound plugin events cannot make a row publishable.
 
 Each fact report uses schema
 `opencollab.swe_eval_layer_final_report.v1`. It must contain the exact ordered
@@ -194,3 +196,19 @@ change any verdict, count, comparison set, runtime identity, or evidence hash.
 Narrative evidence references must name a file already verified by one of the
 two audit manifests. All external text is escaped independently for Markdown
 and TeX.
+
+## Publication requirements and outputs
+
+The default renderer requires `xelatex` on `PATH`. Select another compatible
+engine with `--latex-engine`. The output directory must be outside the source
+checkout and writable by the evaluator.
+
+The command publishes one common prefix with `.json`, `.md`, `.tex`, `.pdf`,
+and `.manifest.json` files. The publication manifest records every final
+file name, SHA-256, byte size, validated runtime identity, dataset identity,
+and final status.
+
+Exit status 0 means the complete publication set was validated, rendered,
+hashed, and committed. Input validation, evidence validation, file safety,
+locking, rendering, or publication replacement failure returns nonzero and
+records a failed manifest when the destination is safe to write.

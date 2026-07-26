@@ -26,6 +26,23 @@ def _install_client(monkeypatch, client_type):
     return client_arguments, clients
 
 
+def test_current_session_evidence_precedes_legacy_aggregate() -> None:
+    record = evaluator_sessions._EvalRunRecord(
+        RunResult(
+            output=None,
+            status="stopped",
+            reason="timeout",
+            metrics={
+                "session_quiesced": False,
+                "execution_quiesced": True,
+            },
+        )
+    )
+
+    assert record.execution_quiesced is False
+    assert record.workflow_error == "OpenCollab session did not quiesce"
+
+
 def test_agent_delegates_to_public_runtime_with_bound_configuration(
     monkeypatch,
     tmp_path,
@@ -44,7 +61,8 @@ def test_agent_delegates_to_public_runtime_with_bound_configuration(
                 metrics={
                     "steps": 3,
                     "markup_recovered": 1,
-                    "execution_quiesced": True,
+                    "session_quiesced": True,
+                    "execution_quiesced": None,
                 },
             )
 
@@ -229,7 +247,7 @@ def test_nonquiescent_controlled_stop_blocks_submission(monkeypatch, tmp_path):
     assert result.tokens_used == 13
     assert result.steps == 6
     assert result.execution_quiesced is False
-    assert "OpenCollab execution did not quiesce" in (result.error or "")
+    assert "OpenCollab session did not quiesce" in (result.error or "")
     assert result.submission_eligible is False
 
 

@@ -298,9 +298,15 @@ def main() -> None:
         bind_llm_transport(metrics)
         metrics["generation_image_id"] = generation_image_id
         metrics["solver_git_snapshot"] = snapshot.as_dict()
-        if metrics.get("submission_eligible") is True:
+        if metrics.get("candidate_probe_eligible") is True:
             require_container_quiescence(cid)
             metrics["container_execution_quiesced"] = True
+            metrics["execution_quiesced"] = (
+                metrics.get("session_quiesced") is True
+            )
+            metrics["submission_eligible"] = (
+                metrics["execution_quiesced"] is True
+            )
             patch, removed_artifacts, extraction = extract_patch_guarded(cid, trusted_baseline)
             metrics["trusted_patch_extraction"] = extraction
             metrics["removed_generated_artifacts"] = removed_artifacts
@@ -310,6 +316,8 @@ def main() -> None:
             patch = ""
             patch_extraction_succeeded = False
             metrics["container_execution_quiesced"] = False
+            metrics["execution_quiesced"] = False
+            metrics["submission_eligible"] = False
         complete_single_agent_integrity(
             metrics,
             patch=patch,

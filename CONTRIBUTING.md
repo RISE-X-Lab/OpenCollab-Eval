@@ -1,5 +1,7 @@
 # Contributing to OpenCollab-Eval
 
+**English** | [简体中文](CONTRIBUTING.zh-CN.md)
+
 Thank you for improving OpenCollab-Eval. The repository owns benchmark
 adaptation, solver isolation, candidate construction, official evaluation,
 evidence, remote execution, and reporting.
@@ -19,6 +21,25 @@ The checkout of OpenCollab must match the compatible version declared in
 `pyproject.toml`. The wheel contract test builds both repositories and verifies
 the installed boundary without editable imports.
 
+Build both wheels and verify the packaged contract before release.
+
+```bash
+python -m pip install build
+wheel_root="$(mktemp -d)"
+python -m build --wheel --outdir "$wheel_root/opencollab" ../OpenCollab
+python -m build --wheel --outdir "$wheel_root/eval" .
+scripts/verify_wheel_contract.sh \
+  "$wheel_root"/opencollab/opencollab-0.4*.whl \
+  "$wheel_root"/eval/opencollab_eval-0.1.0*.whl
+```
+
+The deterministic SWE E2E requires Docker, `sshd`, `ssh`, `ssh-keygen`, and
+`rsync`. It uses a local fake model service and no provider credential.
+
+```bash
+scripts/run_deterministic_swe_e2e.sh --output /tmp/oce-e2e --runs 1
+```
+
 ## Architecture
 
 Production code may use only the documented public OpenCollab API. Imports from
@@ -35,7 +56,15 @@ files at or below 500 KB. Do not commit generated reports, model transcripts,
 predictions, patches, datasets, container exports, PDFs, credentials, or local
 runtime paths.
 
-Public code, comments, tests, and documentation use English. Commit summaries,
+Update the operator guide, CLI reference, architecture description, and
+integrity documentation whenever a change affects commands, defaults, runtime
+topology, evidence, or result semantics. Documentation examples must use
+external output paths and placeholders rather than local infrastructure.
+
+Public code, comments, tests, and canonical documentation use English.
+Simplified Chinese documentation mirrors live only in root `*.zh-CN.md` files
+and under `docs/zh-CN/`. Keep every mirror synchronized with its English source
+and preserve the same code blocks and technical identifiers. Commit summaries,
 pull request titles, pull request descriptions, and review replies use Chinese
 while retaining an English Conventional Commit type.
 

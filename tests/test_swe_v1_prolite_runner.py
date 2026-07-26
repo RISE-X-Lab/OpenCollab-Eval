@@ -118,13 +118,22 @@ def _complete_remote_config(config: dict) -> dict:
 
 def test_ensure_remote_proxy_falls_back_when_default_remote_port_is_busy():
     calls: list[list[str]] = []
+    interpreters = []
     started_ports: set[int] = set()
     old_remote_http_ok = runner.remote_http_ok
     old_local_http_ok = runner.local_http_ok
     old_start_remote_proxy_tunnel = runner.start_remote_proxy_tunnel
     old_sleep = runner.time.sleep
 
-    def fake_remote_http_ok(*, ssh_command, host, base_url, timeout=10):
+    def fake_remote_http_ok(
+        *,
+        ssh_command,
+        host,
+        base_url,
+        remote_python="python3",
+        timeout=10,
+    ):
+        interpreters.append(remote_python)
         return base_url == "http://127.0.0.1:18789" and 18789 in started_ports
 
     def fake_start_remote_proxy_tunnel(command):
@@ -148,6 +157,7 @@ def test_ensure_remote_proxy_falls_back_when_default_remote_port_is_busy():
             host="eval-host",
             local_proxy_base_url="http://127.0.0.1:8878",
             remote_proxy_base_url="http://127.0.0.1:18788",
+            remote_python="/remote/venv with space/bin/python",
             enabled=True,
         )
     finally:
@@ -161,6 +171,7 @@ def test_ensure_remote_proxy_falls_back_when_default_remote_port_is_busy():
     assert summary["selected_remote_port"] == 18789
     assert calls[0][calls[0].index("-R") + 1] == "127.0.0.1:18788:127.0.0.1:8878"
     assert calls[-1][calls[-1].index("-R") + 1] == "127.0.0.1:18789:127.0.0.1:8878"
+    assert set(interpreters) == {"/remote/venv with space/bin/python"}
 
 
 def test_remote_http_ok_keeps_ssh_outer_timeout_above_short_http_probe():
@@ -177,6 +188,7 @@ def test_remote_http_ok_keeps_ssh_outer_timeout_above_short_http_probe():
             ssh_command=["ssh"],
             host="eval-host",
             base_url="http://127.0.0.1:18792",
+            remote_python="/remote/venv with space/bin/python",
             timeout=2,
         )
     finally:
@@ -185,6 +197,10 @@ def test_remote_http_ok_keeps_ssh_outer_timeout_above_short_http_probe():
     assert ok is True
     assert calls[0]["timeout"] == runner.REMOTE_HEALTH_SSH_TIMEOUT_FLOOR
     assert "http://127.0.0.1:18792/healthz" in calls[0]["command"][-1]
+    assert shlex.split(calls[0]["command"][-1])[:2] == [
+        "/remote/venv with space/bin/python",
+        "-c",
+    ]
 
 
 def test_remote_http_ok_returns_false_on_outer_timeout():

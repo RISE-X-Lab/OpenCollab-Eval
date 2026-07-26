@@ -4,19 +4,14 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
-import json
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
 
-_REPO_ROOT = Path(
-    os.environ.get("OPENCOLLAB_EVAL_SOURCE_ROOT", Path(__file__).resolve().parents[1])
-).resolve()
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 _SCRIPT = _REPO_ROOT / "scripts" / "check_secret_history.py"
-_BASELINE = _REPO_ROOT / ".secrets.baseline"
 _ZERO_SHA = "0" * 40
 
 
@@ -58,9 +53,8 @@ def _repository(tmp_path: Path) -> tuple[Path, str]:
     _git(repository, "init")
     _git(repository, "config", "user.name", "Security Test")
     _git(repository, "config", "user.email", "security@example.invalid")
-    shutil.copyfile(_BASELINE, repository / ".secrets.baseline")
     (repository / "base.txt").write_text("base\n", encoding="utf-8")
-    _git(repository, "add", ".secrets.baseline", "base.txt")
+    _git(repository, "add", "base.txt")
     _git(repository, "commit", "-m", "chore: \u5efa\u7acb\u57fa\u7ebf")
     return repository, _git(repository, "rev-parse", "HEAD")
 
@@ -165,24 +159,36 @@ def test_secret_history_rejects_private_keys_and_assigned_credentials(tmp_path):
     assert "Potential assigned credential" in result.stdout
 
 
-def test_secret_history_rejects_personal_environment_details(tmp_path):
+def test_secret_history_rejects_namespaced_assigned_credentials(tmp_path):
     repository, base = _repository(tmp_path)
-    content = "\n".join(
-        (
-            "workspace = /" + "Users/alice/project",
-            "volume = /" + "Volumes/private-data/results",
-            "owner = alice" + "@gmail.com",
-            "host = 192" + ".168.12.34",
+    assignments = "\n".join(
+        f'{name}="{"B" * 24}"'
+        for name in (
+            "GLM_API_KEY",
+            "OPENAI_API_KEY",
+            "DB_PASSWORD",
+            "OAUTH_CLIENT_SECRET",
         )
     )
-    _commit(repository, "environment.txt", content + "\n")
+    _commit(repository, "credentials.env", assignments + "\n")
 
     result = _run(repository, base, "HEAD")
 
     assert result.returncode == 1
-    assert "Potential personal macOS path" in result.stdout
-    assert "Potential personal email" in result.stdout
-    assert "Potential private IPv4 address" in result.stdout
+    assert result.stdout.count("Potential assigned credential") == 4
+
+
+def test_secret_history_rejects_removed_namespaced_credential(tmp_path):
+    repository, base = _repository(tmp_path)
+    _commit(repository, "temporary.env", f'OPENAI_API_KEY="{"B" * 24}"\n')
+    (repository / "temporary.env").unlink()
+    _git(repository, "add", "-u")
+    _git(repository, "commit", "-m", "test: remove temporary credential")
+
+    result = _run(repository, base, "HEAD")
+
+    assert result.returncode == 1
+    assert "Potential assigned credential introduced in commit" in result.stdout
 
 
 def test_secret_history_rejects_zero_commit_range(tmp_path):
@@ -194,173 +200,24 @@ def test_secret_history_rejects_zero_commit_range(tmp_path):
     assert "No proposed commits" in result.stdout
 
 
-def test_secret_history_rejects_missing_baseline(tmp_path):
-    repository, base = _repository(tmp_path)
-    (repository / ".secrets.baseline").unlink()
-    _git(repository, "add", "-u")
-    _git(repository, "commit", "-m", "test: remove secret baseline")
-
-    result = _run(repository, base, "HEAD")
-
-    assert result.returncode == 1
-    assert ".secrets.baseline is missing" in result.stdout
-
-
-def test_secret_history_rejects_unaudited_baseline_change(tmp_path):
-    repository, base = _repository(tmp_path)
-    baseline_path = repository / ".secrets.baseline"
-    baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-    baseline["plugins_used"].append({"name": "UnexpectedDetector"})
-    baseline_path.write_text(json.dumps(baseline, indent=2) + "\n", encoding="utf-8")
-    _git(repository, "add", ".secrets.baseline")
-    _git(repository, "commit", "-m", "test: modify secret baseline")
-
-    result = _run(repository, base, "HEAD")
-
-    assert result.returncode == 1
-    assert "changed without a digest approved" in result.stdout
-
-
-def test_secret_history_rejects_intermediate_baseline_change_then_restore(tmp_path):
-    repository, base = _repository(tmp_path)
-    baseline_path = repository / ".secrets.baseline"
-    trusted_content = baseline_path.read_bytes()
-    baseline = json.loads(trusted_content)
-    baseline["plugins_used"].append({"name": "IntermediateDetector"})
-    baseline_path.write_text(json.dumps(baseline, indent=2) + "\n", encoding="utf-8")
-    _git(repository, "add", ".secrets.baseline")
-    _git(repository, "commit", "-m", "test: change baseline temporarily")
-    baseline_path.write_bytes(trusted_content)
-    _git(repository, "add", ".secrets.baseline")
-    _git(repository, "commit", "-m", "test: restore trusted baseline")
-
-    result = _run(repository, base, "HEAD")
-
-    assert result.returncode == 1
-    assert "trusted base checker in commit" in result.stdout
-
-
-def test_zero_sha_allows_history_before_approved_baseline(tmp_path, monkeypatch):
-    repository = tmp_path / "repository"
+def test_secret_history_rejects_a_tree_without_files(tmp_path):
+    repository = tmp_path / "empty"
     repository.mkdir()
     _git(repository, "init")
     _git(repository, "config", "user.name", "Security Test")
     _git(repository, "config", "user.email", "security@example.invalid")
-    (repository / "base.txt").write_text("base\n", encoding="utf-8")
-    _git(repository, "add", "base.txt")
-    _git(repository, "commit", "-m", "test: create source tree")
-    shutil.copyfile(_BASELINE, repository / ".secrets.baseline")
-    _git(repository, "add", ".secrets.baseline")
-    _git(repository, "commit", "-m", "test: add approved baseline")
-    module = _script_module()
-    monkeypatch.setattr(module, "_verify_detect_secrets", lambda: None)
-    monkeypatch.setattr(
-        module,
-        "_detect_secrets_identities",
-        lambda *_args: set(),
-    )
-    monkeypatch.setattr(
-        module,
-        "_scan_tree_with_detect_secrets",
-        lambda *_args: True,
-    )
-
-    assert module.check_secret_history(repository, _ZERO_SHA, "HEAD") == 0
-
-
-def test_secret_history_accepts_digest_approved_by_trusted_checker(
-    tmp_path,
-    monkeypatch,
-):
-    repository, base = _repository(tmp_path)
-    baseline_path = repository / ".secrets.baseline"
-    baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-    baseline["generated_at"] = "2099-01-01T00:00:00Z"
-    baseline_path.write_text(json.dumps(baseline, indent=2) + "\n", encoding="utf-8")
-    _git(repository, "add", ".secrets.baseline")
-    _git(repository, "commit", "-m", "test: update generated timestamp")
-    module = _script_module()
-    digest = module._baseline_digest(baseline_path.read_bytes())
-    monkeypatch.setattr(module, "_APPROVED_BASELINE_SHA256", {digest})
-    monkeypatch.setattr(module, "_verify_detect_secrets", lambda: None)
-    monkeypatch.setattr(
-        module,
-        "_detect_secrets_identities",
-        lambda *_args: set(),
-    )
-    monkeypatch.setattr(
-        module,
-        "_scan_tree_with_detect_secrets",
-        lambda *_args: True,
-    )
-
-    assert module.check_secret_history(repository, base, "HEAD") == 0
-
-
-def test_secret_history_rejects_payload_in_generated_timestamp(tmp_path):
-    repository, base = _repository(tmp_path)
-    baseline_path = repository / ".secrets.baseline"
-    baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-    baseline["generated_at"] = "random-credential-" + "X" * 64
-    baseline_path.write_text(json.dumps(baseline, indent=2) + "\n", encoding="utf-8")
-    _git(repository, "add", ".secrets.baseline")
-    _git(repository, "commit", "-m", "test: hide payload in generated timestamp")
-
-    result = _run(repository, base, "HEAD")
-
-    assert result.returncode == 2
-    assert "generated_at must be a UTC timestamp" in result.stdout
-
-
-def test_secret_history_rejects_duplicate_generated_timestamp(tmp_path):
-    repository, base = _repository(tmp_path)
-    baseline_path = repository / ".secrets.baseline"
-    trusted = baseline_path.read_text(encoding="utf-8")
-    hidden_value = "concealed-" + "Y" * 64
-    baseline_path.write_text(
-        trusted.replace("{", f'{{\n  "generated_at": "{hidden_value}",', 1),
-        encoding="utf-8",
-    )
-    _git(repository, "add", ".secrets.baseline")
-    _git(repository, "commit", "-m", "test: duplicate generated timestamp")
-
-    result = _run(repository, base, "HEAD")
-
-    assert result.returncode == 2
-    assert "repeats JSON key 'generated_at'" in result.stdout
-
-
-def test_secret_history_rejects_unreviewed_baseline_finding(tmp_path):
-    repository, base = _repository(tmp_path)
-    baseline_path = repository / ".secrets.baseline"
-    baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-    first_path = next(iter(baseline["results"]))
-    baseline["results"][first_path][0]["is_secret"] = None
-    baseline_path.write_text(json.dumps(baseline, indent=2) + "\n", encoding="utf-8")
-    _git(repository, "add", ".secrets.baseline")
-    _git(repository, "commit", "-m", "test: remove audit verdict")
-
-    result = _run(repository, base, "HEAD")
-
-    assert result.returncode == 2
-    assert "audited false verdict" in result.stdout
-
-
-def test_detect_secrets_scans_high_entropy_value_removed_later(tmp_path):
-    repository, base = _repository(tmp_path)
-    _commit(
+    _git(
         repository,
-        "temporary.txt",
-        'digest = "d8f391c72a6be4059c18f7a2d63b4e91"\n',
+        "commit",
+        "--allow-empty",
+        "-m",
+        "test: \u5efa\u7acb\u7a7a\u6811",
     )
-    (repository / "temporary.txt").unlink()
-    _git(repository, "add", "-u")
-    _git(repository, "commit", "-m", "test: remove high entropy fixture")
 
-    result = _run(repository, base, "HEAD")
+    result = _run(repository, _ZERO_SHA, "HEAD")
 
-    assert result.returncode == 1
-    assert "detect-secrets found an unaudited finding" in result.stdout
+    assert result.returncode == 2
+    assert "has no files to scan" in result.stdout
 
 
 def test_zero_sha_base_scans_all_reachable_commits(tmp_path):

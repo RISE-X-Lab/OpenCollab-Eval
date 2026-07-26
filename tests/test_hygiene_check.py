@@ -7,9 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-_REPO_ROOT = Path(
-    os.environ.get("OPENCOLLAB_EVAL_SOURCE_ROOT", Path(__file__).resolve().parents[1])
-).resolve()
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _subprocess_environment() -> dict[str, str]:

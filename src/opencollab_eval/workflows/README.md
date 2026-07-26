@@ -1,5 +1,7 @@
 # Evaluation workflows
 
+**English** | [简体中文](README.zh-CN.md)
+
 This package contains deterministic multi-agent workflows for evaluation.
 Ordinary Python controls agent fan-out, repair rounds, verification gates, and
 stop conditions. The model handles repository reasoning and edits within those
@@ -28,6 +30,13 @@ submodules.
 | `team-pro` | Stable tuned alias for `analyst-solve` |
 | `validation-council-solve` | Blind contract and validation council for SWE tasks |
 | `swe-committee-v2` | Committee workflow with explicit evidence and test gates |
+
+The production Solver coordinator maps `g11` and `g1.1` to
+`validation-council-solve`, `baseTeam` to `base-team`, and `TeamPro` to
+`team-pro`. `openhands` and `claude-code` are external Solver configurations
+that enter through the shared generation and candidate path. The remaining
+workflow functions are library-level building blocks and can be selected by
+the single-instance workflow generator.
 
 Blind SWE workflows receive issue text, repository contents, public tests, and
 public documentation. They do not receive hidden grader assertions. Final task

@@ -10,6 +10,7 @@ from swe_v1_prolite_runner_test_support import (
     os,
     pytest,
     runner,
+    shlex,
     subprocess,
     sys,
 )
@@ -167,6 +168,7 @@ def test_no_sync_runtime_verifies_shared_preflight_identity(monkeypatch):
         expected_runtime_tree_sha256=expected,
         host="remote-host",
         remote_runtime_repo="/remote/runtime",
+        remote_python="/remote/venv/bin/python",
     )
 
     summary = runner.prepare_runtime_summary(
@@ -180,6 +182,7 @@ def test_no_sync_runtime_verifies_shared_preflight_identity(monkeypatch):
         "host": "remote-host",
         "remote_runtime_repo": "/remote/runtime",
         "expected": None,
+        "remote_python": "/remote/venv/bin/python",
     }
     assert summary == {
         "source_tree": {
@@ -190,13 +193,14 @@ def test_no_sync_runtime_verifies_shared_preflight_identity(monkeypatch):
     }
 
 
-def test_runtime_sync_receives_the_configured_remote_python(monkeypatch):
+def test_runtime_preparation_forwards_the_selected_remote_python(monkeypatch):
     captured = {}
-    monkeypatch.setattr(
-        runner,
-        "sync_runtime",
-        lambda **kwargs: captured.update(kwargs) or {"synced": True},
-    )
+
+    def fake_sync(**kwargs):
+        captured.update(kwargs)
+        return {"source_tree": {"verified": True}}
+
+    monkeypatch.setattr(runner, "sync_runtime", fake_sync)
     args = SimpleNamespace(
         no_sync_runtime=False,
         expected_runtime_tree_sha256="",
@@ -213,7 +217,7 @@ def test_runtime_sync_receives_the_configured_remote_python(monkeypatch):
         "remote_runtime_repo": "/remote/runtime",
         "remote_python": "/remote/venv/bin/python",
     }
-    assert summary == {"synced": True}
+    assert summary == {"source_tree": {"verified": True}}
 
 
 def test_no_sync_runtime_without_shared_preflight_identity_fails_closed(monkeypatch):
@@ -295,6 +299,7 @@ def test_main_rejects_missing_runtime_configuration_before_start(
 
 def test_run_remote_uses_installed_remote_module_without_inline_payload(monkeypatch):
     commands = []
+    proxy_calls = []
 
     class FinishedProcess:
         pid = 424280
@@ -307,7 +312,10 @@ def test_run_remote_uses_installed_remote_module_without_inline_payload(monkeypa
     monkeypatch.setattr(
         runner,
         "ensure_remote_proxy",
-        lambda **kwargs: {"remote_proxy_base_url": "http://127.0.0.1:18788"},
+        lambda **kwargs: (
+            proxy_calls.append(kwargs)
+            or {"remote_proxy_base_url": "http://127.0.0.1:18788"}
+        ),
     )
     monkeypatch.setattr(runner, "get_proxy_token", lambda path: "token")
     monkeypatch.setattr(
@@ -333,6 +341,7 @@ def test_run_remote_uses_installed_remote_module_without_inline_payload(monkeypa
         no_sync_runtime=True,
         expected_runtime_tree_sha256="a" * 64,
         remote_runtime_repo="/remote/repo",
+        remote_python="/remote/venv with space/bin/python",
         proxy_env_file=None,
         remote_root="/remote/root",
         base_run_dir="/remote/run",
@@ -367,7 +376,11 @@ def test_run_remote_uses_installed_remote_module_without_inline_payload(monkeypa
     ):
         assert option in commands[0]
     remote_command = commands[0][-1]
-    assert "python3 -m opencollab_eval.engine.swe_v1_remote_runner" in remote_command
+    assert (
+        "'/remote/venv with space/bin/python' "
+        "-m opencollab_eval.engine.swe_v1_remote_runner"
+    ) in remote_command
+    assert proxy_calls[0]["remote_python"] == "/remote/venv with space/bin/python"
     assert "base64" not in remote_command
     assert "exec(" not in remote_command
 
@@ -435,28 +448,6 @@ def test_runtime_archive_imports_generation_entrypoints_from_clean_directory(mon
     assert "opencollab_eval.generation.openhands_runtime" in openhands_shell
 
 
-def test_runtime_sync_probes_with_the_configured_remote_python(monkeypatch):
-    commands = []
-
-    def fake_run_checked(command, *, timeout=120, input_text=None):
-        commands.append(command)
-        return subprocess.CompletedProcess(command, 0, "", "")
-
-    monkeypatch.setattr(runner, "run_checked", fake_run_checked)
-
-    runner.sync_runtime(
-        ssh_command=["ssh"],
-        host="remote-host",
-        remote_runtime_repo="/remote/runtime",
-        remote_python="/remote/venv/bin/python",
-    )
-
-    install_command = commands[-1][-1]
-    assert "/remote/venv/bin/python -m compileall" in install_command
-    assert "PYTHONPATH=src /remote/venv/bin/python -c" in install_command
-    assert "PYTHONPATH=src python3 -c" not in install_command
-
-
 def test_runtime_sync_rejects_an_incomplete_public_api_before_transfer(monkeypatch):
     calls = []
     real_import = runner.importlib.import_module
@@ -508,6 +499,31 @@ def test_runtime_sync_resumes_an_interrupted_archive_transfer(monkeypatch, failu
     assert len(transfers) == 3
     assert all("--partial" in command for command in transfers)
     assert transfers[0] == transfers[1] == transfers[2]
+
+
+def test_runtime_sync_uses_the_selected_remote_python(monkeypatch):
+    commands = []
+
+    def run_checked(command, *, timeout=120, input_text=None):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(runner, "run_checked", run_checked)
+    selected = "/remote/venv with space/bin/python"
+
+    summary = runner.sync_runtime(
+        ssh_command=["ssh"],
+        host="remote-host",
+        remote_runtime_repo="/remote/runtime",
+        remote_python=selected,
+    )
+
+    install_command = commands[-1][-1]
+    quoted = shlex.quote(selected)
+    assert quoted + " -m compileall -q " in install_command
+    assert install_command.count("PYTHONPATH=src " + quoted + " -c ") == 2
+    assert "PYTHONPATH=src python3 -c " not in install_command
+    assert summary["remote_python"] == selected
 
 
 def test_runtime_sync_cleans_the_named_archive_after_retry_exhaustion(monkeypatch):

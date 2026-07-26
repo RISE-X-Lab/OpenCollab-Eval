@@ -30,6 +30,7 @@ def terminate_remote_run(
     host: str,
     base_run_dir: str,
     remote_runtime_repo: str | None = None,
+    remote_python: str = "python3",
     timeout: int = 30,
 ) -> dict[str, Any]:
     runtime_repo = remote_runtime_repo or str(Path(base_run_dir) / "_runtime" / "repo")
@@ -37,7 +38,9 @@ def terminate_remote_run(
     remote_command = (
         "env PYTHONPATH="
         + shlex.quote(remote_pythonpath)
-        + " python3 -m opencollab_eval.engine.swe_v1_remote_cleanup "
+        + " "
+        + shlex.quote(remote_python)
+        + " -m opencollab_eval.engine.swe_v1_remote_cleanup "
         + shlex.quote(base_run_dir)
     )
     result = subprocess.run(
@@ -409,6 +412,7 @@ def _cleanup_remote_execution(
     host: str,
     base_run_dir: str,
     remote_runtime_repo: str | None = None,
+    remote_python: str = "python3",
     proc: subprocess.Popen[str],
 ) -> tuple[dict[str, Any], BaseException | None]:
     """Run remote and local cleanup under one caller-interrupt-resistant owner."""
@@ -426,6 +430,7 @@ def _cleanup_remote_execution(
                     host=host,
                     base_run_dir=base_run_dir,
                     remote_runtime_repo=remote_runtime_repo,
+                    remote_python=remote_python,
                     timeout=int(REMOTE_CLEANUP_COMMAND_TIMEOUT_SECONDS),
                 )
             except BaseException as exc:
