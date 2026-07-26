@@ -297,6 +297,21 @@ def test_secret_history_accepts_digest_approved_by_trusted_checker(
     assert module.check_secret_history(repository, base, "HEAD") == 0
 
 
+def test_secret_history_rejects_payload_in_generated_timestamp(tmp_path):
+    repository, base = _repository(tmp_path)
+    baseline_path = repository / ".secrets.baseline"
+    baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+    baseline["generated_at"] = "random-credential-" + "X" * 64
+    baseline_path.write_text(json.dumps(baseline, indent=2) + "\n", encoding="utf-8")
+    _git(repository, "add", ".secrets.baseline")
+    _git(repository, "commit", "-m", "test: hide payload in generated timestamp")
+
+    result = _run(repository, base, "HEAD")
+
+    assert result.returncode == 2
+    assert "generated_at must be a UTC timestamp" in result.stdout
+
+
 def test_secret_history_rejects_unreviewed_baseline_finding(tmp_path):
     repository, base = _repository(tmp_path)
     baseline_path = repository / ".secrets.baseline"

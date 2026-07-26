@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 from collections import Counter
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 
 _BASELINE_PATH = ".secrets.baseline"
@@ -31,6 +32,7 @@ _APPROVED_BASELINE_SHA256 = {
     )
 }
 _ZERO_SHA = "0" * 40
+_GENERATED_AT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 _PATTERNS = (
     (
         "personal macOS path",
@@ -196,7 +198,16 @@ def _baseline_document(content: bytes, *, require_audit: bool) -> dict:
             for finding in findings
         ):
             raise ValueError("every baseline finding must have an audited false verdict")
-    baseline.pop("generated_at", None)
+    generated_at = baseline.pop("generated_at", None)
+    if generated_at is not None:
+        if not isinstance(generated_at, str) or len(generated_at) != 20:
+            raise ValueError("the secret baseline generated_at must be a UTC timestamp")
+        try:
+            datetime.strptime(generated_at, _GENERATED_AT_FORMAT)
+        except ValueError as exc:
+            raise ValueError(
+                "the secret baseline generated_at must be a UTC timestamp"
+            ) from exc
     return baseline
 
 
