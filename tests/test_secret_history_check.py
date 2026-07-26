@@ -201,6 +201,53 @@ def test_secret_history_rejects_unaudited_baseline_change(tmp_path):
     assert "changed without a digest approved" in result.stdout
 
 
+def test_secret_history_rejects_intermediate_baseline_change_then_restore(tmp_path):
+    repository, base = _repository(tmp_path)
+    baseline_path = repository / ".secrets.baseline"
+    trusted_content = baseline_path.read_bytes()
+    baseline = json.loads(trusted_content)
+    baseline["plugins_used"].append({"name": "IntermediateDetector"})
+    baseline_path.write_text(json.dumps(baseline, indent=2) + "\n", encoding="utf-8")
+    _git(repository, "add", ".secrets.baseline")
+    _git(repository, "commit", "-m", "test: change baseline temporarily")
+    baseline_path.write_bytes(trusted_content)
+    _git(repository, "add", ".secrets.baseline")
+    _git(repository, "commit", "-m", "test: restore trusted baseline")
+
+    result = _run(repository, base, "HEAD")
+
+    assert result.returncode == 1
+    assert "trusted base checker in commit" in result.stdout
+
+
+def test_zero_sha_allows_history_before_approved_baseline(tmp_path, monkeypatch):
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _git(repository, "init")
+    _git(repository, "config", "user.name", "Security Test")
+    _git(repository, "config", "user.email", "security@example.invalid")
+    (repository / "base.txt").write_text("base\n", encoding="utf-8")
+    _git(repository, "add", "base.txt")
+    _git(repository, "commit", "-m", "test: create source tree")
+    shutil.copyfile(_BASELINE, repository / ".secrets.baseline")
+    _git(repository, "add", ".secrets.baseline")
+    _git(repository, "commit", "-m", "test: add approved baseline")
+    module = _script_module()
+    monkeypatch.setattr(module, "_verify_detect_secrets", lambda: None)
+    monkeypatch.setattr(
+        module,
+        "_detect_secrets_identities",
+        lambda *_args: set(),
+    )
+    monkeypatch.setattr(
+        module,
+        "_scan_tree_with_detect_secrets",
+        lambda *_args: True,
+    )
+
+    assert module.check_secret_history(repository, _ZERO_SHA, "HEAD") == 0
+
+
 def test_secret_history_accepts_digest_approved_by_trusted_checker(
     tmp_path,
     monkeypatch,

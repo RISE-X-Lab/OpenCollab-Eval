@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import os
+from importlib.metadata import files as distribution_files
 from importlib.metadata import version as distribution_version
 from importlib.resources import files
 from pathlib import Path
@@ -33,3 +35,32 @@ def test_opencollab_sdk_can_come_from_the_built_wheel() -> None:
 
 def test_installed_wheels_satisfy_the_runtime_import_contract() -> None:
     verify_runtime_import_contract()
+
+
+def test_eval_wheel_contains_the_published_license_files() -> None:
+    source_root = Path(
+        os.environ.get(
+            "OPENCOLLAB_EVAL_SOURCE_ROOT",
+            Path(__file__).resolve().parents[1],
+        )
+    ).resolve()
+    names = {"LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"}
+    expected_root = os.environ.get("OPENCOLLAB_EVAL_EXPECTED_WHEEL_ROOT")
+    if not expected_root:
+        pyproject = (source_root / "pyproject.toml").read_text(encoding="utf-8")
+        assert 'license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"]' in pyproject
+        return
+
+    entries = distribution_files("opencollab-eval")
+    assert entries is not None
+    installed = {
+        entry.name: entry.locate()
+        for entry in entries
+        if entry.name in names
+    }
+    assert installed.keys() == names
+    for name, path in installed.items():
+        assert path.is_file()
+        assert hashlib.sha256(path.read_bytes()).digest() == hashlib.sha256(
+            (source_root / name).read_bytes()
+        ).digest()

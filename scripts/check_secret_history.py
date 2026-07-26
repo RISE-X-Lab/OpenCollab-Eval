@@ -19,14 +19,14 @@ _DETECT_SECRETS_VERSION = "1.5.0"
 _APPROVED_BASELINE_SHA256 = {
     "".join(
         (
-            "2ab9e49f",
-            "1de09f67",
-            "c8840583",
-            "37c79f8e",
-            "5e8c2089",
-            "105c6812",
-            "86df5bb9",
-            "679e0e01",
+            "bc77746f",
+            "69c28eaa",
+            "d8d4c9f3",
+            "8fb972c7",
+            "20151c3c",
+            "5e17015a",
+            "0098f2f3",
+            "9205c936",
         )
     )
 }
@@ -201,25 +201,37 @@ def _baseline_identities(document: dict) -> set[tuple[str, str, str]]:
     return identities
 
 
-def _check_baseline_change(
+def _check_baseline_history(
     repository: Path,
     base: str,
     head: str,
+    commits: list[str],
 ) -> bytes | None:
     head_content = _tree_file(repository, head, _BASELINE_PATH)
     if head_content is None:
         print("::error::.secrets.baseline is missing from the proposed tree.")
         return None
-    head_digest = _baseline_digest(head_content)
     base_content = (
         None if base == _ZERO_SHA else _tree_file(repository, base, _BASELINE_PATH)
     )
-    if base_content != head_content and head_digest not in _APPROVED_BASELINE_SHA256:
-        print(
-            "::error::.secrets.baseline changed without a digest approved by "
-            "the trusted base checker."
-        )
-        return None
+    for commit in commits:
+        content = _tree_file(repository, commit, _BASELINE_PATH)
+        if content is None:
+            if base_content is None:
+                continue
+            print(
+                "::error::.secrets.baseline is missing from proposed commit "
+                f"{commit}."
+            )
+            return None
+        if content == base_content:
+            continue
+        if _baseline_digest(content) not in _APPROVED_BASELINE_SHA256:
+            print(
+                "::error::.secrets.baseline changed without a digest approved by "
+                f"the trusted base checker in commit {commit}."
+            )
+            return None
     return head_content
 
 
@@ -365,10 +377,11 @@ def check_secret_history(repository: Path, base: str, head: str) -> int:
     if not commits:
         print("::error::No proposed commits were available for the secret scan.")
         return 1
-    baseline_content = _check_baseline_change(
+    baseline_content = _check_baseline_history(
         repository,
         resolved_base,
         resolved_head,
+        commits,
     )
     if baseline_content is None:
         return 1
