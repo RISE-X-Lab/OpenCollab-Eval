@@ -51,14 +51,22 @@ jobs:
         run: |
           set -euo pipefail
           EMPTY_TREE="$(git hash-object -t tree /dev/null)"
+          zero_sha="0000000000000000000000000000000000000000"
+          effective_base="$BASE_SHA"
+          if [ "$effective_base" != "$zero_sha" ]; then
+            if ! git cat-file -e "$effective_base^{commit}" 2>/dev/null ||
+              ! git merge-base --is-ancestor "$effective_base" "$HEAD_SHA"; then
+              effective_base="$zero_sha"
+            fi
+          fi
           trusted_checker=""
-          if [ "$BASE_SHA" != "0000000000000000000000000000000000000000" ]; then
+          if [ "$effective_base" != "$zero_sha" ]; then
             trusted_checker="$(
-              git ls-tree --name-only "$BASE_SHA" -- scripts/check_added_files.py
+              git ls-tree --name-only "$effective_base" -- scripts/check_added_files.py
             )"
           fi
           if [ "$trusted_checker" = "scripts/check_added_files.py" ]; then
-            git show "$BASE_SHA:scripts/check_added_files.py" |
+            git show "$effective_base:scripts/check_added_files.py" |
               python3 - "$EMPTY_TREE" "$HEAD_SHA" --require-files
           else
             python3 scripts/check_added_files.py \

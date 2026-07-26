@@ -29,17 +29,25 @@ jobs:
           HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          zero_sha="0000000000000000000000000000000000000000"
+          effective_base="$BASE_SHA"
+          if [ "$effective_base" != "$zero_sha" ]; then
+            if ! git cat-file -e "$effective_base^{commit}" 2>/dev/null ||
+              ! git merge-base --is-ancestor "$effective_base" "$HEAD_SHA"; then
+              effective_base="$zero_sha"
+            fi
+          fi
           trusted_checker=""
-          if [ "$BASE_SHA" != "0000000000000000000000000000000000000000" ]; then
+          if [ "$effective_base" != "$zero_sha" ]; then
             trusted_checker="$(
-              git ls-tree --name-only "$BASE_SHA" -- scripts/check_secret_history.py
+              git ls-tree --name-only "$effective_base" -- scripts/check_secret_history.py
             )"
           fi
           if [ "$trusted_checker" = "scripts/check_secret_history.py" ]; then
-            git show "$BASE_SHA:scripts/check_secret_history.py" |
-              python3 - "$BASE_SHA" "$HEAD_SHA"
+            git show "$effective_base:scripts/check_secret_history.py" |
+              python3 - "$effective_base" "$HEAD_SHA"
           else
-            python3 scripts/check_secret_history.py "$BASE_SHA" "$HEAD_SHA"
+            python3 scripts/check_secret_history.py "$effective_base" "$HEAD_SHA"
           fi
       - name: Scan every proposed commit with the trusted checker
         if: github.event_name == 'pull_request'
