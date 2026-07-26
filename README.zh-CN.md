@@ -153,9 +153,14 @@ python -m opencollab_eval.commands.swe_eval_run \
   --remote-root /srv/opencollab-eval \
   --remote-eval-work-root /srv/opencollab-eval/runs \
   --session-prefix example-g11-001 \
-  --model-name kimi-for-coding \
-  --llm-model kimi-for-coding \
+  --remote-python /srv/opencollab-eval/venv/bin/python \
+  --model-name kimi-k3-g11 \
+  --llm-model k3 \
   --llm-provider openai \
+  --context-window 1048576 \
+  --temperature 1 \
+  --top-p 0.95 \
+  --max-output-tokens 32768 \
   --remote-proxy-base-url https://api.kimi.com/coding/v1 \
   --remote-api-env-file /srv/opencollab-eval/secrets/kimi.env \
   --image-repository registry.example/swe \
@@ -163,7 +168,7 @@ python -m opencollab_eval.commands.swe_eval_run \
   --max-eval-attempts 1
 ```
 
-协调器会应用各 Solver 专属的默认设置。OpenHands 和 Claude Code 还要求安装各自的外部运行时。随附的 shell 资源充当这些运行时的适配器，两个产品仍由各自渠道提供。
+这个示例选择经过验证的 K3 配置，使用 1048576-token 上下文与 `reasoning_effort=high`。协调器会应用各 Solver 专属的默认设置。OpenHands 和 Claude Code 还要求安装各自的外部运行时。随附的 shell 资源充当这些运行时的适配器，两个产品仍由各自渠道提供。
 
 ## 结果与证据
 

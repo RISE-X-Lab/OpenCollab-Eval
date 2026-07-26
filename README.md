@@ -192,9 +192,14 @@ python -m opencollab_eval.commands.swe_eval_run \
   --remote-root /srv/opencollab-eval \
   --remote-eval-work-root /srv/opencollab-eval/runs \
   --session-prefix example-g11-001 \
-  --model-name kimi-for-coding \
-  --llm-model kimi-for-coding \
+  --remote-python /srv/opencollab-eval/venv/bin/python \
+  --model-name kimi-k3-g11 \
+  --llm-model k3 \
   --llm-provider openai \
+  --context-window 1048576 \
+  --temperature 1 \
+  --top-p 0.95 \
+  --max-output-tokens 32768 \
   --remote-proxy-base-url https://api.kimi.com/coding/v1 \
   --remote-api-env-file /srv/opencollab-eval/secrets/kimi.env \
   --image-repository registry.example/swe \
@@ -202,9 +207,11 @@ python -m opencollab_eval.commands.swe_eval_run \
   --max-eval-attempts 1
 ```
 
-Solver-specific defaults are applied by the coordinator. OpenHands and Claude
-Code also require their external runtimes. The supplied shell resources are
-adapters around those runtimes and do not distribute either product.
+This example selects the validated K3 profile with a 1048576-token context and
+`reasoning_effort=high`. Solver-specific defaults are applied by the
+coordinator. OpenHands and Claude Code also require their external runtimes.
+The supplied shell resources are adapters around those runtimes and do not
+distribute either product.
 
 ## Results and evidence
 

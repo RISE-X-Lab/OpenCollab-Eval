@@ -8,7 +8,7 @@
 
 使用相同参数加上 `--dry-run` 运行命令，并检查每一项必需值。生产 Pro-Lite 运行需要主机、远程根目录、镜像仓库、模型名称、模型 ID、提供商、远程模型端点、会话前缀以及一套完整的凭据传输方式。必须为绝对路径的路径会在 SSH 前遭到拒绝。
 
-对于直接 Kimi coding 模式，模型必须是 `kimi-for-coding`，提供商必须是 `openai`，端点必须是 `https://api.kimi.com/coding/v1`，受保护的环境文件必须已经存在于工作节点。
+直接 Kimi coding 模式应使用经过验证的 G11 配置。`kimi-for-coding` 使用 262144-token 上下文并保留完整思考历史。`k3` 使用 1048576-token 上下文与 `reasoning_effort=high`。两套配置都要求使用 `openai` 提供商、`https://api.kimi.com/coding/v1` 端点，并要求受保护的环境文件已经存在于工作节点。
 
 ## 提供商探测或生成失败
 

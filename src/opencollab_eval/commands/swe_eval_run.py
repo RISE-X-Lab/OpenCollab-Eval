@@ -23,6 +23,7 @@ from pathlib import Path
 from opencollab_eval.engine.solver_backend import (
     DEFAULT_WORKFLOW_SOLVERS,
     KIMI_CODING_BASE_URL,
+    is_kimi_direct_model,
     workflow_solver_spec,
 )
 from opencollab_eval.generation.claude_code_sidecar import relay_socket_path
@@ -76,8 +77,8 @@ def _uses_kimi_direct_api(arguments: list[str]) -> bool:
     env_file = _option_value(arguments, "--remote-api-env-file", "").strip()
     if not env_file:
         return False
+    model = _option_value(arguments, "--llm-model", "")
     expected = {
-        "--llm-model": "kimi-for-coding",
         "--llm-provider": "openai",
         "--remote-proxy-base-url": KIMI_CODING_BASE_URL,
     }
@@ -86,9 +87,9 @@ def _uses_kimi_direct_api(arguments: list[str]) -> bool:
         for option, value in expected.items()
         if _option_value(arguments, option, "").rstrip("/") != value
     ]
-    if not env_file.startswith("/") or mismatches:
+    if not env_file.startswith("/") or not is_kimi_direct_model(model) or mismatches:
         raise SystemExit(
-            "--remote-api-env-file requires an absolute path, --llm-model kimi-for-coding, "
+            "--remote-api-env-file requires an absolute path, a direct Kimi model, "
             f"--llm-provider openai, and --remote-proxy-base-url {KIMI_CODING_BASE_URL}"
         )
     return True

@@ -26,7 +26,7 @@
 | 镜像 | 数据集镜像名称能够解析为不可变本地镜像 |
 | 凭据 | 所选传输方式能够读取受保护的环境文件 |
 
-当工作节点的系统解释器缺少提供商依赖时，低层切片运行器允许显式传入 `--remote-python`。当前多 Solver 协调器使用工作节点的 `python3`，因此该解释器必须提供同步运行时所需的依赖。
+当工作节点的系统解释器缺少提供商依赖时，低层切片运行器和多 Solver 协调器都允许显式传入 `--remote-python`。选定的解释器会贯穿运行时同步、健康探测、候选生成和官方评测。
 
 ## 运行一个有界切片
 
@@ -89,9 +89,14 @@ python -m opencollab_eval.commands.swe_eval_run \
   --remote-root /srv/opencollab-eval \
   --remote-eval-work-root /srv/opencollab-eval/runs \
   --session-prefix example-g11-001 \
-  --model-name kimi-for-coding \
-  --llm-model kimi-for-coding \
+  --remote-python /srv/opencollab-eval/venv/bin/python \
+  --model-name kimi-k3-g11 \
+  --llm-model k3 \
   --llm-provider openai \
+  --context-window 1048576 \
+  --temperature 1 \
+  --top-p 0.95 \
+  --max-output-tokens 32768 \
   --remote-proxy-base-url https://api.kimi.com/coding/v1 \
   --remote-api-env-file /srv/opencollab-eval/secrets/kimi.env \
   --image-repository registry.example/swe \
@@ -100,7 +105,7 @@ python -m opencollab_eval.commands.swe_eval_run \
   --runner-attempts 1
 ```
 
-协调器接受逗号分隔的索引列表与闭区间。也可以使用 `--start-index` 和 `--end-index`。Solver 默认值会先应用，剩余选项随后传递给并行运行器。
+协调器示例使用经过验证的 K3 G11 配置。它会绑定精确的 `k3` 响应身份、1048576-token 上下文、温度 1、top-p 0.95、最大输出 32768、保留思考过程以及 `reasoning_effort=high`。协调器接受逗号分隔的索引列表与闭区间。也可以使用 `--start-index` 和 `--end-index`。Solver 默认值会先应用，剩余选项随后传递给并行运行器。
 
 OpenHands 需要 Python 3.12 与打包的 `run_openhands_cli.sh` 资源。Claude Code 需要外部运行时镜像，以及适配器要求的精确模型身份。开始批次前，请运行每个外部运行时的聚焦冒烟测试。
 

@@ -209,7 +209,26 @@ def test_coordinator_example_uses_only_forwarded_options() -> None:
     operations = (DOCS / "swe-prolite-operations.md").read_text(encoding="utf-8")
     section = operations.split("## Run through the Solver coordinator", 1)[1]
     example = section.split("```bash", 1)[1].split("```", 1)[0]
-    assert "--remote-python" not in example
+    assert "--remote-python /srv/opencollab-eval/venv/bin/python" in example
+
+
+def test_documented_k3_coordinator_has_complete_identity() -> None:
+    required = (
+        "--llm-model k3",
+        "--context-window 1048576",
+        "--temperature 1",
+        "--top-p 0.95",
+        "--max-output-tokens 32768",
+        "reasoning_effort=high",
+    )
+    for relative in (
+        "README.md",
+        "README.zh-CN.md",
+        "docs/swe-prolite-operations.md",
+        "docs/zh-CN/swe-prolite-operations.md",
+    ):
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        assert all(value in text for value in required)
 
 
 def test_removed_documentation_claims_do_not_return() -> None:

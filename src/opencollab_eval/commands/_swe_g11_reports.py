@@ -387,6 +387,7 @@ def aggregate(
         "runner_attempts": config.runner_attempts,
         "remote_base": config.remote_base,
         "remote_runtime_repo": config.remote_runtime_repo,
+        "remote_python": config.remote_python,
         "output_dir": str(config.output_dir),
         "model_name": config.model_name,
         "llm_model": config.llm_model,

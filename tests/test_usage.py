@@ -59,6 +59,7 @@ def test_llm_response_uses_independent_default_values() -> None:
         ("qwen2.5-coder", 131_072),
         ("glm-5.2", 400_000),
         ("gemini-2.5-pro", 1_000_000),
+        ("k3", 1_048_576),
         ("kimi-for-coding", 262_144),
     ],
 )
@@ -77,6 +78,7 @@ def test_model_context_window_preserves_known_models(
         "some-unknown-model",
         "kimi-k2.6",
         "kimi-k2.70",
+        "k3-preview",
         "kimi-for-coding-preview",
     ],
 )

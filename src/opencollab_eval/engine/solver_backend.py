@@ -10,6 +10,25 @@ _MODEL_RUNTIME_OPTIONS = (
     ("--llm-model", "OPENCOLLAB_SWE_LLM_MODEL"),
 )
 KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/v1"
+SUPPORTED_KIMI_G11_MODELS = frozenset({"k3", "kimi-for-coding"})
+
+
+def is_kimi_direct_model(model: str) -> bool:
+    """Return whether a model has a validated direct Kimi G11 profile."""
+    return model.strip() in SUPPORTED_KIMI_G11_MODELS
+
+
+def kimi_response_model_matches(requested: str, actual: object) -> bool:
+    """Match a Kimi response identity without accepting nearby model names."""
+    requested_model = requested.strip().lower()
+    actual_model = str(actual or "").strip().lower()
+    if requested_model == "k3":
+        return actual_model == "k3"
+    if requested_model == "kimi-for-coding":
+        return actual_model in {"kimi-for-coding", "kimi-k2.7"} or actual_model.startswith(
+            ("kimi-k2.7-", "kimi-k2.7_")
+        )
+    return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +132,9 @@ def workflow_solver_spec(name: str) -> WorkflowSolverSpec:
 __all__ = [
     "DEFAULT_WORKFLOW_SOLVERS",
     "KIMI_CODING_BASE_URL",
+    "SUPPORTED_KIMI_G11_MODELS",
     "WorkflowSolverSpec",
+    "is_kimi_direct_model",
+    "kimi_response_model_matches",
     "workflow_solver_spec",
 ]

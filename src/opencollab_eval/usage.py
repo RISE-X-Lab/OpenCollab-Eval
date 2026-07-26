@@ -26,6 +26,7 @@ MODEL_CONTEXT_WINDOWS: dict[str, int] = {
 }
 
 EXACT_MODEL_CONTEXT_WINDOWS: dict[str, int] = {
+    "k3": 1_048_576,
     "kimi-for-coding": 262_144,
 }
 

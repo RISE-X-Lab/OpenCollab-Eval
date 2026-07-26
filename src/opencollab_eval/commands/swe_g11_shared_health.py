@@ -11,6 +11,10 @@ from pathlib import Path
 from typing import Any
 
 from opencollab_eval.commands.swe_v1_prolite_config import get_proxy_token
+from opencollab_eval.engine.solver_backend import (
+    is_kimi_direct_model,
+    kimi_response_model_matches,
+)
 
 _REMOTE_ERROR_TYPES = frozenset({"access_terminated_error"})
 
@@ -27,11 +31,12 @@ class SharedProbeFailure(RuntimeError):
 def remote_health_script(config: Any) -> str:
     remote_base = shlex.quote(config.remote_base)
     remote_runtime_repo = shlex.quote(config.remote_runtime_repo)
+    remote_python = shlex.quote(config.remote_python)
     return "\n".join(
         [
             "set -eu",
             f"mkdir -p {remote_base}",
-            "command -v python3 >/dev/null",
+            f"test -x {remote_python} || command -v {remote_python} >/dev/null",
             "command -v docker >/dev/null",
             "docker info >/dev/null",
             f"df -Pk {remote_base}",
@@ -180,7 +185,9 @@ raise SystemExit(0 if valid else 3)
         config.host,
         "env PYTHONPATH="
         + shlex.quote(str(Path(config.remote_runtime_repo) / "src"))
-        + " python3 -c "
+        + " "
+        + shlex.quote(config.remote_python)
+        + " -c "
         + shlex.quote(script)
         + " "
         + " ".join(
@@ -223,12 +230,11 @@ raise SystemExit(0 if valid else 3)
     error_type = payload.get("error_type")
     if not isinstance(error_type, str) or error_type not in _REMOTE_ERROR_TYPES:
         error_type = None
-    model_matches = bool(actual_model)
-    if config.llm_model == "kimi-for-coding":
-        normalized = str(actual_model or "").lower()
-        model_matches = normalized in {"kimi-for-coding", "kimi-k2.7"} or normalized.startswith(
-            ("kimi-k2.7-", "kimi-k2.7_")
-        )
+    model_matches = (
+        kimi_response_model_matches(config.llm_model, actual_model)
+        if config.llm_provider == "openai" and is_kimi_direct_model(config.llm_model)
+        else bool(actual_model)
+    )
     summary = {
         "status": payload.get("status"),
         "direct": True,

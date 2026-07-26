@@ -13,10 +13,11 @@ Pro-Lite runs need a host, remote root, image repository, model name, model ID,
 provider, remote model endpoint, session prefix, and one complete credential
 transport. Paths that are required to be absolute are rejected before SSH.
 
-For direct Kimi coding mode, the model must be `kimi-for-coding`, the provider
-must be `openai`, the endpoint must be
-`https://api.kimi.com/coding/v1`, and the protected environment file must
-already exist on the worker.
+For direct Kimi coding mode, use one validated G11 profile. `kimi-for-coding`
+uses a 262144-token context with retained thinking history. `k3` uses a
+1048576-token context with `reasoning_effort=high`. Both profiles require the
+`openai` provider, the `https://api.kimi.com/coding/v1` endpoint, and a
+protected environment file that already exists on the worker.
 
 ## Provider probe or generation fails
 

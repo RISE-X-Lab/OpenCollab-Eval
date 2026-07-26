@@ -42,6 +42,7 @@ def _args(**overrides):
         "session_prefix": "",
         "host": "host",
         "ssh_command": "ssh",
+        "remote_python": "python3",
         "remote_root": "/remote/root",
         "image_repository": "registry.example/swe-images",
         "workflow": "validation-council-solve",
@@ -315,7 +316,7 @@ def test_workflow_env_is_validated_and_forwarded():
 
 def test_task_command_forwards_typed_llm_settings():
     module = _load_module()
-    config = module.resolve_config(_args())
+    config = module.resolve_config(_args(remote_python="/remote/runtime/bin/python"))
 
     command = module.task_command(config, 51)
 
@@ -326,6 +327,9 @@ def test_task_command_forwards_typed_llm_settings():
     assert command[command.index("--max-output-tokens") + 1] == "32768"
     assert command[command.index("--image-repository") + 1] == "registry.example/swe-images"
     assert command[command.index("--llm-provider") + 1] == "anthropic"
+    assert command[command.index("--remote-python") + 1] == (
+        "/remote/runtime/bin/python"
+    )
 
 
 def test_workflow_env_rejects_secret_or_arbitrary_keys():
@@ -733,7 +737,12 @@ def test_scheduler_ignores_semantic_eval_failures():
 
 def test_remote_health_check_builds_parameterized_ssh_probe(tmp_path):
     module = _load_module()
-    config = module.resolve_config(_args(output_dir=tmp_path))
+    config = module.resolve_config(
+        _args(
+            output_dir=tmp_path,
+            remote_python="/remote/runtime with space/bin/python",
+        )
+    )
     calls = []
 
     def fake_run(command, **kwargs):
@@ -753,6 +762,7 @@ def test_remote_health_check_builds_parameterized_ssh_probe(tmp_path):
     assert "swe_g11_prolite51_75_test" in joined
     assert "docker info" in joined
     assert "test -d" in joined
+    assert "/remote/runtime with space/bin/python" in joined
 
 
 def test_remote_health_check_skips_without_ssh_for_dry_run_or_explicit_skip(tmp_path):

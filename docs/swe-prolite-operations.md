@@ -36,10 +36,10 @@ Confirm these conditions before the first run.
 | Images | Dataset image names resolve to immutable local images |
 | Credentials | The selected transport can read a protected environment file |
 
-The low-level slice runner accepts an explicit `--remote-python` when the
-worker system interpreter lacks provider dependencies. The current
-multi-Solver coordinator uses the worker `python3`, so that interpreter must
-provide the synchronized runtime dependencies.
+The low-level slice runner and multi-Solver coordinator accept an explicit
+`--remote-python` when the worker system interpreter lacks provider
+dependencies. The selected interpreter is forwarded through runtime
+synchronization, health probes, generation, and official evaluation.
 
 ## Run one bounded slice
 
@@ -110,9 +110,14 @@ python -m opencollab_eval.commands.swe_eval_run \
   --remote-root /srv/opencollab-eval \
   --remote-eval-work-root /srv/opencollab-eval/runs \
   --session-prefix example-g11-001 \
-  --model-name kimi-for-coding \
-  --llm-model kimi-for-coding \
+  --remote-python /srv/opencollab-eval/venv/bin/python \
+  --model-name kimi-k3-g11 \
+  --llm-model k3 \
   --llm-provider openai \
+  --context-window 1048576 \
+  --temperature 1 \
+  --top-p 0.95 \
+  --max-output-tokens 32768 \
   --remote-proxy-base-url https://api.kimi.com/coding/v1 \
   --remote-api-env-file /srv/opencollab-eval/secrets/kimi.env \
   --image-repository registry.example/swe \
@@ -121,7 +126,10 @@ python -m opencollab_eval.commands.swe_eval_run \
   --runner-attempts 1
 ```
 
-The coordinator accepts a comma-separated index list and inclusive ranges.
+The coordinator example uses the validated K3 G11 profile. It binds the exact
+`k3` response identity, a 1048576-token context, temperature 1, top-p 0.95,
+maximum output 32768, retained thinking, and `reasoning_effort=high`. The
+coordinator accepts a comma-separated index list and inclusive ranges.
 `--start-index` with `--end-index` is an alternative. Solver defaults are
 applied before the remaining options reach the parallel runner.
 

@@ -28,7 +28,7 @@ from collections import deque
 from contextlib import contextmanager
 from typing import Any
 
-from opencollab_eval.engine.solver_backend import KIMI_CODING_BASE_URL
+from opencollab_eval.engine.solver_backend import KIMI_CODING_BASE_URL, is_kimi_direct_model
 from opencollab_eval.engine.swe_eval_records import (
     SUBMISSION_INTEGRITY_INELIGIBLE,
     embedded_workflow_metric,
@@ -279,9 +279,9 @@ def configure(config: dict[str, Any]) -> None:
     if llm_transport not in {"direct", "reverse_proxy"}:
         raise ValueError("llm_transport must be direct or reverse_proxy")
     if llm_transport == "direct" and (
-        llm_provider != "openai" or llm_model != "kimi-for-coding"
+        llm_provider != "openai" or not is_kimi_direct_model(llm_model)
     ):
-        raise ValueError("direct transport is supported only for openai kimi-for-coding")
+        raise ValueError("direct transport is supported only for OpenAI-compatible Kimi models")
     if llm_transport == "direct" and remote_proxy_base_url != KIMI_CODING_BASE_URL:
         raise ValueError("Kimi direct transport requires the official coding API base URL")
     context_window = cfg.get("context_window")

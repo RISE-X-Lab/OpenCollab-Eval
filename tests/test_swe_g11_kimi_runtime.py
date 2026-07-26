@@ -37,6 +37,58 @@ def test_kimi_for_coding_defaults_to_k27_thinking_runtime():
     }
 
 
+def test_k3_defaults_to_one_million_context_and_high_reasoning():
+    module = _load_module()
+    config = module.resolve_config(
+        _args(
+            llm_model="k3",
+            llm_provider="openai",
+            context_window=None,
+            temperature=None,
+            top_p=None,
+            max_output_tokens=None,
+        )
+    )
+
+    assert config.context_window == 1_048_576
+    assert model_context_window("k3") == config.context_window
+    assert config.temperature == 1.0
+    assert config.top_p == 0.95
+    assert config.max_output_tokens == 32_768
+    workflow_env = dict(item.split("=", 1) for item in config.workflow_env)
+    assert workflow_env["OPENCOLLAB_THINKING"] == "true"
+    assert json.loads(workflow_env["OPENCOLLAB_THINKING_PARAMS"]) == {
+        "reasoning_effort": "high"
+    }
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"context_window": 262_144}, "context-window 1048576"),
+        ({"workflow_env": ["OPENCOLLAB_THINKING=false"]}, "OPENCOLLAB_THINKING=true"),
+        (
+            {"workflow_env": ['OPENCOLLAB_THINKING_PARAMS={"reasoning_effort":"low"}']},
+            "reasoning_effort=high",
+        ),
+        ({"llm_provider": "anthropic"}, "llm-provider openai"),
+    ],
+)
+def test_k3_rejects_runtime_identity_drift(overrides, message):
+    module = _load_module()
+    values = {
+        "llm_model": "k3",
+        "llm_provider": "openai",
+        "context_window": None,
+        "temperature": None,
+        "top_p": None,
+        "max_output_tokens": None,
+    }
+    values.update(overrides)
+    with pytest.raises(ValueError, match=message):
+        module.resolve_config(_args(**values))
+
+
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
@@ -97,6 +149,7 @@ def test_remote_model_probe_uses_selected_provider_and_stdin_token(monkeypatch, 
             top_p=None,
             max_output_tokens=None,
             remote_proxy_base_url="http://127.0.0.1:18789",
+            remote_python="/remote/runtime with space/bin/python",
         )
     )
     captured = {}
@@ -276,10 +329,45 @@ def test_kimi_direct_mode_uses_remote_credential_without_proxy_arguments():
     assert "--local-proxy-base-url" not in command
 
 
+def test_k3_direct_mode_uses_remote_credential_and_bound_identity():
+    module = _load_module()
+    config = module.resolve_config(
+        _args(
+            llm_model="k3", llm_provider="openai",
+            context_window=None, temperature=None, top_p=None, max_output_tokens=None,
+            local_proxy_base_url="", proxy_env_file=None,
+            remote_proxy_base_url="https://api.kimi.com/coding/v1",
+            remote_api_env_file="/srv/opencollab/secrets/kimi.env",
+        )
+    )
+    command = module.task_command(config, 7)
+
+    assert config.context_window == 1_048_576
+    assert command[command.index("--llm-model") + 1] == "k3"
+    assert command[command.index("--context-window") + 1] == "1048576"
+    assert command[command.index("--remote-api-env-file") + 1] == (
+        "/srv/opencollab/secrets/kimi.env"
+    )
+    assert "--proxy-env-file" not in command
+    assert "--local-proxy-base-url" not in command
+
+
+def test_k3_model_id_is_case_sensitive():
+    module = _load_module()
+    with pytest.raises(ValueError, match="only for direct Kimi models"):
+        module.resolve_config(
+            _args(
+                llm_model="K3",
+                llm_provider="openai",
+                remote_api_env_file="/srv/opencollab/secrets/kimi.env",
+            )
+        )
+
+
 def test_kimi_remote_api_file_rejects_glm_or_loopback():
     module = _load_module()
     path = "/srv/opencollab/secrets/kimi.env"
-    with pytest.raises(ValueError, match="only for openai kimi-for-coding"):
+    with pytest.raises(ValueError, match="only for direct Kimi models"):
         module.resolve_config(_args(remote_api_env_file=path))
     with pytest.raises(ValueError, match="api.kimi.com/coding/v1"):
         module.resolve_config(
@@ -320,6 +408,7 @@ def test_remote_model_probe_accepts_only_alias_or_k27_backend(
             top_p=None,
             max_output_tokens=None,
             remote_proxy_base_url="http://127.0.0.1:18789",
+            remote_python="/remote/runtime with space/bin/python",
         )
     )
     monkeypatch.setattr(module, "get_proxy_token", lambda _path: "client-token")
@@ -345,6 +434,94 @@ def test_remote_model_probe_accepts_only_alias_or_k27_backend(
     else:
         with pytest.raises(RuntimeError, match="remote model probe failed"):
             module.run_remote_model_probe(config)
+
+
+@pytest.mark.parametrize(
+    ("actual_model", "accepted"),
+    [
+        ("k3", True),
+        ("K3", True),
+        ("k3-256k", False),
+        ("kimi-k3", False),
+    ],
+)
+def test_remote_model_probe_accepts_only_exact_k3_identity(
+    monkeypatch, tmp_path, actual_model, accepted
+):
+    module = _load_module()
+    config = module.resolve_config(
+        _args(
+            output_dir=tmp_path,
+            llm_provider="openai",
+            llm_model="k3",
+            context_window=None,
+            temperature=None,
+            top_p=None,
+            max_output_tokens=None,
+            remote_proxy_base_url="http://127.0.0.1:18789",
+        )
+    )
+    monkeypatch.setattr(module, "get_proxy_token", lambda _path: "client-token")
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda command, **_kwargs: module.subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(
+                {
+                    "status": "ok",
+                    "thinking_proven": True,
+                    "actual_model": actual_model,
+                }
+            ),
+            stderr="",
+        ),
+    )
+
+    if accepted:
+        result = module.run_remote_model_probe(config)
+        assert result["model_matches"] is True
+        assert result["thinking_proven"] is True
+    else:
+        with pytest.raises(RuntimeError, match="remote model probe failed"):
+            module.run_remote_model_probe(config)
+
+
+def test_k3_remote_model_probe_sends_high_reasoning_effort(monkeypatch, tmp_path):
+    module = _load_module()
+    config = module.resolve_config(
+        _args(
+            output_dir=tmp_path,
+            llm_provider="openai",
+            llm_model="k3",
+            context_window=None,
+            temperature=None,
+            top_p=None,
+            max_output_tokens=None,
+            remote_proxy_base_url="http://127.0.0.1:18789",
+            remote_python="/remote/runtime with space/bin/python",
+        )
+    )
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured.update(command=command, kwargs=kwargs)
+        return module.subprocess.CompletedProcess(
+            command,
+            0,
+            stdout='{"status":"ok","thinking_proven":true,"actual_model":"k3"}\n',
+            stderr="",
+        )
+
+    monkeypatch.setattr(module, "get_proxy_token", lambda _path: "client-token")
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    assert module.run_remote_model_probe(config)["model_matches"] is True
+    joined = " ".join(captured["command"])
+    assert '"reasoning_effort":"high"' in joined
+    assert '"max_tokens":32768' in joined
+    assert "/remote/runtime with space/bin/python" in joined
 
 
 @pytest.mark.parametrize(

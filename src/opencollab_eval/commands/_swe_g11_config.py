@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from opencollab_eval.commands import _swe_eval_layer_integrity as _eval_integrity
-from opencollab_eval.engine.solver_backend import KIMI_CODING_BASE_URL
+from opencollab_eval.engine.solver_backend import KIMI_CODING_BASE_URL, is_kimi_direct_model
 from opencollab_eval.engine.swe_eval_records import (
     SUBMISSION_INTEGRITY_PROVEN,
     metric_submission_integrity,
@@ -64,6 +64,7 @@ class ParallelConfig:
     session_prefix: str
     host: str
     ssh_command: str
+    remote_python: str
     remote_root: str
     image_repository: str
     workflow: str
@@ -168,7 +169,7 @@ def normalize_workflow_env(values: list[str] | tuple[str, ...]) -> tuple[str, ..
     return tuple(f"{key}={value}" for key, value in normalized.items())
 
 
-def _kimi_k27_runtime_defaults(
+def _kimi_runtime_defaults(
     llm_model: str,
     *,
     llm_provider: str,
@@ -178,30 +179,51 @@ def _kimi_k27_runtime_defaults(
     max_output_tokens: int | None,
     workflow_env: tuple[str, ...],
 ) -> tuple[int | None, float | None, float | None, int | None, tuple[str, ...]]:
-    if llm_model != "kimi-for-coding":
+    if not is_kimi_direct_model(llm_model):
         return context_window, temperature, top_p, max_output_tokens, workflow_env
     if llm_provider != "openai":
-        raise ValueError("kimi-for-coding K2.7 requires --llm-provider openai")
+        raise ValueError(f"{llm_model} requires --llm-provider openai")
     values = dict(item.split("=", 1) for item in workflow_env)
-    context_window = 262_144 if context_window is None else context_window
     temperature = 1.0 if temperature is None else temperature
     top_p = 0.95 if top_p is None else top_p
     max_output_tokens = 32_768 if max_output_tokens is None else max_output_tokens
     values.setdefault("OPENCOLLAB_THINKING", "true")
+    if temperature != 1.0:
+        raise ValueError(f"{llm_model} requires --temperature 1")
+    if top_p != 0.95:
+        raise ValueError(f"{llm_model} requires --top-p 0.95")
+    if max_output_tokens != 32_768:
+        raise ValueError(f"{llm_model} requires --max-output-tokens 32768")
+    if values["OPENCOLLAB_THINKING"].strip().lower() not in {"1", "true", "yes", "on"}:
+        raise ValueError(f"{llm_model} requires OPENCOLLAB_THINKING=true")
+    if llm_model == "k3":
+        context_window = 1_048_576 if context_window is None else context_window
+        values.setdefault(
+            "OPENCOLLAB_THINKING_PARAMS",
+            json.dumps({"reasoning_effort": "high"}, separators=(",", ":")),
+        )
+        if context_window != 1_048_576:
+            raise ValueError("k3 requires --context-window 1048576")
+        try:
+            thinking_params = json.loads(values["OPENCOLLAB_THINKING_PARAMS"])
+        except json.JSONDecodeError as exc:
+            raise ValueError("OPENCOLLAB_THINKING_PARAMS must be valid JSON") from exc
+        if thinking_params != {"reasoning_effort": "high"}:
+            raise ValueError("k3 requires reasoning_effort=high")
+        return (
+            context_window,
+            temperature,
+            top_p,
+            max_output_tokens,
+            tuple(f"{key}={value}" for key, value in values.items()),
+        )
+    context_window = 262_144 if context_window is None else context_window
     values.setdefault(
         "OPENCOLLAB_THINKING_PARAMS",
         json.dumps({"thinking": {"type": "enabled", "keep": "all"}}, separators=(",", ":")),
     )
-    if temperature != 1.0:
-        raise ValueError("kimi-for-coding requires --temperature 1")
-    if top_p != 0.95:
-        raise ValueError("kimi-for-coding requires --top-p 0.95")
     if context_window != 262_144:
         raise ValueError("kimi-for-coding requires --context-window 262144")
-    if max_output_tokens != 32_768:
-        raise ValueError("kimi-for-coding requires --max-output-tokens 32768")
-    if values["OPENCOLLAB_THINKING"].strip().lower() not in {"1", "true", "yes", "on"}:
-        raise ValueError("K2.7 requires OPENCOLLAB_THINKING=true")
     try:
         thinking_params = json.loads(values["OPENCOLLAB_THINKING_PARAMS"])
     except json.JSONDecodeError as exc:
@@ -247,6 +269,7 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
     max_workers = max(1, args.max_workers)
     min_workers = min(max_workers, max(1, args.min_workers))
     host = str(args.host or "").strip()
+    remote_python = str(getattr(args, "remote_python", "python3") or "").strip()
     remote_root = str(args.remote_root or "").strip()
     image_repository = str(args.image_repository or "").strip()
     model_name = str(args.model_name or "").strip()
@@ -254,7 +277,7 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
     llm_provider = str(getattr(args, "llm_provider", "") or "").strip().lower()
     workflow = str(args.workflow or "").strip()
     workflow_env = normalize_workflow_env(getattr(args, "workflow_env", ()))
-    context_window, temperature, top_p, max_output_tokens, workflow_env = _kimi_k27_runtime_defaults(
+    context_window, temperature, top_p, max_output_tokens, workflow_env = _kimi_runtime_defaults(
         llm_model,
         llm_provider=llm_provider,
         context_window=getattr(args, "context_window", None),
@@ -271,12 +294,13 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
     local_proxy_base_url = str(args.local_proxy_base_url or "").strip()
     if remote_api_env_file and not remote_api_env_file.startswith("/"):
         raise ValueError("--remote-api-env-file must be an absolute path")
-    if remote_api_env_file and (llm_provider != "openai" or llm_model != "kimi-for-coding"):
-        raise ValueError("--remote-api-env-file is supported only for openai kimi-for-coding")
+    if remote_api_env_file and (llm_provider != "openai" or not is_kimi_direct_model(llm_model)):
+        raise ValueError("--remote-api-env-file is supported only for direct Kimi models")
     if remote_api_env_file and remote_proxy_base_url.rstrip("/") != KIMI_CODING_BASE_URL:
         raise ValueError(f"Kimi direct mode requires --remote-proxy-base-url {KIMI_CODING_BASE_URL}")
     required = {
         "--host or OPENCOLLAB_SWE_HOST": host,
+        "--remote-python": remote_python,
         "--remote-root or OPENCOLLAB_SWE_REMOTE_ROOT": remote_root,
         "--image-repository or OPENCOLLAB_SWE_IMAGE_REPOSITORY": image_repository,
         "--model-name or OPENCOLLAB_SWE_MODEL_NAME": model_name,
@@ -319,6 +343,7 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
         session_prefix=session_prefix,
         host=host,
         ssh_command=args.ssh_command,
+        remote_python=remote_python,
         remote_root=remote_root,
         image_repository=image_repository,
         workflow=workflow,

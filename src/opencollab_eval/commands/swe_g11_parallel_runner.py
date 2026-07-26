@@ -84,6 +84,8 @@ def task_command(config: ParallelConfig, index: int) -> list[str]:
         config.host,
         "--ssh-command",
         config.ssh_command,
+        "--remote-python",
+        config.remote_python,
         "--remote-root",
         config.remote_root,
         "--image-repository",
@@ -315,6 +317,8 @@ def prepare_runtime(config: ParallelConfig) -> str:
         config.host,
         "--ssh-command",
         config.ssh_command,
+        "--remote-python",
+        config.remote_python,
         "--remote-root",
         config.remote_root,
         "--image-repository",
@@ -668,6 +672,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--session-prefix", default="")
     parser.add_argument("--host", default=os.environ.get("OPENCOLLAB_SWE_HOST", ""))
     parser.add_argument("--ssh-command", default="ssh")
+    parser.add_argument("--remote-python", default="python3")
     parser.add_argument("--remote-root", default=DEFAULT_REMOTE_ROOT)
     parser.add_argument(
         "--image-repository",

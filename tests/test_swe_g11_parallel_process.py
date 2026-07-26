@@ -132,6 +132,7 @@ def test_parallel_sigterm_cleans_preflight_controller_group(tmp_path):
             "    [sys.executable, '-c', code, str(marker)], cwd=marker.parent)",
             "cfg = SimpleNamespace(skip_preflight=False, output_dir=marker.parent,",
             "    remote_base='/remote/run', host='host', ssh_command='ssh',",
+            "    remote_python='python3',",
             "    remote_root='/remote', image_repository='image', run_id='run',",
             "    session_prefix='session', model_name='model', llm_provider='openai',",
             "    indices=(1,), remote_runtime_repo='/remote/runtime', workflow='workflow',",

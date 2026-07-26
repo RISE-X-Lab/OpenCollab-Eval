@@ -27,7 +27,7 @@ from opencollab_eval.commands.swe_v1_prolite_config import *  # noqa: F403
 from opencollab_eval.commands.swe_v1_prolite_controller import *  # noqa: F403
 from opencollab_eval.commands.swe_v1_prolite_process import *  # noqa: F403
 from opencollab_eval.commands.swe_v1_prolite_report import *  # noqa: F403
-from opencollab_eval.engine.solver_backend import KIMI_CODING_BASE_URL
+from opencollab_eval.engine.solver_backend import KIMI_CODING_BASE_URL, is_kimi_direct_model
 
 
 def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
@@ -213,9 +213,9 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
     if args.checkpoint_interval < 0:
         parser.error("--checkpoint-interval must be >= 0")
     if args.remote_api_env_file and (
-        args.llm_provider != "openai" or args.llm_model != "kimi-for-coding"
+        args.llm_provider != "openai" or not is_kimi_direct_model(args.llm_model)
     ):
-        parser.error("--remote-api-env-file is supported only for openai kimi-for-coding")
+        parser.error("--remote-api-env-file is supported only for direct Kimi models")
     if args.remote_api_env_file and args.remote_proxy_base_url.rstrip("/") != KIMI_CODING_BASE_URL:
         parser.error(f"Kimi direct mode requires --remote-proxy-base-url {KIMI_CODING_BASE_URL}")
     if args.run_id:

@@ -754,3 +754,34 @@ def test_kimi_remote_api_file_skips_persistent_proxy(monkeypatch: Any, tmp_path:
             "--remote-api-env-file", "/srv/opencollab/secrets/kimi.env",
         ]
     ) == 0
+
+
+def test_k3_remote_api_file_skips_persistent_proxy(monkeypatch: Any, tmp_path: Path) -> None:
+    module = _load_entry_module()
+    monkeypatch.setattr(
+        module,
+        "_ensure_proxy_agent",
+        lambda **_kwargs: pytest.fail("Kimi direct mode must not start a proxy"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_launchctl",
+        lambda *arguments, **_kwargs: SimpleNamespace(
+            returncode=1 if arguments[0] == "print" else 0,
+            stdout="",
+            stderr="",
+        ),
+    )
+    monkeypatch.setattr(module, "_write_plist", lambda *_args: None)
+    monkeypatch.setattr(module.shutil, "copy2", lambda *_args: None)
+
+    assert module.main(
+        [
+            "--indices", "7", "--solver", "g11",
+            "--model-name", "kimi-k3-g11",
+            "--llm-model", "k3", "--llm-provider", "openai",
+            "--remote-proxy-base-url", "https://api.kimi.com/coding/v1",
+            "--output-dir", str(tmp_path), "--detach",
+            "--remote-api-env-file", "/srv/opencollab/secrets/kimi.env",
+        ]
+    ) == 0
