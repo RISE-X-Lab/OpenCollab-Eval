@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -18,7 +19,8 @@ ROOT = Path(
 DOCS = ROOT / "docs"
 MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 FENCED_CODE = re.compile(r"^```[^\n]*\n(.*?)^```", re.MULTILINE | re.DOTALL)
-HEADING = re.compile(r"^#{1,6} ", re.MULTILINE)
+HEADING = re.compile(r"^(#{1,6}) ", re.MULTILINE)
+INLINE_CODE = re.compile(r"(?<!`)`([^`\n]+)`(?!`)")
 
 ROOT_DOCUMENTS = (
     ROOT / "README.md",
@@ -61,6 +63,18 @@ def _documentation_files() -> tuple[Path, ...]:
             for path in (english, chinese)
         )
     )
+
+
+def _chinese_documents() -> set[Path]:
+    return {
+        *ROOT.glob("*.zh-CN.md"),
+        *(DOCS / "zh-CN").rglob("*.md"),
+        *(ROOT / "src" / "opencollab_eval").rglob("README.zh-CN.md"),
+    }
+
+
+def _inline_code_tokens(text: str) -> Counter[str]:
+    return Counter(INLINE_CODE.findall(FENCED_CODE.sub("", text)))
 
 
 def _resolved_local_links(path: Path) -> set[Path]:
@@ -112,6 +126,11 @@ def test_chinese_documentation_index_references_every_document() -> None:
     assert missing == []
 
 
+def test_every_chinese_document_has_a_canonical_english_source() -> None:
+    expected = {chinese for _english, chinese in _bilingual_pairs()}
+    assert _chinese_documents() == expected
+
+
 @pytest.mark.parametrize(
     ("english", "chinese"),
     _bilingual_pairs(),
@@ -133,8 +152,29 @@ def test_bilingual_documents_are_linked_and_structurally_aligned(
     assert chinese.resolve() in _resolved_local_links(english)
     assert english.resolve() in _resolved_local_links(chinese)
     assert FENCED_CODE.findall(chinese_text) == FENCED_CODE.findall(english_text)
-    assert len(HEADING.findall(chinese_text)) == len(HEADING.findall(english_text))
+    assert HEADING.findall(chinese_text) == HEADING.findall(english_text)
+    assert _inline_code_tokens(chinese_text) == _inline_code_tokens(english_text)
     assert any("\u4e00" <= char <= "\u9fff" for char in chinese_text)
+
+
+@pytest.mark.parametrize(
+    ("english", "chinese"),
+    _bilingual_pairs(),
+    ids=lambda value: str(value.relative_to(ROOT)),
+)
+def test_chinese_internal_links_prefer_available_chinese_documents(
+    english: Path,
+    chinese: Path,
+) -> None:
+    counterparts = dict(_bilingual_pairs())
+    english_links = _resolved_local_links(english)
+    chinese_links = _resolved_local_links(chinese)
+    for target in english_links:
+        if target in counterparts:
+            assert counterparts[target] in chinese_links
+    assert not {
+        target for target in chinese_links if target in counterparts and target != english
+    }
 
 
 def test_readme_names_installed_commands_and_solver_profiles() -> None:

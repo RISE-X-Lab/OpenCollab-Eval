@@ -37,7 +37,7 @@ official-evaluation process 执行 controller-generated plan，并写入 bounded
 evidence artifact。完成 container 和 process cleanup 后，host 只从自有
 output directory 中读取 allowlisted regular file。
 
-## Public baseline preparation
+## 公开基线准备
 
 Solver 启动前，task image 会按照数据集的 `base_commit` 接受检查。任务需要的
 runtime dependency 与 candidate view 分离。Repository history 被替换为由
@@ -84,7 +84,7 @@ supervisor 检查自有 process group 和 container state。只有不存在能�
 不完整的 cleanup 会将 `execution_quiesced` 或 `cleanup_quiesced` 设为 false。
 此时候选不再 eligible，official evaluation 无法产生 resolved verdict。
 
-## Controller-owned candidate construction
+## 控制器持有的候选构造
 
 候选构造使用外部 trusted Git directory、冻结后的 Solver worktree 和一个
 新的 temporary index。
@@ -154,7 +154,7 @@ symbolic link、mode、deletion 和 Gitlink 计算到另一个 temporary index �
 anonymous commit 的 image，同时保留 generation 阶段的 source-tree
 identity。
 
-## Test-plan contract
+## 测试计划契约
 
 Pro-Lite test plan 包含 schema、adapter、declared target、ordered target
 batch、ordered command、proof description、runtime dependency 和 verified
@@ -280,7 +280,7 @@ signature。
 只有 technical-reason set 为空，并且每个 F2P 与 P2P evidence batch 上的
 `target_evidence_passed` 都返回 true，`resolved` 才会成为 true。
 
-## Evaluation state
+## 评测状态
 
 | State | 含义 |
 | --- | --- |
@@ -336,7 +336,7 @@ final comparison report 在渲染 JSON、Markdown、TeX 或 PDF 输出前验证
 dataset identity、task coverage、run identity、candidate SHA-256、
 projection evidence、direct execution evidence 和 terminal status。
 
-## Review checklist
+## 审查清单
 
 当 evaluation change 保持 solver-visible input 公开、judge field 密封、
 candidate 来自共享 controller-owned constructor，并且 official workspace

@@ -25,10 +25,10 @@ OpenCollab-Eval 导入以下 OpenCollab public surface。
 
 | Public module | 使用的能力 |
 | --- | --- |
-| `opencollab` | `OpenCollab`、`RunError`、`RunResult` 和 `workflow` |
+| `opencollab` | `OpenCollab` 和 `RunResult` |
 | `opencollab.environments` | `Environment`、`attach_container`、`docker_environment` 和 `worktree_environment` |
-| `opencollab.tools` | `Tool`、`VerificationTool`、`BuiltinToolName` 和 `builtin_tools` |
-| `opencollab.workflows` | `WorkflowContext` 和 `workflow` |
+| `opencollab.tools` | `BuiltinToolName`、`Tool` 和 `builtin_tools` |
+| `opencollab.workflows` | `workflow` |
 
 已退役的 `opencollab.sdk` 包以及 OpenCollab 的 `adapters`、`application`、
 `bootstrap`、`domain` 和 `harness` 等实现层均位于该依赖边界之外。
