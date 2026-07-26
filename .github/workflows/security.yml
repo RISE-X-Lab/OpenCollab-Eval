@@ -1,0 +1,69 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install the pinned secret scanner
+        run: python3 -m pip install --disable-pip-version-check detect-secrets==1.5.0
+      - name: Scan every pushed commit with the trusted checker
+        if: github.event_name == 'push'
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          trusted_checker=""
+          checker_path="$RUNNER_TEMP/push-secret-checker-path"
+          if [ "$BASE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            if ! git ls-tree --name-only "$BASE_SHA" -- \
+              scripts/check_secret_history.py > "$checker_path"; then
+              exit 1
+            fi
+            trusted_checker="$(cat "$checker_path")"
+          fi
+          if [ "$trusted_checker" = "scripts/check_secret_history.py" ]; then
+            git show "$BASE_SHA:scripts/check_secret_history.py" |
+              python3 - "$BASE_SHA" "$HEAD_SHA"
+          else
+            python3 scripts/check_secret_history.py "$BASE_SHA" "$HEAD_SHA"
+          fi
+      - name: Scan every proposed commit with the trusted checker
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          checker_path="$RUNNER_TEMP/secret-checker-path"
+          if ! git ls-tree --name-only "$BASE_SHA" -- \
+            scripts/check_secret_history.py > "$checker_path"; then
+            exit 1
+          fi
+          trusted_checker="$(cat "$checker_path")"
+          if [ "$trusted_checker" = "scripts/check_secret_history.py" ]; then
+            git show "$BASE_SHA:scripts/check_secret_history.py" |
+              python3 - "$BASE_SHA" "$HEAD_SHA"
+          elif [ -z "$trusted_checker" ]; then
+            python3 scripts/check_secret_history.py "$BASE_SHA" "$HEAD_SHA"
+          else
+            exit 1
+          fi

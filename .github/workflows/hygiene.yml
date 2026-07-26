@@ -1,0 +1,66 @@
+name: Hygiene
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hygiene-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  added-files:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check files added by the pull request
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          checker_path="$RUNNER_TEMP/hygiene-checker-path"
+          if ! git ls-tree --name-only "$BASE_SHA" -- \
+            scripts/check_added_files.py > "$checker_path"; then
+            exit 1
+          fi
+          trusted_checker="$(cat "$checker_path")"
+          if [ "$trusted_checker" = "scripts/check_added_files.py" ]; then
+            git show "$BASE_SHA:scripts/check_added_files.py" |
+              python3 - "$BASE_SHA" "$HEAD_SHA"
+          elif [ -z "$trusted_checker" ]; then
+            python3 scripts/check_added_files.py "$BASE_SHA" "$HEAD_SHA"
+          else
+            exit 1
+          fi
+      - name: Check the complete main tree
+        if: github.event_name == 'push'
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          EMPTY_TREE="$(git hash-object -t tree /dev/null)"
+          trusted_checker=""
+          if [ "$BASE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            trusted_checker="$(
+              git ls-tree --name-only "$BASE_SHA" -- scripts/check_added_files.py
+            )"
+          fi
+          if [ "$trusted_checker" = "scripts/check_added_files.py" ]; then
+            git show "$BASE_SHA:scripts/check_added_files.py" |
+              python3 - "$EMPTY_TREE" "$HEAD_SHA" --require-files
+          else
+            python3 scripts/check_added_files.py \
+              "$EMPTY_TREE" "$HEAD_SHA" --require-files
+          fi

@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    defaults:
+      run:
+        shell: bash
+        working-directory: eval
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Check out OpenCollab-Eval
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: eval
+
+      - name: Check out the compatible OpenCollab public API
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: RISE-X-Lab/OpenCollab
+          ref: 44e18823c752598b66b6ee800826a6281af2a557
+          token: ${{ secrets.OPENCOLLAB_READ_TOKEN }}
+          persist-credentials: false
+          path: opencollab-source
+
+      - name: Set up Python
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            eval/pyproject.toml
+            opencollab-source/pyproject.toml
+
+      - name: Build both distributions
+        id: wheels
+        run: |
+          python -m pip install build
+          mkdir -p "$RUNNER_TEMP/wheels/opencollab" "$RUNNER_TEMP/wheels/eval"
+          python -m build --wheel --outdir "$RUNNER_TEMP/wheels/opencollab" ../opencollab-source
+          python -m build --wheel --outdir "$RUNNER_TEMP/wheels/eval" .
+          oc_wheels=("$RUNNER_TEMP"/wheels/opencollab/*.whl)
+          eval_wheels=("$RUNNER_TEMP"/wheels/eval/*.whl)
+          test "${#oc_wheels[@]}" -eq 1
+          test "${#eval_wheels[@]}" -eq 1
+          echo "opencollab=${oc_wheels[0]}" >> "$GITHUB_OUTPUT"
+          echo "eval=${eval_wheels[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Install test dependencies
+        run: python -m pip install "${{ steps.wheels.outputs.opencollab }}" -e ".[dev,swebench]"
+
+      - name: Run Ruff
+        run: ruff check .
+
+      - name: Run the full test suite
+        run: pytest -q
+
+      - name: Verify installed wheel and public API compatibility
+        if: matrix.python-version == '3.12'
+        env:
+          OPENCOLLAB_SOURCE_ROOT: ${{ github.workspace }}/opencollab-source
+          OPENCOLLAB_EVAL_SOURCE_ROOT: ${{ github.workspace }}/eval
+        run: scripts/verify_wheel_contract.sh "${{ steps.wheels.outputs.opencollab }}" "${{ steps.wheels.outputs.eval }}"
+
+  deterministic-e2e:
+    name: Deterministic SWE end-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+        working-directory: eval
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Check out OpenCollab-Eval
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: eval
+
+      - name: Check out the compatible OpenCollab public API
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: RISE-X-Lab/OpenCollab
+          ref: 44e18823c752598b66b6ee800826a6281af2a557
+          token: ${{ secrets.OPENCOLLAB_READ_TOKEN }}
+          persist-credentials: false
+          path: opencollab-source
+
+      - name: Set up Python
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            eval/pyproject.toml
+            opencollab-source/pyproject.toml
+
+      - name: Install SSH and rsync
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes openssh-server rsync
+          sudo mkdir -p /run/sshd
+
+      - name: Build both distributions
+        id: wheels
+        run: |
+          python -m pip install build
+          mkdir -p "$RUNNER_TEMP/wheels/opencollab" "$RUNNER_TEMP/wheels/eval"
+          python -m build --wheel --outdir "$RUNNER_TEMP/wheels/opencollab" ../opencollab-source
+          python -m build --wheel --outdir "$RUNNER_TEMP/wheels/eval" .
+          oc_wheels=("$RUNNER_TEMP"/wheels/opencollab/*.whl)
+          eval_wheels=("$RUNNER_TEMP"/wheels/eval/*.whl)
+          test "${#oc_wheels[@]}" -eq 1
+          test "${#eval_wheels[@]}" -eq 1
+          echo "opencollab=${oc_wheels[0]}" >> "$GITHUB_OUTPUT"
+          echo "eval=${eval_wheels[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Run deterministic SWE evaluation
+        env:
+          OPENCOLLAB_SOURCE_ROOT: ${{ github.workspace }}/opencollab-source
+          OPENCOLLAB_E2E_OPENCOLLAB_WHEEL: ${{ steps.wheels.outputs.opencollab }}
+          OPENCOLLAB_E2E_EVAL_WHEEL: ${{ steps.wheels.outputs.eval }}
+        run: scripts/run_deterministic_swe_e2e.sh --output "$RUNNER_TEMP/deterministic-e2e" --runs 1
+
+      - name: Upload deterministic evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: deterministic-swe-e2e
+          path: ${{ runner.temp }}/deterministic-e2e
+          if-no-files-found: error
+          retention-days: 14

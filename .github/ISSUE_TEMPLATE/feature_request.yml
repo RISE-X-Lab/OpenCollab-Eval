@@ -1,0 +1,19 @@
+name: Feature request
+description: Propose an evaluation capability or design change
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the evaluation need and its evidence boundary.
+    validations:
+      required: true
+  - type: textarea
+    id: design
+    attributes:
+      label: Proposed design
+      description: Explain compatibility, failure handling, and test evidence.
+    validations:
+      required: true

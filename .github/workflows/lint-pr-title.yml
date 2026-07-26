@@ -1,0 +1,66 @@
+name: Conventional Title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conventional-title:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the pull request title
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          checker_path="$RUNNER_TEMP/title-checker-path"
+          if ! git ls-tree --name-only "$BASE_SHA" -- \
+            scripts/check_conventional_title.py > "$checker_path"; then
+            exit 1
+          fi
+          trusted_checker="$(cat "$checker_path")"
+          if [ "$trusted_checker" = "scripts/check_conventional_title.py" ]; then
+            git show "$BASE_SHA:scripts/check_conventional_title.py" |
+              python3 - --title "$TITLE"
+          elif [ -z "$trusted_checker" ]; then
+            python3 scripts/check_conventional_title.py --title "$TITLE"
+          else
+            exit 1
+          fi
+      - name: Check every pushed commit title
+        if: github.event_name == 'push'
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          trusted_checker=""
+          if [ "$BASE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            trusted_checker="$(
+              git ls-tree --name-only "$BASE_SHA" -- scripts/check_conventional_title.py
+            )"
+          fi
+          if [ "$trusted_checker" = "scripts/check_conventional_title.py" ]; then
+            git show "$BASE_SHA:scripts/check_conventional_title.py" |
+              python3 - --range "$BASE_SHA" "$HEAD_SHA"
+          else
+            python3 scripts/check_conventional_title.py \
+              --range "$BASE_SHA" "$HEAD_SHA"
+          fi
