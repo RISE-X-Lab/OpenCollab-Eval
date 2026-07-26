@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import subprocess
 import sys
 from pathlib import Path
 
-from scripts.check_conventional_title import validate_title
-
 _REPO_ROOT = Path(
     os.environ.get("OPENCOLLAB_EVAL_SOURCE_ROOT", Path(__file__).resolve().parents[1])
 ).resolve()
+_SCRIPT = _REPO_ROOT / "scripts" / "check_conventional_title.py"
+_SCRIPT_SPEC = importlib.util.spec_from_file_location("check_conventional_title", _SCRIPT)
+assert _SCRIPT_SPEC is not None and _SCRIPT_SPEC.loader is not None
+_SCRIPT_MODULE = importlib.util.module_from_spec(_SCRIPT_SPEC)
+_SCRIPT_SPEC.loader.exec_module(_SCRIPT_MODULE)
+validate_title = _SCRIPT_MODULE.validate_title
 _CLEAN_SNAPSHOT = "chore: \u5efa\u7acb\u5e72\u51c0\u53d1\u5e03\u5feb\u7167"
 _ZERO_SHA = "0" * 40
 
