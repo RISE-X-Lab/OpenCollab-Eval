@@ -28,6 +28,8 @@ jobs:
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
       PYTHONUNBUFFERED: "1"
+      OPENCOLLAB_SOURCE_ROOT: ${{ github.workspace }}/opencollab-source
+      OPENCOLLAB_EVAL_SOURCE_ROOT: ${{ github.workspace }}/eval
 
     steps:
       - name: Check out OpenCollab-Eval

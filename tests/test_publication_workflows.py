@@ -76,3 +76,9 @@ def test_ci_uses_verified_action_release_commits() -> None:
     assert "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f" in workflow
     assert workflow.count("token: ${{ secrets.OPENCOLLAB_READ_TOKEN }}") == 2
     assert "if-no-files-found: error" in workflow
+    assert workflow.count(
+        "OPENCOLLAB_SOURCE_ROOT: ${{ github.workspace }}/opencollab-source"
+    ) == 3
+    assert workflow.count(
+        "OPENCOLLAB_EVAL_SOURCE_ROOT: ${{ github.workspace }}/eval"
+    ) == 2
