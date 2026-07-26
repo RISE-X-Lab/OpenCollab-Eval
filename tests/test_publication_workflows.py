@@ -189,9 +189,14 @@ def test_ci_uses_verified_action_release_commits() -> None:
     workflow = _workflow("ci.yml")
 
     assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" in workflow
-    assert "actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548" in workflow
-    assert "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f" in workflow
-    assert workflow.count("token: ${{ secrets.OPENCOLLAB_READ_TOKEN }}") == 2
+    assert "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97" in workflow
+    assert "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" in workflow
+    assert (
+        workflow.count(
+            "token: ${{ secrets.OPENCOLLAB_READ_TOKEN || github.token }}"
+        )
+        == 2
+    )
     assert "if-no-files-found: error" in workflow
     assert workflow.count(
         "OPENCOLLAB_SOURCE_ROOT: ${{ github.workspace }}/opencollab-source"
