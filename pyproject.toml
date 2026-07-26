@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "opencollab-eval"
+version = "0.1.0"
+description = "Independent evaluation layer for OpenCollab solvers."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MulanPSL-2.0"
+license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"]
+authors = [{ name = "OpenCollab-Eval contributors" }]
+maintainers = [{ name = "RISE-X-Lab" }]
+keywords = ["evaluation", "llm", "software-engineering", "swe-bench", "agent"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = ["opencollab>=0.4,<0.5"]
+
+[project.optional-dependencies]
+dev = [
+    "detect-secrets==1.5.0",
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.5",
+]
+swebench = ["swebench>=4,<5", "docker>=7"]
+openhands = ["openhands==1.16.0; python_version == '3.12'"]
+
+[project.urls]
+Homepage = "https://github.com/RISE-X-Lab/OpenCollab-Eval"
+Repository = "https://github.com/RISE-X-Lab/OpenCollab-Eval"
+Issues = "https://github.com/RISE-X-Lab/OpenCollab-Eval/issues"
+Security = "https://github.com/RISE-X-Lab/OpenCollab-Eval/security/policy"
+
+[project.scripts]
+oc-eval = "opencollab_eval.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/opencollab_eval"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

@@ -1,0 +1,56 @@
+# OpenCollab-Eval
+
+OpenCollab-Eval owns benchmark adaptation, solver isolation, trusted patch
+extraction, official evaluation, evidence, batch orchestration, and reporting for
+OpenCollab-based software-engineering experiments.
+
+This repository requires OpenCollab 0.4.x. Evaluation code uses the package
+root and the public `opencollab.environments`, `opencollab.tools`, and
+`opencollab.workflows` modules. Boundary tests reject the retired
+`opencollab.sdk.*` namespace and framework internals.
+
+The package contains benchmark contracts, solver workflows, trusted patch and
+process isolation, evidence handling, batch coordination, remote execution,
+reporting commands, and the tests for those components. OpenCollab retains its
+framework, compact public Python API, and framework tests.
+
+Direct Python evaluation currently fails closed because candidate code and
+Pytest reporting hooks share one interpreter identity. Python targets require
+an external result boundary before they can produce executable pass evidence.
+Exit codes, console text, in-process plugin events, empty collections, import
+errors, and abrupt exits cannot produce a resolved verdict. Go and JavaScript
+targets continue to use their parser-backed adapters.
+
+```bash
+oc-eval inspect path/to/tasks.jsonl --identity-key-file path/to/sealed-identity.key
+oc-eval run path/to/tasks.jsonl --model MODEL --provider PROVIDER --output results
+```
+
+After two 100-task runs have terminal fact reports and clean-run audit
+manifests, publish their comparison with `oc-eval final-report`. The command
+validates the complete census and evidence bindings before atomically writing a
+JSON model, Markdown, TeX, PDF, and publication manifest. See
+[docs/final-report.md](docs/final-report.md) for the input contract and example.
+
+See [MIGRATION.md](MIGRATION.md) for the repository ownership map and public API
+boundary.
+
+Release compatibility is verified from built artifacts rather than editable
+source trees. Build both wheels, then run
+`scripts/verify_wheel_contract.sh PATH_TO_OC_WHEEL PATH_TO_EVAL_WHEEL`; the
+script installs both distributions in a fresh virtual environment, runs the
+full Eval suite against the packaged wheels, checks the public API contract,
+and exercises both packaged CLI entrypoints.
+
+The identity key is an evaluator-owned file containing exactly 32 random bytes.
+Keep it in sealed run state and reuse it for retries of the same batch so public
+task IDs remain stable without exposing benchmark instance identifiers.
+
+For development, install the repository and its test dependencies before
+running the suite:
+
+```bash
+python -m pip install -e /path/to/OpenCollab
+python -m pip install -e '.[dev,swebench]'
+pytest -q
+```
