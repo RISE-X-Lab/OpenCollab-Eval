@@ -298,6 +298,7 @@ def prepare_runtime_summary(
             ssh_command=ssh_command,
             host=args.host,
             remote_runtime_repo=args.remote_runtime_repo,
+            remote_python=args.remote_python,
         )
     if not expected:
         raise RuntimeError("--no-sync-runtime requires --expected-runtime-tree-sha256")

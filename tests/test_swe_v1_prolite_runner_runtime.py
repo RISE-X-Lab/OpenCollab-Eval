@@ -190,6 +190,32 @@ def test_no_sync_runtime_verifies_shared_preflight_identity(monkeypatch):
     }
 
 
+def test_runtime_sync_receives_the_configured_remote_python(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        runner,
+        "sync_runtime",
+        lambda **kwargs: captured.update(kwargs) or {"synced": True},
+    )
+    args = SimpleNamespace(
+        no_sync_runtime=False,
+        expected_runtime_tree_sha256="",
+        host="remote-host",
+        remote_runtime_repo="/remote/runtime",
+        remote_python="/remote/venv/bin/python",
+    )
+
+    summary = runner.prepare_runtime_summary(args, ["ssh"], eval_only=False)
+
+    assert captured == {
+        "ssh_command": ["ssh"],
+        "host": "remote-host",
+        "remote_runtime_repo": "/remote/runtime",
+        "remote_python": "/remote/venv/bin/python",
+    }
+    assert summary == {"synced": True}
+
+
 def test_no_sync_runtime_without_shared_preflight_identity_fails_closed(monkeypatch):
     calls = []
     monkeypatch.setattr(runner, "verify_remote_runtime", lambda **kwargs: calls.append(kwargs))
@@ -407,6 +433,28 @@ def test_runtime_archive_imports_generation_entrypoints_from_clean_directory(mon
     openhands_shell = (extracted / "src" / "opencollab_eval" / "resources" / "run_openhands_cli.sh").read_text()
     assert "opencollab_eval.generation.gen_prediction" in fifo_shell
     assert "opencollab_eval.generation.openhands_runtime" in openhands_shell
+
+
+def test_runtime_sync_probes_with_the_configured_remote_python(monkeypatch):
+    commands = []
+
+    def fake_run_checked(command, *, timeout=120, input_text=None):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(runner, "run_checked", fake_run_checked)
+
+    runner.sync_runtime(
+        ssh_command=["ssh"],
+        host="remote-host",
+        remote_runtime_repo="/remote/runtime",
+        remote_python="/remote/venv/bin/python",
+    )
+
+    install_command = commands[-1][-1]
+    assert "/remote/venv/bin/python -m compileall" in install_command
+    assert "PYTHONPATH=src /remote/venv/bin/python -c" in install_command
+    assert "PYTHONPATH=src python3 -c" not in install_command
 
 
 def test_runtime_sync_rejects_an_incomplete_public_api_before_transfer(monkeypatch):

@@ -566,7 +566,13 @@ def ensure_remote_proxy(
     raise RuntimeError(f"remote proxy tunnel did not become healthy near port {remote_port}: {detail}")
 
 
-def sync_runtime(*, ssh_command: list[str], host: str, remote_runtime_repo: str) -> dict[str, Any]:
+def sync_runtime(
+    *,
+    ssh_command: list[str],
+    host: str,
+    remote_runtime_repo: str,
+    remote_python: str = "python3",
+) -> dict[str, Any]:
     synced = list(SYNC_FILES)
     directory_sources, distribution_version = _runtime_directory_sources()
     synced_dirs = list(directory_sources)
@@ -694,14 +700,16 @@ def sync_runtime(*, ssh_command: list[str], host: str, remote_runtime_repo: str)
         'tar -xzf "$archive" -C "$stage"',
     ]
     prepare_commands: list[str] = []
+    python_command = shlex.quote(remote_python)
     if sh_files:
         prepare_commands.append("chmod +x " + " ".join(shlex.quote(rel) for rel in sh_files))
     if compile_targets:
         prepare_commands.append(
-            "python3 -m compileall -q " + " ".join(shlex.quote(rel) for rel in compile_targets)
+            f"{python_command} -m compileall -q "
+            + " ".join(shlex.quote(rel) for rel in compile_targets)
         )
     prepare_commands.append(
-        "PYTHONPATH=src python3 -c "
+        f"PYTHONPATH=src {python_command} -c "
         + shlex.quote(
             "import opencollab, opencollab_eval; "
             "from opencollab import OpenCollab, RunResult; "
@@ -713,7 +721,7 @@ def sync_runtime(*, ssh_command: list[str], host: str, remote_runtime_repo: str)
         )
     )
     prepare_commands.append(
-        "PYTHONPATH=src python3 -c "
+        f"PYTHONPATH=src {python_command} -c "
         + shlex.quote(
             "import sys; "
             "from opencollab_eval.commands.swe_v1_prolite_config import verify_runtime_manifest; "
