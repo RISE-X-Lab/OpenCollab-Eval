@@ -1,0 +1,765 @@
+"""One-task generation execution for the V1 remote runner."""
+
+# ruff: noqa: F403, F405
+
+from opencollab_eval.engine import swe_v1_remote_cleanup as remote_cleanup
+from opencollab_eval.engine.swe_eval_records import direct_eval_done_has_execution_proof
+from opencollab_eval.engine.swe_v1_remote_commands import *
+from opencollab_eval.engine.swe_v1_remote_core import *
+from opencollab_eval.engine.swe_v1_remote_generation_failure import *
+from opencollab_eval.engine.swe_v1_remote_gitlink_probe import *
+from opencollab_eval.engine.swe_v1_remote_records import *
+from opencollab_eval.engine.swe_v1_remote_state import *
+
+
+def bind_llm_transport_environment(env):
+    env.pop("OPENCOLLAB_LLM_TRANSPORT", None)
+    if llm_transport == "direct":
+        env["OPENCOLLAB_LLM_TRANSPORT"] = "direct"
+        bind_remote_api_network_environment(env, remote_api_network_env)
+
+
+def bind_eval_container_marker(cidfile, marker_path, container_name, proc, timeout=2.0):
+    deadline = time.monotonic() + timeout
+    last_error = "container cidfile did not appear"
+    while time.monotonic() < deadline:
+        try:
+            raw = remote_cleanup.read_bounded_regular(
+                cidfile,
+                max_bytes=remote_cleanup.MAX_CONTAINER_REFERENCE_BYTES,
+            )
+            container_id = raw.decode("ascii").strip().lower()
+        except FileNotFoundError:
+            container_id = ""
+        except remote_cleanup.CleanupInputError as exc:
+            try:
+                cid_status = cidfile.lstat()
+            except FileNotFoundError:
+                container_id = ""
+            except OSError as status_error:
+                return {
+                    "ok": False,
+                    "status": "invalid_cidfile",
+                    "details": str(status_error),
+                }
+            else:
+                if remote_cleanup.stat.S_ISREG(cid_status.st_mode) and cid_status.st_size == 0:
+                    container_id = ""
+                else:
+                    return {"ok": False, "status": "invalid_cidfile", "details": str(exc)}
+        except (OSError, UnicodeDecodeError) as exc:
+            return {"ok": False, "status": "invalid_cidfile", "details": str(exc)}
+        if remote_cleanup.FULL_CONTAINER_ID_RE.fullmatch(container_id):
+            try:
+                marker = remote_cleanup.read_bounded_json(
+                    marker_path,
+                    max_bytes=remote_cleanup.MAX_CONTAINER_MARKER_BYTES,
+                )
+            except (OSError, remote_cleanup.CleanupInputError) as exc:
+                return {"ok": False, "status": "invalid_marker", "details": str(exc)}
+            if (
+                marker.get("schema") != remote_cleanup.EVAL_CONTAINER_SCHEMA
+                or marker.get("state") != "pending"
+                or marker.get("container_name") != container_name
+                or marker.get("owner_nonce") != owner_nonce
+                or marker.get("owner_label") != remote_cleanup.EVAL_OWNER_LABEL
+                or marker.get("owner_schema_label") != remote_cleanup.EVAL_SCHEMA_LABEL
+                or marker.get("owner_schema") != remote_cleanup.EVAL_SCHEMA_LABEL_VALUE
+            ):
+                return {"ok": False, "status": "invalid_marker_ownership"}
+            write_json(
+                marker_path,
+                {
+                    **marker,
+                    "state": "active",
+                    "container_id": container_id,
+                    "bound_at": now(),
+                },
+            )
+            return {"ok": True, "container_id": container_id}
+        if container_id:
+            last_error = "container cidfile did not contain a complete id"
+        poll = getattr(proc, "poll", None)
+        if not callable(poll) or poll() is not None:
+            break
+        time.sleep(0.01)
+    return {"ok": False, "status": "container_identity_unavailable", "details": last_error}
+
+
+def clear_pending_eval_marker(cidfile, marker_path, container_name):
+    try:
+        cidfile.lstat()
+    except FileNotFoundError:
+        pass
+    else:
+        return {"ok": False, "status": "cidfile_exists"}
+    try:
+        marker = remote_cleanup.read_bounded_json(
+            marker_path,
+            max_bytes=remote_cleanup.MAX_CONTAINER_MARKER_BYTES,
+        )
+    except (FileNotFoundError, OSError, remote_cleanup.CleanupInputError) as exc:
+        return {"ok": False, "status": "invalid_pending_marker", "details": str(exc)}
+    if (
+        marker.get("schema") != remote_cleanup.EVAL_CONTAINER_SCHEMA
+        or marker.get("state") != "pending"
+        or marker.get("container_name") != container_name
+        or marker.get("container_id") != ""
+        or marker.get("owner_nonce") != owner_nonce
+        or marker.get("owner_label") != remote_cleanup.EVAL_OWNER_LABEL
+        or marker.get("owner_schema_label") != remote_cleanup.EVAL_SCHEMA_LABEL
+        or marker.get("owner_schema") != remote_cleanup.EVAL_SCHEMA_LABEL_VALUE
+    ):
+        return {"ok": False, "status": "pending_marker_ownership_unproven"}
+    try:
+        marker_path.unlink()
+    except OSError as exc:
+        return {"ok": False, "status": "pending_marker_unlink_failed", "details": str(exc)}
+    return {"ok": True, "status": "pending_marker_removed"}
+
+
+GENERATION_RETRY_STATUSES = {
+    "fifo_write_failed",
+    "generation_failed",
+    "generation_timeout",
+}
+def result_failure_scope(result_rows, technical_failed):
+    if not technical_failed:
+        return "none"
+    return "image" if any(
+        row["generation"].get("failure_scope") == "image" for row in result_rows
+    ) else "task"
+
+
+def _generation_patch_result(
+    row,
+    task,
+    prediction,
+    metric,
+    pairing,
+    *,
+    expected_generation_image_id="",
+    **extra,
+):
+    if expected_generation_image_id and metric.get("generation_image_id") != expected_generation_image_id:
+        return {
+            "status": "technical_generation_image_identity_failed",
+            "task": task,
+            "pairing": pairing,
+            "expected_generation_image_id": expected_generation_image_id,
+            "observed_generation_image_id": metric.get("generation_image_id"),
+            **extra,
+        }
+    if not _generation_base_commit_matches(row, metric):
+        return {
+            "status": "technical_generation_base_identity_failed",
+            "task": task,
+            "pairing": pairing,
+            "patch_sha256": row_patch_sha(prediction),
+            "record_id": row_record_id(prediction),
+            **extra,
+        }
+    selection = prepare_eval_patch_selection(row, prediction, metric)
+    if not selection.get("ok"):
+        return {
+            "status": "technical_generation_patch_filter_failed",
+            "task": task,
+            "pairing": pairing,
+            "patch_sha256": row_patch_sha(prediction),
+            "record_id": row_record_id(prediction),
+            "patch_filter_status": selection.get("status"),
+            "tampered_paths": selection.get("tampered_paths"),
+            "gitlink_probe": selection.get("gitlink_probe"),
+            **extra,
+        }
+    evidence = {
+        "source_patch_sha256": selection["source_patch_sha256"],
+        "eval_patch_sha256": selection["eval_patch_sha256"],
+        "filtered_patch_paths": selection["filtered_patch_paths"],
+        "gitlink_probe": selection.get("gitlink_probe"),
+    }
+    if not selection["model_patch"].strip():
+        result = {
+            "status": "empty_patch",
+            "task": task,
+            "pairing": pairing,
+            "patch_len": 0,
+            "original_patch_len": len(prediction_patch(prediction)),
+            "workflow_status": workflow_status(metric),
+            "record_id": row_record_id(prediction),
+            "patch_sha256": row_patch_sha(prediction),
+            "submission_integrity": "filtered_empty_patch_proven",
+            **evidence,
+        }
+        result.update(generation_integrity_evidence(metric))
+        result.update(extra)
+        return result
+    result = generation_done_result(task, prediction, metric, pairing, **extra)
+    result.update(
+        {
+            "patch_len": len(selection["model_patch"]),
+            **evidence,
+        }
+    )
+    return result
+
+
+def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
+    task = row["instance_id"]
+    run_dir = base_run_dir / task
+    run_dir.mkdir(parents=True, exist_ok=True)
+    image = image_for_row(row)
+    done, prediction, metric, pairing = generation_done(
+        run_dir,
+        task,
+        require_identity=not eval_only,
+    )
+    if not done and not isinstance(metric, dict) and start_count(run_dir) >= max_task_starts:
+        return {"status": "generation_start_limit_reached", "task": task, "start_count": start_count(run_dir)}
+    image_status = ensure_image(image)
+    if not image_status.get("ok"):
+        return {"status": "blocked_missing_generation_image", "task": task, "image_status": image_status}
+    expected_generation_image_id = image_status["image_id"]
+    provider_failure = _generation_provider_failure_result(
+        row,
+        task,
+        prediction,
+        metric,
+        pairing,
+        expected_generation_image_id=expected_generation_image_id,
+    )
+    if provider_failure is not None:
+        return provider_failure
+    if not done and start_count(run_dir) >= max_task_starts:
+        return {
+            "status": "generation_start_limit_reached",
+            "task": task,
+            "start_count": start_count(run_dir),
+        }
+    if done and _generation_base_commit_matches(row, metric):
+        result = _generation_patch_result(
+            row,
+            task,
+            prediction,
+            metric,
+            pairing,
+            expected_generation_image_id=expected_generation_image_id,
+        )
+        if result.get("status") != "empty_patch" or reuse_existing_empty_patch:
+            return result
+    if (
+        reuse_existing_empty_patch
+        and workflow_status(metric) == "empty_patch_after_done"
+        and row_record_id(prediction)
+        and generation_identity_matches(prediction, metric)
+        and _generation_base_commit_matches(row, metric)
+        and metric.get("generation_image_id") == expected_generation_image_id
+    ):
+        return empty_patch_result(
+            task,
+            prediction,
+            metric,
+            pairing,
+            reused_existing_artifact=True,
+        )
+    previous_record_id = row_record_id(prediction)
+    if start_count(run_dir) >= max_task_starts:
+        return {"status": "generation_start_limit_reached", "task": task, "start_count": start_count(run_dir)}
+    if dry_run:
+        workdir_status = image_repo_workdir_status(image)
+        if not workdir_status.get("ok"):
+            return {
+                "status": "blocked_bad_generation_workdir",
+                "task": task,
+                "image_status": image_status,
+                "workdir_status": workdir_status,
+            }
+        if workflow == "openhands-external" and not openhands_command:
+            return {
+                "status": "blocked_missing_openhands_command",
+                "task": task,
+                "image": image,
+                "workdir_status": workdir_status,
+            }
+        return {"status": "would_generate", "task": task, "image": image, "workdir_status": workdir_status}
+    unsafe_failure_record = clear_generation_failure_record(run_dir, task)
+    if unsafe_failure_record is not None:
+        return unsafe_failure_record
+    fifo = pathlib.Path("/tmp") / (f"opencollab_v1_{os.getpid()}_{uuid.uuid4().hex}.fifo")
+    os.mkfifo(fifo, 0o600)
+    ACTIVE_FIFO_PATHS.add(fifo)
+    session = task_session(task)
+    state = write_start_state(run_dir, task, session)
+    log_path = run_dir / "generation_logs" / f"{task}.outer.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    generator = (
+        "openhands"
+        if workflow == "openhands-external"
+        else "single-agent"
+        if workflow == "single-agent"
+        else "workflow"
+    )
+    env.update(
+        {
+            "OPENCOLLAB_SWE_GENERATOR": generator,
+            "OPENCOLLAB_SWE_WORKFLOW": workflow,
+            "OPENCOLLAB_MODEL": model_name,
+            "OPENCOLLAB_SWE_MODEL_NAME": model_name,
+            "OPENCOLLAB_SWE_BUDGET": str(budget),
+            "OPENCOLLAB_SWE_MAX_STEPS": str(max_steps),
+            "OPENCOLLAB_LLM_PROVIDER": llm_provider or "anthropic",
+            "OPENCOLLAB_OPENHANDS_EMPTY_PATCH_REJECTIONS": str(
+                openhands_empty_patch_rejections
+            ),
+            "OPENCOLLAB_SWE_TIMEOUT": str(swe_timeout),
+            "OPENCOLLAB_LLM_TIMEOUT": str(cfg["llm_timeout"]),
+            "OPENCOLLAB_SWE_DATASET": "swe-batch-pro-lite",
+            "OPENCOLLAB_REMOTE_PROXY_BASE_URL": remote_proxy_base_url,
+            "OPENCOLLAB_SWE_CHECKPOINT_INTERVAL_SECONDS": str(checkpoint_interval),
+            "OPENCOLLAB_REMOTE_ROOT": str(remote_root),
+            "OPENCOLLAB_REMOTE_REPO": str(remote_repo),
+            "OPENCOLLAB_EVAL_INVOCATION_ID": invocation_id,
+            "OPENCOLLAB_EVAL_RUN_ID": run_id,
+            "OPENCOLLAB_RUNTIME_TREE_SHA256": runtime_tree_sha256,
+            "OPENCOLLAB_EVAL_LLM_BASE_URL_SHA256": hashlib.sha256(
+                remote_proxy_base_url.encode("utf-8")
+            ).hexdigest(),
+            "OPENCOLLAB_EVAL_WORKFLOW_ENV": json.dumps(
+                effective_workflow_env(), sort_keys=True
+            ),
+        }
+    )
+    env.update(effective_workflow_env())
+    bind_llm_transport_environment(env)
+    if openhands_command:
+        env["OPENCOLLAB_OPENHANDS_COMMAND"] = openhands_command
+    cmd = [
+        str(remote_repo / "src" / "opencollab_eval" / "resources" / "run_swe_v2_one_from_fifo.sh"),
+        task,
+        image,
+        str(fifo),
+        str(run_dir),
+        llm_model,
+        "" if temperature is None else str(temperature),
+        "" if top_p is None else str(top_p),
+        "" if max_output_tokens is None else str(max_output_tokens),
+        "" if context_window is None else str(context_window),
+    ]
+    with open_locked_append(log_path) as log:
+        log.write(("\n===== generation start " + now() + " =====\n").encode())
+        spawn_signal_state = block_spawn_signals()
+        try:
+            proc = subprocess.Popen(
+                cmd, cwd=str(remote_root), env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True
+            )
+        except OSError as exc:
+            try:
+                restore_spawn_signals(spawn_signal_state)
+            finally:
+                cleanup_fifo(fifo)
+            return {
+                "status": "generation_start_failed",
+                "task": task,
+                "details": str(exc),
+                "log": str(log_path),
+                "start_state": state,
+            }
+        except BaseException:
+            try:
+                restore_spawn_signals(spawn_signal_state)
+            finally:
+                cleanup_fifo(fifo)
+            raise
+        ACTIVE_CHILD_PGIDS.add(proc.pid)
+        cleanup_quiesced = True
+        try:
+            restore_spawn_signals(spawn_signal_state)
+            fifo_write = write_fifo_with_timeout(fifo, token + "\n")
+            if not fifo_write.get("ok"):
+                cleanup_quiesced = terminate_process_group_bounded(proc)
+                cleanup_fifo(fifo)
+                if not cleanup_quiesced:
+                    return {
+                        "status": "technical_generation_cleanup_failed",
+                        "task": task,
+                        "returncode": PROCESS_CLEANUP_FAILED_EXIT_CODE,
+                        "details": fifo_write,
+                        "log": str(log_path),
+                    }
+                return {"status": "fifo_write_failed", "task": task, "details": fifo_write, "log": str(log_path)}
+            try:
+                returncode = proc.wait(timeout=task_wall_timeout)
+                cleanup_quiesced = ensure_process_group_quiesced_after_wait(proc)
+                if not cleanup_quiesced:
+                    cleanup_fifo(fifo)
+                    return {
+                        "status": "technical_generation_cleanup_failed",
+                        "task": task,
+                        "returncode": PROCESS_CLEANUP_FAILED_EXIT_CODE,
+                        "details": "generator leader exited with residual process-group descendants",
+                        "log": str(log_path),
+                        "start_state": state,
+                    }
+            except subprocess.TimeoutExpired:
+                log.write(("\nouter generation timeout after " + str(task_wall_timeout) + "s\n").encode())
+                cleanup_quiesced = terminate_process_group_bounded(proc)
+                if not cleanup_quiesced:
+                    cleanup_fifo(fifo)
+                    return {
+                        "status": "technical_generation_cleanup_failed",
+                        "task": task,
+                        "returncode": PROCESS_CLEANUP_FAILED_EXIT_CODE,
+                        "log": str(log_path),
+                        "start_state": state,
+                    }
+                done, prediction, metric, pairing = generation_done(run_dir, task)
+                cleanup_fifo(fifo)
+                if done:
+                    return _generation_patch_result(
+                        row,
+                        task,
+                        prediction,
+                        metric,
+                        pairing,
+                        expected_generation_image_id=expected_generation_image_id,
+                        returncode=124,
+                        log=str(log_path),
+                        start_state=state,
+                        timed_out=True,
+                    )
+                return {
+                    "status": "generation_timeout",
+                    "task": task,
+                    "returncode": 124,
+                    "log": str(log_path),
+                    "start_state": state,
+                }
+        except BaseException:
+            cleanup_quiesced = False
+            try:
+                cleanup_quiesced = terminate_process_group_bounded(proc)
+            except BaseException:
+                pass
+            cleanup_fifo(fifo)
+            raise
+        finally:
+            if cleanup_quiesced:
+                ACTIVE_CHILD_PGIDS.discard(proc.pid)
+    cleanup_fifo(fifo)
+    done, prediction, metric, pairing = generation_done(
+        run_dir,
+        task,
+        require_identity=not eval_only,
+    )
+    provider_failure = _generation_provider_failure_result(
+        row,
+        task,
+        prediction,
+        metric,
+        pairing,
+        expected_generation_image_id=expected_generation_image_id,
+    )
+    if provider_failure is not None:
+        provider_failure.update(
+            returncode=returncode,
+            log=str(log_path),
+            start_state=state,
+        )
+        return provider_failure
+    if done:
+        return _generation_patch_result(
+            row,
+            task,
+            prediction,
+            metric,
+            pairing,
+            expected_generation_image_id=expected_generation_image_id,
+            returncode=returncode,
+            log=str(log_path),
+            start_state=state,
+        )
+    if (
+        generation_identity_matches(prediction, metric)
+        and workflow_status(metric) == "empty_patch_after_done"
+        and row_record_id(prediction)
+        and row_record_id(prediction) != previous_record_id
+        and _generation_base_commit_matches(row, metric)
+        and metric.get("generation_image_id") == expected_generation_image_id
+    ):
+        return empty_patch_result(
+            task,
+            prediction,
+            metric,
+            pairing,
+            returncode=returncode,
+            log=str(log_path),
+            start_state=state,
+        )
+    failure_evidence = generation_failure_evidence(run_dir, task)
+    return {
+        "status": "generation_failed",
+        "task": task,
+        "returncode": returncode,
+        "log": str(log_path),
+        "pairing": pairing,
+        "patch_len": len(prediction_patch(prediction)),
+        "workflow_status": workflow_status(metric),
+        "record_id": row_record_id(prediction),
+        "patch_sha256": row_patch_sha(prediction),
+        "start_state": state,
+        **failure_evidence,
+    }
+
+
+def generation_for_task(row):
+    attempts = []
+    force_new_generation = False
+    while True:
+        was_empty_patch_retry = force_new_generation
+        result = dict(
+            generation_for_task_once(
+                row,
+                reuse_existing_empty_patch=not force_new_generation,
+            )
+        )
+        force_new_generation = False
+        attempts.append(result)
+        if result.get("status") == "generation_done":
+            break
+        if was_empty_patch_retry:
+            break
+        if result.get("status") == "empty_patch":
+            run_dir = base_run_dir / row["instance_id"]
+            if empty_patch_retry_count(run_dir, row["instance_id"]) >= max_empty_patch_retries:
+                break
+            if start_count(run_dir) >= max_task_starts:
+                break
+            append_jsonl(
+                base_run_dir / "events.jsonl",
+                {
+                    "time": now(),
+                    "phase": "empty_patch_retry",
+                    "task": row["instance_id"],
+                    "run_dir": str(run_dir),
+                    "previous_record_id": result.get("record_id"),
+                },
+            )
+            force_new_generation = True
+            continue
+        if result.get("status") not in GENERATION_RETRY_STATUSES:
+            break
+        if start_count(base_run_dir / row["instance_id"]) >= max_task_starts:
+            break
+    final = dict(attempts[-1])
+    run_dir = base_run_dir / row["instance_id"]
+    final["generation_attempt_count"] = len(attempts)
+    final["empty_patch_retry_count"] = empty_patch_retry_count(
+        run_dir,
+        row["instance_id"],
+    )
+    final["max_empty_patch_retries"] = max_empty_patch_retries
+    final["max_task_starts"] = max_task_starts
+    if len(attempts) > 1:
+        final["attempts"] = attempts
+    return final
+
+
+def eval_summary_matches_prediction(
+    summary,
+    prediction,
+    task,
+    *,
+    eval_spec_sha256="",
+    f2p_plan=None,
+    p2p_plan=None,
+    expected_eval_patch_sha256="",
+    expected_eval_image_id="",
+):
+    expected_eval_image_id = str(expected_eval_image_id or "")
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", expected_eval_image_id) is None:
+        return False
+    if not isinstance(summary, dict) or not direct_eval_done_has_execution_proof(
+        summary,
+        expected_eval_spec_sha256=eval_spec_sha256,
+        expected_f2p_plan=f2p_plan,
+        expected_p2p_plan=p2p_plan,
+    ):
+        return False
+    if not eval_model_patch(prediction).strip():
+        return False
+    if summary.get("task") != task:
+        return False
+    if summary.get("eval_image_id") != expected_eval_image_id:
+        return False
+    current_sha = row_patch_sha(prediction)
+    previous_sha = str(summary.get("patch_sha256") or "")
+    if not patch_sha_matches(previous_sha, current_sha):
+        return False
+    current_eval_sha = str(expected_eval_patch_sha256 or patch_sha(eval_model_patch(prediction)))
+    previous_eval_sha = str(
+        summary.get("eval_patch_sha256") or summary.get("patch_sha256") or ""
+    )
+    if not patch_sha_matches(previous_eval_sha, current_eval_sha):
+        return False
+    current_record = row_record_id(prediction)
+    previous_record = str(summary.get("record_id") or "")
+    if current_record and previous_record and current_record != previous_record:
+        return False
+    if current_record and not previous_record:
+        return False
+    return True
+
+
+def eval_log_has_infra_failure(exit_status, log_text):
+    if exit_status in {124, 126, 127}:
+        return True
+    if exit_status == 0:
+        return False
+    normalized_log = str(log_text or "").lower()
+    no_tests_executed = bool(
+        re.search(r"\b(?:collected 0 items|no tests (?:ran|collected))\b", normalized_log)
+    )
+    explicit_target_failure = bool(
+        re.search(r"(?:error:\s+not found:|importerror:|modulenotfounderror:)", normalized_log)
+    )
+    if no_tests_executed and not explicit_target_failure:
+        return True
+    infrastructure_patterns = (
+        r"(?:redis|mongodb|mongo|postgres(?:ql)?|mysql|elasticsearch|rabbitmq|kafka)"
+        r".{0,160}(?:connection refused|unavailable|failed to connect|timed? out)",
+        r"(?:connectionerror|serverselectiontimeouterror|socket\.gaierror|eai_again)"
+        r".{0,160}(?:connection refused|unavailable|failed to connect|timed? out|name resolution)?",
+        r"(?:temporary failure in name resolution|could not resolve host|network is unreachable)",
+        r"(?:enospc|no space left on device|disk quota exceeded|read-only file system|input/output error)",
+    )
+    for line in normalized_log.splitlines():
+        if "assertionerror" in line or re.search(r"\bexpected\b", line):
+            continue
+        if any(re.search(pattern, line) for pattern in infrastructure_patterns):
+            return True
+    return False
+
+
+def _eval_container_state(candidate):
+    owner_label = candidate["owner_label"]
+    owner_schema_label = candidate["owner_schema_label"]
+    inspect_format = (
+        '{{.Id}}\\t{{index .Config.Labels "'
+        + owner_label
+        + '"}}\\t{{index .Config.Labels "'
+        + owner_schema_label
+        + '"}}'
+    )
+    result = run(
+        [
+            "docker",
+            "inspect",
+            "--type",
+            "container",
+            "--format",
+            inspect_format,
+            "--",
+            candidate["container_id"],
+        ],
+        timeout=30,
+    )
+    details = str(result.get("stderr") or result.get("stdout") or "")
+    if result.get("returncode") != 0:
+        lowered = details.lower()
+        if "no such container" in lowered or "no such object" in lowered:
+            return {"ok": True, "absent": True}
+        return {
+            "ok": False,
+            "absent": False,
+            "status": "inspect_failed",
+            "details": details[-1000:],
+        }
+    parts = str(result.get("stdout") or "").split("\\t")
+    if (
+        len(parts) != 3
+        or parts[0].lower() != candidate["container_id"]
+        or parts[1] != candidate["owner_nonce"]
+        or parts[2] != candidate["owner_schema"]
+    ):
+        return {
+            "ok": False,
+            "absent": False,
+            "status": "ownership_unproven",
+        }
+    return {"ok": True, "absent": False}
+
+
+def cleanup_eval_container(cidfile, marker_path, container_name):
+    try:
+        candidate = remote_cleanup.read_eval_container_marker(
+            marker_path,
+            expected_runner_nonce=owner_nonce,
+        )
+    except (FileNotFoundError, OSError, remote_cleanup.CleanupInputError) as exc:
+        return {
+            "ok": False,
+            "status": "ownership_unproven",
+            "details": str(exc),
+            "marker_path": str(marker_path),
+            "cidfile": str(cidfile),
+        }
+    if container_name and candidate["container_name"] != container_name:
+        return {
+            "ok": False,
+            "status": "ownership_unproven",
+            "details": "container name does not match its ownership marker",
+            "marker_path": str(marker_path),
+            "cidfile": str(cidfile),
+        }
+
+    before = _eval_container_state(candidate)
+    attempts = [{"phase": "before", **before}]
+    if not before.get("ok"):
+        return {
+            "ok": False,
+            "status": str(before.get("status") or "inspect_failed"),
+            "attempts": attempts,
+            "marker_path": str(marker_path),
+            "cidfile": str(cidfile),
+        }
+    if not before.get("absent"):
+        removal = run(
+            ["docker", "rm", "-f", "--", candidate["container_id"]],
+            timeout=60,
+        )
+        attempts.append(
+            {
+                "phase": "remove",
+                "returncode": removal.get("returncode"),
+                "details": str(removal.get("stderr") or removal.get("stdout") or "")[-1000:],
+            }
+        )
+    after = _eval_container_state(candidate)
+    attempts.append({"phase": "after", **after})
+    if not after.get("ok") or not after.get("absent"):
+        return {
+            "ok": False,
+            "status": "remove_failed",
+            "attempts": attempts,
+            "marker_path": str(marker_path),
+            "cidfile": str(cidfile),
+        }
+    try:
+        cidfile.unlink(missing_ok=True)
+        marker_path.unlink(missing_ok=True)
+    except OSError as exc:
+        return {
+            "ok": False,
+            "status": "marker_cleanup_failed",
+            "details": str(exc),
+            "attempts": attempts,
+        }
+    return {
+        "ok": True,
+        "status": "all_references_absent",
+        "attempts": attempts,
+    }
+
+
+__all__ = [name for name in globals() if not name.startswith("__")]
