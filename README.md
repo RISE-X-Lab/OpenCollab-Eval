@@ -13,10 +13,11 @@
   <a href="#documentation">Documentation</a>
 </p>
 
-OpenCollab-Eval runs software-agent benchmarks on top of OpenCollab. For a full
-SWE-bench run, it gives the Solver an isolated checkout, records the resulting
-patch, and runs the official tests. OpenCollab provides the agents and
-workflows. This repository evaluates them.
+OpenCollab-Eval is the independent evaluation layer for
+[OpenCollab](https://github.com/RISE-X-Lab/OpenCollab), a platform for
+multi-agent collaboration and programmable agent workflows. It runs those
+agents on software-engineering benchmarks, gives each Solver an isolated
+checkout, records the resulting patch, and runs the official tests.
 
 A task failure and an evaluation failure mean different things. `resolved`
 means that the named target tests ran and passed on the patch extracted from
@@ -306,7 +307,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before changing evaluation behavior.
   <a href="#文档">文档</a>
 </p>
 
-OpenCollab-Eval 用来评测基于 OpenCollab 构建的软件工程智能体。运行完整 SWE-bench 评测时，它会为 Solver 准备隔离的工作副本，记录最终补丁，再运行官方测试。智能体和工作流由 OpenCollab 提供，这个仓库负责评测。
+OpenCollab-Eval 是 [OpenCollab](https://github.com/RISE-X-Lab/OpenCollab) 的独立评测层。OpenCollab 提供多智能体协作和可编程工作流，OpenCollab-Eval 负责把这些智能体放进软件工程基准测试。运行完整 SWE-bench 评测时，它会为每个 Solver 准备隔离的工作副本，记录最终补丁，再运行官方测试。
 
 题目没有做对和评测没有跑成是两回事。只有本次运行提取出的补丁通过指定目标测试，系统才会写入 `resolved`。没有收集到测试、证据不完整、补丁身份发生变化或工作区仍在被修改时，本次运行会被记为技术失败。
 
