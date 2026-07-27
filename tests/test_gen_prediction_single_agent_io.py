@@ -559,6 +559,28 @@ def test_startup_recovers_stale_pending_owner(monkeypatch, tmp_path):
     assert not path.exists()
 
 
+def test_recovery_accepts_owner_removed_after_enumeration(monkeypatch, tmp_path):
+    path = gp.container_owner_path(tmp_path, "stale-name")
+    gp._create_pending_owner(tmp_path, "stale-name")
+
+    def remove_before_read(candidate):
+        assert candidate == path
+        candidate.unlink()
+        return None
+
+    monkeypatch.setattr(gp, "_read_owner", remove_before_read)
+
+    assert gp.recover_stale_container_owners(tmp_path) is True
+
+
+def test_recovery_rejects_an_existing_invalid_owner(tmp_path):
+    path = gp.container_owner_path(tmp_path, "stale-name")
+    gp._atomic_write_bytes(path, b"{}\n")
+
+    assert gp.recover_stale_container_owners(tmp_path) is False
+    assert path.exists()
+
+
 def test_remove_container_requires_absent_inspect_result(monkeypatch):
     responses = iter(
         [

@@ -423,6 +423,10 @@ def recover_stale_container_owners(run_dir: Path) -> bool:
     for path in sorted(owner_dir.glob("*.json")):
         record = _read_owner(path)
         if record is None:
+            try:
+                path.lstat()
+            except FileNotFoundError:
+                continue
             print(f"  warning: invalid container owner record retained: {path}")
             recovered = False
             continue
