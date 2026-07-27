@@ -35,7 +35,7 @@ OpenCollab-Eval 导入以下 OpenCollab public surface。
 `tests/test_boundaries.py` 扫描 import，并根据已安装的 OpenCollab 包检查允许
 使用的 public name。
 
-OpenCollab-Eval 通过 `opencollab>=0.4,<0.5` 获得有版本约束的 runtime
+OpenCollab-Eval 通过 `opencollab>=0.4.1,<0.5` 获得有版本约束的 runtime
 dependency。只要 documented public API 保持兼容，OpenCollab 内部实现变化
 就不会影响这里。
 

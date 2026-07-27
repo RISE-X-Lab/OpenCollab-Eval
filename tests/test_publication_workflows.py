@@ -187,10 +187,12 @@ def test_push_gates_reject_an_unrelated_but_reachable_before_commit(
 
 def test_ci_uses_verified_action_release_commits() -> None:
     workflow = _workflow("ci.yml")
+    opencollab_ref = "851e08d2ed0cfe05646b720e47aff07f6b350c93"
 
     assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" in workflow
     assert "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97" in workflow
     assert "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" in workflow
+    assert workflow.count(f"ref: {opencollab_ref}") == 2
     assert (
         workflow.count(
             "token: ${{ secrets.OPENCOLLAB_READ_TOKEN || github.token }}"

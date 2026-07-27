@@ -6,7 +6,6 @@ import argparse
 import atexit
 import hashlib
 import importlib
-import importlib.util
 import json
 import os
 import re
@@ -55,7 +54,7 @@ RUNTIME_PUBLIC_MODULES = (
     "tools.py",
     "workflows.py",
 )
-
+MIN_OPENCOLLAB_RELEASE = (0, 4, 1)
 
 def verify_runtime_import_contract() -> None:
     """Import runtime entrypoints so an incomplete SDK fails before task launch."""
@@ -100,18 +99,18 @@ def _runtime_input_path(relative_path: str) -> Path:
 
 def _runtime_directory_sources() -> tuple[dict[str, Path], str]:
     sources = {relative: _runtime_input_path(relative) for relative in SYNC_DIRS}
-    spec = importlib.util.find_spec("opencollab")
-    if spec is None or not spec.submodule_search_locations:
-        raise RuntimeError("the OpenCollab package is not installed")
-    sources["src/opencollab"] = Path(next(iter(spec.submodule_search_locations))).resolve()
+    package = importlib.import_module("opencollab")
+    sources["src/opencollab"] = Path(next(iter(package.__path__))).resolve()
     try:
         distribution_version = version("opencollab")
     except PackageNotFoundError as exc:
         raise RuntimeError("the OpenCollab distribution metadata is missing") from exc
-    if tuple(int(part) for part in distribution_version.split(".")[:2]) != (0, 4):
-        raise RuntimeError(
-            f"OpenCollab 0.4.x is required, found {distribution_version}"
-        )
+    release_match = re.match(r"^(\d+)\.(\d+)\.(\d+)", distribution_version)
+    release = tuple(map(int, release_match.groups())) if release_match else ()
+    if release < MIN_OPENCOLLAB_RELEASE or release >= (0, 5, 0):
+        raise RuntimeError(f"OpenCollab 0.4.1 or newer within the 0.4 series is required, found {distribution_version}")
+    if getattr(package, "__version__", None) != distribution_version:
+        raise RuntimeError("the imported OpenCollab source version does not match its distribution metadata")
     verify_runtime_import_contract()
     return sources, distribution_version
 
@@ -724,7 +723,7 @@ def sync_runtime(
             "from opencollab.environments import attach_container; "
             "from opencollab.tools import builtin_tools; "
             "from opencollab.workflows import workflow; "
-            "assert opencollab.__version__.startswith('0.4.'); "
+            f"assert opencollab.__version__=={distribution_version!r}; "
             "assert OpenCollab and RunResult and attach_container and builtin_tools and workflow"
         )
     )

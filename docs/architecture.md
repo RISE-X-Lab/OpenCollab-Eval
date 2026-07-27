@@ -38,7 +38,7 @@ compatibility envelope available to production code and tests, scans imports,
 and verifies its public names against the installed OpenCollab package.
 
 This boundary gives OpenCollab-Eval a versioned runtime dependency through
-`opencollab>=0.4,<0.5`. A change to OpenCollab internals remains invisible here
+`opencollab>=0.4.1,<0.5`. A change to OpenCollab internals remains invisible here
 as long as the documented public API remains compatible.
 
 ## Package map

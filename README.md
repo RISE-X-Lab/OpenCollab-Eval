@@ -54,7 +54,7 @@ it starts.
 
 ## Supported environment
 
-Use Python 3.10 or later with OpenCollab 0.4.x. SWE-bench evaluation also needs
+Use Python 3.10 or later with OpenCollab 0.4.1 or newer in the 0.4 series. SWE-bench evaluation also needs
 Docker and the optional `swebench` dependencies. OpenHands needs Python 3.12.
 For a remote Pro-Lite run, provide a Linux machine reachable through SSH. It
 must have Python, the task images, and a writable directory for each run.
@@ -62,7 +62,7 @@ must have Python, the task images, and a writable directory for each run.
 Install the two wheel files.
 
 ```bash
-python -m pip install /path/to/opencollab-0.4.x-py3-none-any.whl
+python -m pip install /path/to/opencollab-0.4.1-py3-none-any.whl
 python -m pip install /path/to/opencollab_eval-0.1.0-py3-none-any.whl
 ```
 
@@ -276,7 +276,7 @@ details are recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 ruff check .
 pytest -q
 scripts/verify_wheel_contract.sh \
-  /path/to/opencollab-0.4.x-py3-none-any.whl \
+  /path/to/opencollab-0.4.1-py3-none-any.whl \
   /path/to/opencollab_eval-0.1.0-py3-none-any.whl
 scripts/run_deterministic_swe_e2e.sh --output /tmp/oce-e2e --runs 1
 ```
@@ -336,12 +336,12 @@ Solver 只能看到公开题面和一次性工作副本。基准提交、测试�
 
 ## 支持的环境
 
-OpenCollab-Eval 支持 Python 3.10 及以上版本，并与 OpenCollab 0.4.x 配套使用。运行 SWE-bench 还需要 Docker 和可选的 `swebench` 依赖。OpenHands 需要 Python 3.12。远程运行 Pro-Lite 时，还要准备一台可以通过 SSH 访问的 Linux 机器。机器上需要有 Python、任务镜像，以及每次运行独立使用的可写目录。
+OpenCollab-Eval 支持 Python 3.10 及以上版本，并要求 OpenCollab 0.4.1 或同系列更新版本。运行 SWE-bench 还需要 Docker 和可选的 `swebench` 依赖。OpenHands 需要 Python 3.12。远程运行 Pro-Lite 时，还要准备一台可以通过 SSH 访问的 Linux 机器。机器上需要有 Python、任务镜像，以及每次运行独立使用的可写目录。
 
 安装两个 wheel 文件。
 
 ```bash
-python -m pip install /path/to/opencollab-0.4.x-py3-none-any.whl
+python -m pip install /path/to/opencollab-0.4.1-py3-none-any.whl
 python -m pip install /path/to/opencollab_eval-0.1.0-py3-none-any.whl
 ```
 
@@ -511,7 +511,7 @@ OpenCollab-Eval 依据 [木兰宽松许可证第 2 版](LICENSE) 发行。依赖
 ruff check .
 pytest -q
 scripts/verify_wheel_contract.sh \
-  /path/to/opencollab-0.4.x-py3-none-any.whl \
+  /path/to/opencollab-0.4.1-py3-none-any.whl \
   /path/to/opencollab_eval-0.1.0-py3-none-any.whl
 scripts/run_deterministic_swe_e2e.sh --output /tmp/oce-e2e --runs 1
 ```

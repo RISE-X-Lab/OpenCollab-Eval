@@ -10,7 +10,7 @@ produce an official resolved or unresolved verdict.
 ## Requirements
 
 The core package supports Python 3.10 through 3.12 and requires OpenCollab
-0.4.x. Docker is required for container-backed tasks and official SWE-bench
+0.4.1 or newer within the 0.4 series. Docker is required for container-backed tasks and official SWE-bench
 evaluation. The OpenHands extra is available only on Python 3.12.
 
 The evaluator and the framework should come from compatible releases or from
@@ -22,7 +22,7 @@ wheels and verifies the installed boundary.
 ```bash
 python -m venv .venv
 . .venv/bin/activate
-python -m pip install /path/to/opencollab-0.4.x-py3-none-any.whl
+python -m pip install /path/to/opencollab-0.4.1-py3-none-any.whl
 python -m pip install /path/to/opencollab_eval-0.1.0-py3-none-any.whl
 oc-eval --version
 oc-eval --help
