@@ -1,6 +1,6 @@
 # Getting started
 
-**English** | [简体中文](zh-CN/getting-started.md)
+**English** | [简体中文](https://rise-x-lab.github.io/OpenCollab-Eval/zh-CN/getting-started/)
 
 This guide installs OpenCollab-Eval, validates a dataset, and runs the generic
 candidate engine. Continue with the

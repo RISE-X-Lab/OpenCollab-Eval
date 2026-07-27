@@ -1,6 +1,6 @@
 # 可信候选构造
 
-[English](../../design/trusted-candidate-construction.md) | **简体中文**
+[English](https://rise-x-lab.github.io/OpenCollab-Eval/en/design/trusted-candidate-construction/) | **简体中文**
 
 候选身份由评测器持有的基线和 Solver 最终可见的文件系统共同决定。
 Solver 自己拥有的 Git 配置、引用、对象数据库、索引、ignore 变更、
@@ -72,4 +72,4 @@ ignore 规则、不可读缓存与候选文件、二进制文件、链接、mode
 
 完整性覆盖台账将每项已实现要求映射到精确的回归测试。参见
 [评测完整性](../evaluation-integrity.md)和
-[机器可读台账](../../integrity-coverage.json)。
+[机器可读台账](https://rise-x-lab.github.io/OpenCollab-Eval/en/integrity-coverage.json)。

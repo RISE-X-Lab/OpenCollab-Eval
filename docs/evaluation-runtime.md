@@ -1,6 +1,6 @@
 # Evaluation runtime map
 
-**English** | [简体中文](zh-CN/evaluation-runtime.md)
+**English** | [简体中文](https://rise-x-lab.github.io/OpenCollab-Eval/zh-CN/evaluation-runtime/)
 
 OpenCollab-Eval exposes several execution layers. Choose the highest-level
 entrypoint that matches the required result.

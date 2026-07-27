@@ -1,6 +1,6 @@
 # OpenCollab-Eval Architecture
 
-**English** | [简体中文](zh-CN/architecture.md)
+**English** | [简体中文](https://rise-x-lab.github.io/OpenCollab-Eval/zh-CN/architecture/)
 
 OpenCollab-Eval is the evaluation owner for solvers built with OpenCollab. It
 loads benchmark tasks, exposes only public task data to a solver, constructs a

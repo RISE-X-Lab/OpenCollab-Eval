@@ -1,6 +1,6 @@
 # OpenCollab-Eval
 
-[English](README.md) | **简体中文**
+[English](https://rise-x-lab.github.io/OpenCollab-Eval/en/) | **简体中文** | [文档](https://rise-x-lab.github.io/OpenCollab-Eval/zh-CN/)
 
 OpenCollab-Eval 是面向基于 OpenCollab 的软件工程智能体的评测系统。它负责基准规范化、Solver 隔离、可信候选构建、官方测试执行、证据验证、远程批次协调和报告发布。OpenCollab 提供智能体框架及其公开 Python API。
 

@@ -1,6 +1,6 @@
 # 评测运行时映射
 
-[English](../evaluation-runtime.md) | **简体中文**
+[English](https://rise-x-lab.github.io/OpenCollab-Eval/en/evaluation-runtime/) | **简体中文**
 
 OpenCollab-Eval 提供多个执行层级。请选择能够满足所需结果的最高层入口。
 

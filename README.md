@@ -1,6 +1,6 @@
 # OpenCollab-Eval
 
-**English** | [简体中文](README.zh-CN.md)
+**English** | [简体中文](https://rise-x-lab.github.io/OpenCollab-Eval/zh-CN/) | [Documentation](https://rise-x-lab.github.io/OpenCollab-Eval/en/)
 
 OpenCollab-Eval is the evaluation system for OpenCollab-based software
 engineering agents. It owns benchmark normalization, Solver isolation, trusted

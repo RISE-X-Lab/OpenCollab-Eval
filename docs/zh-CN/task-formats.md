@@ -1,6 +1,6 @@
 # 任务与数据集格式
 
-[English](../task-formats.md) | **简体中文**
+[English](https://rise-x-lab.github.io/OpenCollab-Eval/en/task-formats/) | **简体中文**
 
 OpenCollab-Eval 在不同信任边界上接受两种 JSONL 契约。`oc-eval inspect` 读取同时包含公开字段和密封裁判字段的基准数据集。`oc-eval run` 读取已经为 Solver 执行准备好的通用评测器任务。两种格式无法互换。
 

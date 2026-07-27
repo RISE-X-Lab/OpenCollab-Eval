@@ -32,6 +32,7 @@ SOURCE_DOCUMENTS = (
     ROOT / "src" / "opencollab_eval" / "engine" / "eval_adapter" / "README.md",
     ROOT / "src" / "opencollab_eval" / "workflows" / "README.md",
 )
+DOCS_SITE = "https://rise-x-lab.github.io/OpenCollab-Eval"
 
 
 def _english_docs() -> tuple[Path, ...]:
@@ -75,6 +76,21 @@ def _chinese_documents() -> set[Path]:
 
 def _inline_code_tokens(text: str) -> Counter[str]:
     return Counter(INLINE_CODE.findall(FENCED_CODE.sub("", text)))
+
+
+def _docs_site_route(path: Path, language: str) -> str:
+    if path in {ROOT / "README.md", ROOT / "README.zh-CN.md", DOCS / "README.md", DOCS / "zh-CN" / "README.md"}:
+        suffix = ""
+    else:
+        relative = path.relative_to(DOCS)
+        if relative.parts[0] == "zh-CN":
+            relative = Path(*relative.parts[1:])
+        suffix = relative.with_suffix("").as_posix() + "/"
+    return f"{DOCS_SITE}/{language}/{suffix}"
+
+
+def _uses_docs_site_language_switch(english: Path) -> bool:
+    return english == ROOT / "README.md" or english.is_relative_to(DOCS)
 
 
 def _resolved_local_links(path: Path) -> set[Path]:
@@ -148,9 +164,13 @@ def test_bilingual_documents_are_linked_and_structurally_aligned(
         f"**English** | [{language_name}]("
     )
     assert chinese_text.splitlines()[2].startswith("[English](")
-    assert chinese_text.splitlines()[2].endswith(f"| **{language_name}**")
-    assert chinese.resolve() in _resolved_local_links(english)
-    assert english.resolve() in _resolved_local_links(chinese)
+    assert f"| **{language_name}**" in chinese_text.splitlines()[2]
+    if _uses_docs_site_language_switch(english):
+        assert _docs_site_route(chinese, "zh-CN") in english_text.splitlines()[2]
+        assert _docs_site_route(english, "en") in chinese_text.splitlines()[2]
+    else:
+        assert chinese.resolve() in _resolved_local_links(english)
+        assert english.resolve() in _resolved_local_links(chinese)
     assert FENCED_CODE.findall(chinese_text) == FENCED_CODE.findall(english_text)
     assert HEADING.findall(chinese_text) == HEADING.findall(english_text)
     assert _inline_code_tokens(chinese_text) == _inline_code_tokens(english_text)

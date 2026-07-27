@@ -3,7 +3,17 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-_IGNORED_PARTS = {".git", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv", "__pycache__", "build", "dist"}
+_IGNORED_PARTS = {
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".uv-cache",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+}
 _REQUIRED_FILES = {
     ".github/workflows/ci.yml",
     ".github/workflows/hygiene.yml",

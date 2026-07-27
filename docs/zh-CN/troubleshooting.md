@@ -1,6 +1,6 @@
 # 故障排查
 
-[English](../troubleshooting.md) | **简体中文**
+[English](https://rise-x-lab.github.io/OpenCollab-Eval/en/troubleshooting/) | **简体中文**
 
 请从生成的 JSON 报告开始排查。控制台输出只提供诊断上下文，无法替代结构化原因、候选身份、目标证据或清理证据。
 

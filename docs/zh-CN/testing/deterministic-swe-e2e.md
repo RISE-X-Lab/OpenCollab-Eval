@@ -1,6 +1,6 @@
 # 确定性 SWE 端到端测试
 
-[English](../../testing/deterministic-swe-e2e.md) | **简体中文**
+[English](https://rise-x-lab.github.io/OpenCollab-Eval/en/testing/deterministic-swe-e2e/) | **简体中文**
 
 确定性 E2E 在不联系真实模型服务商的情况下验证安装后的完整评测路径。它会
 真实使用构建后的 OpenCollab 和 OpenCollab-Eval wheel、临时 SSH、`rsync`、

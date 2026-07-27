@@ -1,6 +1,6 @@
 # SWE Pro-Lite operations
 
-**English** | [简体中文](zh-CN/swe-prolite-operations.md)
+**English** | [简体中文](https://rise-x-lab.github.io/OpenCollab-Eval/zh-CN/swe-prolite-operations/)
 
 This guide covers the remote production path that combines candidate generation
 with official evaluation. All examples use neutral host and storage names.
