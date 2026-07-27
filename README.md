@@ -1,8 +1,17 @@
 <a id="english"></a>
 
-# OpenCollab-Eval
+<h1 align="center">OpenCollab-Eval</h1>
 
-**English** | [简体中文](#simplified-chinese)
+<p align="center"><strong>Evidence-first evaluation for OpenCollab software-engineering agents</strong></p>
+
+<p align="center"><strong>English</strong> · <a href="#simplified-chinese">简体中文</a></p>
+
+<p align="center">
+  <a href="#supported-environment">Quick start</a> ·
+  <a href="#command-overview">Commands</a> ·
+  <a href="docs/evaluation-integrity.md">Evaluation integrity</a> ·
+  <a href="#documentation">Documentation</a>
+</p>
 
 OpenCollab-Eval is the evaluation system for OpenCollab-based software
 engineering agents. It owns benchmark normalization, Solver isolation, trusted
@@ -283,9 +292,18 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before changing evaluation behavior.
 
 <a id="simplified-chinese"></a>
 
-# OpenCollab-Eval 中文说明
+<h1 align="center">OpenCollab-Eval</h1>
 
-[English](#english) | **简体中文**
+<p align="center"><strong>面向 OpenCollab 软件工程智能体的证据优先评测系统</strong></p>
+
+<p align="center"><a href="#english">English</a> · <strong>简体中文</strong></p>
+
+<p align="center">
+  <a href="#支持的环境">快速开始</a> ·
+  <a href="#命令概览">命令</a> ·
+  <a href="docs/zh-CN/evaluation-integrity.md">评测完整性</a> ·
+  <a href="#文档">文档</a>
+</p>
 
 OpenCollab-Eval 是面向基于 OpenCollab 的软件工程智能体的评测系统。它负责基准规范化、Solver 隔离、可信候选构建、官方测试执行、证据验证、远程批次协调和报告发布。OpenCollab 提供智能体框架及其公开 Python API。
 

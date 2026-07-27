@@ -33,8 +33,10 @@ _UNICODE_FIXTURES = {
 _ACTION_REF = re.compile(r"^\s*(?:-\s+)?uses:\s+([^#\s]+)", re.MULTILINE)
 _FULL_GIT_SHA = re.compile(r"[0-9a-f]{40}")
 _ENGLISH_LANGUAGE_SWITCH = re.compile(
-    "^[*][*]English[*][*] [|] "
+    "(?:^[*][*]English[*][*] [|] "
     r"\[\u7b80\u4f53\u4e2d\u6587\]\([^)]+\)$"
+    '|^<p align="center"><strong>English</strong> \u00b7 '
+    r'<a href="#simplified-chinese">\u7b80\u4f53\u4e2d\u6587</a></p>$)'
 )
 
 

@@ -140,11 +140,18 @@ def test_every_chinese_document_has_a_canonical_english_source() -> None:
 def test_root_readme_switches_languages_on_the_same_page() -> None:
     text = ROOT_README.read_text(encoding="utf-8")
     english, chinese = text.split(ROOT_README_CHINESE_MARKER, 1)
-    language_name = "\u7b80\u4f53\u4e2d\u6587"
 
     assert '<a id="english"></a>' in english
-    assert f"[{language_name}](#simplified-chinese)" in english
-    assert "[English](#english)" in chinese
+    assert (
+        '<p align="center"><strong>English</strong> · '
+        '<a href="#simplified-chinese">\u7b80\u4f53\u4e2d\u6587</a></p>'
+    ) in english
+    assert (
+        '<p align="center"><a href="#english">English</a> · '
+        "<strong>\u7b80\u4f53\u4e2d\u6587</strong></p>"
+    ) in chinese
+    assert 'href="#supported-environment"' in english
+    assert 'href="#\u652f\u6301\u7684\u73af\u5883"' in chinese
     assert FENCED_CODE.findall(chinese) == FENCED_CODE.findall(english)
     assert HEADING.findall(chinese) == HEADING.findall(english)
     assert _inline_code_tokens(chinese) == _inline_code_tokens(english)
