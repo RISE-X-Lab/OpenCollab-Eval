@@ -1,6 +1,6 @@
 # Troubleshooting
 
-**English** | [简体中文](https://rise-x-lab.github.io/OpenCollab-Eval/zh-CN/troubleshooting/)
+**English** | [简体中文](zh-CN/troubleshooting.md)
 
 Start with the generated JSON report. Console output is diagnostic context and
 does not replace the structured reason, candidate identity, target proof, or

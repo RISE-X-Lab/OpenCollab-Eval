@@ -1,6 +1,6 @@
 # Task and dataset formats
 
-**English** | [简体中文](https://rise-x-lab.github.io/OpenCollab-Eval/zh-CN/task-formats/)
+**English** | [简体中文](zh-CN/task-formats.md)
 
 OpenCollab-Eval accepts two JSONL contracts at different trust boundaries.
 `oc-eval inspect` reads a benchmark dataset with public and sealed judge fields.

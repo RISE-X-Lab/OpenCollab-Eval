@@ -1,6 +1,6 @@
 # Evaluation Integrity
 
-**English** | [简体中文](https://rise-x-lab.github.io/OpenCollab-Eval/zh-CN/evaluation-integrity/)
+**English** | [简体中文](zh-CN/evaluation-integrity.md)
 
 OpenCollab-Eval treats an evaluation result as a chain of executable evidence.
 A task becomes resolved when the declared target tests execute against the

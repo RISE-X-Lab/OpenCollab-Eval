@@ -1,6 +1,6 @@
 # CLI reference
 
-**English** | [简体中文](https://rise-x-lab.github.io/OpenCollab-Eval/zh-CN/cli-reference/)
+**English** | [简体中文](zh-CN/cli-reference.md)
 
 This document separates stable installed commands from advanced module
 entrypoints. Run `--help` on the installed revision for the complete option

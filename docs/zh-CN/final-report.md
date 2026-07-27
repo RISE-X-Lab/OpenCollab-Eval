@@ -1,6 +1,6 @@
 # 最终 SWE 对比报告
 
-[English](https://rise-x-lab.github.io/OpenCollab-Eval/en/final-report/) | **简体中文**
+[English](../final-report.md) | **简体中文**
 
 `oc-eval final-report` 根据两次已经完成、各含 100 项任务的 SWE-bench Pro-Lite 运行发布一份对比结果。每种输出格式都由同一个经过验证的 JSON 模型渲染。只有 PDF 与所有源文件均以原子方式发布，且发布清单状态为 `final` 后，命令才会成功退出。
 

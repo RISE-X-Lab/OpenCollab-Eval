@@ -1,6 +1,6 @@
 # SWE Pro-Lite 操作指南
 
-[English](https://rise-x-lab.github.io/OpenCollab-Eval/en/swe-prolite-operations/) | **简体中文**
+[English](../swe-prolite-operations.md) | **简体中文**
 
 本指南介绍将候选生成与官方评测结合起来的远程生产执行路径。所有示例均使用中性的主机名与存储名称。
 

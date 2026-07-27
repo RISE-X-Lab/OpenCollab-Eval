@@ -1,6 +1,6 @@
 # Trusted candidate construction
 
-**English** | [简体中文](https://rise-x-lab.github.io/OpenCollab-Eval/zh-CN/design/trusted-candidate-construction/)
+**English** | [简体中文](../zh-CN/design/trusted-candidate-construction.md)
 
 Candidate identity is controlled by the evaluator's baseline and the final
 Solver-visible filesystem. Solver-owned Git configuration, references, object

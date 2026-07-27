@@ -1,6 +1,6 @@
 # Final SWE comparison reports
 
-**English** | [简体中文](https://rise-x-lab.github.io/OpenCollab-Eval/zh-CN/final-report/)
+**English** | [简体中文](zh-CN/final-report.md)
 
 `oc-eval final-report` publishes one comparison from two completed 100-task
 SWE-bench Pro-Lite runs. Every output format is rendered from one validated JSON

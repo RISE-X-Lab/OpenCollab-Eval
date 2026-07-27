@@ -45,7 +45,7 @@ scripts/run_deterministic_swe_e2e.sh --output /tmp/oce-e2e --runs 1
 
 凡是会影响命令、默认值、运行时拓扑、证据或结果语义的更改，都应同步更新操作员指南、CLI 参考、架构说明和完整性文档。文档示例必须使用外部输出路径和占位符，避免使用本地基础设施信息。
 
-公开代码、注释、测试和规范文档使用英文。简体中文文档镜像仅放在根目录 `*.zh-CN.md` 文件、`docs/zh-CN/` 目录，以及 `src/opencollab_eval/` 下紧邻包 README 的 `README.zh-CN.md` 文件中。每份镜像都应与其英文源文档同步，并保留相同的代码块和技术标识。提交摘要、拉取请求标题、拉取请求描述和审查回复使用中文，同时保留英文 Conventional Commit 类型。
+公开代码、注释、测试和规范文档使用英文。根目录 `README.md` 在英文源内容之后放置同步的简体中文翻译，并使用页内语言链接。其他简体中文文档镜像仅放在根目录 `*.zh-CN.md` 文件、`docs/zh-CN/` 目录，以及 `src/opencollab_eval/` 下紧邻包 README 的 `README.zh-CN.md` 文件中。每份翻译都应与其英文源文档同步，并保留相同的代码块和技术标识。提交摘要、拉取请求标题、拉取请求描述和审查回复使用中文，同时保留英文 Conventional Commit 类型。
 
 ## 贡献许可
 

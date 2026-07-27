@@ -1,6 +1,6 @@
 # Deterministic SWE end-to-end test
 
-**English** | [简体中文](https://rise-x-lab.github.io/OpenCollab-Eval/zh-CN/testing/deterministic-swe-e2e/)
+**English** | [简体中文](../zh-CN/testing/deterministic-swe-e2e.md)
 
 The deterministic E2E proves the installed evaluation path without contacting
 a real model provider. It exercises built OpenCollab and OpenCollab-Eval wheels,

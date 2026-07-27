@@ -62,9 +62,11 @@ topology, evidence, or result semantics. Documentation examples must use
 external output paths and placeholders rather than local infrastructure.
 
 Public code, comments, tests, and canonical documentation use English.
-Simplified Chinese documentation mirrors live only in root `*.zh-CN.md` files,
-under `docs/zh-CN/`, and in `README.zh-CN.md` files beside package READMEs
-under `src/opencollab_eval/`. Keep every mirror synchronized with its English
+The root `README.md` places its synchronized Simplified Chinese translation
+after the English source and uses in-page language links. Other Simplified
+Chinese documentation mirrors live only in root `*.zh-CN.md` files, under
+`docs/zh-CN/`, and in `README.zh-CN.md` files beside package READMEs under
+`src/opencollab_eval/`. Keep every translation synchronized with its English
 source and preserve the same code blocks and technical identifiers. Commit
 summaries, pull request titles, pull request descriptions, and review replies
 use Chinese while retaining an English Conventional Commit type.

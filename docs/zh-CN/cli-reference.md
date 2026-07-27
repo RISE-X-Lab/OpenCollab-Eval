@@ -1,6 +1,6 @@
 # CLI 参考
 
-[English](https://rise-x-lab.github.io/OpenCollab-Eval/en/cli-reference/) | **简体中文**
+[English](../cli-reference.md) | **简体中文**
 
 本文档将稳定的已安装命令与高级模块入口分别说明。完整选项列表请对已安装的修订运行 `--help`。
 

@@ -1,6 +1,6 @@
 # 快速入门
 
-[English](https://rise-x-lab.github.io/OpenCollab-Eval/en/getting-started/) | **简体中文**
+[English](../getting-started.md) | **简体中文**
 
 本指南介绍如何安装 OpenCollab-Eval、验证数据集并运行通用候选引擎。如果一次运行必须给出官方的 resolved 或 unresolved 判定，请继续阅读 [SWE Pro-Lite 操作指南](swe-prolite-operations.md)。
 

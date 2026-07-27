@@ -34,17 +34,14 @@ _ACTION_REF = re.compile(r"^\s*(?:-\s+)?uses:\s+([^#\s]+)", re.MULTILINE)
 _FULL_GIT_SHA = re.compile(r"[0-9a-f]{40}")
 _ENGLISH_LANGUAGE_SWITCH = re.compile(
     "^[*][*]English[*][*] [|] "
-    r"\[\u7b80\u4f53\u4e2d\u6587\]\([^)]+\)"
-    r"(?: [|] \[Documentation\]\([^)]+\))?$"
+    r"\[\u7b80\u4f53\u4e2d\u6587\]\([^)]+\)$"
 )
-_CHINESE_LANGUAGE_OPTION = re.compile(r"^\s+- name: \u7b80\u4f53\u4e2d\u6587$")
 
 
 def _is_simplified_chinese_document(relative: Path) -> bool:
-    return (
-        relative.name.endswith(".zh-CN.md")
-        or relative.name == "mkdocs.zh-CN.yml"
-        or relative.parts[:2] == ("docs", "zh-CN")
+    return relative.name.endswith(".zh-CN.md") or relative.parts[:2] == (
+        "docs",
+        "zh-CN",
     )
 
 
@@ -88,12 +85,15 @@ def test_public_text_is_english_and_uses_canonical_project_names() -> None:
     for path in _public_text_files():
         text = path.read_text(encoding="utf-8")
         relative = path.relative_to(_REPO_ROOT)
+        in_root_readme_chinese_section = False
         for line_number, line in enumerate(text.splitlines(), start=1):
+            if relative == Path("README.md") and line == '<a id="simplified-chinese"></a>':
+                in_root_readme_chinese_section = True
             if (
                 relative not in _UNICODE_FIXTURES
                 and not _is_simplified_chinese_document(relative)
+                and not in_root_readme_chinese_section
                 and not _ENGLISH_LANGUAGE_SWITCH.fullmatch(line)
-                and not _CHINESE_LANGUAGE_OPTION.fullmatch(line)
                 and any("\u4e00" <= char <= "\u9fff" for char in line)
             ):
                 findings.append(f"{relative}:{line_number}: non-English public text")

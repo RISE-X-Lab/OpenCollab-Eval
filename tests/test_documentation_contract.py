@@ -23,16 +23,16 @@ HEADING = re.compile(r"^(#{1,6}) ", re.MULTILINE)
 INLINE_CODE = re.compile(r"(?<!`)`([^`\n]+)`(?!`)")
 
 ROOT_DOCUMENTS = (
-    ROOT / "README.md",
     ROOT / "MIGRATION.md",
     ROOT / "CONTRIBUTING.md",
     ROOT / "SECURITY.md",
 )
+ROOT_README = ROOT / "README.md"
+ROOT_README_CHINESE_MARKER = '<a id="simplified-chinese"></a>'
 SOURCE_DOCUMENTS = (
     ROOT / "src" / "opencollab_eval" / "engine" / "eval_adapter" / "README.md",
     ROOT / "src" / "opencollab_eval" / "workflows" / "README.md",
 )
-DOCS_SITE = "https://rise-x-lab.github.io/OpenCollab-Eval"
 
 
 def _english_docs() -> tuple[Path, ...]:
@@ -59,9 +59,14 @@ def _bilingual_pairs() -> tuple[tuple[Path, Path], ...]:
 def _documentation_files() -> tuple[Path, ...]:
     return tuple(
         dict.fromkeys(
-            path
-            for english, chinese in _bilingual_pairs()
-            for path in (english, chinese)
+            (
+                ROOT_README,
+                *(
+                    path
+                    for english, chinese in _bilingual_pairs()
+                    for path in (english, chinese)
+                ),
+            )
         )
     )
 
@@ -76,21 +81,6 @@ def _chinese_documents() -> set[Path]:
 
 def _inline_code_tokens(text: str) -> Counter[str]:
     return Counter(INLINE_CODE.findall(FENCED_CODE.sub("", text)))
-
-
-def _docs_site_route(path: Path, language: str) -> str:
-    if path in {ROOT / "README.md", ROOT / "README.zh-CN.md", DOCS / "README.md", DOCS / "zh-CN" / "README.md"}:
-        suffix = ""
-    else:
-        relative = path.relative_to(DOCS)
-        if relative.parts[0] == "zh-CN":
-            relative = Path(*relative.parts[1:])
-        suffix = relative.with_suffix("").as_posix() + "/"
-    return f"{DOCS_SITE}/{language}/{suffix}"
-
-
-def _uses_docs_site_language_switch(english: Path) -> bool:
-    return english == ROOT / "README.md" or english.is_relative_to(DOCS)
 
 
 def _resolved_local_links(path: Path) -> set[Path]:
@@ -147,6 +137,20 @@ def test_every_chinese_document_has_a_canonical_english_source() -> None:
     assert _chinese_documents() == expected
 
 
+def test_root_readme_switches_languages_on_the_same_page() -> None:
+    text = ROOT_README.read_text(encoding="utf-8")
+    english, chinese = text.split(ROOT_README_CHINESE_MARKER, 1)
+    language_name = "\u7b80\u4f53\u4e2d\u6587"
+
+    assert '<a id="english"></a>' in english
+    assert f"[{language_name}](#simplified-chinese)" in english
+    assert "[English](#english)" in chinese
+    assert FENCED_CODE.findall(chinese) == FENCED_CODE.findall(english)
+    assert HEADING.findall(chinese) == HEADING.findall(english)
+    assert _inline_code_tokens(chinese) == _inline_code_tokens(english)
+    assert any("\u4e00" <= char <= "\u9fff" for char in chinese)
+
+
 @pytest.mark.parametrize(
     ("english", "chinese"),
     _bilingual_pairs(),
@@ -164,13 +168,9 @@ def test_bilingual_documents_are_linked_and_structurally_aligned(
         f"**English** | [{language_name}]("
     )
     assert chinese_text.splitlines()[2].startswith("[English](")
-    assert f"| **{language_name}**" in chinese_text.splitlines()[2]
-    if _uses_docs_site_language_switch(english):
-        assert _docs_site_route(chinese, "zh-CN") in english_text.splitlines()[2]
-        assert _docs_site_route(english, "en") in chinese_text.splitlines()[2]
-    else:
-        assert chinese.resolve() in _resolved_local_links(english)
-        assert english.resolve() in _resolved_local_links(chinese)
+    assert chinese_text.splitlines()[2].endswith(f"| **{language_name}**")
+    assert chinese.resolve() in _resolved_local_links(english)
+    assert english.resolve() in _resolved_local_links(chinese)
     assert FENCED_CODE.findall(chinese_text) == FENCED_CODE.findall(english_text)
     assert HEADING.findall(chinese_text) == HEADING.findall(english_text)
     assert _inline_code_tokens(chinese_text) == _inline_code_tokens(english_text)
@@ -198,12 +198,11 @@ def test_chinese_internal_links_prefer_available_chinese_documents(
 
 
 def test_readme_names_installed_commands_and_solver_profiles() -> None:
-    for path in (ROOT / "README.md", ROOT / "README.zh-CN.md"):
-        readme = path.read_text(encoding="utf-8")
-        for command in ("inspect", "run", "swe-v1-prolite", "final-report"):
-            assert f"`oc-eval {command}`" in readme
-        for solver in DEFAULT_WORKFLOW_SOLVERS:
-            assert f"`{solver}`" in readme
+    readme = ROOT_README.read_text(encoding="utf-8")
+    for command in ("inspect", "run", "swe-v1-prolite", "final-report"):
+        assert f"`oc-eval {command}`" in readme
+    for solver in DEFAULT_WORKFLOW_SOLVERS:
+        assert f"`{solver}`" in readme
 
 
 def test_documented_kimi_slice_has_complete_identity() -> None:
@@ -217,7 +216,6 @@ def test_documented_kimi_slice_has_complete_identity() -> None:
     )
     for relative in (
         "README.md",
-        "README.zh-CN.md",
         "docs/swe-prolite-operations.md",
         "docs/zh-CN/swe-prolite-operations.md",
     ):
@@ -243,7 +241,6 @@ def test_documented_k3_coordinator_has_complete_identity() -> None:
     )
     for relative in (
         "README.md",
-        "README.zh-CN.md",
         "docs/swe-prolite-operations.md",
         "docs/zh-CN/swe-prolite-operations.md",
     ):

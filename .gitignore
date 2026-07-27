@@ -1,11 +1,10 @@
 .venv/
+.uv-cache/
 .pytest_cache/
 .ruff_cache/
-.uv-cache/
 __pycache__/
 *.py[cod]
 dist/
-site/
 runs/
 evals/
 swe_workdir/

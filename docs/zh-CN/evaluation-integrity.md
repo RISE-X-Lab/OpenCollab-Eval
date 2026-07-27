@@ -1,6 +1,6 @@
 # 评测完整性
 
-[English](https://rise-x-lab.github.io/OpenCollab-Eval/en/evaluation-integrity/) | **简体中文**
+[English](../evaluation-integrity.md) | **简体中文**
 
 OpenCollab-Eval 将评测结果视为一条 executable evidence chain。当 declared
 target test 针对 Solver 生成的同一个候选真实执行，且所有必要目标都通过时，

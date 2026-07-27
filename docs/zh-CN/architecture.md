@@ -1,6 +1,6 @@
 # OpenCollab-Eval 架构
 
-[English](https://rise-x-lab.github.io/OpenCollab-Eval/en/architecture/) | **简体中文**
+[English](../architecture.md) | **简体中文**
 
 OpenCollab-Eval 是基于 OpenCollab 的 Solver 所使用的评测实现。它加载
 benchmark task，只向 Solver 暴露公开任务数据，根据可信基线构造候选 patch，

@@ -1,6 +1,6 @@
 # OpenCollab-Eval documentation
 
-**English** | [简体中文](https://rise-x-lab.github.io/OpenCollab-Eval/zh-CN/)
+**English** | [简体中文](zh-CN/README.md)
 
 This directory separates operator guidance, contracts, architecture, and design
 records so that an implementation plan is never mistaken for a command guide.
@@ -18,14 +18,11 @@ records so that an implementation plan is never mistaken for a command guide.
 | Diagnose a failed run | [Troubleshooting](troubleshooting.md) |
 | Publish a validated 100-task comparison | [Final report contract](final-report.md) |
 
-The repository-level [README](https://github.com/RISE-X-Lab/OpenCollab-Eval#readme)
-gives the shortest complete overview.
-[MIGRATION.md](https://github.com/RISE-X-Lab/OpenCollab-Eval/blob/main/MIGRATION.md)
-defines ownership between OpenCollab and OpenCollab-Eval.
-[CONTRIBUTING.md](https://github.com/RISE-X-Lab/OpenCollab-Eval/blob/main/CONTRIBUTING.md)
-describes development and review requirements.
-[SECURITY.md](https://github.com/RISE-X-Lab/OpenCollab-Eval/blob/main/SECURITY.md)
-contains the private reporting process.
+The repository-level [README](../README.md) gives the shortest complete
+overview. [MIGRATION.md](../MIGRATION.md) defines ownership between OpenCollab
+and OpenCollab-Eval. [CONTRIBUTING.md](../CONTRIBUTING.md) describes development
+and review requirements. [SECURITY.md](../SECURITY.md) contains the private
+reporting process.
 
 ## Operator and contract documents
 

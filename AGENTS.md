@@ -2,11 +2,13 @@
 
 OpenCollab-Eval is the evaluation owner for OpenCollab-based solvers. Public
 code, comments, tests, and canonical documentation use English. Simplified
-Chinese documentation mirrors live only in root `*.zh-CN.md` files,
+Chinese content in the root `README.md` follows its English source on the same
+page so the repository home page can switch languages without navigation.
+Other translated documents live only in root `*.zh-CN.md` files,
 `docs/zh-CN/`, and `README.zh-CN.md` files beside package READMEs under
-`src/opencollab_eval/`. Every translated page must link to its English source,
+`src/opencollab_eval/`. Every translation must link to its English source,
 preserve code blocks and technical identifiers, and remain structurally
-aligned with the canonical page. Commit messages, pull request text, and
+aligned with the canonical content. Commit messages, pull request text, and
 review replies use Chinese while retaining an English Conventional Commit type.
 
 The dependency direction is `opencollab_eval -> opencollab public API`.
