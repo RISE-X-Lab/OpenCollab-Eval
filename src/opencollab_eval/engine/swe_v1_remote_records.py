@@ -414,6 +414,18 @@ def completed_generation_identity(prediction, metric, task, *, require_submissio
         return returncode == 0
     if status == "done_with_timeout_patch":
         return returncode == 124
+    if status == "incomplete":
+        return bool(
+            returncode == 1
+            and metric.get("runtime_status") == "completed"
+            and "error" in metric
+            and (metric["error"] is None or metric["error"] == "")
+            and isinstance(metric.get("agent_failures"), list)
+            and not metric["agent_failures"]
+            and "provider_failure" not in metric
+            and metric.get("submission_eligible") is True
+            and current_generation_proof_valid(metric, original_patch)
+        )
     return False
 
 

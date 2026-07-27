@@ -87,6 +87,102 @@ def test_completed_generation_reuse_requires_current_immutable_image_id(tmp_path
     assert reused["status"] == "generation_done"
 
 
+def test_incomplete_workflow_with_proven_candidate_continues_to_official_eval(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    task = "task-1"
+    _seed_remote_completed_generation(namespace, task)
+    metrics_path = namespace["base_run_dir"] / task / "metrics.jsonl"
+    metrics = namespace["read_jsonl"](metrics_path)
+    metrics[0].update(
+        workflow_status="incomplete",
+        runner_returncode=1,
+        runtime_status="completed",
+        error=None,
+        agent_failures=[],
+    )
+    _write_jsonl(metrics_path, metrics)
+    namespace["ensure_image"] = lambda _image: {
+        "ok": True,
+        "image_id": "sha256:" + "8" * 64,
+    }
+
+    result = namespace["generation_for_task_once"]({"instance_id": task})
+
+    assert result["status"] == "generation_done"
+    assert result["workflow_status"] == "incomplete"
+    assert result["submission_eligible"] is True
+
+
+def test_incomplete_workflow_without_proven_eligibility_remains_failed(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    task = "task-1"
+    _seed_remote_completed_generation(namespace, task)
+    metrics_path = namespace["base_run_dir"] / task / "metrics.jsonl"
+    metrics = namespace["read_jsonl"](metrics_path)
+    metrics[0].update(
+        workflow_status="incomplete",
+        runner_returncode=1,
+        runtime_status="completed",
+        error=None,
+        agent_failures=[],
+        submission_eligible=False,
+    )
+    _write_jsonl(metrics_path, metrics)
+    namespace["ensure_image"] = lambda _image: {
+        "ok": True,
+        "image_id": "sha256:" + "8" * 64,
+    }
+
+    result = namespace["generation_for_task_once"]({"instance_id": task})
+
+    assert result["status"] == "generation_failed"
+
+
+@pytest.mark.parametrize(
+    ("removed_field", "updates"),
+    [
+        ("error", {}),
+        ("agent_failures", {}),
+        (None, {"error": "workflow crashed"}),
+        (None, {"error": ["invalid error evidence"]}),
+        (None, {"agent_failures": [{"label": "reviewer", "status": "failed"}]}),
+        (None, {"provider_failure": {"status": "provider_request_rejected"}}),
+        (None, {"provider_failure": {}}),
+        (None, {"provider_failure": None}),
+        (None, {"runtime_status": "failed"}),
+        (None, {"runner_returncode": 2}),
+        (None, {"trusted_patch_extraction": {}}),
+    ],
+)
+def test_incomplete_workflow_rejects_unproven_runtime_state(
+    tmp_path, removed_field, updates
+):
+    namespace = _remote_namespace(tmp_path)
+    task = "task-1"
+    _seed_remote_completed_generation(namespace, task)
+    metrics_path = namespace["base_run_dir"] / task / "metrics.jsonl"
+    metrics = namespace["read_jsonl"](metrics_path)
+    metrics[0].update(
+        workflow_status="incomplete",
+        runner_returncode=1,
+        runtime_status="completed",
+        error=None,
+        agent_failures=[],
+    )
+    if removed_field:
+        metrics[0].pop(removed_field)
+    metrics[0].update(updates)
+    _write_jsonl(metrics_path, metrics)
+    namespace["ensure_image"] = lambda _image: {
+        "ok": True,
+        "image_id": "sha256:" + "8" * 64,
+    }
+
+    result = namespace["generation_for_task_once"]({"instance_id": task})
+
+    assert result["status"] == "generation_failed"
+
+
 def test_structured_provider_failure_rejects_a_conflicting_nonempty_candidate(tmp_path):
     namespace = _remote_namespace(tmp_path)
     task = "task-1"
