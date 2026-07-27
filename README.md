@@ -2,7 +2,7 @@
 
 <h1 align="center">OpenCollab-Eval</h1>
 
-<p align="center"><strong>Evidence-first evaluation for OpenCollab software-engineering agents</strong></p>
+<p align="center"><strong>Run and verify SWE-bench evaluations for OpenCollab agents</strong></p>
 
 <p align="center"><strong>English</strong> · <a href="#simplified-chinese">简体中文</a></p>
 
@@ -13,55 +13,52 @@
   <a href="#documentation">Documentation</a>
 </p>
 
-OpenCollab-Eval is the evaluation system for OpenCollab-based software
-engineering agents. It owns benchmark normalization, Solver isolation, trusted
-candidate construction, official test execution, evidence validation, remote
-batch coordination, and report publication. OpenCollab supplies the agent
-framework and its public Python API.
+OpenCollab-Eval runs software-agent benchmarks on top of OpenCollab. For a full
+SWE-bench run, it gives the Solver an isolated checkout, records the resulting
+patch, and runs the official tests. OpenCollab provides the agents and
+workflows. This repository evaluates them.
 
-The repository is designed for experiments where an incorrect `resolved` value
-is more damaging than a technical failure. A task becomes resolved only when
-the declared target tests execute and pass against the same candidate patch
-that was produced by the Solver. Empty plans, zero collected tests, missing
-proof, candidate identity drift, and a workspace that is still changing remain
-technical failures.
+A task failure and an evaluation failure mean different things. `resolved`
+means that the named target tests ran and passed on the patch extracted from
+this run. If no tests were collected, the evidence is incomplete, the patch
+identity changed, or the workspace was still being modified, the run ends as a
+technical failure.
 
 ## Evaluation flow
 
 ```text
-trusted benchmark row
+benchmark task
         |
         v
-sealed judge data + anonymous Solver task
+private judge data + public Solver task
         |
         v
-disposable Solver workspace
+temporary Solver checkout
         |
         v
-controller-owned candidate projection
+patch built from the evaluator's baseline
         |
         v
-fresh official evaluation workspace
+clean checkout for official tests
         |
         v
-target execution evidence + terminal report
+test logs + final report
 ```
 
-The Solver receives the public problem statement and a disposable repository.
-The evaluator retains the base commit, test patch, target lists, image identity,
-and run identity. Candidate extraction uses evaluator-owned Git state, and the
-official evaluator verifies the candidate patch SHA-256 again before running
-the declared tests.
+The Solver sees the public problem statement and a disposable checkout. The
+evaluator keeps the base commit, test patch, target lists, image ID, and run ID
+outside that checkout. After the Solver exits, the evaluator builds the patch
+with its own Git state. The official test run checks the patch SHA-256 before
+it starts.
 
 ## Supported environment
 
-OpenCollab-Eval requires Python 3.10 or newer and OpenCollab 0.4.x. SWE-bench
-evaluation requires Docker and the optional `swebench` dependencies. OpenHands
-integration requires Python 3.12. Remote Pro-Lite runs additionally require a
-Linux worker reachable through SSH, an installed Python runtime, the required
-task images, and writable run-scoped storage.
+Use Python 3.10 or later with OpenCollab 0.4.x. SWE-bench evaluation also needs
+Docker and the optional `swebench` dependencies. OpenHands needs Python 3.12.
+For a remote Pro-Lite run, provide a Linux machine reachable through SSH. It
+must have Python, the task images, and a writable directory for each run.
 
-Install the core package from built distributions.
+Install the two wheel files.
 
 ```bash
 python -m pip install /path/to/opencollab-0.4.x-py3-none-any.whl
@@ -81,32 +78,29 @@ python -m pip install -e ../OpenCollab
 python -m pip install -e '.[dev,swebench]'
 ```
 
-Credentials, datasets, predictions, trajectories, patches, reports, PDFs, and
-runtime logs belong outside the source checkout.
+Keep run data outside the source checkout. This includes credentials, datasets,
+predictions, trajectories, patches, reports, PDFs, and runtime logs.
 
 ## Command overview
 
-| Command | Purpose | Official terminal verdict |
+| Command | Purpose | Produces an official result |
 | --- | --- | --- |
 | `oc-eval inspect` | Validate and anonymize a SWE-Batch Pro dataset census | No |
 | `oc-eval run` | Run the generic evaluation engine and produce candidate eligibility records | No |
-| `oc-eval swe-v1-prolite` | Generate and officially evaluate one bounded remote Pro-Lite slice | Yes |
+| `oc-eval swe-v1-prolite` | Generate and evaluate a selected remote Pro-Lite slice | Yes |
 | `oc-eval final-report` | Validate and publish a comparison from two completed fact reports | Consumes existing verdicts |
-| `python -m opencollab_eval.commands.swe_eval_run` | Select a Solver and coordinate a bounded Pro-Lite batch | Yes |
+| `python -m opencollab_eval.commands.swe_eval_run` | Select a Solver and run a chosen Pro-Lite batch | Yes |
 
-`oc-eval run` reports whether a candidate was produced and remains eligible for
-submission. It does not turn a candidate into a SWE-bench resolved result.
-`oc-eval swe-v1-prolite` and the multi-Solver coordinator include the official
-evaluation stage.
+Use `oc-eval run` when you only need candidate-generation records. It never
+reports a SWE-bench task as resolved. Use `oc-eval swe-v1-prolite` or the
+multi-Solver coordinator when the run must include official tests.
 
-Use `oc-eval --help` and the subcommand help for the complete current option
-set.
+Use `oc-eval --help` and the subcommand help for all available options.
 
 ## Dataset inspection
 
-The identity key is an evaluator-owned file containing exactly 32 random bytes.
-Keep it with sealed run state. Reuse it for retries of the same batch so public
-task IDs stay stable.
+Create a 32-byte identity key and keep it with the private files for the run.
+Reuse the same key when retrying a batch so its public task IDs do not change.
 
 ```bash
 install -d -m 700 /sealed/opencollab-eval
@@ -117,14 +111,14 @@ oc-eval inspect /data/swe-batch-pro.jsonl \
   --image-repository registry.example/swe
 ```
 
-The command validates the bounded JSONL input and prints the anonymous public
-task census. It does not start a Solver or expose sealed judge fields.
+The command checks the JSONL input and prints a task list with anonymized IDs.
+It does not start a Solver or print private judge fields.
 
 ## Generic candidate generation
 
-The generic engine accepts one JSON object per line. Each row requires
-`task_id` and `description`, and may provide `repo_path`, `docker_image`,
-`timeout`, `max_tokens`, and an `extras` object.
+`oc-eval run` reads one JSON object per line. Each row requires `task_id` and
+`description`. Optional fields are `repo_path`, `docker_image`, `timeout`,
+`max_tokens`, and an `extras` object.
 
 ```json
 {"task_id":"example-1","description":"Fix the failing calculator test","repo_path":"/work/calculator"}
@@ -140,18 +134,20 @@ oc-eval run /data/tasks.jsonl \
   --concurrency 1
 ```
 
-Provider configuration is resolved through the OpenCollab public API. Prefer
-an external secret store or a protected environment file over command-line
-credentials. The result summary counts eligible and ineligible candidates, and
-the output directory receives `results.jsonl`.
+OpenCollab loads the provider configuration through its public API. Put API
+keys in a secret store or a protected environment file instead of the command
+line. The command writes `results.jsonl` and reports how many candidates are
+eligible for evaluation.
 
 ## Official SWE Pro-Lite evaluation
 
-The production remote entrypoint synchronizes the current OpenCollab public
-runtime and OpenCollab-Eval runtime, verifies the source-tree identity on the
-worker, generates a candidate, waits for process quiescence, projects the
-candidate into a fresh official workspace, runs the declared target tests, and
-writes JSON and Markdown reports.
+`oc-eval swe-v1-prolite` copies the current OpenCollab and OpenCollab-Eval code
+to the worker and checks the source hashes before starting the Solver. When the
+Solver command returns, the evaluator stops any remaining Solver-owned
+processes and verifies that the workspace is quiet. It then freezes the
+workspace, constructs the patch, projects that patch into a clean official
+checkout, and checks the resulting tree before running the declared tests. The
+command writes JSON and Markdown reports.
 
 ```bash
 oc-eval swe-v1-prolite \
@@ -181,11 +177,10 @@ oc-eval swe-v1-prolite \
   --markdown-output /results/example-001.md
 ```
 
-Run `--dry-run` first when preparing a new worker. A dry run validates
-configuration and planned work, and it does not represent a terminal task
-result. See [the Pro-Lite operations guide](docs/swe-prolite-operations.md) for
-provider transport, Solver selection, remote layout, retries, reports, and
-failure handling.
+Use `--dry-run` once when setting up a new worker. It checks the configuration,
+paths, and task selection without creating a task result. The
+[Pro-Lite operations guide](docs/swe-prolite-operations.md) covers provider
+access, Solver selection, remote directories, retries, reports, and failures.
 
 ## Solver selection
 
@@ -218,52 +213,57 @@ python -m opencollab_eval.commands.swe_eval_run \
   --max-eval-attempts 1
 ```
 
-This example selects the validated K3 profile with a 1048576-token context and
-`reasoning_effort=high`. Solver-specific defaults are applied by the
-coordinator. OpenHands and Claude Code also require their external runtimes.
-The supplied shell resources are adapters around those runtimes and do not
-distribute either product.
+The command above runs K3 with a 1048576-token context and
+`reasoning_effort=high`. The coordinator fills in the remaining defaults for
+the selected Solver. OpenHands and Claude Code must be installed separately.
+The shell adapters in this repository only invoke those runtimes.
 
 ## Results and evidence
 
-OpenCollab-Eval distinguishes five states.
+The pipeline tracks up to three milestones before the terminal outcome.
 
-| State | Meaning |
+| Milestone | Meaning |
 | --- | --- |
 | Candidate produced | A nonempty patch was extracted |
 | Submission eligible | Candidate and lifecycle evidence passed generation checks |
 | Eval done | Official evaluation produced a bound report |
-| Resolved or unresolved | Declared targets executed for the bound candidate and produced a semantic verdict |
-| Technical failed | The system could not establish a trustworthy semantic verdict |
 
-Every publishable result binds the task identity, run identity, record ID,
-complete patch SHA-256, runtime identity, fresh evaluation workspace, target
-plan, command evidence, process cleanup, and official report. A failed target
-is unresolved only when execution evidence proves that the intended target ran.
-Import failures, collection failures, unsupported plans, missing logs, and
-identity mismatches remain technical failures.
+After official evaluation, a task has one of three terminal outcomes.
 
-Python targets use an evaluator-owned controller and structured per-node Pytest
-events. Go targets use `go test -json` evidence. JavaScript targets use
-framework-specific parser-backed evidence. Unsupported target syntax fails
-closed.
+| Outcome | Meaning |
+| --- | --- |
+| Resolved | The declared targets ran and passed for the bound candidate |
+| Unresolved | The declared targets ran and at least one target failed |
+| Technical failed | The evaluation did not produce a verifiable task result |
+
+Each report stores the task, run, and record IDs, the full patch SHA-256, the
+runtime, the target plan, the commands that ran, the cleanup result, and the
+official report. These fields show which patch the tests actually used. A task
+is unresolved only after the intended target ran and failed. Import errors,
+collection errors, unsupported plans, missing logs, and identity mismatches are
+technical failures.
+
+The evaluator records one structured event for each Python test node. Go tests
+are checked through `go test -json`. JavaScript results are read by parsers for
+the supported test frameworks. Unknown target syntax is a technical failure.
 
 ## Documentation
 
-The [documentation index](docs/README.md) routes readers by task. The most
-important guides are the [getting started guide](docs/getting-started.md), the
-[task format reference](docs/task-formats.md), the
-[Pro-Lite operations guide](docs/swe-prolite-operations.md), the
-[architecture guide](docs/architecture.md), the
-[evaluation integrity guide](docs/evaluation-integrity.md), the
-[CLI reference](docs/cli-reference.md), and the
-[troubleshooting guide](docs/troubleshooting.md).
+Start with the [documentation index](docs/README.md). For a first run, use the
+[getting started guide](docs/getting-started.md) and
+[task format reference](docs/task-formats.md). Remote Pro-Lite work is covered
+by the [operations guide](docs/swe-prolite-operations.md). The
+[architecture guide](docs/architecture.md),
+[evaluation integrity guide](docs/evaluation-integrity.md),
+[CLI reference](docs/cli-reference.md), and
+[troubleshooting guide](docs/troubleshooting.md) explain the rest of the
+system.
 
-The [final report contract](docs/final-report.md) describes evidence-bound
-100-task comparison publication. [MIGRATION.md](MIGRATION.md) defines repository
-ownership and the OpenCollab public API boundary. [CONTRIBUTING.md](CONTRIBUTING.md)
-describes development and review requirements. [SECURITY.md](SECURITY.md)
-contains the private vulnerability reporting process.
+The [final report contract](docs/final-report.md) defines the input needed to
+publish a 100-task comparison. [MIGRATION.md](MIGRATION.md) explains which code
+belongs in OpenCollab and which belongs here.
+[CONTRIBUTING.md](CONTRIBUTING.md) covers development and review.
+[SECURITY.md](SECURITY.md) gives the private vulnerability reporting process.
 
 OpenCollab-Eval is distributed under the
 [Mulan Permissive Software License v2](LICENSE). Dependency and attribution
@@ -280,11 +280,12 @@ scripts/verify_wheel_contract.sh \
 scripts/run_deterministic_swe_e2e.sh --output /tmp/oce-e2e --runs 1
 ```
 
-The wheel contract installs both distributions in isolation and runs the Eval
-suite against packaged artifacts. The deterministic E2E uses a local fake
-OpenAI-compatible service, ephemeral SSH, real `rsync`, Docker, trusted
-candidate extraction, and official target execution without using a provider
-credential.
+The wheel check installs both distributions in a clean environment and runs
+the Eval tests against the packaged files. The deterministic E2E starts a local
+fake model service and a temporary SSH server, copies the code with real
+`rsync`, and runs the task in Docker. It then extracts the patch, runs the
+official SWE-bench harness, checks the final report, and verifies cleanup of
+the resources it created. It does not call an external model.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) before changing evaluation behavior.
 
@@ -294,7 +295,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before changing evaluation behavior.
 
 <h1 align="center">OpenCollab-Eval</h1>
 
-<p align="center"><strong>面向 OpenCollab 软件工程智能体的证据优先评测系统</strong></p>
+<p align="center"><strong>运行并核验 OpenCollab 智能体的 SWE-bench 评测</strong></p>
 
 <p align="center"><a href="#english">English</a> · <strong>简体中文</strong></p>
 
@@ -305,38 +306,38 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before changing evaluation behavior.
   <a href="#文档">文档</a>
 </p>
 
-OpenCollab-Eval 是面向基于 OpenCollab 的软件工程智能体的评测系统。它负责基准规范化、Solver 隔离、可信候选构建、官方测试执行、证据验证、远程批次协调和报告发布。OpenCollab 提供智能体框架及其公开 Python API。
+OpenCollab-Eval 用来评测基于 OpenCollab 构建的软件工程智能体。运行完整 SWE-bench 评测时，它会为 Solver 准备隔离的工作副本，记录最终补丁，再运行官方测试。智能体和工作流由 OpenCollab 提供，这个仓库负责评测。
 
-该仓库面向这样一类实验，其中错误的 `resolved` 值比技术失败造成的损害更大。只有声明的目标测试针对 Solver 生成的同一候选补丁完成执行并通过后，任务才会变为 resolved。空计划、测试收集数为零、证明缺失、候选身份漂移和仍在变化的工作区均属于技术失败。
+题目没有做对和评测没有跑成是两回事。只有本次运行提取出的补丁通过指定目标测试，系统才会写入 `resolved`。没有收集到测试、证据不完整、补丁身份发生变化或工作区仍在被修改时，本次运行会被记为技术失败。
 
 ## 评测流程
 
 ```text
-trusted benchmark row
+benchmark task
         |
         v
-sealed judge data + anonymous Solver task
+private judge data + public Solver task
         |
         v
-disposable Solver workspace
+temporary Solver checkout
         |
         v
-controller-owned candidate projection
+patch built from the evaluator's baseline
         |
         v
-fresh official evaluation workspace
+clean checkout for official tests
         |
         v
-target execution evidence + terminal report
+test logs + final report
 ```
 
-Solver 会收到公开的问题描述和一个一次性仓库。评测器保留基准提交、测试补丁、目标列表、镜像身份和运行身份。候选提取使用评测器拥有的 Git 状态，官方评测器在运行声明的测试前会再次验证候选补丁的 SHA-256。
+Solver 只能看到公开题面和一次性工作副本。基准提交、测试补丁、目标列表、镜像 ID 和运行 ID 由评测器保管，不会进入这个副本。Solver 退出后，评测器用自己的 Git 状态生成补丁。官方测试启动前还会核对补丁的 SHA-256。
 
 ## 支持的环境
 
-OpenCollab-Eval 要求 Python 3.10 或更高版本，以及 OpenCollab 0.4.x。SWE-bench 评测要求 Docker 和可选的 `swebench` 依赖项。OpenHands 集成要求 Python 3.12。远程 Pro-Lite 运行还要求一台可通过 SSH 访问的 Linux 工作节点，其中已安装 Python 运行时和所需的任务镜像，并提供按运行划分的可写存储。
+OpenCollab-Eval 支持 Python 3.10 及以上版本，并与 OpenCollab 0.4.x 配套使用。运行 SWE-bench 还需要 Docker 和可选的 `swebench` 依赖。OpenHands 需要 Python 3.12。远程运行 Pro-Lite 时，还要准备一台可以通过 SSH 访问的 Linux 机器。机器上需要有 Python、任务镜像，以及每次运行独立使用的可写目录。
 
-通过已构建的发行包安装核心软件包。
+安装两个 wheel 文件。
 
 ```bash
 python -m pip install /path/to/opencollab-0.4.x-py3-none-any.whl
@@ -356,25 +357,25 @@ python -m pip install -e ../OpenCollab
 python -m pip install -e '.[dev,swebench]'
 ```
 
-凭据、数据集、预测、轨迹、补丁、报告、PDF 和运行时日志应存放在源码检出目录之外。
+运行数据应放在源码目录之外，其中包括凭据、数据集、预测、轨迹、补丁、报告、PDF 和运行日志。
 
 ## 命令概览
 
-| 命令 | 用途 | 官方终结判定 |
+| 命令 | 用途 | 是否产生官方结果 |
 | --- | --- | --- |
 | `oc-eval inspect` | 验证 SWE-Batch Pro 数据集清单并进行匿名化 | 无 |
 | `oc-eval run` | 运行通用评测引擎并生成候选资格记录 | 无 |
-| `oc-eval swe-v1-prolite` | 生成一个有界远程 Pro-Lite 切片并进行官方评测 | 有 |
+| `oc-eval swe-v1-prolite` | 生成并评测一组指定的远程 Pro-Lite 题目 | 有 |
 | `oc-eval final-report` | 验证并发布由两份已完成事实报告构成的比较结果 | 使用现有判定 |
-| `python -m opencollab_eval.commands.swe_eval_run` | 选择 Solver 并协调一个有界 Pro-Lite 批次 | 有 |
+| `python -m opencollab_eval.commands.swe_eval_run` | 选择 Solver 并运行一组指定的 Pro-Lite 题目 | 有 |
 
-`oc-eval run` 会报告候选是否已经生成，以及是否仍具备提交资格。其结果限于候选资格，SWE-bench 的 resolved 结果仍需经过官方评测。`oc-eval swe-v1-prolite` 和多 Solver 协调器均包含官方评测阶段。
+只需要生成候选记录时，使用 `oc-eval run`。这个命令不会把 SWE-bench 任务判为 resolved。需要运行官方测试时，使用 `oc-eval swe-v1-prolite` 或多 Solver 协调器。
 
 使用 `oc-eval --help` 和各子命令的帮助信息查看当前完整选项集。
 
 ## 数据集检查
 
-身份密钥是由评测器持有且恰好包含 32 个随机字节的文件。请将其与密封运行状态存放在一起。同一批次重试时应复用该密钥，使公开任务 ID 保持稳定。
+生成一个 32 字节的身份密钥，并把它和本次运行的私有文件放在一起。同一批次重试时继续使用这个密钥，这样公开任务 ID 不会改变。
 
 ```bash
 install -d -m 700 /sealed/opencollab-eval
@@ -385,11 +386,11 @@ oc-eval inspect /data/swe-batch-pro.jsonl \
   --image-repository registry.example/swe
 ```
 
-该命令验证有界 JSONL 输入，并输出匿名化的公开任务清单。它的职责限于检查，不会启动 Solver 或暴露密封的评判字段。
+这个命令检查 JSONL 输入，并输出使用匿名 ID 的任务清单。它不会启动 Solver，也不会打印私有评测字段。
 
 ## 通用候选生成
 
-通用引擎每行接受一个 JSON 对象。每行都必须提供 `task_id` 和 `description`，还可以提供 `repo_path`、`docker_image`、`timeout`、`max_tokens` 以及一个 `extras` 对象。
+`oc-eval run` 按行读取 JSON 对象。每行必须包含 `task_id` 和 `description`，还可以包含 `repo_path`、`docker_image`、`timeout`、`max_tokens` 和一个 `extras` 对象。
 
 ```json
 {"task_id":"example-1","description":"Fix the failing calculator test","repo_path":"/work/calculator"}
@@ -405,11 +406,11 @@ oc-eval run /data/tasks.jsonl \
   --concurrency 1
 ```
 
-提供方配置通过 OpenCollab 公开 API 解析。与在命令行中传递凭据相比，外部密钥存储或受保护的环境文件更合适。结果摘要会统计具备资格和未具备资格的候选，输出目录中会生成 `results.jsonl`。
+OpenCollab 通过公开 API 读取模型配置。API 密钥应放在密钥存储或受保护的环境文件中，避免写进命令行。命令会生成 `results.jsonl`，并报告有多少候选可以继续评测。
 
 ## 官方 SWE Pro-Lite 评测
 
-生产环境远程入口点会同步当前 OpenCollab 公开运行时和 OpenCollab-Eval 运行时，验证工作节点上的源码树身份，生成候选，等待进程进入静止状态，将候选投影到全新的官方工作区，运行声明的目标测试，并写入 JSON 和 Markdown 报告。
+`oc-eval swe-v1-prolite` 会把当前版本的 OpenCollab 和 OpenCollab-Eval 复制到工作节点，并在启动 Solver 前检查源码哈希。Solver 命令结束后，评测器会停止遗留进程，确认工作区已经静止，然后冻结工作区并构造补丁。补丁会被投影到干净的官方评测副本，生成的源码树通过核对后才会开始测试。命令最后写出 JSON 和 Markdown 报告。
 
 ```bash
 oc-eval swe-v1-prolite \
@@ -439,7 +440,7 @@ oc-eval swe-v1-prolite \
   --markdown-output /results/example-001.md
 ```
 
-准备新的工作节点时，先运行 `--dry-run`。试运行会验证配置和计划执行的工作，终结任务结果需要完成实际运行。提供方传输、Solver 选择、远程布局、重试、报告和失败处理的说明见 [Pro-Lite 运维指南](docs/zh-CN/swe-prolite-operations.md)。
+第一次配置工作节点时，先运行一次 `--dry-run`。它会检查配置、路径和任务选择，但不会生成任务结果。[Pro-Lite 运维指南](docs/zh-CN/swe-prolite-operations.md)介绍模型访问、Solver 选择、远程目录、重试、报告和失败处理。
 
 ## Solver 选择
 
@@ -471,29 +472,35 @@ python -m opencollab_eval.commands.swe_eval_run \
   --max-eval-attempts 1
 ```
 
-这个示例选择经过验证的 K3 配置，使用 1048576-token 上下文与 `reasoning_effort=high`。协调器会应用各 Solver 专属的默认设置。OpenHands 和 Claude Code 还要求安装各自的外部运行时。随附的 shell 资源充当这些运行时的适配器，两个产品仍由各自渠道提供。
+上面的命令使用 K3，上下文窗口为 1,048,576 token，并设置 `reasoning_effort=high`。协调器会补齐所选 Solver 的其余默认参数。OpenHands 和 Claude Code 需要单独安装，这个仓库中的 shell 适配器只负责调用它们。
 
 ## 结果与证据
 
-OpenCollab-Eval 区分五种状态。
+系统会跟踪最多三个阶段性状态。
 
-| 状态 | 含义 |
+| 阶段 | 含义 |
 | --- | --- |
 | 候选已生成 | 已提取一个非空补丁 |
 | 具备提交资格 | 候选和生命周期证据已通过生成检查 |
 | 评测完成 | 官方评测已生成绑定报告 |
-| Resolved 或 unresolved | 针对绑定候选执行声明的目标，并生成语义判定 |
-| 技术失败 | 系统无法建立可信的语义判定 |
 
-每项可发布结果都会绑定任务身份、运行身份、记录 ID、完整补丁 SHA-256、运行时身份、全新评测工作区、目标计划、命令证据、进程清理情况和官方报告。只有执行证据证明预期目标已经运行时，失败的目标才会判为 unresolved。导入失败、收集失败、不受支持的计划、日志缺失和身份不匹配均属于技术失败。
+官方评测结束后，每道题只会有三个终态之一。
 
-Python 目标使用由评测器持有的控制器和结构化的逐节点 Pytest 事件。Go 目标使用 `go test -json` 证据。JavaScript 目标使用各框架专用、由解析器支持的证据。不受支持的目标语法会直接判为技术失败。
+| 终态 | 含义 |
+| --- | --- |
+| Resolved | 指定目标针对绑定候选运行并全部通过 |
+| Unresolved | 指定目标已经运行，且至少有一个目标失败 |
+| 技术失败 | 评测没有产生可核验的题目结果 |
+
+每份报告都保存任务、运行和记录 ID，以及完整的补丁 SHA-256、运行时、目标计划、实际命令、清理结果和官方报告。这些信息用于确认测试使用的确实是本次生成的补丁。只有目标确实运行并失败，任务才会被记为 unresolved。导入错误、收集错误、不支持的计划、日志缺失和身份不匹配都属于技术失败。
+
+Python 测试由评测控制器启动，并按 Pytest 节点记录结构化事件。Go 测试通过 `go test -json` 检查。JavaScript 结果由对应测试框架的解析器读取。无法识别的目标语法会被记为技术失败。
 
 ## 文档
 
-[文档索引](docs/zh-CN/README.md) 按任务引导读者。最重要的指南包括 [入门指南](docs/zh-CN/getting-started.md)、[任务格式参考](docs/zh-CN/task-formats.md)、[Pro-Lite 运维指南](docs/zh-CN/swe-prolite-operations.md)、[架构指南](docs/zh-CN/architecture.md)、[评测完整性指南](docs/zh-CN/evaluation-integrity.md)、[CLI 参考](docs/zh-CN/cli-reference.md) 和 [故障排除指南](docs/zh-CN/troubleshooting.md)。
+先从[文档索引](docs/zh-CN/README.md)开始。第一次运行可以看[入门指南](docs/zh-CN/getting-started.md)和[任务格式参考](docs/zh-CN/task-formats.md)。远程 Pro-Lite 运行见[运维指南](docs/zh-CN/swe-prolite-operations.md)。其余细节分别写在[架构指南](docs/zh-CN/architecture.md)、[评测完整性指南](docs/zh-CN/evaluation-integrity.md)、[CLI 参考](docs/zh-CN/cli-reference.md)和[故障排除指南](docs/zh-CN/troubleshooting.md)中。
 
-[最终报告契约](docs/zh-CN/final-report.md) 介绍受证据约束的 100 项任务对比结果发布。[MIGRATION.zh-CN.md](MIGRATION.zh-CN.md) 规定仓库归属和 OpenCollab 公开 API 边界。[CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md) 介绍开发和审查要求。[SECURITY.zh-CN.md](SECURITY.zh-CN.md) 说明私密漏洞报告流程。
+[最终报告契约](docs/zh-CN/final-report.md)规定发布 100 题对比结果时需要哪些输入。[MIGRATION.zh-CN.md](MIGRATION.zh-CN.md)解释哪些代码属于 OpenCollab，哪些属于这里。[CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)介绍开发和审查流程。[SECURITY.zh-CN.md](SECURITY.zh-CN.md)说明如何私下报告安全漏洞。
 
 OpenCollab-Eval 依据 [木兰宽松许可证第 2 版](LICENSE) 发行。依赖项和署名详情记录在 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 中。
 
@@ -508,6 +515,6 @@ scripts/verify_wheel_contract.sh \
 scripts/run_deterministic_swe_e2e.sh --output /tmp/oce-e2e --runs 1
 ```
 
-wheel 契约会隔离安装两个发行包，并针对打包产物运行 Eval 测试套件。确定性 E2E 使用本地伪 OpenAI 兼容服务、临时 SSH、真实 `rsync`、Docker、可信候选提取和官方目标执行，整个过程无需提供方凭据。
+wheel 检查会在干净环境中安装两个发行包，并针对打包后的文件运行 Eval 测试。确定性 E2E 会启动本地伪模型服务和临时 SSH 服务，用真实 `rsync` 复制代码，并在 Docker 中运行任务。随后，它会提取补丁，运行官方 SWE-bench harness，检查最终报告，并确认自己创建的资源已经清理。整个过程不会调用外部模型。
 
 更改评测行为前，请阅读 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)。
