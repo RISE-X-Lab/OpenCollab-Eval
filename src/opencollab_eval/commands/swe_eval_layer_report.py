@@ -378,20 +378,6 @@ def _row_score(row: dict[str, Any], round_number: int) -> tuple[int, int]:
     return (1, round_number)
 
 
-def _eval_attempt_count(row: dict[str, Any]) -> int:
-    evaluation = row.get("eval") if isinstance(row.get("eval"), dict) else {}
-    if evaluation.get("executed") is False:
-        return 0
-    value = evaluation.get("attempt_count")
-    if isinstance(value, bool):
-        return 0
-    try:
-        count = int(value or 0)
-    except (TypeError, ValueError):
-        return 0
-    return max(0, count)
-
-
 def _compact_attempt(attempt: dict[str, Any]) -> dict[str, Any]:
     return {
         "round": attempt.get("round"),
@@ -411,7 +397,7 @@ def _compact_attempt(attempt: dict[str, Any]) -> dict[str, Any]:
         "filtered_patch_paths": attempt.get("filtered_patch_paths"),
         "direct_execution_proven": attempt.get("direct_execution_proven"),
         "report_path": attempt.get("report_path"),
-        "eval_attempt_count": _eval_attempt_count(attempt.get("row") or {}),
+        "eval_attempt_count": _integrity.eval_attempt_count(attempt.get("row") or {}),
     }
 
 
@@ -487,7 +473,9 @@ def build_report(
                 used_reports.append(path_text)
             attempts.append(observed)
     token_cost = _load_json(token_cost_path) if token_cost_path else {}
-    patch_identity_by_task: dict[str, tuple[str, str, tuple[str, ...]]] = {}
+    source_patch_by_task: dict[str, str] = {}
+    projection_identity_by_task: dict[str, tuple[str, tuple[str, ...]]] = {}
+    record_id_by_task: dict[str, str] = {}
     eval_attempts_by_task: dict[str, int] = {}
     indices_by_task: dict[str, set[int]] = defaultdict(set)
     tasks_by_index: dict[int, set[str]] = defaultdict(set)
@@ -497,25 +485,39 @@ def build_report(
         if isinstance(index, int):
             indices_by_task[task].add(index)
             tasks_by_index[index].add(task)
-        for reason in attempt.get("identity_reasons") or []:
-            _integrity.append_issue(task_issues, task, str(reason))
+        if not _integrity.successful_pre_eval_recovery(attempt, observed_attempts):
+            for reason in attempt.get("identity_reasons") or []:
+                _integrity.append_issue(task_issues, task, str(reason))
         patch_sha = str(attempt.get("patch_sha256") or "")
         if _is_declared_empty_patch(attempt) or _is_pending_dry_run(attempt):
             pass
         elif patch_sha:
-            patch_identity = (
-                patch_sha,
-                str(attempt.get("eval_patch_sha256") or ""),
-                tuple(attempt.get("filtered_patch_paths") or ()),
-            )
-            previous = patch_identity_by_task.get(task)
-            if previous and previous != patch_identity:
+            record_id = str(attempt.get("record_id") or "")
+            if record_id:
+                previous_record_id = record_id_by_task.get(task)
+                if previous_record_id and previous_record_id != record_id:
+                    _integrity.append_issue(task_issues, task, "candidate_identity_mismatch")
+                record_id_by_task[task] = record_id
+            previous_source = source_patch_by_task.get(task)
+            if previous_source and previous_source != patch_sha:
                 _integrity.append_issue(task_issues, task, "candidate_identity_mismatch")
-            patch_identity_by_task[task] = patch_identity
+            source_patch_by_task[task] = patch_sha
+            eval_patch_sha = str(attempt.get("eval_patch_sha256") or "")
+            if eval_patch_sha and "missing_trusted_generation_proof" not in (
+                attempt.get("identity_reasons") or ()
+            ):
+                projection_identity = (
+                    eval_patch_sha,
+                    tuple(attempt.get("filtered_patch_paths") or ()),
+                )
+                previous_projection = projection_identity_by_task.get(task)
+                if previous_projection and previous_projection != projection_identity:
+                    _integrity.append_issue(task_issues, task, "candidate_identity_mismatch")
+                projection_identity_by_task[task] = projection_identity
         else:
             _integrity.append_issue(task_issues, task, "missing_candidate_identity")
         eval_attempts_by_task[task] = (
-            eval_attempts_by_task.get(task, 0) + _eval_attempt_count(attempt["row"])
+            eval_attempts_by_task.get(task, 0) + _integrity.eval_attempt_count(attempt["row"])
         )
     for task, indices in indices_by_task.items():
         if len(indices) > 1:
@@ -579,7 +581,7 @@ def build_report(
                 if attempt["round"] <= max_rounds:
                     accepted_attempts.append(attempt)
                 continue
-            next_count = accepted_eval_attempts.get(task, 0) + _eval_attempt_count(attempt["row"])
+            next_count = accepted_eval_attempts.get(task, 0) + _integrity.eval_attempt_count(attempt["row"])
             if next_count > max_eval_attempts:
                 over_budget_evidence.setdefault(task, []).append(attempt)
                 continue
@@ -625,7 +627,9 @@ def build_report(
             ),
         )
         task_record["attempt_count"] = len(task_attempts)
-        task_record["eval_attempt_count"] = sum(_eval_attempt_count(attempt["row"]) for attempt in task_attempts)
+        task_record["eval_attempt_count"] = sum(
+            _integrity.eval_attempt_count(attempt["row"]) for attempt in task_attempts
+        )
         task_record["attempts"] = [_compact_attempt(attempt) for attempt in task_attempts]
         observed_attempts_for_task = [attempt for attempt in observed_attempts if attempt["task"] == task]
         task_record["observed_record_count"] = len(observed_attempts_for_task)
@@ -671,7 +675,7 @@ def build_report(
         "observed_eval_attempts": sum(eval_attempts_by_task.values()),
         "over_budget_tasks": len(over_budget_evidence),
         "over_budget_eval_attempts": sum(
-            _eval_attempt_count(attempt["row"])
+            _integrity.eval_attempt_count(attempt["row"])
             for task_attempts in over_budget_evidence.values()
             for attempt in task_attempts
         ),

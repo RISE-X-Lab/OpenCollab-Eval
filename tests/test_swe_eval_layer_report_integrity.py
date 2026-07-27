@@ -5,8 +5,10 @@ import sys
 
 from test_swe_eval_layer_report import (
     _as_verified_empty,
+    _assert_technical,
     _load_module,
     _row,
+    _sha,
     _write_json,
 )
 
@@ -135,6 +137,119 @@ def test_conflicting_terminal_verdict_is_deterministic_across_input_order(tmp_pa
         assert forward[key] == reverse[key]
     assert forward["resolved"] is None
     assert "conflicting_eval_verdicts" in forward["technical_reasons"]
+
+
+def test_verified_recovery_accepts_the_same_pre_eval_candidate(tmp_path):
+    module = _load_module()
+    failed = _row(1, "task-a", "/run/task-a.outer.log", 100, "would_eval")
+    failed["generation"]["status"] = "generation_failed"
+    failed["generation"].pop("submission_integrity", None)
+    failed["generation"].pop("trusted_patch_extraction", None)
+    failed["eval"] = {
+        "status": "skipped_generation_not_ready",
+        "task": "task-a",
+        "reason": "generation_not_ready",
+    }
+    recovered = _row(1, "task-a", "/run/task-a.outer.log", 100, "eval_done", True)
+    first = _write_json(tmp_path / "round1.json", {"rows": [failed]})
+    second = _write_json(tmp_path / "round2.json", {"rows": [recovered]})
+
+    report = module.build_report([first, second], max_rounds=2)
+
+    assert report["counts"]["resolved"] == 1
+    assert report["counts"]["technical_failed_final"] == 0
+    task = report["tasks"][0]
+    assert task["resolved"] is True
+    assert task["attempt_count"] == 2
+    assert task["eval_attempt_count"] == 1
+
+
+def test_verified_recovery_rejects_a_different_candidate(tmp_path):
+    module = _load_module()
+    failed = _row(1, "task-a", "/run/task-a.outer.log", 100, "would_eval")
+    failed["generation"]["status"] = "generation_failed"
+    failed["generation"].pop("submission_integrity", None)
+    failed["generation"].pop("trusted_patch_extraction", None)
+    failed["eval"] = {
+        "status": "skipped_generation_not_ready",
+        "task": "task-a",
+        "reason": "generation_not_ready",
+    }
+    recovered = _row(1, "task-a", "/run/task-a.outer.log", 100, "eval_done", True)
+    recovered["generation"].update(
+        record_id="different-record",
+        patch_sha256=_sha("different-patch"),
+        eval_patch_sha256=_sha("different-patch"),
+    )
+    recovered["eval"]["summary"].update(
+        record_id="different-record",
+        patch_sha256=_sha("different-patch"),
+        eval_patch_sha256=_sha("different-patch"),
+    )
+    first = _write_json(tmp_path / "round1.json", {"rows": [failed]})
+    second = _write_json(tmp_path / "round2.json", {"rows": [recovered]})
+
+    report = module.build_report([first, second], max_rounds=2)
+
+    _assert_technical(report, "candidate_identity_mismatch")
+
+
+def test_verified_recovery_rejects_record_drift_with_same_patch(tmp_path):
+    module = _load_module()
+    failed = _row(1, "task-a", "/run/task-a.outer.log", 100, "would_eval")
+    failed["generation"]["status"] = "generation_failed"
+    failed["generation"].pop("submission_integrity", None)
+    failed["generation"].pop("trusted_patch_extraction", None)
+    failed["eval"] = {
+        "status": "skipped_generation_not_ready",
+        "task": "task-a",
+        "reason": "generation_not_ready",
+    }
+    recovered = _row(1, "task-a", "/run/task-a.outer.log", 100, "eval_done", True)
+    recovered["generation"]["record_id"] = "different-record"
+    recovered["eval"]["summary"]["record_id"] = "different-record"
+    first = _write_json(tmp_path / "round1.json", {"rows": [failed]})
+    second = _write_json(tmp_path / "round2.json", {"rows": [recovered]})
+
+    report = module.build_report([first, second], max_rounds=2)
+
+    _assert_technical(report, "candidate_identity_mismatch")
+
+
+def test_verified_recovery_cannot_use_another_tasks_evidence(tmp_path):
+    module = _load_module()
+    failed = _row(1, "task-a", "/run/task-a.outer.log", 100, "would_eval")
+    failed["generation"]["status"] = "generation_failed"
+    failed["generation"].pop("submission_integrity", None)
+    failed["generation"].pop("trusted_patch_extraction", None)
+    failed["eval"] = {
+        "status": "skipped_generation_not_ready",
+        "task": "task-a",
+        "reason": "generation_not_ready",
+    }
+    task_a = _row(1, "task-a", "/run/task-a.outer.log", 100, "eval_done", True)
+    task_a["generation"]["record_id"] = "different-record"
+    task_a["eval"]["summary"]["record_id"] = "different-record"
+    task_b = _row(2, "task-b", "/run/task-b.outer.log", 100, "eval_done", True)
+    task_b["generation"].update(
+        record_id=failed["generation"]["record_id"],
+        patch_sha256=failed["generation"]["patch_sha256"],
+        eval_patch_sha256=failed["generation"]["patch_sha256"],
+    )
+    task_b["eval"]["summary"].update(
+        record_id=failed["generation"]["record_id"],
+        patch_sha256=failed["generation"]["patch_sha256"],
+        eval_patch_sha256=failed["generation"]["patch_sha256"],
+    )
+    first = _write_json(tmp_path / "round1.json", {"rows": [failed]})
+    second = _write_json(tmp_path / "round2.json", {"rows": [task_a, task_b]})
+
+    report = module.build_report([first, second], max_rounds=2)
+
+    by_task = {task["task"]: task for task in report["tasks"]}
+    assert by_task["task-a"]["resolved"] is None
+    assert by_task["task-a"]["technical_failed"] is True
+    assert "candidate_identity_mismatch" in by_task["task-a"]["technical_reasons"]
 
 
 def test_single_report_without_record_identity_is_technical(tmp_path):

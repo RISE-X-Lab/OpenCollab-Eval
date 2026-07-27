@@ -236,6 +236,50 @@ def strict_index(value: Any) -> int | None:
     return None
 
 
+def eval_attempt_count(row: dict[str, Any]) -> int:
+    """Return the number of genuine official-eval starts represented by one row."""
+    evaluation = row.get("eval") if isinstance(row.get("eval"), dict) else {}
+    if evaluation.get("executed") is False:
+        return 0
+    value = evaluation.get("attempt_count")
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def successful_pre_eval_recovery(
+    attempt: dict[str, Any],
+    observed_attempts: list[dict[str, Any]],
+) -> bool:
+    """Return whether a later verified eval supersedes a pre-eval classification failure."""
+    if eval_attempt_count(attempt["row"]) or not attempt.get("record_id") or not attempt.get("patch_sha256"):
+        return False
+    raw_eval = attempt["row"].get("eval")
+    if not isinstance(raw_eval, dict) or raw_eval.get("status") != "skipped_generation_not_ready":
+        return False
+    recoverable = {
+        "unexpected_generation_status:generation_failed",
+        "missing_trusted_generation_proof",
+    }
+    identity_reasons = set(attempt.get("identity_reasons") or ())
+    if not identity_reasons or not identity_reasons.issubset(recoverable):
+        return False
+    return any(
+        candidate.get("round", 0) > attempt.get("round", 0)
+        and candidate.get("task") == attempt["task"]
+        and candidate.get("record_id") == attempt["record_id"]
+        and candidate.get("patch_sha256") == attempt["patch_sha256"]
+        and candidate.get("generation_status") == "generation_done"
+        and candidate.get("eval_success") is True
+        and candidate.get("direct_execution_proven") is True
+        and not candidate.get("identity_reasons")
+        for candidate in observed_attempts
+    )
+
+
 def append_issue(container: dict[Any, list[str]], key: Any, reason: str) -> None:
     """Add one deterministic technical reason without duplicates."""
     reasons = container.setdefault(key, [])

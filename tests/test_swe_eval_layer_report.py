@@ -462,6 +462,7 @@ def test_eval_layer_report_allows_verified_empty_patch_before_rerun(tmp_path):
     first = _as_verified_empty(
         _row(1, "task-a", "/run/task-a.outer.log", 0, "skipped_empty_patch")
     )
+    first["generation"]["record_id"] = "record-task-a-empty"
     second = _row(1, "task-a", "/run/task-a-rerun.outer.log", 100, "eval_done", True)
     first_path = _write_json(tmp_path / "first.json", {"rows": [first]})
     second_path = _write_json(tmp_path / "second.json", {"rows": [second]})
