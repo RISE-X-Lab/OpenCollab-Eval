@@ -159,6 +159,10 @@ class _BoundedHashReader:
         return data
 
 
+class _WorkspaceArchiveTruncated(RuntimeError):
+    """The Docker archive stream ended before one complete workspace arrived."""
+
+
 def _member_parts(name: str) -> tuple[str, ...]:
     if "\x00" in name:
         raise RuntimeError("container workspace archive contains a NUL path")
@@ -246,7 +250,9 @@ def _extract_member(
         while written < member.size:
             chunk = source.read(min(1024 * 1024, member.size - written))
             if not chunk:
-                raise RuntimeError("container workspace archive file payload is truncated")
+                raise _WorkspaceArchiveTruncated(
+                    "container workspace archive file payload is truncated"
+                )
             view = memoryview(chunk)
             while view:
                 count = os.write(fd, view)
@@ -332,6 +338,12 @@ def _copy_workspace_archive(container_id: str, root: Path) -> tuple[str, int, in
         while reader.read(1024 * 1024):
             pass
         returncode = process.wait(timeout=5)
+    except tarfile.ReadError as exc:
+        process.kill()
+        process.wait()
+        raise _WorkspaceArchiveTruncated(
+            f"container workspace archive stream is truncated: {exc}"
+        ) from exc
     except BaseException:
         process.kill()
         process.wait()
@@ -344,6 +356,42 @@ def _copy_workspace_archive(container_id: str, root: Path) -> tuple[str, int, in
     if returncode != 0:
         raise RuntimeError(f"docker cp workspace archive failed with exit {returncode}")
     return reader.digest.hexdigest(), reader.count, entries, extracted
+
+
+def _copy_frozen_workspace(
+    container_id: str,
+    parent: Path,
+    name: str = "workspace",
+) -> tuple[Path, tuple[str, int, int, int]]:
+    destination = parent / name
+    if destination.exists():
+        raise RuntimeError("trusted workspace copy destination already exists")
+    for attempt in range(2):
+        root = parent / f".{name}-copy-{attempt + 1}"
+        root.mkdir()
+        try:
+            if attempt:
+                require_container_quiescence(container_id)
+            with frozen_container(container_id):
+                archive = _copy_workspace_archive(container_id, root)
+            require_container_quiescence(container_id)
+        except _WorkspaceArchiveTruncated:
+            _discard_incomplete_workspace(root)
+            if attempt:
+                raise
+            continue
+        except BaseException:
+            _discard_incomplete_workspace(root)
+            raise
+        root.rename(destination)
+        return destination, archive
+    raise AssertionError("workspace archive retry loop did not terminate")
+
+
+def _discard_incomplete_workspace(root: Path) -> None:
+    shutil.rmtree(root)
+    if os.path.lexists(root):
+        raise RuntimeError("incomplete workspace archive copy could not be discarded")
 
 
 def _git_environment(home: Path, template: Path) -> dict[str, str]:
@@ -467,14 +515,8 @@ def prepare_trusted_patch_baseline(
     temporary_directory = tempfile.TemporaryDirectory(prefix="opencollab-trusted-base-")
     temp_root = Path(temporary_directory.name)
     try:
-        root = temp_root / "workspace"
-        root.mkdir()
-        with frozen_container(container_id):
-            archive_sha, archive_bytes, entries, extracted_bytes = _copy_workspace_archive(
-                container_id,
-                root,
-            )
-        require_container_quiescence(container_id)
+        root, archive = _copy_frozen_workspace(container_id, temp_root)
+        archive_sha, archive_bytes, entries, extracted_bytes = archive
         _strip_nested_git_metadata(root)
         source_git = root / ".git"
         if not source_git.is_dir() or source_git.is_symlink():
@@ -591,14 +633,8 @@ def extract_patch_trusted(
         ) from exc
     try:
         with tempfile.TemporaryDirectory(prefix="opencollab-workspace-copy-") as temp:
-            root = Path(temp) / "workspace"
-            root.mkdir()
-            with frozen_container(container_id):
-                archive_sha, archive_bytes, entries, extracted = _copy_workspace_archive(
-                    container_id,
-                    root,
-                )
-            require_container_quiescence(container_id)
+            root, archive = _copy_frozen_workspace(container_id, Path(temp))
+            archive_sha, archive_bytes, entries, extracted = archive
             candidate = _construct_candidate_from_copy(root, baseline)
             patch = candidate.patch
     except WorkspaceIntegrityError:

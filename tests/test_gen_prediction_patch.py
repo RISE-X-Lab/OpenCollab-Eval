@@ -654,6 +654,110 @@ def test_extract_requires_quiescence_before_and_after_copy(
     assert calls == 2
 
 
+def test_workspace_copy_retries_a_truncated_archive_in_a_fresh_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    roots: list[Path] = []
+    quiescence_calls = 0
+
+    def copy(_container: str, root: Path) -> tuple[str, int, int, int]:
+        roots.append(root)
+        (root / "partial").write_text("discard me", encoding="utf-8")
+        if len(roots) == 1:
+            raise patcher._WorkspaceArchiveTruncated("unexpected end of data")
+        (root / "complete").write_text("keep me", encoding="utf-8")
+        return "c" * 64, 10, 2, 14
+
+    def quiesce(_container: str) -> None:
+        nonlocal quiescence_calls
+        quiescence_calls += 1
+
+    monkeypatch.setattr(patcher, "_copy_workspace_archive", copy)
+    monkeypatch.setattr(patcher, "require_container_quiescence", quiesce)
+    monkeypatch.setattr(patcher, "frozen_container", lambda _container: nullcontext())
+
+    root, archive = patcher._copy_frozen_workspace("cid", tmp_path)
+
+    assert archive == ("c" * 64, 10, 2, 14)
+    assert len(roots) == 2
+    assert roots[0] != roots[1]
+    assert not roots[0].exists()
+    assert root == tmp_path / "workspace"
+    assert (root / "complete").read_text(encoding="utf-8") == "keep me"
+    assert quiescence_calls == 2
+
+
+def test_workspace_copy_discards_both_truncated_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    roots: list[Path] = []
+
+    def copy(_container: str, root: Path) -> tuple[str, int, int, int]:
+        roots.append(root)
+        (root / "partial").write_text("discard me", encoding="utf-8")
+        raise patcher._WorkspaceArchiveTruncated("unexpected end of data")
+
+    monkeypatch.setattr(patcher, "_copy_workspace_archive", copy)
+    monkeypatch.setattr(patcher, "require_container_quiescence", lambda _container: None)
+    monkeypatch.setattr(patcher, "frozen_container", lambda _container: nullcontext())
+
+    with pytest.raises(patcher._WorkspaceArchiveTruncated, match="unexpected end"):
+        patcher._copy_frozen_workspace("cid", tmp_path)
+
+    assert len(roots) == 2
+    assert not any(root.exists() for root in roots)
+    assert not (tmp_path / "workspace").exists()
+
+
+def test_workspace_copy_does_not_retry_a_policy_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls = 0
+
+    def copy(_container: str, root: Path) -> tuple[str, int, int, int]:
+        nonlocal calls
+        calls += 1
+        (root / "partial").write_text("discard me", encoding="utf-8")
+        raise RuntimeError("container workspace archive exceeded its byte limit")
+
+    monkeypatch.setattr(patcher, "_copy_workspace_archive", copy)
+    monkeypatch.setattr(patcher, "frozen_container", lambda _container: nullcontext())
+
+    with pytest.raises(RuntimeError, match="byte limit"):
+        patcher._copy_frozen_workspace("cid", tmp_path)
+
+    assert calls == 1
+    assert not (tmp_path / ".workspace-copy-1").exists()
+
+
+def test_workspace_copy_stops_when_a_truncated_attempt_cannot_be_discarded(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls = 0
+
+    def copy(_container: str, root: Path) -> tuple[str, int, int, int]:
+        nonlocal calls
+        calls += 1
+        (root / "partial").write_text("discard me", encoding="utf-8")
+        raise patcher._WorkspaceArchiveTruncated("unexpected end of data")
+
+    def refuse_cleanup(_root: Path) -> None:
+        raise PermissionError("cleanup refused")
+
+    monkeypatch.setattr(patcher, "_copy_workspace_archive", copy)
+    monkeypatch.setattr(patcher, "frozen_container", lambda _container: nullcontext())
+    monkeypatch.setattr(patcher.shutil, "rmtree", refuse_cleanup)
+
+    with pytest.raises(PermissionError, match="cleanup refused"):
+        patcher._copy_frozen_workspace("cid", tmp_path)
+
+    assert calls == 1
+
+
 def test_trusted_baseline_rejects_workspace_digest_drift(monkeypatch: pytest.MonkeyPatch) -> None:
     snapshot = SolverGitSnapshot(
         "a" * 40, "b" * 40, 1, 0, 0, 1, workspace_sha256="0" * 64
