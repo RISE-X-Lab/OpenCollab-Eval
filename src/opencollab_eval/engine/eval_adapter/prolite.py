@@ -12,7 +12,9 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
-from opencollab_eval.benchmarks.public_issue import compose_public_issue
+from opencollab_eval.benchmarks.task_specification import (
+    compose_task_specification,
+)
 from opencollab_eval.engine.eval_adapter.models import (
     PatchCandidate,
     TaskSpec,
@@ -53,7 +55,7 @@ def task_spec_from_row(
     raw_problem = _first_string(
         row, "problem_statement", "problem", "description"
     )
-    problem_statement = compose_public_issue(
+    problem_statement = compose_task_specification(
         {**row, "problem_statement": raw_problem}
     )
     service_dependencies = _service_dependencies(row, instance_id, repo, docker_image)

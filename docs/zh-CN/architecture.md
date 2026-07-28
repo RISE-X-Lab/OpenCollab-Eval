@@ -223,7 +223,8 @@ judge view。dataset-specific parsing 应放在 `benchmarks` 或
 `engine.eval_adapter` 下。
 
 新的 workflow 应只使用 documented OpenCollab public import，并放在
-`workflows` 下。其 task input 应包含 public issue information。
+`workflows` 下。其 task input 应包含完整的 benchmark task specification。
+generation adapter 必须保留每个 Solver 可见字段。
 
 新的 external Solver 应复用 disposable snapshot preparation、process
 quiescence 和共享 candidate constructor。它的 sidecar 应报告 usage 和

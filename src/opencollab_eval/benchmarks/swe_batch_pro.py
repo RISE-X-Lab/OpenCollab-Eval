@@ -13,7 +13,7 @@ from typing import Any
 
 from opencollab_eval.contracts import BenchmarkTask, JudgeSpec, PublicTask
 
-from .public_issue import compose_public_issue
+from .task_specification import compose_task_specification
 
 MAX_DATASET_BYTES = 64 * 1024 * 1024
 
@@ -78,7 +78,7 @@ def task_from_row(
     )
     if not instance_id or not repo or not raw_problem:
         raise ValueError("task row requires instance_id, repo, and problem statement")
-    problem = compose_public_issue(
+    problem = compose_task_specification(
         {**row, "problem_statement": raw_problem}
     )
     public_id = "solver-" + hmac.new(identity_key, instance_id.encode(), hashlib.sha256).hexdigest()[:32]

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from opencollab_eval.benchmarks.public_issue import compose_public_issue
+from opencollab_eval.benchmarks.task_specification import (
+    compose_task_specification,
+)
 from opencollab_eval.generation import gen_prediction_openhands as gpo
 
 
@@ -38,12 +40,12 @@ from opencollab_eval.generation import gen_prediction_openhands as gpo
         ),
     ],
 )
-def test_compose_public_issue(instance: dict, expected: str) -> None:
-    assert compose_public_issue(instance) == expected
+def test_compose_task_specification(instance: dict, expected: str) -> None:
+    assert compose_task_specification(instance) == expected
 
 
-def test_compose_public_issue_ignores_sealed_fields() -> None:
-    issue = compose_public_issue(
+def test_compose_task_specification_ignores_sealed_fields() -> None:
+    issue = compose_task_specification(
         {
             "problem_statement": "Fix it.",
             "requirements": "Keep compatibility.",
@@ -58,7 +60,7 @@ def test_compose_public_issue_ignores_sealed_fields() -> None:
     assert issue == "Fix it.\n\nRequirements:\nKeep compatibility."
 
 
-def test_openhands_prompt_and_solver_instance_receive_complete_public_issue() -> None:
+def test_openhands_prompt_and_solver_instance_receive_complete_task_specification() -> None:
     original_identity = "private-instance"
     public_identity = "solver-" + "a" * 32
     instance = {
@@ -75,12 +77,12 @@ def test_openhands_prompt_and_solver_instance_receive_complete_public_issue() ->
 
     prompt = gpo._prompt(instance, container_id="container-123")
     solver_instance = gpo._solver_instance(instance, public_identity)
-    for public_text in (
+    for task_text in (
         "Requirements:\nThe widget must accept empty input.",
         "New interfaces introduced:\nparse_widget(text: str) -> Widget",
     ):
-        assert public_text in prompt
-        assert public_text in solver_instance["problem_statement"]
+        assert task_text in prompt
+        assert task_text in solver_instance["problem_statement"]
     assert solver_instance["instance_id"] == public_identity
     assert solver_instance["hints_text"] == "Inspect parser.py."
     assert all(

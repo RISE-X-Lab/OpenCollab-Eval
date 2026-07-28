@@ -15,11 +15,11 @@ import tempfile
 import time
 from pathlib import Path
 
-from opencollab_eval.benchmarks.public_issue import (  # noqa: E402
-    compose_public_issue,
+from opencollab_eval.benchmarks.task_specification import (  # noqa: E402
+    compose_task_specification,
 )
-from opencollab_eval.benchmarks.public_issue import (  # noqa: E402
-    solver_public_instance as _solver_instance,
+from opencollab_eval.benchmarks.task_specification import (  # noqa: E402
+    solver_task_instance as _solver_instance,
 )
 from opencollab_eval.engine.swe_generation_proof import (  # noqa: E402
     current_generation_proof_valid,
@@ -69,7 +69,7 @@ def _prompt(instance: dict, *, container_id: str) -> str:
     hints_block = f"\n## Hints\n{hints}\n" if hints else "\n"
     return DEFAULT_PROMPT.format(
         repo=instance.get("repo") or "",
-        problem_statement=compose_public_issue(instance),
+        problem_statement=compose_task_specification(instance),
         hints_block=hints_block,
         container_id=container_id,
         workspace=gp.DOCKER_WORKDIR,

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 
-from opencollab_eval.benchmarks.public_issue import compose_public_issue
+from opencollab_eval.benchmarks.task_specification import (
+    compose_task_specification,
+)
 
 BLIND_BY_DEFAULT_WORKFLOWS = {"validation-council-solve", "swe-committee-v2"}
 
@@ -19,7 +21,7 @@ def _fail_to_pass_ids(instance: dict) -> list[str]:
 
 def build_task(instance: dict, *, include_fail_to_pass: bool = True) -> str:
     """Build the solver prompt, optionally including official grading ids."""
-    problem = compose_public_issue(instance)
+    problem = compose_task_specification(instance)
     hints = (instance.get("hints_text") or "").strip()
     hints_block = (
         f"\n## Hints (from the issue discussion — may help locate the cause)\n{hints}\n"

@@ -17,7 +17,9 @@ below and a small set of legacy aliases defined in
 | --- | --- | --- |
 | `instance_id` | Sealed | Original benchmark identity |
 | `repo` | Public | Repository name |
-| `problem_statement` | Public | Solver goal |
+| `problem_statement` | Public | Main issue description |
+| `requirements` | Public | Required behavior and acceptance criteria |
+| `interface` | Public | Introduced or changed interfaces |
 | `base_commit` | Sealed | Trusted source revision |
 | `docker_image` | Sealed | Complete evaluation image name |
 | `dockerhub_tag` | Sealed | Image tag used with `--image-repository` |
@@ -31,6 +33,10 @@ The normalizer rejects a public hint or metadata value that contains an
 instance ID, base commit, image, target, test patch, or another sealed value.
 The public task ID is a keyed HMAC-derived identifier such as
 `solver-0123456789abcdef0123456789abcdef`.
+
+The adapter always combines `problem_statement`, `requirements`, and
+`interface` into the complete Solver task specification. A generation adapter
+must not silently drop either of the latter two fields.
 
 `oc-eval inspect` reads at most 64 MiB and requires a raw 32-byte key.
 
