@@ -30,6 +30,7 @@ from opencollab_eval.generation.claude_code_sidecar import relay_socket_path
 from opencollab_eval.usage import model_context_window
 
 from .ssh_reverse_proxy import remove_stale_remote_socket
+from .swe_v1_prolite_config import url_with_healthz
 
 WORKSPACE_ROOT = Path(
     os.environ.get("OPENCOLLAB_EVAL_WORKSPACE", Path.cwd())
@@ -237,6 +238,7 @@ def _remote_proxy_healthy(
         "import json,sys,urllib.request;"
         "v=json.load(urllib.request.urlopen(sys.argv[1],timeout=5));"
         "raise SystemExit(0 if v.get('kind')=='authenticated_model_relay' "
+        "and v.get('aggregate_chat_stream') is True "
         "and v.get('upstream_base_url_sha256')==sys.argv[2] else 3)"
     )
     command = [
@@ -247,7 +249,7 @@ def _remote_proxy_healthy(
         "ConnectTimeout=10",
         host,
         shlex.join(
-            ["python3", "-c", probe, base_url.rstrip("/") + "/healthz", expected]
+            ["python3", "-c", probe, url_with_healthz(base_url), expected]
         ),
     ]
     try:
@@ -286,6 +288,7 @@ def _remote_proxy_socket_healthy(
             "assert len(body) == length",
             "value=json.loads(body)",
             "assert value.get('kind') == 'authenticated_model_relay'",
+            "assert value.get('aggregate_chat_stream') is True",
             "assert value.get('upstream_base_url_sha256') == expected",
         )
     )
@@ -322,11 +325,12 @@ def _remove_stale_remote_proxy_socket(
 
 def _local_relay_healthy(base_url: str, upstream_base_url: str) -> bool:
     try:
-        with urllib.request.urlopen(base_url.rstrip("/") + "/healthz", timeout=5) as response:
+        with urllib.request.urlopen(url_with_healthz(base_url), timeout=5) as response:
             payload = json.load(response)
         expected = hashlib.sha256(upstream_base_url.rstrip("/").encode()).hexdigest()
         return (
             payload.get("kind") == "authenticated_model_relay"
+            and payload.get("aggregate_chat_stream") is True
             and payload.get("upstream_base_url_sha256") == expected
         )
     except (OSError, ValueError, urllib.error.URLError):
@@ -364,6 +368,7 @@ def _ensure_local_proxy_agent(
             str(port),
             "--upstream-base-url",
             upstream_base_url,
+            "--aggregate-chat-stream",
         ],
         stdout_path=output_dir / "llm-proxy.launch.stdout.log",
         stderr_path=output_dir / "llm-proxy.launch.stderr.log",

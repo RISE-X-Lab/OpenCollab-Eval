@@ -538,6 +538,7 @@ def test_local_model_relay_launches_without_putting_api_key_in_plist(
     assert result["status"] == "started"
     program = written[0]["ProgramArguments"]
     assert "opencollab_eval.commands.llm_api_proxy" in program
+    assert "--aggregate-chat-stream" in program
     assert "/private/tmp/kimi.env" in program
     assert not any(argument.startswith("sk-") for argument in program)
 
@@ -582,13 +583,15 @@ def test_remote_relay_health_binds_the_expected_upstream(monkeypatch: Any) -> No
     assert module._remote_proxy_healthy(
         ssh_command="ssh",
         host="host",
-        base_url="http://127.0.0.1:18789",
+        base_url="http://127.0.0.1:18789/v1",
         upstream_base_url="https://api.kimi.com/coding/v1",
     )
     joined = " ".join(captured["command"])
     expected = hashlib.sha256(b"https://api.kimi.com/coding/v1").hexdigest()
     assert expected in joined
     assert "upstream_base_url_sha256" in joined
+    assert "http://127.0.0.1:18789/healthz" in joined
+    assert "http://127.0.0.1:18789/v1/healthz" not in joined
     assert subprocess.run(["sh", "-n", "-c", captured["command"][-1]], check=False).returncode == 0
 
 

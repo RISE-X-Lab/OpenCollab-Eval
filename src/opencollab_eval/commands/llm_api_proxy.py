@@ -14,6 +14,11 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from opencollab_eval.commands.llm_api_stream import (
+    ChatStreamError,
+    aggregate_chat_stream,
+    streaming_chat_request,
+)
 from opencollab_eval.commands.swe_v1_prolite_config import load_shell_env
 
 MAX_REQUEST_BYTES = 32 * 1024 * 1024
@@ -26,6 +31,7 @@ class ProxyConfig:
     upstream_api_key: str
     upstream_base_url: str
     timeout: float
+    aggregate_chat_stream: bool = False
 
 
 def _required(values: dict[str, str], *names: str) -> str:
@@ -106,6 +112,7 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                 {
                     "status": "ok",
                     "kind": "authenticated_model_relay",
+                    "aggregate_chat_stream": config.aggregate_chat_stream,
                     "upstream_base_url_sha256": upstream_base_url_sha256(config),
                 },
             )
@@ -124,8 +131,19 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                 self._json(413, {"error": "invalid_request_size"})
                 return
             body = self.rfile.read(length)
+            aggregate_stream = False
+            expected_model = ""
             try:
                 url = _upstream_url(config.upstream_base_url, self.path)
+                if config.aggregate_chat_stream and urllib.parse.urlsplit(self.path).path in {
+                    "/chat/completions",
+                    "/v1/chat/completions",
+                }:
+                    try:
+                        body, aggregate_stream, expected_model = streaming_chat_request(body)
+                    except ChatStreamError:
+                        self._json(400, {"error": "invalid_chat_request"})
+                        return
                 headers = {
                     "Authorization": f"Bearer {config.upstream_api_key}",
                     "x-api-key": config.upstream_api_key,
@@ -145,6 +163,31 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                 self._json(502, {"error": "upstream_request_failed"})
                 return
             with response:
+                if aggregate_stream and int(response.status) < 400:
+                    if "text/event-stream" not in response.headers.get("Content-Type", ""):
+                        self._json(502, {"error": "invalid_upstream_stream"})
+                        return
+                    try:
+                        payload = aggregate_chat_stream(
+                            response,
+                            byte_limit=MAX_RESPONSE_BYTES,
+                            timeout=config.timeout,
+                            expected_model=expected_model,
+                        )
+                    except (ChatStreamError, OSError):
+                        self._json(502, {"error": "invalid_upstream_stream"})
+                        return
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    request_id = response.headers.get("x-request-id", "")
+                    if request_id:
+                        self.send_header("x-request-id", request_id)
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    self.close_connection = True
+                    self.wfile.write(payload)
+                    return
                 self.send_response(int(response.status))
                 self.send_header(
                     "Content-Type",
@@ -179,6 +222,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", required=True, type=int)
     parser.add_argument("--upstream-base-url", default="")
     parser.add_argument("--timeout", type=float, default=900.0)
+    parser.add_argument("--aggregate-chat-stream", action="store_true")
     return parser
 
 
@@ -187,6 +231,14 @@ def main() -> int:
     if args.host not in {"127.0.0.1", "::1", "localhost"}:
         raise SystemExit("proxy host must be loopback")
     config = load_proxy_config(args.env_file, upstream_base_url=args.upstream_base_url, timeout=args.timeout)
+    if args.aggregate_chat_stream:
+        config = ProxyConfig(
+            client_token=config.client_token,
+            upstream_api_key=config.upstream_api_key,
+            upstream_base_url=config.upstream_base_url,
+            timeout=config.timeout,
+            aggregate_chat_stream=True,
+        )
     server = ThreadingHTTPServer((args.host, args.port), make_handler(config))
     server.daemon_threads = True
     try:

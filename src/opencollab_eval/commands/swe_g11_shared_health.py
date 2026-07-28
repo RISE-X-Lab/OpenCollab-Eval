@@ -23,6 +23,15 @@ from opencollab_eval.engine.solver_backend import (
 _REMOTE_ERROR_TYPES = frozenset({"access_terminated_error"})
 
 
+def response_model_matches(provider: str, requested: str, actual: object) -> bool:
+    """Require the selected model identity, retaining documented Kimi aliases."""
+    if provider == "openai" and is_kimi_direct_model(requested):
+        return kimi_response_model_matches(requested, actual)
+    requested_model = requested.strip().lower()
+    actual_model = str(actual or "").strip().lower()
+    return bool(requested_model) and actual_model == requested_model
+
+
 class SharedProbeFailure(RuntimeError):
     """A shared-service request was issued and returned failed evidence."""
 
@@ -189,15 +198,39 @@ except Exception:
 if provider == "anthropic":
     valid=bool(value.get("content"))
     thinking_proven=not thinking or any(item.get("type") == "thinking" for item in value.get("content",[]))
+    thinking_request_bound=thinking_proven
 else:
     valid=isinstance(value.get("choices"),list) and bool(value["choices"])
     message=value["choices"][0].get("message",{}) if valid else {}
-    thinking_proven=not thinking or bool(message.get("reasoning_content"))
+    if not thinking:
+        thinking_evidence="not_requested"
+        thinking_request_bound=True
+        thinking_proven=True
+    elif message.get("reasoning_content"):
+        thinking_evidence="response_reasoning_content"
+        thinking_request_bound=True
+        thinking_proven=True
+    elif isinstance(json.loads(options_text).get("reasoning_effort"),str):
+        thinking_evidence="requested_reasoning_effort"
+        thinking_request_bound=True
+        thinking_proven=False
+    elif json.loads(options_text):
+        thinking_evidence="requested_thinking_config"
+        thinking_request_bound=True
+        thinking_proven=False
+    else:
+        thinking_evidence="missing"
+        thinking_request_bound=False
+        thinking_proven=False
 actual_model=value.get("model")
-valid=valid and thinking_proven
+valid=valid and (thinking_proven if provider == "anthropic" else thinking_request_bound)
 print(json.dumps({
     "status":"ok" if valid else "invalid_response",
     "thinking_proven":thinking_proven,
+    "thinking_request_bound":thinking_request_bound,
+    "thinking_evidence":thinking_evidence if provider != "anthropic" else (
+        "response_thinking_block" if thinking else "not_requested"
+    ),
     "actual_model":actual_model,
 }))
 raise SystemExit(0 if valid else 3)
@@ -254,10 +287,10 @@ raise SystemExit(0 if valid else 3)
     error_type = payload.get("error_type")
     if not isinstance(error_type, str) or error_type not in _REMOTE_ERROR_TYPES:
         error_type = None
-    model_matches = (
-        kimi_response_model_matches(config.llm_model, actual_model)
-        if config.llm_provider == "openai" and is_kimi_direct_model(config.llm_model)
-        else bool(actual_model)
+    model_matches = response_model_matches(
+        config.llm_provider,
+        config.llm_model,
+        actual_model,
     )
     summary = {
         "status": payload.get("status"),
@@ -271,6 +304,8 @@ raise SystemExit(0 if valid else 3)
         "model_matches": model_matches,
         "thinking_enabled": thinking,
         "thinking_proven": payload.get("thinking_proven") is True,
+        "thinking_request_bound": payload.get("thinking_request_bound") is True,
+        "thinking_evidence": payload.get("thinking_evidence"),
         "base_url_sha256": hashlib.sha256(config.remote_proxy_base_url.encode()).hexdigest(),
     }
     if result.returncode != 0 or summary["status"] != "ok" or not summary["model_matches"]:
@@ -284,6 +319,7 @@ raise SystemExit(0 if valid else 3)
 __all__ = [
     "SharedProbeFailure",
     "remote_health_script",
+    "response_model_matches",
     "run_remote_health_checks",
     "run_remote_model_probe",
 ]

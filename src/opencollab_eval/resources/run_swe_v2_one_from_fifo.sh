@@ -173,5 +173,5 @@ else
     --max-steps "$SWE_MAX_STEPS" \
     --timeout "$SWE_TIMEOUT" \
     "${llm_args[@]}" \
-    "${checkpoint_args[@]}" 2>&1 | tee -a "$RUN/generation_logs/$IID.log"
+    ${checkpoint_args[@]+"${checkpoint_args[@]}"} 2>&1 | tee -a "$RUN/generation_logs/$IID.log"
 fi

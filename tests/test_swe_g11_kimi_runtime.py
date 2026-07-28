@@ -247,6 +247,91 @@ def test_remote_model_probe_does_not_send_claude_identity_to_openai(
     assert "claude-cli/" not in " ".join(captured["command"])
 
 
+def test_remote_model_probe_requires_exact_non_kimi_model_identity(
+    monkeypatch, tmp_path
+):
+    module = _load_module()
+    config = module.resolve_config(
+        _args(
+            output_dir=tmp_path,
+            llm_provider="openai",
+            llm_model="gpt-5.6-sol",
+            workflow_env=[
+                "OPENCOLLAB_THINKING=true",
+                'OPENCOLLAB_THINKING_PARAMS={"reasoning_effort":"xhigh"}',
+            ],
+        )
+    )
+    monkeypatch.setattr(module, "get_proxy_token", lambda _path: "client-token")
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda command, **_kwargs: module.subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(
+                {
+                    "status": "ok",
+                    "thinking_proven": False,
+                    "thinking_request_bound": True,
+                    "thinking_evidence": "requested_reasoning_effort",
+                    "actual_model": "gpt-5.6",
+                }
+            ),
+            stderr="",
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="remote model probe failed"):
+        module.run_remote_model_probe(config)
+
+
+def test_remote_model_probe_records_hidden_reasoning_effort_request(
+    monkeypatch, tmp_path
+):
+    module = _load_module()
+    config = module.resolve_config(
+        _args(
+            output_dir=tmp_path,
+            llm_provider="openai",
+            llm_model="gpt-5.6-sol",
+            workflow_env=[
+                "OPENCOLLAB_THINKING=true",
+                'OPENCOLLAB_THINKING_PARAMS={"reasoning_effort":"xhigh"}',
+            ],
+        )
+    )
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured.update(command=command, kwargs=kwargs)
+        return module.subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(
+                {
+                    "status": "ok",
+                    "thinking_proven": False,
+                    "thinking_request_bound": True,
+                    "thinking_evidence": "requested_reasoning_effort",
+                    "actual_model": "gpt-5.6-sol",
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(module, "get_proxy_token", lambda _path: "client-token")
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    result = module.run_remote_model_probe(config)
+
+    assert result["model_matches"] is True
+    assert result["thinking_proven"] is False
+    assert result["thinking_request_bound"] is True
+    assert result["thinking_evidence"] == "requested_reasoning_effort"
+    assert '"reasoning_effort":"xhigh"' in " ".join(captured["command"])
+
+
 def test_remote_model_probe_reads_kimi_key_only_on_remote(monkeypatch, tmp_path):
     module = _load_module()
     config = module.resolve_config(

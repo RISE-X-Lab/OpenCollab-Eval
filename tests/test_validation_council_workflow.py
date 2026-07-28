@@ -222,7 +222,7 @@ async def test_happy_path_passes_first_round(validation_council_solve):
     assert timeouts["coder:r1"] == 1800
     for call in ctx.agent_calls:
         if call["label"] != "coder:r1":
-            assert call.get("timeout") == 300
+            assert call.get("timeout") == 900
     assert ctx.phases == [
         "localize",
         "evidence",
@@ -255,12 +255,12 @@ async def test_failed_final_verifier_retries_with_feedback(validation_council_so
     assert budgets["post-validation-triage:r2"] == 180_000
     assert budgets["final-verifier:r2"] == 220_000
     assert timeouts["coder:r2"] == 1800
-    assert timeouts["patch-validator:r2"] == 300
-    assert timeouts["diff-risk-auditor:r2"] == 300
-    assert timeouts["post-validation-factory:r2"] == 300
-    assert timeouts["post-r2-validation-judge"] == 300
-    assert timeouts["post-validation-triage:r2"] == 300
-    assert timeouts["final-verifier:r2"] == 300
+    assert timeouts["patch-validator:r2"] == 900
+    assert timeouts["diff-risk-auditor:r2"] == 900
+    assert timeouts["post-validation-factory:r2"] == 900
+    assert timeouts["post-r2-validation-judge"] == 900
+    assert timeouts["post-validation-triage:r2"] == 900
+    assert timeouts["final-verifier:r2"] == 900
     assert any("attempt 1 failed" in message for message in ctx.logs)
 
 

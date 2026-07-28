@@ -4,11 +4,13 @@ import hashlib
 import http.client
 import json
 import threading
+import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
+from openai.types.chat import ChatCompletion
 
 from opencollab_eval.commands.llm_api_proxy import (
     ProxyConfig,
@@ -35,6 +37,25 @@ class _UpstreamHandler(BaseHTTPRequestHandler):
         self.send_header("x-request-id", "request-1")
         self.end_headers()
         self.wfile.write(payload)
+
+
+class _AggregatingUpstreamHandler(BaseHTTPRequestHandler):
+    requests: list[dict[str, object]] = []
+    status = 200
+    content_type = "text/event-stream"
+    response = b""
+
+    def log_message(self, _format: str, *_args: object) -> None:
+        return
+
+    def do_POST(self) -> None:  # noqa: N802
+        body = self.rfile.read(int(self.headers["Content-Length"]))
+        self.requests.append({"path": self.path, "headers": dict(self.headers), "body": body})
+        self.send_response(self.status)
+        self.send_header("Content-Type", self.content_type)
+        self.send_header("x-request-id", "stream-request-1")
+        self.end_headers()
+        self.wfile.write(self.response)
 
 
 @pytest.fixture
@@ -222,6 +243,265 @@ def test_proxy_forwards_first_sse_event_before_upstream_closes() -> None:
     finally:
         release_upstream.set()
         connection.close()
+        proxy.shutdown()
+        upstream.shutdown()
+        proxy.server_close()
+        upstream.server_close()
+
+
+def test_proxy_aggregates_chat_stream_without_losing_request_or_response_evidence() -> None:
+    _AggregatingUpstreamHandler.requests = []
+    _AggregatingUpstreamHandler.status = 200
+    _AggregatingUpstreamHandler.content_type = "text/event-stream"
+    _AggregatingUpstreamHandler.response = (
+        b'data: {"id":"chat-3","created":789,"model":"gpt-5.6-sol","choices":'
+        b'[{"index":0,"delta":{"role":"assistant","content":"O"},"finish_reason":null}]}\n\n'
+        b'data: {"id":"chat-3","created":789,"model":"gpt-5.6-sol","choices":'
+        b'[{"index":0,"delta":{"content":"K"},"finish_reason":"stop"}]}\n\n'
+        b'data: {"id":"chat-3","created":789,"model":"gpt-5.6-sol","choices":[],'
+        b'"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}\n\n'
+        b"data: [DONE]\n\n"
+    )
+    upstream = ThreadingHTTPServer(("127.0.0.1", 0), _AggregatingUpstreamHandler)
+    proxy = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        make_handler(
+            ProxyConfig(
+                client_token="client-secret",
+                upstream_api_key="upstream-secret",
+                upstream_base_url=f"http://127.0.0.1:{upstream.server_port}/v1",
+                timeout=5,
+                aggregate_chat_stream=True,
+            )
+        ),
+    )
+    proxy.daemon_threads = True
+    threads = [
+        threading.Thread(target=upstream.serve_forever, daemon=True),
+        threading.Thread(target=proxy.serve_forever, daemon=True),
+    ]
+    for thread in threads:
+        thread.start()
+    request_body = {
+        "model": "gpt-5.6-sol",
+        "messages": [{"role": "user", "content": "hi"}],
+        "reasoning_effort": "xhigh",
+        "temperature": 0.2,
+        "stream_options": {"opaque": "kept"},
+    }
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{proxy.server_port}/v1/chat/completions",
+        data=json.dumps(request_body).encode(),
+        headers={"Authorization": "Bearer client-secret", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=3) as response:
+            result = json.load(response)
+            assert response.headers["x-request-id"] == "stream-request-1"
+        forwarded = json.loads(_AggregatingUpstreamHandler.requests[0]["body"])
+        assert forwarded == {
+            **request_body,
+            "stream": True,
+            "stream_options": {"opaque": "kept", "include_usage": True},
+        }
+        assert result["model"] == "gpt-5.6-sol"
+        assert result["choices"][0]["message"]["content"] == "OK"
+        assert result["usage"]["total_tokens"] == 12
+        ChatCompletion.model_validate(result)
+    finally:
+        proxy.shutdown()
+        upstream.shutdown()
+        proxy.server_close()
+        upstream.server_close()
+
+
+def test_proxy_preserves_client_stream_and_upstream_error_status() -> None:
+    _AggregatingUpstreamHandler.requests = []
+    _AggregatingUpstreamHandler.status = 429
+    _AggregatingUpstreamHandler.content_type = "application/json"
+    _AggregatingUpstreamHandler.response = b'{"error":{"message":"limited"}}'
+    upstream = ThreadingHTTPServer(("127.0.0.1", 0), _AggregatingUpstreamHandler)
+    proxy = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        make_handler(
+            ProxyConfig(
+                client_token="client-secret",
+                upstream_api_key="upstream-secret",
+                upstream_base_url=f"http://127.0.0.1:{upstream.server_port}/v1",
+                timeout=5,
+                aggregate_chat_stream=True,
+            )
+        ),
+    )
+    proxy.daemon_threads = True
+    threads = [
+        threading.Thread(target=upstream.serve_forever, daemon=True),
+        threading.Thread(target=proxy.serve_forever, daemon=True),
+    ]
+    for thread in threads:
+        thread.start()
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{proxy.server_port}/v1/chat/completions",
+        data=b'{"model":"gpt-5.6-sol","stream":true}',
+        headers={"Authorization": "Bearer client-secret"},
+        method="POST",
+    )
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(request, timeout=3)
+        assert caught.value.code == 429
+        assert json.loads(_AggregatingUpstreamHandler.requests[0]["body"])["stream"] is True
+    finally:
+        proxy.shutdown()
+        upstream.shutdown()
+        proxy.server_close()
+        upstream.server_close()
+
+
+def test_proxy_preserves_successful_client_chat_stream_byte_for_byte() -> None:
+    _AggregatingUpstreamHandler.requests = []
+    _AggregatingUpstreamHandler.status = 200
+    _AggregatingUpstreamHandler.content_type = "text/event-stream"
+    _AggregatingUpstreamHandler.response = (
+        b'data: {"id":"chat-7","model":"gpt-5.6-sol","choices":[]}\n\n'
+        b"data: [DONE]\n\n"
+    )
+    upstream = ThreadingHTTPServer(("127.0.0.1", 0), _AggregatingUpstreamHandler)
+    proxy = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        make_handler(
+            ProxyConfig(
+                client_token="client-secret",
+                upstream_api_key="upstream-secret",
+                upstream_base_url=f"http://127.0.0.1:{upstream.server_port}/v1",
+                timeout=5,
+                aggregate_chat_stream=True,
+            )
+        ),
+    )
+    proxy.daemon_threads = True
+    threads = [
+        threading.Thread(target=upstream.serve_forever, daemon=True),
+        threading.Thread(target=proxy.serve_forever, daemon=True),
+    ]
+    for thread in threads:
+        thread.start()
+    body = b'{"model":"gpt-5.6-sol","messages":[],"stream":true}'
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{proxy.server_port}/v1/chat/completions",
+        data=body,
+        headers={"Authorization": "Bearer client-secret"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=3) as response:
+            assert response.headers["Content-Type"] == "text/event-stream"
+            assert response.read() == _AggregatingUpstreamHandler.response
+        assert _AggregatingUpstreamHandler.requests[0]["body"] == body
+    finally:
+        proxy.shutdown()
+        upstream.shutdown()
+        proxy.server_close()
+        upstream.server_close()
+
+
+@pytest.mark.parametrize("content_type", ["application/json", "text/plain"])
+def test_proxy_rejects_non_sse_success_during_aggregation(content_type: str) -> None:
+    _AggregatingUpstreamHandler.requests = []
+    _AggregatingUpstreamHandler.status = 200
+    _AggregatingUpstreamHandler.content_type = content_type
+    _AggregatingUpstreamHandler.response = b'{"choices":[]}'
+    upstream = ThreadingHTTPServer(("127.0.0.1", 0), _AggregatingUpstreamHandler)
+    proxy = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        make_handler(
+            ProxyConfig(
+                client_token="client-secret",
+                upstream_api_key="upstream-secret",
+                upstream_base_url=f"http://127.0.0.1:{upstream.server_port}/v1",
+                timeout=5,
+                aggregate_chat_stream=True,
+            )
+        ),
+    )
+    proxy.daemon_threads = True
+    threads = [
+        threading.Thread(target=upstream.serve_forever, daemon=True),
+        threading.Thread(target=proxy.serve_forever, daemon=True),
+    ]
+    for thread in threads:
+        thread.start()
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{proxy.server_port}/v1/chat/completions",
+        data=b'{"model":"gpt-5.6-sol","messages":[]}',
+        headers={"Authorization": "Bearer client-secret"},
+        method="POST",
+    )
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(request, timeout=3)
+        assert caught.value.code == 502
+    finally:
+        proxy.shutdown()
+        upstream.shutdown()
+        proxy.server_close()
+        upstream.server_close()
+
+
+def test_proxy_aborts_stream_that_stalls_after_first_chunk() -> None:
+    class StallingHandler(BaseHTTPRequestHandler):
+        def log_message(self, _format: str, *_args: object) -> None:
+            return
+
+        def do_POST(self) -> None:  # noqa: N802
+            self.rfile.read(int(self.headers["Content-Length"]))
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(
+                b'data: {"id":"chat-8","model":"gpt-5.6-sol","choices":'
+                b'[{"index":0,"delta":{"content":"A"},"finish_reason":null}]}\n\n'
+            )
+            self.wfile.flush()
+            time.sleep(0.25)
+            self.wfile.write(
+                b'data: {"id":"chat-8","model":"gpt-5.6-sol","choices":'
+                b'[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n'
+                b"data: [DONE]\n\n"
+            )
+
+    upstream = ThreadingHTTPServer(("127.0.0.1", 0), StallingHandler)
+    proxy = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        make_handler(
+            ProxyConfig(
+                client_token="client-secret",
+                upstream_api_key="upstream-secret",
+                upstream_base_url=f"http://127.0.0.1:{upstream.server_port}/v1",
+                timeout=0.05,
+                aggregate_chat_stream=True,
+            )
+        ),
+    )
+    proxy.daemon_threads = True
+    threads = [
+        threading.Thread(target=upstream.serve_forever, daemon=True),
+        threading.Thread(target=proxy.serve_forever, daemon=True),
+    ]
+    for thread in threads:
+        thread.start()
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{proxy.server_port}/v1/chat/completions",
+        data=b'{"model":"gpt-5.6-sol","messages":[]}',
+        headers={"Authorization": "Bearer client-secret"},
+        method="POST",
+    )
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(request, timeout=3)
+        assert caught.value.code == 502
+    finally:
         proxy.shutdown()
         upstream.shutdown()
         proxy.server_close()

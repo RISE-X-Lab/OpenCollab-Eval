@@ -223,6 +223,11 @@ def test_remote_http_ok_returns_false_on_outer_timeout():
     assert ok is False
 
 
+def test_proxy_health_url_accepts_openai_v1_base() -> None:
+    assert runner.url_with_healthz("http://127.0.0.1:18788/v1") == (
+        "http://127.0.0.1:18788/healthz"
+    )
+
 @pytest.mark.parametrize(
     ("runner_alive", "status", "expected"),
     [
@@ -644,6 +649,7 @@ def test_generation_shell_forwards_typed_llm_overrides():
     assert 'llm_args+=(--temperature "$LLM_TEMPERATURE")' in shell
     assert 'llm_args+=(--top-p "$LLM_TOP_P")' in shell
     assert 'llm_args+=(--max-output-tokens "$LLM_MAX_OUTPUT_TOKENS")' in shell
+    assert '${checkpoint_args[@]+"${checkpoint_args[@]}"}' in shell
 
 
 def test_single_agent_workflow_selects_the_single_agent_generator():

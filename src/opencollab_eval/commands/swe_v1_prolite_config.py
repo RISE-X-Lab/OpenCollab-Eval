@@ -369,7 +369,9 @@ def get_proxy_token(proxy_env_file: Path | None) -> str:
 
 
 def url_with_healthz(base_url: str) -> str:
-    return base_url.rstrip("/") + "/healthz"
+    parsed = urllib.parse.urlsplit(base_url)
+    root = urllib.parse.urlunsplit(parsed._replace(path="", query="", fragment="")).rstrip("/")
+    return root + "/healthz" if parsed.path.rstrip("/") == "/v1" else base_url.rstrip("/") + "/healthz"
 
 
 def local_http_ok(base_url: str, timeout: float = 5.0) -> bool:
