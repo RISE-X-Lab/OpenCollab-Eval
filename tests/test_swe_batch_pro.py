@@ -20,6 +20,8 @@ def _row() -> dict:
         "instance_id": "owner__repo-secret-commit",
         "repo": "owner/repo",
         "problem_statement": "Fix the documented behavior.",
+        "requirements": "Preserve documented compatibility.",
+        "interface": "fix(value: str) -> str",
         "base_commit": "secret-base",
         "dockerhub_tag": "owner.repo-task",
         "FAIL_TO_PASS": ["tests/test_secret.py::test_fix"],
@@ -39,6 +41,14 @@ def test_task_adapter_separates_public_and_sealed_data() -> None:
 
     assert task.public.task_id.startswith("solver-")
     assert task.public.repo == "owner/repo"
+    assert (
+        "Requirements:\nPreserve documented compatibility."
+        in task.public.problem_statement
+    )
+    assert (
+        "New interfaces introduced:\nfix(value: str) -> str"
+        in task.public.problem_statement
+    )
     assert dict(task.public.metadata) == {"language": "Python"}
     assert task.judge.instance_id == "owner__repo-secret-commit"
     assert task.judge.fail_to_pass == ("tests/test_secret.py::test_fix",)

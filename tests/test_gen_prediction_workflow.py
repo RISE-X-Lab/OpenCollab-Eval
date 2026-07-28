@@ -86,6 +86,8 @@ def test_build_task_lists_target_tests_without_literal_values():
     prompt = gpw.build_task(FIXTURE)
     assert "tests/test_widget.py::test_empty" in prompt
     assert "Widget explodes on empty input." in prompt
+    assert "Requirements:\nEmpty input must return an empty widget." in prompt
+    assert "New interfaces introduced:\nparse_widget(text: str) -> Widget" in prompt
 
 
 def test_build_task_can_omit_hidden_grading_ids_for_blind_validation():
@@ -93,6 +95,8 @@ def test_build_task_can_omit_hidden_grading_ids_for_blind_validation():
 
     assert "Blind validation mode" in prompt
     assert "Widget explodes on empty input." in prompt
+    assert "Requirements:\nEmpty input must return an empty widget." in prompt
+    assert "New interfaces introduced:\nparse_widget(text: str) -> Widget" in prompt
     assert "tests/test_widget.py::test_empty" not in prompt
     assert "Tests that must pass after your fix" not in prompt
 

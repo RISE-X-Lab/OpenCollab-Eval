@@ -15,6 +15,8 @@ FIXTURE = {
     "base_commit": "a" * 40,
     "repo": "acme/widget",
     "problem_statement": "Widget explodes on empty input.",
+    "requirements": "Empty input must return an empty widget.",
+    "interface": "parse_widget(text: str) -> Widget",
     "hints_text": "look at parse()",
     "FAIL_TO_PASS": '["tests/test_widget.py::test_empty", "tests/test_widget.py::test_none"]',
     "test_patch": (

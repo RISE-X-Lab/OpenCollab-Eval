@@ -12,6 +12,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
+from opencollab_eval.benchmarks.public_issue import compose_public_issue
 from opencollab_eval.engine.eval_adapter.models import (
     PatchCandidate,
     TaskSpec,
@@ -49,7 +50,12 @@ def task_spec_from_row(
         docker_image = f"{repository}:{dockerhub_tag}"
 
     repo = _first_string(row, "repo", "repository", "repo_name")
-    problem_statement = _first_string(row, "problem_statement", "problem", "description")
+    raw_problem = _first_string(
+        row, "problem_statement", "problem", "description"
+    )
+    problem_statement = compose_public_issue(
+        {**row, "problem_statement": raw_problem}
+    )
     service_dependencies = _service_dependencies(row, instance_id, repo, docker_image)
 
     return TaskSpec(
