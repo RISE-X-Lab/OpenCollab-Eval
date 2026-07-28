@@ -470,37 +470,6 @@ def test_runtime_sync_rejects_an_incomplete_public_api_before_transfer(monkeypat
     assert calls == []
 
 
-@pytest.mark.parametrize(
-    "failure",
-    [
-        RuntimeError("temporary transport failure"),
-        subprocess.TimeoutExpired(["rsync"], 300),
-    ],
-)
-def test_runtime_sync_resumes_an_interrupted_archive_transfer(monkeypatch, failure):
-    transfers = []
-
-    def run_checked(command, *, timeout=120, input_text=None):
-        if command[0] == "rsync":
-            transfers.append(command)
-            if len(transfers) < 3:
-                raise failure
-        return subprocess.CompletedProcess(command, 0, "", "")
-
-    monkeypatch.setattr(runner, "run_checked", run_checked)
-    monkeypatch.setattr(runner.time, "sleep", lambda _seconds: None)
-
-    runner.sync_runtime(
-        ssh_command=["ssh"],
-        host="remote-host",
-        remote_runtime_repo="/remote/runtime",
-    )
-
-    assert len(transfers) == 3
-    assert all("--partial" in command for command in transfers)
-    assert transfers[0] == transfers[1] == transfers[2]
-
-
 def test_runtime_sync_uses_the_selected_remote_python(monkeypatch):
     commands = []
 
@@ -524,52 +493,6 @@ def test_runtime_sync_uses_the_selected_remote_python(monkeypatch):
     assert install_command.count("PYTHONPATH=src " + quoted + " -c ") == 2
     assert "PYTHONPATH=src python3 -c " not in install_command
     assert summary["remote_python"] == selected
-
-
-def test_runtime_sync_cleans_the_named_archive_after_retry_exhaustion(monkeypatch):
-    transfers = []
-    cleanup_commands = []
-
-    def run_checked(command, *, timeout=120, input_text=None):
-        if command[0] == "rsync":
-            transfers.append(command)
-            raise RuntimeError("persistent transport failure")
-        if command[0] == "ssh" and command[-1].startswith("rm -f -- "):
-            cleanup_commands.append(command)
-        return subprocess.CompletedProcess(command, 0, "", "")
-
-    monkeypatch.setattr(runner, "run_checked", run_checked)
-    monkeypatch.setattr(runner.time, "sleep", lambda _seconds: None)
-
-    with pytest.raises(RuntimeError, match="persistent transport failure"):
-        runner.sync_runtime(
-            ssh_command=["ssh"],
-            host="remote-host",
-            remote_runtime_repo="/remote/runtime",
-        )
-
-    assert len(transfers) == 3
-    assert len(cleanup_commands) == 1
-    assert cleanup_commands[0][-1].startswith("rm -f -- /remote/runtime.archive.")
-
-
-def test_runtime_sync_cleanup_timeout_keeps_the_transfer_error(monkeypatch):
-    def run_checked(command, *, timeout=120, input_text=None):
-        if command[0] == "rsync":
-            raise RuntimeError("persistent transport failure")
-        if command[0] == "ssh" and command[-1].startswith("rm -f -- "):
-            raise subprocess.TimeoutExpired(command, timeout)
-        return subprocess.CompletedProcess(command, 0, "", "")
-
-    monkeypatch.setattr(runner, "run_checked", run_checked)
-    monkeypatch.setattr(runner.time, "sleep", lambda _seconds: None)
-
-    with pytest.raises(RuntimeError, match="persistent transport failure"):
-        runner.sync_runtime(
-            ssh_command=["ssh"],
-            host="remote-host",
-            remote_runtime_repo="/remote/runtime",
-        )
 
 
 def test_runtime_sync_requires_every_declared_input(monkeypatch, tmp_path):

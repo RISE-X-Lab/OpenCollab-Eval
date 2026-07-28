@@ -23,6 +23,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
+from opencollab_eval.commands.swe_ssh_transport import run_checked, run_ssh_checked
 from opencollab_eval.commands.swe_v1_prolite_common import (
     ALLOWED_WORKFLOW_ENV_KEYS,
     DEFAULT_BASE_RUN_DIR_PREFIX,
@@ -237,15 +238,6 @@ def normalize_workflow_env(
             raise ValueError(f"unsupported --workflow-env: {item}")
         normalized[key] = value
     return normalized
-
-
-def run_checked(
-    command: list[str], *, timeout: int = 120, input_text: str | None = None
-) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(command, input=input_text, text=True, capture_output=True, timeout=timeout)
-    if result.returncode != 0:
-        raise RuntimeError(_redacted(result.stderr or result.stdout or f"{command[0]} exited {result.returncode}"))
-    return result
 
 
 def _read_bounded_regular_text(path: Path, *, max_bytes: int) -> str:
@@ -648,27 +640,29 @@ def sync_runtime(
             manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             archive.add(manifest_path, arcname="runtime-manifest.json")
 
-        run_checked([*ssh_command, host, "mkdir -p -- " + shlex.quote(target_parent)], timeout=60)
+        mkdir_attempts: list[dict[str, object]] = []
+        run_ssh_checked(
+            [*ssh_command, host, "mkdir -p -- " + shlex.quote(target_parent)],
+            timeout=60, retry_log=mkdir_attempts,
+        )
         transfer_command = [
             "rsync", "-az", "--partial", "-e", ssh_part,
             str(archive_path), f"{host}:{remote_archive}",
         ]
-        for attempt in range(3):
+        transfer_attempts: list[dict[str, object]] = []
+        try:
+            run_ssh_checked(
+                transfer_command, timeout=300, retry_log=transfer_attempts,
+            )
+        except (RuntimeError, subprocess.TimeoutExpired):
             try:
-                run_checked(transfer_command, timeout=300)
-                break
+                run_ssh_checked(
+                    [*ssh_command, host, "rm -f -- " + shlex.quote(remote_archive)],
+                    timeout=60,
+                )
             except (RuntimeError, subprocess.TimeoutExpired):
-                if attempt < 2:
-                    time.sleep(attempt + 1)
-                    continue
-                try:
-                    run_checked(
-                        [*ssh_command, host, "rm -f -- " + shlex.quote(remote_archive)],
-                        timeout=60,
-                    )
-                except (RuntimeError, subprocess.TimeoutExpired):
-                    pass
-                raise
+                pass
+            raise
     sh_files = [rel for rel in synced if rel.endswith(".sh")]
     compile_targets = [
         rel
@@ -752,7 +746,11 @@ def sync_runtime(
             "trap - EXIT HUP INT TERM",
         ]
     )
-    run_checked([*ssh_command, host, "\n".join(install_lines)], timeout=300)
+    install_attempts: list[dict[str, object]] = []
+    run_ssh_checked(
+        [*ssh_command, host, "\n".join(install_lines)],
+        timeout=300, retry_log=install_attempts,
+    )
     return {
         "remote_runtime_repo": target,
         "synced": synced,
@@ -760,14 +758,16 @@ def sync_runtime(
         "compile_targets": compile_targets,
         "remote_python": remote_python,
         "manifest": "runtime-manifest.json",
-        "opencollab": {
-            "distribution_version": distribution_version,
-            "public_api_version": 1,
-        },
+        "opencollab": {"distribution_version": distribution_version, "public_api_version": 1},
         "source_tree": {
             "local": source_tree,
             "remote": source_tree,
             "verified": True,
+        },
+        "ssh_transport_attempts": {
+            "mkdir": mkdir_attempts,
+            "transfer": transfer_attempts,
+            "install": install_attempts,
         },
     }
 

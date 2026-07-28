@@ -44,7 +44,7 @@ def test_remote_stage_binds_source_to_exact_distribution_version(monkeypatch):
             raise RuntimeError("captured install script")
 
     monkeypatch.setattr(runtime_config, "_runtime_directory_sources", lambda: (sources, "0.4.2"))
-    monkeypatch.setattr(runtime_config, "run_checked", capture_install)
+    monkeypatch.setattr(runtime_config, "run_ssh_checked", capture_install)
 
     with pytest.raises(RuntimeError, match="captured install script"):
         runtime_config.sync_runtime(

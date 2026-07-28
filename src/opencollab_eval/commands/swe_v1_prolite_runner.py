@@ -17,6 +17,7 @@ import types
 from collections.abc import Sequence
 from pathlib import Path
 
+from opencollab_eval.commands import swe_ssh_transport as _ssh_transport
 from opencollab_eval.commands import swe_v1_prolite_common as _common
 from opencollab_eval.commands import swe_v1_prolite_config as _config
 from opencollab_eval.commands import swe_v1_prolite_controller as _controller
@@ -286,6 +287,7 @@ _COMPATIBILITY_MODULES = (
     _config,
     _controller,
     _report,
+    _ssh_transport,
 )
 
 

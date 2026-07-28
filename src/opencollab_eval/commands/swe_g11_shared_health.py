@@ -10,6 +10,10 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from opencollab_eval.commands.swe_ssh_transport import (
+    CheckedCommandError,
+    run_ssh_checked,
+)
 from opencollab_eval.commands.swe_v1_prolite_config import get_proxy_token
 from opencollab_eval.engine.solver_backend import (
     is_kimi_direct_model,
@@ -73,33 +77,53 @@ def run_remote_health_checks(
         config.host,
         "bash -lc " + shlex.quote(remote_health_script(config)),
     ]
+    attempts: list[dict[str, object]] = []
     try:
-        proc = subprocess.run(command, cwd=repo, text=True, capture_output=True, timeout=120)
+        proc = run_ssh_checked(
+            command,
+            timeout=120,
+            cwd=repo,
+            retry_log=attempts,
+        )
     except subprocess.TimeoutExpired as exc:
         result = {
             "status": "failed",
             "direct": True,
             "scope": "shared_infrastructure",
             "failure_kind": "timeout",
+            "attempts": attempts,
         }
         write_json(json_path, result)
         raise SharedProbeFailure("remote health check timed out", result) from exc
+    except CheckedCommandError as exc:
+        write_text(stdout_path, exc.stdout)
+        write_text(stderr_path, exc.stderr)
+        result = {
+            "status": "failed",
+            "direct": True,
+            "scope": "shared_infrastructure",
+            "returncode": exc.returncode,
+            "attempts": attempts,
+            "stdout_log": str(stdout_path),
+            "stderr_log": str(stderr_path),
+        }
+        write_json(json_path, result)
+        raise SharedProbeFailure(
+            f"remote health check failed rc={exc.returncode}",
+            result,
+        ) from exc
     write_text(stdout_path, proc.stdout)
     write_text(stderr_path, proc.stderr)
     result = {
-        "status": "ok" if proc.returncode == 0 else "failed",
+        "status": "ok",
         "direct": True,
         "scope": "shared_infrastructure",
         "returncode": proc.returncode,
+        "attempts": attempts,
         "stdout_log": str(stdout_path),
         "stderr_log": str(stderr_path),
     }
     write_json(json_path, result)
-    if proc.returncode != 0:
-        raise SharedProbeFailure(
-            f"remote health check failed rc={proc.returncode}",
-            result,
-        )
     return result
 
 
