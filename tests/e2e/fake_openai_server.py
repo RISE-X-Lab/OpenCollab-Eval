@@ -190,7 +190,7 @@ def handler_class(trace: TraceWriter, ready_file: Path) -> type[BaseHTTPRequestH
             self._write_json(status, {"error": {"type": "invalid_request_error", "message": reason}})
 
         def do_GET(self) -> None:  # noqa: N802
-            if self.path == "/v1/healthz":
+            if self.path in {"/healthz", "/v1/healthz"}:
                 self._write_json(200, {"status": "ok"})
                 return
             if not self._authorized():

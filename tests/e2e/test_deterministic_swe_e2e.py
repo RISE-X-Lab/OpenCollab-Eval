@@ -61,6 +61,9 @@ def test_fake_model_rejects_wrong_model_and_thinking_identity():
 def test_fake_model_runs_as_a_real_local_http_service(tmp_path):
     process, base_url = _start_fake_service(tmp_path)
     try:
+        with urllib.request.urlopen(base_url.removesuffix("/v1") + "/healthz", timeout=5) as response:
+            assert json.load(response) == {"status": "ok"}
+
         model_request = urllib.request.Request(
             base_url + "/models",
             headers={"Authorization": f"Bearer {FAKE_API_KEY}"},
