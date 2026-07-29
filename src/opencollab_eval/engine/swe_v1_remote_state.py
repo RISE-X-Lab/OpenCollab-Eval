@@ -248,11 +248,18 @@ def configure(config: dict[str, Any]) -> None:
         str(key): str(value) for key, value in (cfg.get("workflow_env") or {}).items()
     }
     allowed_workflow_env = {
+        "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES",
+        "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY",
         "OPENCOLLAB_MAX_OUTPUT_TOKENS",
         "OPENCOLLAB_TEMPERATURE",
         "OPENCOLLAB_THINKING",
         "OPENCOLLAB_THINKING_PARAMS",
         "OPENCOLLAB_TOP_P",
+        "OPENCOLLAB_WIRE_PROTOCOL",
+        "OPENCOLLAB_REASONING_EFFORT",
+        "OPENCOLLAB_LLM_CONNECT_TIMEOUT",
+        "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT",
+        "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT",
     }
     unsupported_workflow_env = sorted(set(workflow_env) - allowed_workflow_env)
     if unsupported_workflow_env:

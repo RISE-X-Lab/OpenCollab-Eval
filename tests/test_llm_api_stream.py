@@ -65,6 +65,61 @@ def test_streaming_request_leaves_caller_stream_unchanged() -> None:
     assert streaming_chat_request(body) == (body, False, "gpt-5.6-sol")
 
 
+def test_streaming_request_can_drop_only_tool_schema_annotations() -> None:
+    request = {
+        "model": "gpt-5.6-sol",
+        "messages": [{"role": "user", "content": "inspect"}],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "file_read",
+                    "description": "Long model-facing prose.",
+                    "parameters": {
+                        "type": "object",
+                        "title": "Read arguments",
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "description": "A repository path.",
+                                "minLength": 1,
+                            }
+                        },
+                        "required": ["path"],
+                        "additionalProperties": False,
+                    },
+                },
+            }
+        ],
+    }
+
+    encoded, aggregate, model = streaming_chat_request(
+        json.dumps(request).encode(),
+        compact_tool_schemas=True,
+    )
+    actual = json.loads(encoded)
+
+    assert aggregate is True
+    assert model == "gpt-5.6-sol"
+    assert actual["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "file_read",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "minLength": 1}
+                    },
+                    "required": ["path"],
+                    "additionalProperties": False,
+                },
+            },
+        }
+    ]
+    assert actual["messages"] == request["messages"]
+
+
 @pytest.mark.parametrize(
     "body",
     [b"not-json", b"[]", b'{"stream_options":1}', b'{"messages":[]}'],

@@ -45,17 +45,27 @@ from ._validation_council_solve_defs import (
     VERIFIER_BUDGET,
     Any,
     _accepted_count,
+    _candidates_brief,
+    _cartography_brief,
+    _clip,
     _coder_tools,
+    _contracts_brief,
     _dict_or,
-    _dump,
     _feedback,
+    _goal_brief,
     _is_blocked,
     _is_pass,
+    _judge_brief,
+    _localization_brief,
     _read_tools,
+    _report_brief,
     _risk_tools,
+    _risks_brief,
     _source_diff_present,
     _tester_tools,
+    _triage_brief,
     _trim_judge,
+    _verdict_brief,
 )
 
 
@@ -73,9 +83,9 @@ async def _judge_candidates(
             rules=SHARED_RULES,
             stage=stage,
             cap=cap,
-            goal=goal,
-            contracts=_dump(contracts),
-            candidates=_dump(candidates),
+            goal=_goal_brief(goal, 320),
+            contracts=_contracts_brief(contracts, 220),
+            candidates=_candidates_brief(candidates, cap * 2, 400),
         ),
         schema=JUDGE_SCHEMA,
         label=f"{stage}-validation-judge",
@@ -110,16 +120,13 @@ async def _run_attempt(
     feedback: str,
     injected_test_paths: list[str],
 ) -> dict[str, Any]:
-    feedback_block = FEEDBACK_BLOCK.format(feedback=feedback) if feedback else ""
+    feedback_block = FEEDBACK_BLOCK.format(feedback=_clip(feedback, 220)) if feedback else ""
     coder_report = await ctx.agent(
         CODER_PROMPT.format(
             rules=SHARED_RULES,
-            goal=goal,
-            localization=_dump(localization),
-            contracts=_dump(contracts),
-            cartography=_dump(cartography),
-            pre_judge=_dump(pre_judge),
-            baseline_triage=_dump(baseline_triage),
+            goal=_goal_brief(goal, 240),
+            localization=_localization_brief(localization, 180),
+            cartography=_cartography_brief(cartography),
             feedback_block=feedback_block,
         ),
         label=f"coder:r{attempt}",
@@ -129,10 +136,10 @@ async def _run_attempt(
     patch_verdict = await ctx.agent(
         PATCH_VALIDATOR_PROMPT.format(
             rules=SHARED_RULES,
-            goal=goal,
-            coder_report=coder_report or "(coder returned no report)",
-            pre_judge=_dump(pre_judge),
-            baseline_triage=_dump(baseline_triage),
+            goal=_goal_brief(goal, 400),
+            coder_report=_report_brief(coder_report or "(coder returned no report)", 220),
+            pre_judge=_judge_brief(pre_judge, 140),
+            baseline_triage=_triage_brief(baseline_triage, 140),
         ),
         schema=VERDICT_SCHEMA,
         label=f"patch-validator:r{attempt}",
@@ -165,9 +172,9 @@ async def _run_attempt(
     risks = await ctx.agent(
         DIFF_RISK_PROMPT.format(
             rules=SHARED_RULES,
-            goal=goal,
-            contracts=_dump(contracts),
-            patch_verdict=_dump(patch_verdict),
+            goal=_goal_brief(goal, 320),
+            contracts=_contracts_brief(contracts, 220),
+            patch_verdict=_verdict_brief(patch_verdict),
         ),
         schema=DIFF_RISK_SCHEMA,
         label=f"diff-risk-auditor:r{attempt}",
@@ -180,9 +187,9 @@ async def _run_attempt(
     post_candidates = await ctx.agent(
         POST_VALIDATION_FACTORY_PROMPT.format(
             rules=SHARED_RULES,
-            goal=goal,
-            contracts=_dump(contracts),
-            risks=_dump(risks),
+            goal=_goal_brief(goal, 280),
+            contracts=_contracts_brief(contracts, 180),
+            risks=_risks_brief(risks, 200),
         ),
         schema=CANDIDATE_TESTS_SCHEMA,
         label=f"post-validation-factory:r{attempt}",
@@ -207,8 +214,8 @@ async def _run_attempt(
     post_triage = await ctx.agent(
         POST_TRIAGE_PROMPT.format(
             rules=SHARED_RULES,
-            goal=goal,
-            judge=_dump(post_judge),
+            goal=_goal_brief(goal, 320),
+            judge=_judge_brief(post_judge, 200),
         ),
         schema=TRIAGE_SCHEMA,
         label=f"post-validation-triage:r{attempt}",
@@ -225,16 +232,16 @@ async def _run_attempt(
     final_verdict = await ctx.agent(
         FINAL_VERIFIER_PROMPT.format(
             rules=SHARED_RULES,
-            goal=goal,
-            localization=_dump(localization),
-            contracts=_dump(contracts),
-            pre_judge=_dump(pre_judge),
-            baseline_triage=_dump(baseline_triage),
-            coder_report=coder_report or "(coder returned no report)",
-            patch_verdict=_dump(patch_verdict),
-            risks=_dump(risks),
-            post_judge=_dump(post_judge),
-            post_triage=_dump(post_triage),
+            goal=_goal_brief(goal, 480),
+            localization=_localization_brief(localization),
+            contracts=_contracts_brief(contracts),
+            pre_judge=_judge_brief(pre_judge),
+            baseline_triage=_triage_brief(baseline_triage),
+            coder_report=_report_brief(coder_report or "(coder returned no report)"),
+            patch_verdict=_verdict_brief(patch_verdict),
+            risks=_risks_brief(risks),
+            post_judge=_judge_brief(post_judge),
+            post_triage=_triage_brief(post_triage, 200),
         ),
         schema=VERDICT_SCHEMA,
         label=f"final-verifier:r{attempt}",
@@ -288,7 +295,7 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
 
     await ctx.phase("localize")
     localization = await ctx.agent(
-        LOCALIZER_PROMPT.format(rules=SHARED_RULES, goal=goal),
+        LOCALIZER_PROMPT.format(rules=SHARED_RULES, goal=_goal_brief(goal, 640)),
         schema=LOCALIZATION_SCHEMA,
         label="analyst-localizer",
         tools=_read_tools(),
@@ -313,8 +320,8 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
             lambda: ctx.agent(
                 CONTRACT_MINER_PROMPT.format(
                     rules=SHARED_RULES,
-                    goal=goal,
-                    localization=_dump(localization),
+                    goal=_goal_brief(goal, 360),
+                    localization=_localization_brief(localization, 160),
                 ),
                 schema=CONTRACT_SCHEMA,
                 label="contract-miner",
@@ -325,8 +332,8 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
             lambda: ctx.agent(
                 TEST_CARTOGRAPHER_PROMPT.format(
                     rules=SHARED_RULES,
-                    goal=goal,
-                    localization=_dump(localization),
+                    goal=_goal_brief(goal, 360),
+                    localization=_localization_brief(localization, 160),
                 ),
                 schema=TEST_CARTOGRAPHY_SCHEMA,
                 label="test-cartographer",
@@ -353,10 +360,10 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
     pre_candidates = await ctx.agent(
         PRE_VALIDATION_FACTORY_PROMPT.format(
             rules=SHARED_RULES,
-            goal=goal,
-            localization=_dump(localization),
-            contracts=_dump(contracts),
-            cartography=_dump(cartography),
+            goal=_goal_brief(goal, 220),
+            localization=_localization_brief(localization),
+            contracts=_contracts_brief(contracts, 120),
+            cartography=_report_brief(_cartography_brief(cartography), 180),
         ),
         schema=CANDIDATE_TESTS_SCHEMA,
         label="pre-validation-factory",
@@ -376,22 +383,29 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
         stage="pre",
         cap=MAX_APPROVED_PRE_TESTS,
     )
-    baseline_triage = await ctx.agent(
-        BASELINE_TRIAGE_PROMPT.format(
-            rules=SHARED_RULES,
-            goal=goal,
-            judge=_dump(pre_judge),
-        ),
-        schema=TRIAGE_SCHEMA,
-        label="baseline-triage",
-        tools=_tester_tools(),
-        budget=TRIAGE_BUDGET,
-        timeout=STRUCTURED_ROLE_TIMEOUT_SECONDS,
-    )
-    baseline_triage = _dict_or(
-        baseline_triage,
-        {"classifications": [], "approved_brief": "No baseline triage.", "abstained": True},
-    )
+    if _accepted_count(pre_judge):
+        baseline_triage = await ctx.agent(
+            BASELINE_TRIAGE_PROMPT.format(
+                rules=SHARED_RULES,
+                goal=_goal_brief(goal, 320),
+                judge=_judge_brief(pre_judge, 200),
+            ),
+            schema=TRIAGE_SCHEMA,
+            label="baseline-triage",
+            tools=_tester_tools(),
+            budget=TRIAGE_BUDGET,
+            timeout=STRUCTURED_ROLE_TIMEOUT_SECONDS,
+        )
+        baseline_triage = _dict_or(
+            baseline_triage,
+            {"classifications": [], "approved_brief": "No baseline triage.", "abstained": True},
+        )
+    else:
+        baseline_triage = {
+            "classifications": [],
+            "approved_brief": "No accepted baseline probes.",
+            "abstained": True,
+        }
 
     attempts: list[dict[str, Any]] = []
     feedback = ""

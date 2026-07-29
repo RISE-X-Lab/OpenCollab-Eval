@@ -10,14 +10,11 @@ import json
 import os
 import plistlib
 import re
-import shlex
 import shutil
 import subprocess
 import sys
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from pathlib import Path
 
 from opencollab_eval.engine.solver_backend import (
@@ -29,8 +26,15 @@ from opencollab_eval.engine.solver_backend import (
 from opencollab_eval.generation.claude_code_sidecar import relay_socket_path
 from opencollab_eval.usage import model_context_window
 
+from ._swe_eval_relay_health import (
+    local_relay_healthy as _local_relay_healthy,
+)
+from ._swe_eval_relay_health import relay_mode_flags as _relay_mode_flags
+from ._swe_eval_relay_health import remote_proxy_healthy as _remote_proxy_healthy
+from ._swe_eval_relay_health import (
+    remote_proxy_socket_healthy as _remote_proxy_socket_healthy,
+)
 from .ssh_reverse_proxy import remove_stale_remote_socket
-from .swe_v1_prolite_config import url_with_healthz
 
 WORKSPACE_ROOT = Path(
     os.environ.get("OPENCOLLAB_EVAL_WORKSPACE", Path.cwd())
@@ -230,89 +234,6 @@ def _launchctl(*arguments: str, check: bool = False) -> subprocess.CompletedProc
     return result
 
 
-def _remote_proxy_healthy(
-    *, ssh_command: str, host: str, base_url: str, upstream_base_url: str
-) -> bool:
-    expected = hashlib.sha256(upstream_base_url.rstrip("/").encode()).hexdigest()
-    probe = (
-        "import json,sys,urllib.request;"
-        "v=json.load(urllib.request.urlopen(sys.argv[1],timeout=5));"
-        "raise SystemExit(0 if v.get('kind')=='authenticated_model_relay' "
-        "and v.get('aggregate_chat_stream') is True "
-        "and v.get('upstream_base_url_sha256')==sys.argv[2] else 3)"
-    )
-    command = [
-        *shlex.split(ssh_command),
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "ConnectTimeout=10",
-        host,
-        shlex.join(
-            ["python3", "-c", probe, url_with_healthz(base_url), expected]
-        ),
-    ]
-    try:
-        return subprocess.run(
-            command,
-            text=True,
-            capture_output=True,
-            timeout=20,
-            check=False,
-        ).returncode == 0
-    except subprocess.TimeoutExpired:
-        return False
-
-
-def _remote_proxy_socket_healthy(
-    *, ssh_command: str, host: str, socket_path: str, upstream_base_url: str
-) -> bool:
-    expected = hashlib.sha256(upstream_base_url.rstrip("/").encode()).hexdigest()
-    probe = "\n".join(
-        (
-            "import http.client,json,os,socket,stat,sys",
-            "path,expected=sys.argv[1:3]",
-            "mode=os.stat(path).st_mode",
-            "assert stat.S_ISSOCK(mode) and stat.S_IMODE(mode) & 0o077 == 0",
-            "client=socket.socket(socket.AF_UNIX)",
-            "client.settimeout(5)",
-            "client.connect(path)",
-            'client.sendall(b"GET /healthz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n")',
-            "stream=client.makefile('rb')",
-            "status=stream.readline().split()",
-            "assert len(status) >= 2 and status[1] == b'200'",
-            "headers=http.client.parse_headers(stream)",
-            "length=int(headers['Content-Length'])",
-            "assert 0 <= length <= 65536",
-            "body=stream.read(length)",
-            "assert len(body) == length",
-            "value=json.loads(body)",
-            "assert value.get('kind') == 'authenticated_model_relay'",
-            "assert value.get('aggregate_chat_stream') is True",
-            "assert value.get('upstream_base_url_sha256') == expected",
-        )
-    )
-    command = [
-        *shlex.split(ssh_command),
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "ConnectTimeout=10",
-        host,
-        shlex.join(["python3", "-c", probe, socket_path, expected]),
-    ]
-    try:
-        return subprocess.run(
-            command,
-            text=True,
-            capture_output=True,
-            timeout=20,
-            check=False,
-        ).returncode == 0
-    except subprocess.TimeoutExpired:
-        return False
-
-
 def _remove_stale_remote_proxy_socket(
     *, ssh_command: str, host: str, socket_path: str
 ) -> None:
@@ -323,22 +244,15 @@ def _remove_stale_remote_proxy_socket(
     )
 
 
-def _local_relay_healthy(base_url: str, upstream_base_url: str) -> bool:
-    try:
-        with urllib.request.urlopen(url_with_healthz(base_url), timeout=5) as response:
-            payload = json.load(response)
-        expected = hashlib.sha256(upstream_base_url.rstrip("/").encode()).hexdigest()
-        return (
-            payload.get("kind") == "authenticated_model_relay"
-            and payload.get("aggregate_chat_stream") is True
-            and payload.get("upstream_base_url_sha256") == expected
-        )
-    except (OSError, ValueError, urllib.error.URLError):
-        return False
-
-
 def _ensure_local_proxy_agent(
-    *, output_dir: Path, remaining: list[str], upstream_base_url: str
+    *,
+    output_dir: Path,
+    remaining: list[str],
+    upstream_base_url: str,
+    relay_mode: str = "aggregate-chat-stream",
+    compact_tool_schemas: bool = False,
+    max_upstream_request_bytes: int = 0,
+    allow_insecure_upstream: bool = False,
 ) -> dict:
     local_url = _option_value(remaining, "--local-proxy-base-url", "http://127.0.0.1:8878")
     parsed = urllib.parse.urlparse(local_url)
@@ -348,7 +262,13 @@ def _ensure_local_proxy_agent(
     env_file = _option_value(remaining, "--proxy-env-file", "").strip()
     if not env_file or not upstream_base_url.strip():
         raise RuntimeError("starting the local model relay requires --proxy-env-file and --proxy-upstream-base-url")
-    if _local_relay_healthy(local_url, upstream_base_url):
+    health_kwargs = {
+        "relay_mode": relay_mode,
+        "compact_tool_schemas": compact_tool_schemas,
+        "max_upstream_request_bytes": max_upstream_request_bytes,
+        "allow_insecure_upstream": allow_insecure_upstream,
+    }
+    if _local_relay_healthy(local_url, upstream_base_url, **health_kwargs):
         return {"status": "already_healthy", "local_url": local_url}
     label = f"com.opencollab.llmproxy.{port}"
     target = f"gui/{os.getuid()}/{label}"
@@ -368,7 +288,12 @@ def _ensure_local_proxy_agent(
             str(port),
             "--upstream-base-url",
             upstream_base_url,
-            "--aggregate-chat-stream",
+            *_relay_mode_flags(
+                relay_mode,
+                compact_tool_schemas=compact_tool_schemas,
+                max_upstream_request_bytes=max_upstream_request_bytes,
+                allow_insecure_upstream=allow_insecure_upstream,
+            ),
         ],
         stdout_path=output_dir / "llm-proxy.launch.stdout.log",
         stderr_path=output_dir / "llm-proxy.launch.stderr.log",
@@ -383,7 +308,7 @@ def _ensure_local_proxy_agent(
     shutil.copy2(plist_path, installed_path)
     _launchctl("bootstrap", f"gui/{os.getuid()}", str(installed_path), check=True)
     for _ in range(20):
-        if _local_relay_healthy(local_url, upstream_base_url):
+        if _local_relay_healthy(local_url, upstream_base_url, **health_kwargs):
             return {
                 "status": "started",
                 "local_url": local_url,
@@ -394,7 +319,14 @@ def _ensure_local_proxy_agent(
 
 
 def _ensure_proxy_agent(
-    *, output_dir: Path, remaining: list[str], upstream_base_url: str = ""
+    *,
+    output_dir: Path,
+    remaining: list[str],
+    upstream_base_url: str = "",
+    relay_mode: str = "aggregate-chat-stream",
+    compact_tool_schemas: bool = False,
+    max_upstream_request_bytes: int = 0,
+    allow_insecure_upstream: bool = False,
 ) -> dict:
     host = _option_value(
         remaining,
@@ -420,7 +352,17 @@ def _ensure_proxy_agent(
         output_dir=output_dir,
         remaining=remaining,
         upstream_base_url=upstream_base_url,
+        relay_mode=relay_mode,
+        compact_tool_schemas=compact_tool_schemas,
+        max_upstream_request_bytes=max_upstream_request_bytes,
+        allow_insecure_upstream=allow_insecure_upstream,
     )
+    health_kwargs = {
+        "relay_mode": relay_mode,
+        "compact_tool_schemas": compact_tool_schemas,
+        "max_upstream_request_bytes": max_upstream_request_bytes,
+        "allow_insecure_upstream": allow_insecure_upstream,
+    }
     label = f"com.opencollab.proxy.{_safe_label(host)}.{remote_port}"
     target = f"gui/{os.getuid()}/{label}"
     if _remote_proxy_healthy(
@@ -428,11 +370,13 @@ def _ensure_proxy_agent(
         host=host,
         base_url=remote_url,
         upstream_base_url=upstream_base_url,
+        **health_kwargs,
     ) and _remote_proxy_socket_healthy(
         ssh_command=ssh_command,
         host=host,
         socket_path=remote_socket,
         upstream_base_url=upstream_base_url,
+        **health_kwargs,
     ):
         return {
             "status": "already_healthy",
@@ -482,11 +426,13 @@ def _ensure_proxy_agent(
             host=host,
             base_url=remote_url,
             upstream_base_url=upstream_base_url,
+            **health_kwargs,
         ) and _remote_proxy_socket_healthy(
             ssh_command=ssh_command,
             host=host,
             socket_path=remote_socket,
             upstream_base_url=upstream_base_url,
+            **health_kwargs,
         ):
             return {
                 "status": "started",
@@ -521,6 +467,10 @@ def _launch_detached(args: argparse.Namespace, raw_arguments: list[str], remaini
             output_dir=output_dir,
             remaining=remaining,
             upstream_base_url=args.proxy_upstream_base_url,
+            relay_mode=args.proxy_mode,
+            compact_tool_schemas=args.proxy_compact_tool_schemas,
+            max_upstream_request_bytes=args.proxy_max_upstream_request_bytes,
+            allow_insecure_upstream=args.proxy_allow_insecure_upstream,
         )
     )
     label = args.launchd_label or f"com.opencollab.eval.{_safe_label(run_id)}"
@@ -685,6 +635,31 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("OPENCOLLAB_PROXY_UPSTREAM_BASE_URL", ""),
         help="Upstream provider URL used by the managed authenticated relay",
     )
+    parser.add_argument(
+        "--proxy-mode",
+        choices=(
+            "aggregate-chat-stream",
+            "responses-pass-through",
+        ),
+        default="aggregate-chat-stream",
+        help="Compatibility mode required from the managed model relay",
+    )
+    parser.add_argument(
+        "--proxy-compact-tool-schemas",
+        action="store_true",
+        help="Remove non-semantic tool schema annotations before relay calls",
+    )
+    parser.add_argument(
+        "--proxy-max-upstream-request-bytes",
+        type=int,
+        default=0,
+        help="Bound compatibility-relay requests after deterministic compaction",
+    )
+    parser.add_argument(
+        "--proxy-allow-insecure-upstream",
+        action="store_true",
+        help="Explicitly allow an HTTP provider URL for the managed relay",
+    )
     return parser
 
 
@@ -692,6 +667,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     raw_arguments = list(sys.argv[1:] if argv is None else argv)
     args, remaining = parser.parse_known_args(raw_arguments)
+    if args.proxy_max_upstream_request_bytes < 0:
+        parser.error("--proxy-max-upstream-request-bytes must be non-negative")
     if args.dataset != "swe-batch-pro-lite":
         raise SystemExit(f"unsupported dataset: {args.dataset}")
     _normalize_indices(args)
@@ -713,6 +690,10 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.output_dir,
             remaining=remaining,
             upstream_base_url=args.proxy_upstream_base_url,
+            relay_mode=args.proxy_mode,
+            compact_tool_schemas=args.proxy_compact_tool_schemas,
+            max_upstream_request_bytes=args.proxy_max_upstream_request_bytes,
+            allow_insecure_upstream=args.proxy_allow_insecure_upstream,
         )
     return _run_parallel_runner(args, remaining)
 

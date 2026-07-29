@@ -103,6 +103,7 @@ from .gen_prediction_constants import (
     MAX_STATUS_DIAGNOSTIC_BYTES,
     PENDING_OUTPUT_SCHEMA_VERSION,
     SAFE_FILE_OPEN_RETRIES,
+    WORKFLOW_AGENT_PROMPT,
 )
 from .gen_prediction_docker import (
     _check_docker,

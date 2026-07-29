@@ -10,7 +10,7 @@ import stat
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -32,6 +32,9 @@ class ProxyConfig:
     upstream_base_url: str
     timeout: float
     aggregate_chat_stream: bool = False
+    compact_tool_schemas: bool = False
+    max_upstream_request_bytes: int = 0
+    allow_insecure_upstream: bool = False
 
 
 def _required(values: dict[str, str], *names: str) -> str:
@@ -42,7 +45,13 @@ def _required(values: dict[str, str], *names: str) -> str:
     raise ValueError("missing proxy configuration: " + " or ".join(names))
 
 
-def load_proxy_config(env_file: Path, *, upstream_base_url: str = "", timeout: float = 900.0) -> ProxyConfig:
+def load_proxy_config(
+    env_file: Path,
+    *,
+    upstream_base_url: str = "",
+    timeout: float = 900.0,
+    allow_insecure_upstream: bool = False,
+) -> ProxyConfig:
     mode = env_file.stat().st_mode
     if not stat.S_ISREG(mode) or mode & 0o077:
         raise PermissionError("proxy environment file must be a private regular file")
@@ -50,14 +59,15 @@ def load_proxy_config(env_file: Path, *, upstream_base_url: str = "", timeout: f
     base_url = upstream_base_url.strip() or _required(values, "OPENCOLLAB_UPSTREAM_BASE_URL")
     parsed = urllib.parse.urlparse(base_url)
     if (
-        parsed.scheme != "https"
+        parsed.scheme not in ({"https", "http"} if allow_insecure_upstream else {"https"})
         or not parsed.hostname
         or parsed.username
         or parsed.password
         or parsed.query
         or parsed.fragment
     ):
-        raise ValueError("upstream base URL must be an HTTPS origin without credentials or query data")
+        expected = "an HTTP or HTTPS" if allow_insecure_upstream else "an HTTPS"
+        raise ValueError(f"upstream base URL must be {expected} origin without credentials or query data")
     return ProxyConfig(
         client_token=_required(values, "OPENCOLLAB_PROXY_CLIENT_TOKEN"),
         upstream_api_key=_required(
@@ -70,6 +80,7 @@ def load_proxy_config(env_file: Path, *, upstream_base_url: str = "", timeout: f
         ),
         upstream_base_url=base_url.rstrip("/"),
         timeout=max(1.0, float(timeout)),
+        allow_insecure_upstream=allow_insecure_upstream,
     )
 
 
@@ -83,7 +94,16 @@ def _upstream_url(base_url: str, request_path: str) -> str:
         path = "/chat/completions"
     elif path == "/v1/messages" and base_url.endswith("/v1"):
         path = "/messages"
-    if path not in {"/chat/completions", "/v1/chat/completions", "/v1/messages", "/messages"}:
+    elif path == "/v1/responses" and base_url.endswith("/v1"):
+        path = "/responses"
+    if path not in {
+        "/chat/completions",
+        "/v1/chat/completions",
+        "/v1/messages",
+        "/messages",
+        "/responses",
+        "/v1/responses",
+    }:
         raise ValueError("unsupported model API path")
     return base_url + path
 
@@ -113,6 +133,10 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                     "status": "ok",
                     "kind": "authenticated_model_relay",
                     "aggregate_chat_stream": config.aggregate_chat_stream,
+                    "compact_tool_schemas": config.compact_tool_schemas,
+                    "responses_passthrough": True,
+                    "allow_insecure_upstream": config.allow_insecure_upstream,
+                    "max_upstream_request_bytes": config.max_upstream_request_bytes,
                     "upstream_base_url_sha256": upstream_base_url_sha256(config),
                 },
             )
@@ -134,16 +158,26 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
             aggregate_stream = False
             expected_model = ""
             try:
+                request_path = urllib.parse.urlsplit(self.path).path
                 url = _upstream_url(config.upstream_base_url, self.path)
-                if config.aggregate_chat_stream and urllib.parse.urlsplit(self.path).path in {
+                if config.aggregate_chat_stream and request_path in {
                     "/chat/completions",
                     "/v1/chat/completions",
                 }:
                     try:
-                        body, aggregate_stream, expected_model = streaming_chat_request(body)
+                        body, aggregate_stream, expected_model = streaming_chat_request(
+                            body,
+                            compact_tool_schemas=config.compact_tool_schemas,
+                        )
                     except ChatStreamError:
                         self._json(400, {"error": "invalid_chat_request"})
                         return
+                if (
+                    config.max_upstream_request_bytes
+                    and len(body) > config.max_upstream_request_bytes
+                ):
+                    self._json(413, {"error": "upstream_request_too_large"})
+                    return
                 headers = {
                     "Authorization": f"Bearer {config.upstream_api_key}",
                     "x-api-key": config.upstream_api_key,
@@ -223,6 +257,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--upstream-base-url", default="")
     parser.add_argument("--timeout", type=float, default=900.0)
     parser.add_argument("--aggregate-chat-stream", action="store_true")
+    parser.add_argument("--compact-tool-schemas", action="store_true")
+    parser.add_argument("--max-upstream-request-bytes", type=int, default=0)
+    parser.add_argument("--allow-insecure-upstream", action="store_true")
     return parser
 
 
@@ -230,15 +267,20 @@ def main() -> int:
     args = build_parser().parse_args()
     if args.host not in {"127.0.0.1", "::1", "localhost"}:
         raise SystemExit("proxy host must be loopback")
-    config = load_proxy_config(args.env_file, upstream_base_url=args.upstream_base_url, timeout=args.timeout)
-    if args.aggregate_chat_stream:
-        config = ProxyConfig(
-            client_token=config.client_token,
-            upstream_api_key=config.upstream_api_key,
-            upstream_base_url=config.upstream_base_url,
-            timeout=config.timeout,
-            aggregate_chat_stream=True,
-        )
+    if args.compact_tool_schemas and not args.aggregate_chat_stream:
+        raise SystemExit("--compact-tool-schemas requires a chat compatibility mode")
+    config = load_proxy_config(
+        args.env_file,
+        upstream_base_url=args.upstream_base_url,
+        timeout=args.timeout,
+        allow_insecure_upstream=args.allow_insecure_upstream,
+    )
+    config = replace(
+        config,
+        aggregate_chat_stream=args.aggregate_chat_stream,
+        compact_tool_schemas=args.compact_tool_schemas,
+        max_upstream_request_bytes=max(0, args.max_upstream_request_bytes),
+    )
     server = ThreadingHTTPServer((args.host, args.port), make_handler(config))
     server.daemon_threads = True
     try:

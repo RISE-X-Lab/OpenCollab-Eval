@@ -363,6 +363,13 @@ def default_tools() -> list[Tool]:
 
 async def build_repository_map(env: ExecutionEnvironment) -> str:
     """Build a bounded file list through the public environment contract."""
+    try:
+        max_bytes = int(os.environ.get("OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES", "512"))
+    except ValueError:
+        max_bytes = 512
+    max_bytes = min(512, max(0, max_bytes))
+    if max_bytes == 0:
+        return ""
     result = await env.exec_cmd(
         "git -c core.quotepath=false ls-files -z",
         timeout=30.0,
@@ -372,9 +379,23 @@ async def build_repository_map(env: ExecutionEnvironment) -> str:
     paths = [path for path in result.stdout.split("\0") if path]
     if not paths:
         return ""
-    selected = paths[:400]
+    header = "Repository files\n"
+    suffix = "\n..."
+    if max_bytes < len((header + "...").encode()):
+        return ""
+    byte_budget = max_bytes - len(header.encode()) - len(suffix.encode())
+    selected: list[str] = []
+    used_bytes = 0
+    for path in paths[:400]:
+        encoded_bytes = len(path.encode("utf-8")) + int(bool(selected))
+        if used_bytes + encoded_bytes > byte_budget:
+            break
+        selected.append(path)
+        used_bytes += encoded_bytes
+    if not selected:
+        return header + "..."
     suffix = "\n..." if len(paths) > len(selected) else ""
-    return "Repository files\n" + "\n".join(selected) + suffix
+    return header + "\n".join(selected) + suffix
 
 
 async def default_env_factory(task: EvalTask) -> ExecutionEnvironment:
@@ -425,6 +446,11 @@ async def run_eval_task(
     max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
     thinking: bool = DEFAULT_THINKING,
     thinking_params: dict | None = None,
+    wire_protocol: str = "chat_completions",
+    reasoning_effort: str | None = None,
+    llm_connect_timeout: float = 30.0,
+    llm_first_event_timeout: float = 180.0,
+    llm_stream_idle_timeout: float = 180.0,
     checkpoint_interval_seconds: float | None = None,
     resume_from_checkpoint: bool = False,
     cancellation_cleanup_timeout: float = DEFAULT_EXECUTION_CLEANUP_TIMEOUT,
@@ -448,6 +474,11 @@ async def run_eval_task(
         max_output_tokens,
         thinking,
         thinking_params,
+        wire_protocol,
+        reasoning_effort,
+        llm_connect_timeout,
+        llm_first_event_timeout,
+        llm_stream_idle_timeout,
         checkpoint_interval_seconds,
         resume_from_checkpoint,
         cancellation_cleanup_timeout,

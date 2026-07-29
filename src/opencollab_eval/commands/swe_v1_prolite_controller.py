@@ -41,13 +41,9 @@ from opencollab_eval.commands.swe_v1_prolite_process import (
 )
 
 _SSH_LIVENESS_OPTIONS = (
-    "-o", "BatchMode=yes",
-    "-o", "ConnectTimeout=20",
-    "-o", "ServerAliveInterval=30",
-    "-o", "ServerAliveCountMax=3",
-    "-o", "TCPKeepAlive=yes",
+    "-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "ServerAliveInterval=30",
+    "-o", "ServerAliveCountMax=3", "-o", "TCPKeepAlive=yes",
 )
-
 
 def _ssh_with_liveness_options(command: list[str]) -> list[str]:
     if not command or Path(command[0]).name != "ssh":
@@ -458,6 +454,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
         + shlex.quote(owner_nonce)
     )
     command = [*ssh_command, args.host, remote_command]
+    primary_failure_detail = ""
     spawn_signal_state = _block_local_spawn_signals()
     try:
         proc = subprocess.Popen(
@@ -526,6 +523,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
                 )
         result = subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
         if result.returncode not in (0, 1, 2):
+            primary_failure_detail = _redacted(result.stderr or result.stdout or f"ssh exited {result.returncode}")
             summary = wait_for_terminal_remote_summary(
                 ssh_command=ssh_command,
                 host=args.host,
@@ -544,6 +542,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
         try:
             summary = json.loads(result.stdout)
         except json.JSONDecodeError as exc:
+            primary_failure_detail = _redacted(result.stderr or result.stdout or "remote runner returned no report")
             recovered_summary = wait_for_terminal_remote_summary(
                 ssh_command=ssh_command,
                 host=args.host,
@@ -573,9 +572,10 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             return recovered(summary, "periodic_probe")
         if exc.observed.get("runner_state") in {"invalid", "missing"}:
             terminate_local_process_group(proc)
+            detail = f"; startup detail: {primary_failure_detail}" if primary_failure_detail else ""
             raise RuntimeError(
                 "remote runner became unavailable because ownership could not be "
-                "verified; refusing remote cleanup"
+                f"verified; refusing remote cleanup{detail}"
             ) from exc
         cleanup, interruption = _cleanup_remote_execution(
             ssh_command=ssh_command,

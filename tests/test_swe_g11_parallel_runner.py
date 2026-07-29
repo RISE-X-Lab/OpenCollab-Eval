@@ -303,16 +303,16 @@ def test_parser_accepts_compact_sparse_ranges():
 
 def test_workflow_env_is_validated_and_forwarded():
     module = _load_module()
-    config = module.resolve_config(
-        _args(workflow_env=["OPENCOLLAB_TEMPERATURE=1", "OPENCOLLAB_TOP_P=1"])
+    expected = (
+        "OPENCOLLAB_TEMPERATURE=1",
+        "OPENCOLLAB_TOP_P=1",
+        "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY=1",
     )
-
+    config = module.resolve_config(_args(workflow_env=list(expected)))
     command = module.task_command(config, 51)
-
-    assert config.workflow_env == ("OPENCOLLAB_TEMPERATURE=1", "OPENCOLLAB_TOP_P=1")
-    assert command.count("--workflow-env") == 2
-    assert "OPENCOLLAB_TEMPERATURE=1" in command
-    assert "OPENCOLLAB_TOP_P=1" in command
+    assert config.workflow_env == expected
+    assert command.count("--workflow-env") == len(expected)
+    assert all(item in command for item in expected)
 
 
 def test_task_command_forwards_typed_llm_settings():

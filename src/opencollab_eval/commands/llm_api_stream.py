@@ -17,7 +17,23 @@ class ChatStreamError(ValueError):
     """The upstream stream cannot prove a complete chat completion."""
 
 
-def streaming_chat_request(body: bytes) -> tuple[bytes, bool, str]:
+def _without_schema_annotations(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _without_schema_annotations(item)
+            for key, item in value.items()
+            if key not in {"description", "title", "examples", "default", "$comment"}
+        }
+    if isinstance(value, list):
+        return [_without_schema_annotations(item) for item in value]
+    return value
+
+
+def streaming_chat_request(
+    body: bytes,
+    *,
+    compact_tool_schemas: bool = False,
+) -> tuple[bytes, bool, str]:
     """Enable upstream streaming while preserving every caller parameter."""
     try:
         payload = json.loads(body)
@@ -30,6 +46,8 @@ def streaming_chat_request(body: bytes) -> tuple[bytes, bool, str]:
         raise ChatStreamError("request model must be a non-empty string")
     if payload.get("stream") is True:
         return body, False, model
+    if compact_tool_schemas and "tools" in payload:
+        payload["tools"] = _without_schema_annotations(payload["tools"])
     options = payload.get("stream_options")
     if options is None:
         options = {}

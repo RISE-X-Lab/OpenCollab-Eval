@@ -43,3 +43,8 @@ Rules:
   is fixed, then stop.
 - Do NOT run `git commit`. Just leave your edits in the working tree.
 """
+
+WORKFLOW_AGENT_PROMPT = """\
+Obey the current software role. Use public repository evidence only.
+Leave source changes in /testbed and do not run git commit.
+"""

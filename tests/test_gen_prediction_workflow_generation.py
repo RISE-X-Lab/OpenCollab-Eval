@@ -89,6 +89,10 @@ def test_generate_defers_container_patch_extraction(monkeypatch, tmp_path):
     assert captured["kwargs"]["checkpoint_interval_seconds"] is None
     assert captured["kwargs"]["resume_from_checkpoint"] is False
     assert captured["kwargs"]["defer_patch_extraction"] is True
+    assert captured["kwargs"]["prompt"] == gpw.gp.WORKFLOW_AGENT_PROMPT
+    assert "Obey the current software role" in captured["kwargs"]["prompt"]
+    assert "public repository evidence only" in captured["kwargs"]["prompt"]
+    assert "you MUST edit" not in captured["kwargs"]["prompt"]
     assert "api_key" not in captured["kwargs"]
     assert "base_url" not in captured["kwargs"]
     assert metrics["llm_base_url_sha256"] == gpw.hashlib.sha256(

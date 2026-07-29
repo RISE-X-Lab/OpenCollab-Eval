@@ -286,6 +286,13 @@ def generation_runtime_identity():
     ):
         if value not in (None, ""):
             identity[key] = value
+    for key, env_name in (
+        ("wire_protocol", "OPENCOLLAB_WIRE_PROTOCOL"),
+        ("reasoning_effort", "OPENCOLLAB_REASONING_EFFORT"),
+    ):
+        value = effective_workflow_env().get(env_name)
+        if value:
+            identity[key] = value
     if workflow == "openhands-external":
         identity["openhands_empty_patch_rejections"] = (
             openhands_empty_patch_rejections

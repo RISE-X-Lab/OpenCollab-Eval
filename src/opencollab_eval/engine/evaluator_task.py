@@ -31,6 +31,11 @@ async def run_eval_task_impl(
     max_output_tokens: int,
     thinking: bool,
     thinking_params: dict | None,
+    wire_protocol: str,
+    reasoning_effort: str | None,
+    llm_connect_timeout: float,
+    llm_first_event_timeout: float,
+    llm_stream_idle_timeout: float,
     checkpoint_interval_seconds: float | None,
     resume_from_checkpoint: bool,
     cancellation_cleanup_timeout: float,
@@ -60,6 +65,11 @@ async def run_eval_task_impl(
         max_output_tokens=max_output_tokens,
         thinking=thinking,
         thinking_params=thinking_params,
+        wire_protocol=wire_protocol,
+        reasoning_effort=reasoning_effort,
+        llm_connect_timeout=llm_connect_timeout,
+        llm_first_event_timeout=llm_first_event_timeout,
+        llm_stream_idle_timeout=llm_stream_idle_timeout,
         resume_from_checkpoint=resume_from_checkpoint,
     )
     execution = await execute_eval_run(

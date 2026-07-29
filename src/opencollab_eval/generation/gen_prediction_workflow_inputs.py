@@ -36,9 +36,7 @@ def build_task(instance: dict, *, include_fail_to_pass: bool = True) -> str:
     else:
         tests_block = (
             "## Blind validation mode\n"
-            "Do not use official hidden tests, injected grader patches, or "
-            "FAIL_TO_PASS node ids. Infer validation only from the issue text, "
-            "repository code, public tests, and public documentation.\n\n"
+            "Use only the public issue, repository, tests, and documentation.\n\n"
         )
     return (
         f"# Issue to fix in `{instance['repo']}`\n\n"

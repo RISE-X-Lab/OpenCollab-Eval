@@ -150,6 +150,11 @@ async def run_agent(
             ),
             "thinking": cfg.get("thinking", False),
             "thinking_params": cfg.get("thinking_params") or {},
+            "wire_protocol": cfg.get("wire_protocol", "chat_completions"),
+            "reasoning_effort": cfg.get("reasoning_effort"),
+            "llm_connect_timeout": cfg.get("llm_connect_timeout", 30.0),
+            "llm_first_event_timeout": cfg.get("llm_first_event_timeout", 180.0),
+            "llm_stream_idle_timeout": cfg.get("llm_stream_idle_timeout", 180.0),
         },
         environment=environment,
     )

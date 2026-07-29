@@ -513,7 +513,7 @@ def test_local_model_relay_launches_without_putting_api_key_in_plist(
     monkeypatch.setattr(
         module,
         "_local_relay_healthy",
-        lambda _url, _upstream: next(health),
+        lambda _url, _upstream, **_kwargs: next(health),
     )
     monkeypatch.setattr(module.Path, "home", classmethod(lambda cls: tmp_path))
     monkeypatch.setattr(
@@ -545,7 +545,9 @@ def test_local_model_relay_launches_without_putting_api_key_in_plist(
 
 def test_local_relay_health_rejects_another_upstream(monkeypatch: Any) -> None:
     module = _load_entry_module()
-
+    relay_health = importlib.import_module(
+        "opencollab_eval.commands._swe_eval_relay_health"
+    )
     class Response:
         def __enter__(self):
             return self
@@ -563,7 +565,7 @@ def test_local_relay_health_rejects_another_upstream(monkeypatch: Any) -> None:
                 }
             ).encode()
 
-    monkeypatch.setattr(module.urllib.request, "urlopen", lambda *_args, **_kwargs: Response())
+    monkeypatch.setattr(relay_health.urllib.request, "urlopen", lambda *_args, **_kwargs: Response())
 
     assert module._local_relay_healthy(
         "http://127.0.0.1:8879", "https://api.kimi.com/coding/v1"
@@ -573,11 +575,9 @@ def test_local_relay_health_rejects_another_upstream(monkeypatch: Any) -> None:
 def test_remote_relay_health_binds_the_expected_upstream(monkeypatch: Any) -> None:
     module = _load_entry_module()
     captured = {}
-
     def fake_run(command, **kwargs):
         captured.update(command=command, kwargs=kwargs)
         return SimpleNamespace(returncode=0)
-
     monkeypatch.setattr(module.subprocess, "run", fake_run)
 
     assert module._remote_proxy_healthy(
@@ -585,6 +585,9 @@ def test_remote_relay_health_binds_the_expected_upstream(monkeypatch: Any) -> No
         host="host",
         base_url="http://127.0.0.1:18789/v1",
         upstream_base_url="https://api.kimi.com/coding/v1",
+        relay_mode="responses-pass-through",
+        compact_tool_schemas=False,
+        max_upstream_request_bytes=0,
     )
     joined = " ".join(captured["command"])
     expected = hashlib.sha256(b"https://api.kimi.com/coding/v1").hexdigest()
@@ -592,17 +595,16 @@ def test_remote_relay_health_binds_the_expected_upstream(monkeypatch: Any) -> No
     assert "upstream_base_url_sha256" in joined
     assert "http://127.0.0.1:18789/healthz" in joined
     assert "http://127.0.0.1:18789/v1/healthz" not in joined
+    assert "responses-pass-through" in joined
     assert subprocess.run(["sh", "-n", "-c", captured["command"][-1]], check=False).returncode == 0
 
 
 def test_remote_relay_socket_health_requires_private_bound_socket(monkeypatch: Any) -> None:
     module = _load_entry_module()
     captured = {}
-
     def fake_run(command, **kwargs):
         captured.update(command=command, kwargs=kwargs)
         return SimpleNamespace(returncode=0)
-
     monkeypatch.setattr(module.subprocess, "run", fake_run)
     socket_path = "/tmp/opencollab-llmproxy-18790.sock"
     assert module._remote_proxy_socket_healthy(
@@ -610,6 +612,9 @@ def test_remote_relay_socket_health_requires_private_bound_socket(monkeypatch: A
         host="host",
         socket_path=socket_path,
         upstream_base_url="https://api.example.invalid/v1",
+        relay_mode="responses-pass-through",
+        compact_tool_schemas=False,
+        max_upstream_request_bytes=0,
     )
     joined = " ".join(captured["command"])
     remote_command = captured["command"][-1]
@@ -618,6 +623,7 @@ def test_remote_relay_socket_health_requires_private_bound_socket(monkeypatch: A
     assert "stat.S_IMODE(mode) & 0o077 == 0" in joined
     assert "http.client.parse_headers" in joined
     assert "stream.read(length)" in joined
+    assert "responses-pass-through" in joined
     assert hashlib.sha256(b"https://api.example.invalid/v1").hexdigest() in joined
     assert subprocess.run(["sh", "-n", "-c", remote_command], check=False).returncode == 0
 
@@ -683,6 +689,7 @@ def test_foreground_entry_starts_model_relay_before_runner(monkeypatch: Any, tmp
 
     assert result == 0
     assert [call[0] for call in calls] == ["proxy", "runner"]
+    assert calls[0][1]["relay_mode"] == "aggregate-chat-stream"
 
 
 def test_detach_starts_direct_launch_agent_once(monkeypatch: Any, tmp_path: Path) -> None:

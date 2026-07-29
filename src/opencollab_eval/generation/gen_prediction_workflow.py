@@ -42,6 +42,7 @@ from opencollab_eval.engine.evaluator import EvalTask, run_eval_task  # noqa: E4
 from opencollab_eval.engine.provider_failures import (  # noqa: E402
     summarize_terminal_provider_failures,
 )
+from opencollab_eval.engine.swe_eval_records import open_regular_binary  # noqa: E402
 from opencollab_eval.engine.swe_generation_proof import (  # noqa: E402
     current_generation_proof_valid,
 )
@@ -154,6 +155,72 @@ def _result_metrics(result) -> dict:
         for field in fields(result)
         if field.name != "patch"
     }
+
+
+def _verified_provider_models(
+    trajectory_path: str | None,
+    *,
+    artifact_root: Path,
+    expected_model: str,
+    expected_reasoning_effort: str | None,
+    wire_protocol: str,
+) -> tuple[list[str], str | None]:
+    if wire_protocol != "responses":
+        return [], None
+    if not trajectory_path:
+        raise RuntimeError("Responses execution did not produce a trajectory")
+    path = Path(trajectory_path)
+    try:
+        resolved = path.resolve(strict=True)
+        if not resolved.is_relative_to(artifact_root.resolve(strict=True)):
+            raise RuntimeError("Responses trajectory is outside the current artifact root")
+        with open_regular_binary(path) as handle:
+            before = os.fstat(handle.fileno())
+            raw = handle.read(16 * 1024 * 1024 + 1)
+            after = os.fstat(handle.fileno())
+        if (
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_ctime_ns,
+        ) != (
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        ):
+            raise RuntimeError("Responses trajectory changed while reading")
+        if len(raw) > 16 * 1024 * 1024:
+            raise RuntimeError("Responses trajectory exceeds 16 MiB")
+        lines = raw.decode("utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise RuntimeError("Responses trajectory cannot be read") from exc
+    models: list[str] = []
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Responses trajectory contains invalid JSON") from exc
+        if not isinstance(record, dict) or record.get("type") != "llm_call":
+            continue
+        payload = record.get("payload")
+        if not isinstance(payload, dict):
+            raise RuntimeError("Responses llm_call is missing its payload")
+        if payload.get("wire_protocol") != "responses":
+            raise RuntimeError("Responses trajectory contains a mixed wire protocol")
+        observed = payload.get("provider_model")
+        if observed != expected_model:
+            raise RuntimeError(
+                f"Responses provider model mismatch expected {expected_model!r} got {observed!r}"
+            )
+        observed_effort = payload.get("reasoning_effort")
+        if observed_effort != expected_reasoning_effort:
+            raise RuntimeError(
+                "Responses reasoning effort mismatch "
+                f"expected {expected_reasoning_effort!r} got {observed_effort!r}"
+            )
+        models.append(observed)
+    if not models:
+        raise RuntimeError("Responses trajectory contains no verified LLM call")
+    return sorted(set(models)), hashlib.sha256(raw).hexdigest()
 
 
 def _workflow_status_for_result(result, patch: str) -> str:
@@ -276,15 +343,18 @@ async def generate(
             max_tokens=args.budget,
             extras=build_extras(instance, include_hidden_tests=include_hidden_tests),
         )
+        workflow_log_dir = Path(
+            os.environ.get(
+                "OPENCOLLAB_EVAL_WORKFLOW_LOG_DIR",
+                str(_REPO_ROOT / "logs" / "eval_workflow"),
+            )
+        ).resolve()
         result = await run_eval_task(
             task,
             model=cfg["model"],
             provider=cfg["provider"],
-            output_dir=os.environ.get(
-                "OPENCOLLAB_EVAL_WORKFLOW_LOG_DIR",
-                str(_REPO_ROOT / "logs" / "eval_workflow"),
-            ),
-            prompt=gp.AGENT_PROMPT,
+            output_dir=str(workflow_log_dir),
+            prompt=gp.WORKFLOW_AGENT_PROMPT,
             env_factory=env_factory,
             max_steps=args.max_steps,
             workflow=workflow_fn,
@@ -295,6 +365,11 @@ async def generate(
             ),
             thinking=cfg.get("thinking", False),
             thinking_params=cfg.get("thinking_params") or None,
+            wire_protocol=cfg.get("wire_protocol", "chat_completions"),
+            reasoning_effort=cfg.get("reasoning_effort"),
+            llm_connect_timeout=cfg.get("llm_connect_timeout", 30.0),
+            llm_first_event_timeout=cfg.get("llm_first_event_timeout", 180.0),
+            llm_stream_idle_timeout=cfg.get("llm_stream_idle_timeout", 180.0),
             checkpoint_interval_seconds=None,
             resume_from_checkpoint=False,
             defer_patch_extraction=True,
@@ -307,6 +382,18 @@ async def generate(
         provider_failure = summarize_terminal_provider_failures(
             result.agent_failures
         )
+        try:
+            provider_models, trajectory_sha256 = _verified_provider_models(
+                result.trajectory_path,
+                artifact_root=workflow_log_dir / "trajectories" / task.task_id,
+                expected_model=cfg["model"],
+                expected_reasoning_effort=cfg.get("reasoning_effort"),
+                wire_protocol=cfg.get("wire_protocol", "chat_completions"),
+            )
+        except RuntimeError as exc:
+            result.error = str(exc)
+            provider_models = []
+            trajectory_sha256 = None
         outer_extraction_allowed = bool(
             result.execution_quiesced
             and result.injected_path_cleanup_proven
@@ -338,7 +425,11 @@ async def generate(
         metrics.update(
             {
                 "llm_model": cfg["model"],
+                "provider_models": provider_models,
+                "trajectory_sha256": trajectory_sha256,
                 "llm_provider": cfg["provider"],
+                "wire_protocol": cfg.get("wire_protocol", "chat_completions"),
+                "reasoning_effort": cfg.get("reasoning_effort"),
                 "context_window": model_context_window(cfg["model"]),
                 "temperature": cfg["temperature"],
                 "top_p": cfg.get("top_p"),
@@ -352,10 +443,16 @@ async def generate(
                     key: os.environ[key]
                     for key in (
                         "OPENCOLLAB_MAX_OUTPUT_TOKENS",
+                        "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY",
                         "OPENCOLLAB_TEMPERATURE",
                         "OPENCOLLAB_THINKING",
                         "OPENCOLLAB_THINKING_PARAMS",
                         "OPENCOLLAB_TOP_P",
+                        "OPENCOLLAB_WIRE_PROTOCOL",
+                        "OPENCOLLAB_REASONING_EFFORT",
+                        "OPENCOLLAB_LLM_CONNECT_TIMEOUT",
+                        "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT",
+                        "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT",
                     )
                     if key in os.environ
                 },

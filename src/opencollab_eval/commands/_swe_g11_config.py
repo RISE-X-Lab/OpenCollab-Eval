@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from opencollab_eval.commands import _swe_eval_layer_integrity as _eval_integrity
+from opencollab_eval.commands.swe_v1_prolite_common import ALLOWED_WORKFLOW_ENV_KEYS
 from opencollab_eval.engine.solver_backend import KIMI_CODING_BASE_URL, is_kimi_direct_model
 from opencollab_eval.engine.swe_eval_records import (
     SUBMISSION_INTEGRITY_PROVEN,
@@ -32,17 +33,6 @@ DEFAULT_MODEL_NAME = os.environ.get("OPENCOLLAB_SWE_MODEL_NAME", "").strip()
 DEFAULT_IMAGE_REPOSITORY = os.environ.get(
     "OPENCOLLAB_SWE_IMAGE_REPOSITORY", ""
 ).strip()
-ALLOWED_WORKFLOW_ENV_KEYS = frozenset(
-    {
-        "OPENCOLLAB_MAX_OUTPUT_TOKENS",
-        "OPENCOLLAB_TEMPERATURE",
-        "OPENCOLLAB_THINKING",
-        "OPENCOLLAB_THINKING_PARAMS",
-        "OPENCOLLAB_TOP_P",
-    }
-)
-
-
 @dataclass(frozen=True)
 class ParallelConfig:
     indices: tuple[int, ...]

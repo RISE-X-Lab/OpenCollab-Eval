@@ -233,8 +233,19 @@ async def test_happy_path_passes_first_round(validation_council_solve):
     ]
     all_prompts = "\n".join(call["prompt"] for call in ctx.agent_calls)
     assert "tests/hidden.py::test_secret" not in all_prompts
-    assert "If your current tools cannot create or run a probe" in all_prompts
+    assert "Report unavailable probes as not_run" in all_prompts
     assert "do not search for write tools" in all_prompts
+    coder_prompt = next(call["prompt"] for call in ctx.agent_calls if call["label"] == "coder:r1")
+    assert "widget.py" in coder_prompt
+    assert "next call must read at most 20 lines" in coder_prompt
+    assert "read the next adjacent 20" in coder_prompt
+    assert "lines instead of searching again" in coder_prompt
+    assert "Use one\nfocused tool call per turn" in coder_prompt
+    assert "never repeat a successful search" in coder_prompt
+    assert "raw ---/+++/@@ text" in coder_prompt
+    assert "never a Begin Patch" in coder_prompt
+    assert "file_write for one unique replacement" in coder_prompt
+    assert len(coder_prompt.encode()) < 850
 
 
 async def test_failed_final_verifier_retries_with_feedback(validation_council_solve):
@@ -262,6 +273,63 @@ async def test_failed_final_verifier_retries_with_feedback(validation_council_so
     assert timeouts["post-validation-triage:r2"] == 900
     assert timeouts["final-verifier:r2"] == 900
     assert any("attempt 1 failed" in message for message in ctx.logs)
+
+
+async def test_retry_feedback_is_bounded(validation_council_solve):
+    long_failure = {**FAIL, "findings": "specific failure " * 200}
+    ctx = ScriptedCtx(_base_replies(long_failure) + _base_replies(PASS)[6:])
+
+    await validation_council_solve(ctx, {"goal": "fix empty widget"})
+
+    retry_prompt = next(call["prompt"] for call in ctx.agent_calls if call["label"] == "coder:r2")
+    assert "...[shortened]..." in retry_prompt
+    assert len(retry_prompt.encode()) < 1200
+
+
+async def test_coder_prompt_keeps_localized_path_ahead_of_long_prose(
+    validation_council_solve,
+):
+    replies = _base_replies()
+    replies[0] = {
+        **LOCALIZATION,
+        "files": ["openlibrary/solr/update_work.py"],
+        "definition_of_done": "two-value return contract " * 100,
+    }
+    ctx = ScriptedCtx(replies)
+
+    await validation_council_solve(ctx, {"goal": "fix updater return shape"})
+
+    coder_prompt = next(call["prompt"] for call in ctx.agent_calls if call["label"] == "coder:r1")
+    assert "openlibrary/solr/update_work.py" in coder_prompt
+
+
+async def test_empty_pre_validation_skips_baseline_executor(validation_council_solve):
+    empty_judge = {
+        "accepted": [],
+        "rejected": [],
+        "diagnostic": [],
+        "validation_brief": "No accepted probes.",
+    }
+    replies = [
+        LOCALIZATION,
+        CONTRACTS,
+        CARTOGRAPHY,
+        {**CANDIDATES, "tests": [], "abstained": True},
+        empty_judge,
+        "changed widget.py",
+        PASS,
+        RISKS,
+        CANDIDATES,
+        JUDGE,
+        TRIAGE,
+        PASS,
+    ]
+    ctx = ScriptedCtx(replies)
+
+    result = await validation_council_solve(ctx, {"goal": "fix empty widget"})
+
+    assert result["status"] == "done"
+    assert "baseline-triage" not in [call["label"] for call in ctx.agent_calls]
 
 
 async def test_failed_final_verifier_allows_three_coder_rounds(validation_council_solve):

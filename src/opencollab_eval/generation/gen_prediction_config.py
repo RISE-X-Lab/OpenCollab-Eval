@@ -134,3 +134,10 @@ def bind_llm_transport(metrics: dict) -> None:
         ):
             raise ValueError("OPENCOLLAB_EVAL_WORKFLOW_ENV must be a string mapping")
         metrics["workflow_env"] = dict(sorted(workflow_env.items()))
+        for metric_key, env_key in (
+            ("wire_protocol", "OPENCOLLAB_WIRE_PROTOCOL"),
+            ("reasoning_effort", "OPENCOLLAB_REASONING_EFFORT"),
+        ):
+            value = workflow_env.get(env_key)
+            if value:
+                metrics[metric_key] = value

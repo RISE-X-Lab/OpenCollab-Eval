@@ -31,6 +31,11 @@ class ExecutionConfig:
     max_output_tokens: int
     thinking: bool
     thinking_params: dict | None
+    wire_protocol: str
+    reasoning_effort: str | None
+    llm_connect_timeout: float
+    llm_first_event_timeout: float
+    llm_stream_idle_timeout: float
     resume_from_checkpoint: bool
 
 
@@ -256,6 +261,11 @@ async def run_session_or_workflow(
             max_output_tokens=config.max_output_tokens,
             thinking=config.thinking,
             thinking_params=config.thinking_params,
+            wire_protocol=config.wire_protocol,
+            reasoning_effort=config.reasoning_effort,
+            llm_connect_timeout=config.llm_connect_timeout,
+            llm_first_event_timeout=config.llm_first_event_timeout,
+            llm_stream_idle_timeout=config.llm_stream_idle_timeout,
             save_dir=run_dir,
             session_holder=state.session_holder,
             owned_tasks=state.owned_tasks,
@@ -281,6 +291,11 @@ async def run_session_or_workflow(
         max_output_tokens=config.max_output_tokens,
         thinking=config.thinking,
         thinking_params=config.thinking_params,
+        wire_protocol=config.wire_protocol,
+        reasoning_effort=config.reasoning_effort,
+        llm_connect_timeout=config.llm_connect_timeout,
+        llm_first_event_timeout=config.llm_first_event_timeout,
+        llm_stream_idle_timeout=config.llm_stream_idle_timeout,
         save_dir=run_dir,
         context_holder=state.workflow_context_holder,
         owned_tasks=state.owned_tasks,

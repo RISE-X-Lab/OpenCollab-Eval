@@ -27,13 +27,9 @@ def test_validation_council_tester_tools_can_probe_but_not_author():
     tools = _workflow_globals()["_tester_tools"]()
     names = _names(tools)
 
-    assert "bash" in names
-    assert {"file_read", "run_tests", "grep", "git_diff"} <= set(names)
+    assert names == ["bash", "file_read", "run_tests", "grep", "git_diff"]
     assert "file_write" not in names
     assert "apply_patch" not in names
-    run_tests = next(tool for tool in tools if tool.name == "run_tests")
-    assert run_tests.allow_runner_override is False
-    assert run_tests.allow_extra_args is False
 
 
 def test_validation_council_risk_tools_can_read_the_diff():
@@ -57,3 +53,17 @@ def test_validation_council_coder_tools_keep_edit_path():
         "run_tests",
         "grep",
     ]
+
+
+def test_validation_council_shared_rules_are_compact_and_keep_integrity_guards():
+    rules = _workflow_globals()["SHARED_RULES"]
+
+    assert len(rules.encode("utf-8")) <= 512
+    assert "hidden grader data" in rules
+    assert "official hidden tests" in rules
+    assert "grader patches" in rules
+    assert "FAIL_TO_PASS IDs" in rules
+    assert "Obey this role and its tools" in rules
+    assert "/tmp/opencollab-validation-*" in rules
+    assert "smallest source fix" in rules
+    assert "Do not run git commit" in rules

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from evaluator_test_support import (
     EvalTask,
+    ExecResult,
     FakeEnv,
     FakeLLMClient,
     evaluator,
@@ -11,6 +12,8 @@ from evaluator_test_support import (
     run,
     run_eval_task,
 )
+
+from opencollab_eval.engine import evaluator_sessions
 
 
 @pytest.mark.parametrize(
@@ -158,6 +161,60 @@ def test_default_tools_match_curated_team_surface():
     assert by_name["run_tests"].require_process_isolation is True
     assert by_name["run_tests"].allow_runner_override is False
     assert by_name["run_tests"].allow_extra_args is False
+
+
+def test_repository_map_is_utf8_bounded_without_splitting_paths():
+    paths = ["src/café.py", *(f"very/long/component/{index:04d}.py" for index in range(500))]
+
+    class RepositoryMapEnv(FakeEnv):
+        async def exec_cmd(self, cmd: str, timeout: float = 120.0) -> ExecResult:
+            assert cmd == "git -c core.quotepath=false ls-files -z"
+            assert timeout == 30.0
+            return ExecResult(returncode=0, stdout="\0".join(paths) + "\0", stderr="")
+
+    repository_map = run(evaluator.build_repository_map(RepositoryMapEnv()))
+
+    assert repository_map.startswith("Repository files\nsrc/café.py\n")
+    assert repository_map.endswith("\n...")
+    assert len(repository_map.encode("utf-8")) <= 512
+    assert "\ufffd" not in repository_map
+
+
+def test_repository_map_can_be_disabled_for_bounded_relays(monkeypatch):
+    class RepositoryMapEnv(FakeEnv):
+        async def exec_cmd(self, cmd: str, timeout: float = 120.0) -> ExecResult:
+            raise AssertionError("disabled repository maps must not inspect the workspace")
+
+    monkeypatch.setenv("OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES", "0")
+
+    assert run(evaluator.build_repository_map(RepositoryMapEnv())) == ""
+
+
+@pytest.mark.parametrize("max_bytes", [1, 17, 18, 19])
+def test_repository_map_never_exceeds_tiny_byte_limit(monkeypatch, max_bytes):
+    class RepositoryMapEnv(FakeEnv):
+        async def exec_cmd(self, cmd: str, timeout: float = 120.0) -> ExecResult:
+            return ExecResult(returncode=0, stdout="src/module.py\0", stderr="")
+
+    monkeypatch.setenv("OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES", str(max_bytes))
+    repository_map = run(evaluator.build_repository_map(RepositoryMapEnv()))
+
+    assert len(repository_map.encode("utf-8")) <= max_bytes
+
+
+@pytest.mark.parametrize(("raw", "expected"), [("1", 1), ("4", 4), ("32", 32)])
+def test_workflow_concurrency_accepts_bounded_values(monkeypatch, raw, expected):
+    monkeypatch.setenv("OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY", raw)
+
+    assert evaluator_sessions._workflow_concurrency() == expected
+
+
+@pytest.mark.parametrize("raw", ["0", "33", "one"])
+def test_workflow_concurrency_rejects_invalid_values(monkeypatch, raw):
+    monkeypatch.setenv("OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY", raw)
+
+    with pytest.raises(RuntimeError, match="workflow concurrency"):
+        evaluator_sessions._workflow_concurrency()
 
 
 def test_eval_task_round_trips_extras():

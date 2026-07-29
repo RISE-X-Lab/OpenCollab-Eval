@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -25,6 +26,17 @@ DEFAULT_THINKING_PARAMS = {"enable_thinking": True}
 _CONTROLLED_STOP_REASONS = frozenset(
     {"budget_exceeded", "context_overflow", "step_limit_exceeded", "timeout"}
 )
+
+
+def _workflow_concurrency() -> int:
+    raw = os.environ.get("OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY", "4")
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise RuntimeError("workflow concurrency must be an integer from 1 to 32") from exc
+    if not 1 <= value <= 32:
+        raise RuntimeError("workflow concurrency must be an integer from 1 to 32")
+    return value
 
 
 def _runtime_session_quiesced(result: RunResult[Any]) -> bool:
@@ -130,6 +142,11 @@ def _client(
     max_output_tokens: int,
     thinking: bool,
     thinking_params: dict | None,
+    wire_protocol: str,
+    reasoning_effort: str | None,
+    llm_connect_timeout: float,
+    llm_first_event_timeout: float,
+    llm_stream_idle_timeout: float,
 ) -> OpenCollab:
     return OpenCollab(
         Path.cwd(),
@@ -147,6 +164,11 @@ def _client(
                 if thinking_params is None
                 else dict(thinking_params)
             ),
+            "wire_protocol": wire_protocol,
+            "reasoning_effort": reasoning_effort,
+            "llm_connect_timeout": llm_connect_timeout,
+            "llm_first_event_timeout": llm_first_event_timeout,
+            "llm_stream_idle_timeout": llm_stream_idle_timeout,
         },
         environment=env,
     )
@@ -169,6 +191,11 @@ async def _run_single_session(
     max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
     thinking: bool = DEFAULT_THINKING,
     thinking_params: dict | None = None,
+    wire_protocol: str = "chat_completions",
+    reasoning_effort: str | None = None,
+    llm_connect_timeout: float = 30.0,
+    llm_first_event_timeout: float = 180.0,
+    llm_stream_idle_timeout: float = 180.0,
     save_dir: str | None = None,
     **_unused: Any,
 ) -> _EvalRunRecord:
@@ -185,6 +212,11 @@ async def _run_single_session(
         max_output_tokens=max_output_tokens,
         thinking=thinking,
         thinking_params=thinking_params,
+        wire_protocol=wire_protocol,
+        reasoning_effort=reasoning_effort,
+        llm_connect_timeout=llm_connect_timeout,
+        llm_first_event_timeout=llm_first_event_timeout,
+        llm_stream_idle_timeout=llm_stream_idle_timeout,
     ).agent(
         task.description,
         name="eval_agent",
@@ -219,6 +251,11 @@ async def _run_workflow_mode(
     max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
     thinking: bool = DEFAULT_THINKING,
     thinking_params: dict | None = None,
+    wire_protocol: str = "chat_completions",
+    reasoning_effort: str | None = None,
+    llm_connect_timeout: float = 30.0,
+    llm_first_event_timeout: float = 180.0,
+    llm_stream_idle_timeout: float = 180.0,
     save_dir: str | None = None,
     **_unused: Any,
 ) -> _EvalRunRecord:
@@ -240,10 +277,16 @@ async def _run_workflow_mode(
         max_output_tokens=max_output_tokens,
         thinking=thinking,
         thinking_params=thinking_params,
+        wire_protocol=wire_protocol,
+        reasoning_effort=reasoning_effort,
+        llm_connect_timeout=llm_connect_timeout,
+        llm_first_event_timeout=llm_first_event_timeout,
+        llm_stream_idle_timeout=llm_stream_idle_timeout,
     ).workflow(
         workflow,
         args,
         budget=task.max_tokens,
+        concurrency=_workflow_concurrency(),
         timeout=task.timeout,
         max_steps=max_steps,
         system_prompt=prompt,

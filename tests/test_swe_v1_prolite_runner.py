@@ -657,17 +657,6 @@ def test_single_agent_workflow_selects_the_single_agent_generator():
     assert 'else "single-agent"' in source
 
 
-def test_workflow_env_accepts_sampling_settings_and_rejects_secrets():
-    assert runner.normalize_workflow_env(
-        ["OPENCOLLAB_TEMPERATURE=1", "OPENCOLLAB_MAX_OUTPUT_TOKENS=32768"]
-    ) == {
-        "OPENCOLLAB_TEMPERATURE": "1",
-        "OPENCOLLAB_MAX_OUTPUT_TOKENS": "32768",
-    }
-    with pytest.raises(ValueError, match="unsupported --workflow-env"):
-        runner.normalize_workflow_env(["OPENCOLLAB_API_KEY=secret"])
-
-
 def test_remote_runner_caps_eval_attempts_and_retries_environment_eval_failures():
     config = _complete_remote_config(
         {

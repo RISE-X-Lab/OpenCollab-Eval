@@ -87,6 +87,9 @@ def test_proxy_health_and_authenticated_forwarding(relay: str) -> None:
     with urllib.request.urlopen(relay + "/healthz", timeout=2) as response:
         health = json.load(response)
     assert health["status"] == "ok"
+    assert health["compact_tool_schemas"] is False
+    assert health["responses_passthrough"] is True
+    assert health["allow_insecure_upstream"] is False
     assert len(health["upstream_base_url_sha256"]) == 64
     request = urllib.request.Request(
         relay + "/chat/completions",
@@ -112,6 +115,19 @@ def test_proxy_health_and_authenticated_forwarding(relay: str) -> None:
     assert observed_headers["anthropic-version"] == "2023-06-01"
     assert observed_headers["anthropic-beta"] == "context-1m-2025-08-07"
 
+    responses_request = urllib.request.Request(
+        relay + "/v1/responses",
+        data=b'{"model":"gpt-5.6-sol","input":"OK","store":false}',
+        headers={
+            "Authorization": "Bearer client-secret",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(responses_request, timeout=2) as response:
+        assert response.status == 200
+    assert _UpstreamHandler.requests[1]["path"] == "/coding/v1/responses"
+
 
 def test_proxy_rejects_wrong_token_without_contacting_upstream(relay: str) -> None:
     request = urllib.request.Request(
@@ -124,6 +140,44 @@ def test_proxy_rejects_wrong_token_without_contacting_upstream(relay: str) -> No
         urllib.request.urlopen(request, timeout=2)
     assert caught.value.code == 401
     assert _UpstreamHandler.requests == []
+
+
+def test_proxy_enforces_declared_upstream_request_limit_after_processing() -> None:
+    _UpstreamHandler.requests = []
+    upstream = ThreadingHTTPServer(("127.0.0.1", 0), _UpstreamHandler)
+    proxy = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        make_handler(
+            ProxyConfig(
+                client_token="client-secret",
+                upstream_api_key="upstream-secret",
+                upstream_base_url=f"http://127.0.0.1:{upstream.server_port}/v1",
+                timeout=5,
+                max_upstream_request_bytes=16,
+            )
+        ),
+    )
+    upstream_thread = threading.Thread(target=upstream.serve_forever, daemon=True)
+    proxy_thread = threading.Thread(target=proxy.serve_forever, daemon=True)
+    upstream_thread.start()
+    proxy_thread.start()
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{proxy.server_port}/v1/responses",
+        data=b'{"model":"gpt-5.6-sol","input":"too large"}',
+        headers={"Authorization": "Bearer client-secret"},
+        method="POST",
+    )
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(request, timeout=2)
+        assert caught.value.code == 413
+        assert json.load(caught.value)["error"] == "upstream_request_too_large"
+        assert _UpstreamHandler.requests == []
+    finally:
+        proxy.shutdown()
+        upstream.shutdown()
+        proxy.server_close()
+        upstream.server_close()
 
 
 def test_proxy_config_requires_private_file_and_separate_tokens(tmp_path) -> None:
@@ -141,6 +195,26 @@ def test_proxy_config_requires_private_file_and_separate_tokens(tmp_path) -> Non
     env_file.chmod(0o644)
     with pytest.raises(PermissionError):
         load_proxy_config(env_file)
+
+
+def test_proxy_config_requires_explicit_opt_in_for_http_upstream(tmp_path) -> None:
+    env_file = tmp_path / "proxy.env"
+    env_file.write_text(
+        "OPENCOLLAB_PROXY_CLIENT_TOKEN=client\n"
+        "OPENCOLLAB_UPSTREAM_API_KEY=upstream\n",
+        encoding="utf-8",
+    )
+    env_file.chmod(0o600)
+
+    with pytest.raises(ValueError, match="HTTPS origin"):
+        load_proxy_config(env_file, upstream_base_url="http://api.example.invalid/v1")
+    config = load_proxy_config(
+        env_file,
+        upstream_base_url="http://api.example.invalid/v1",
+        allow_insecure_upstream=True,
+    )
+
+    assert config.allow_insecure_upstream is True
 
 
 def test_proxy_health_fingerprint_binds_upstream_url() -> None:

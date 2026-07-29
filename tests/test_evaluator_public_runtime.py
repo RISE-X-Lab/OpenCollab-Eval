@@ -108,6 +108,11 @@ def test_agent_delegates_to_public_runtime_with_bound_configuration(
             "max_output_tokens": 4096,
             "thinking": True,
             "thinking_params": {"mode": "enabled"},
+            "wire_protocol": "chat_completions",
+            "reasoning_effort": None,
+            "llm_connect_timeout": 30.0,
+            "llm_first_event_timeout": 180.0,
+            "llm_stream_idle_timeout": 180.0,
         }
     ]
     prompt, call = Client.calls[0]
