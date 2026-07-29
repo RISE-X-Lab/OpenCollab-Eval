@@ -144,16 +144,41 @@ def run_remote_model_probe(config: Any, *, get_token=get_proxy_token) -> dict[st
             "reason": "disabled" if config.skip_health_checks else "dry_run",
         }
     workflow_env = dict(item.split("=", 1) for item in config.workflow_env)
-    thinking = workflow_env.get("OPENCOLLAB_THINKING", "").strip().lower() in {
+    wire_protocol = workflow_env.get(
+        "OPENCOLLAB_WIRE_PROTOCOL", "chat_completions"
+    ).strip().lower()
+    if wire_protocol not in {"chat_completions", "responses"}:
+        raise ValueError(f"unsupported wire protocol: {wire_protocol}")
+    if config.llm_provider != "openai" and wire_protocol != "chat_completions":
+        raise ValueError(
+            f"{config.llm_provider} does not support wire protocol {wire_protocol}"
+        )
+    legacy_thinking = workflow_env.get("OPENCOLLAB_THINKING", "").strip().lower() in {
         "1", "true", "yes", "on"
     }
-    thinking_params = workflow_env.get("OPENCOLLAB_THINKING_PARAMS", "{}") if thinking else "{}"
+    thinking_params = (
+        json.loads(workflow_env.get("OPENCOLLAB_THINKING_PARAMS", "{}"))
+        if legacy_thinking
+        else {}
+    )
+    reasoning_effort = (
+        workflow_env.get("OPENCOLLAB_REASONING_EFFORT", "").strip() or None
+    )
+    if (
+        reasoning_effort is None
+        and wire_protocol == "responses"
+        and isinstance(thinking_params.get("reasoning_effort"), str)
+    ):
+        reasoning_effort = thinking_params["reasoning_effort"]
+    thinking = legacy_thinking or reasoning_effort is not None
     options = {
         "temperature": config.temperature,
         "top_p": config.top_p,
         "max_tokens": config.max_output_tokens,
-        **json.loads(thinking_params),
+        **thinking_params,
     }
+    if wire_protocol == "responses":
+        options["reasoning_effort"] = reasoning_effort
     model_name = str(getattr(config, "model_name", "") or "")
     claude_version = re.fullmatch(r"claude-code-(\d+\.\d+\.\d+)-.+", model_name)
     probe_user_agent = (
@@ -165,8 +190,9 @@ def run_remote_model_probe(config: Any, *, get_token=get_proxy_token) -> dict[st
     )
     script = r'''import json,os,sys,urllib.error,urllib.request
 from opencollab_eval.engine.swe_v1_remote_state import bind_remote_api_network_environment,read_remote_api_environment
-base,provider,model,thinking_text,options_text,env_path,user_agent=sys.argv[1:8]
+base,provider,model,wire,thinking_text,options_text,env_path,user_agent=sys.argv[1:9]
 thinking=thinking_text == "true"
+options=json.loads(options_text)
 remote=read_remote_api_environment(env_path) if env_path else {"token":sys.stdin.readline().strip(),"network_env":{}}
 token=remote["token"]
 bind_remote_api_network_environment(os.environ,remote["network_env"])
@@ -174,10 +200,26 @@ if provider == "anthropic":
     path="/v1/messages"
     payload={"model":model,"max_tokens":128,"messages":[{"role":"user","content":"Reply OK"}]}
     headers={"x-api-key":token,"anthropic-version":"2023-06-01","content-type":"application/json"}
+elif wire == "responses":
+    path="/responses"
+    payload={
+        "model":model,
+        "input":[{"role":"user","content":[{"type":"input_text","text":"Reply OK"}]}],
+        "store":False,
+    }
+    for key in ("temperature","top_p"):
+        if options.get(key) is not None:
+            payload[key]=options[key]
+    if options.get("max_tokens") is not None:
+        payload["max_output_tokens"]=options["max_tokens"]
+    reasoning_effort=options.get("reasoning_effort")
+    if reasoning_effort is not None:
+        payload["reasoning"]={"effort":reasoning_effort}
+    headers={"Authorization":"Bearer "+token,"content-type":"application/json"}
 else:
     path="/chat/completions"
     payload={"model":model,"messages":[{"role":"user","content":"Reply OK"}]}
-    payload.update({key:value for key,value in json.loads(options_text).items() if value is not None})
+    payload.update({key:value for key,value in options.items() if value is not None})
     headers={"Authorization":"Bearer "+token,"content-type":"application/json"}
 if user_agent:
     headers["User-Agent"]=user_agent
@@ -201,6 +243,20 @@ if provider == "anthropic":
     valid=bool(value.get("content"))
     thinking_proven=not thinking or any(item.get("type") == "thinking" for item in value.get("content",[]))
     thinking_request_bound=thinking_proven
+elif wire == "responses":
+    output=value.get("output",[])
+    valid=value.get("status") == "completed" and isinstance(output,list) and bool(output)
+    reasoning_effort=options.get("reasoning_effort")
+    thinking_proven=not thinking or any(
+        isinstance(item,dict) and item.get("type") == "reasoning" for item in output
+    )
+    thinking_request_bound=not thinking or isinstance(reasoning_effort,str)
+    thinking_evidence=(
+        "not_requested" if not thinking else
+        "response_reasoning_item" if thinking_proven else
+        "requested_reasoning_effort" if thinking_request_bound else
+        "missing"
+    )
 else:
     valid=isinstance(value.get("choices"),list) and bool(value["choices"])
     message=value["choices"][0].get("message",{}) if valid else {}
@@ -212,11 +268,11 @@ else:
         thinking_evidence="response_reasoning_content"
         thinking_request_bound=True
         thinking_proven=True
-    elif isinstance(json.loads(options_text).get("reasoning_effort"),str):
+    elif isinstance(options.get("reasoning_effort"),str):
         thinking_evidence="requested_reasoning_effort"
         thinking_request_bound=True
         thinking_proven=False
-    elif json.loads(options_text):
+    elif options:
         thinking_evidence="requested_thinking_config"
         thinking_request_bound=True
         thinking_proven=False
@@ -234,6 +290,7 @@ print(json.dumps({
         "response_thinking_block" if thinking else "not_requested"
     ),
     "actual_model":actual_model,
+    "wire_protocol":wire,
 }))
 raise SystemExit(0 if valid else 3)
 '''
@@ -255,6 +312,7 @@ raise SystemExit(0 if valid else 3)
                 config.remote_proxy_base_url,
                 config.llm_provider,
                 config.llm_model,
+                wire_protocol,
                 "true" if thinking else "false",
                 json.dumps(options, separators=(",", ":")),
                 config.remote_api_env_file,
@@ -286,6 +344,7 @@ raise SystemExit(0 if valid else 3)
     except json.JSONDecodeError:
         payload = {"status": "invalid_probe_output"}
     actual_model = payload.get("actual_model")
+    response_wire_protocol = payload.get("wire_protocol", wire_protocol)
     error_type = payload.get("error_type")
     if not isinstance(error_type, str) or error_type not in _REMOTE_ERROR_TYPES:
         error_type = None
@@ -304,13 +363,21 @@ raise SystemExit(0 if valid else 3)
         "model": config.llm_model,
         "response_model": actual_model,
         "model_matches": model_matches,
+        "wire_protocol": wire_protocol,
+        "response_wire_protocol": response_wire_protocol,
+        "wire_protocol_matches": response_wire_protocol == wire_protocol,
         "thinking_enabled": thinking,
         "thinking_proven": payload.get("thinking_proven") is True,
         "thinking_request_bound": payload.get("thinking_request_bound") is True,
         "thinking_evidence": payload.get("thinking_evidence"),
         "base_url_sha256": hashlib.sha256(config.remote_proxy_base_url.encode()).hexdigest(),
     }
-    if result.returncode != 0 or summary["status"] != "ok" or not summary["model_matches"]:
+    if (
+        result.returncode != 0
+        or summary["status"] != "ok"
+        or not summary["model_matches"]
+        or not summary["wire_protocol_matches"]
+    ):
         raise SharedProbeFailure(
             f"remote model probe failed rc={result.returncode} status={summary['status']}",
             summary,
