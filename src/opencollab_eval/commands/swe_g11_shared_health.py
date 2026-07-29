@@ -126,6 +126,8 @@ def run_remote_model_probe(config: Any, *, get_token=get_proxy_token) -> dict[st
     probe_user_agent = (
         f"claude-cli/{claude_version.group(1)}"
         if config.llm_provider == "anthropic" and claude_version
+        else "Anthropic/Python opencollab-eval"
+        if config.llm_provider == "anthropic"
         else ""
     )
     script = r'''import json,os,sys,urllib.error,urllib.request
