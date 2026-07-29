@@ -188,6 +188,40 @@ def _absolute_pythonpath(value: str) -> str:
     return os.pathsep.join(entries)
 
 
+def _loopback_proxy_environment() -> dict[str, str]:
+    environment: dict[str, str] = {}
+    for key in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ):
+        value = os.environ.get(key, "").strip()
+        try:
+            parsed = urllib.parse.urlparse(value)
+            hostname = parsed.hostname
+        except ValueError:
+            continue
+        if (
+            value
+            and parsed.scheme in {"http", "https"}
+            and hostname in {"127.0.0.1", "localhost", "::1"}
+            and parsed.username is None
+            and parsed.password is None
+            and parsed.path in {"", "/"}
+            and not parsed.params
+            and not parsed.query
+            and not parsed.fragment
+        ):
+            environment[key] = value
+    for key in ("NO_PROXY", "no_proxy"):
+        if value := os.environ.get(key, "").strip():
+            environment[key] = value
+    return environment
+
+
 def _launchd_plist(
     *,
     label: str,
@@ -200,6 +234,7 @@ def _launchd_plist(
         "HOME": str(Path.home()),
         "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
         "PYTHONUNBUFFERED": "1",
+        **_loopback_proxy_environment(),
     }
     if pythonpath := os.environ.get("PYTHONPATH", "").strip():
         environment["PYTHONPATH"] = _absolute_pythonpath(pythonpath)

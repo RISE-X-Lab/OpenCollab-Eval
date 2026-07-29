@@ -5,10 +5,90 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 
 def _entry() -> Any:
     module = importlib.import_module("opencollab_eval.commands.swe_eval_run")
     return importlib.reload(module)
+
+
+def test_launchd_inherits_only_noncredentialed_loopback_proxy(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    module = _entry()
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:7897")
+    monkeypatch.setenv("HTTPS_PROXY", "http://localhost:7897")
+    monkeypatch.setenv("ALL_PROXY", "http://user:secret@127.0.0.1:7897")
+    monkeypatch.setenv("NO_PROXY", "localhost,127.0.0.1")
+
+    payload = module._launchd_plist(
+        label="relay",
+        program_arguments=["relay"],
+        stdout_path=tmp_path / "stdout.log",
+        stderr_path=tmp_path / "stderr.log",
+    )
+
+    environment = payload["EnvironmentVariables"]
+    assert environment["HTTP_PROXY"] == "http://127.0.0.1:7897"
+    assert environment["HTTPS_PROXY"] == "http://localhost:7897"
+    assert environment["NO_PROXY"] == "localhost,127.0.0.1"
+    assert "ALL_PROXY" not in environment
+
+
+@pytest.mark.parametrize(
+    ("proxy_url", "accepted"),
+    [
+        ("http://127.0.0.1:7897", True),
+        ("http://localhost:7897/", True),
+        ("http://[::1]:7897", True),
+        ("http://user:secret@127.0.0.1:7897", False),
+        ("http://127.0.0.1:7897/proxy", False),
+        ("http://127.0.0.1:7897/?token=secret", False),
+        ("http://127.0.0.1:7897/#secret", False),
+        ("http://example.com:7897", False),
+        ("http://[::1", False),
+    ],
+)
+def test_launchd_proxy_requires_plain_loopback_origin(
+    monkeypatch: Any,
+    tmp_path: Path,
+    proxy_url: str,
+    accepted: bool,
+) -> None:
+    module = _entry()
+    monkeypatch.setenv("HTTP_PROXY", proxy_url)
+
+    payload = module._launchd_plist(
+        label="relay",
+        program_arguments=["relay"],
+        stdout_path=tmp_path / "stdout.log",
+        stderr_path=tmp_path / "stderr.log",
+    )
+
+    environment = payload["EnvironmentVariables"]
+    assert ("HTTP_PROXY" in environment) is accepted
+
+
+def test_launchd_ignores_malformed_proxy_without_losing_valid_proxy(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    module = _entry()
+    monkeypatch.setenv("HTTP_PROXY", "http://[::1")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:7897")
+
+    payload = module._launchd_plist(
+        label="relay",
+        program_arguments=["relay"],
+        stdout_path=tmp_path / "stdout.log",
+        stderr_path=tmp_path / "stderr.log",
+    )
+
+    environment = payload["EnvironmentVariables"]
+    assert "HTTP_PROXY" not in environment
+    assert environment["HTTPS_PROXY"] == "http://127.0.0.1:7897"
 
 
 def test_local_responses_relay_launches_as_raw_passthrough(
