@@ -217,6 +217,36 @@ def test_remote_model_probe_uses_claude_cli_identity_for_claude_code(
     assert "claude-cli/2.1.175" in " ".join(captured["command"])
 
 
+def test_remote_model_probe_uses_anthropic_sdk_identity_for_workflows(
+    monkeypatch, tmp_path
+):
+    module = _load_module()
+    config = module.resolve_config(
+        _args(
+            output_dir=tmp_path,
+            model_name="glm-5.2-g11",
+            llm_provider="anthropic",
+            llm_model="glm-5.2",
+        )
+    )
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured.update(command=command, kwargs=kwargs)
+        return module.subprocess.CompletedProcess(
+            command,
+            0,
+            stdout='{"status":"ok","thinking_proven":true,"actual_model":"glm-5.2"}\n',
+            stderr="",
+        )
+
+    monkeypatch.setattr(module, "get_proxy_token", lambda _path: "client-token")
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    assert module.run_remote_model_probe(config)["model_matches"] is True
+    assert "Anthropic/Python opencollab-eval" in " ".join(captured["command"])
+
+
 def test_remote_model_probe_does_not_send_claude_identity_to_openai(
     monkeypatch, tmp_path
 ):
@@ -244,7 +274,9 @@ def test_remote_model_probe_does_not_send_claude_identity_to_openai(
     monkeypatch.setattr(module.subprocess, "run", fake_run)
 
     assert module.run_remote_model_probe(config)["model_matches"] is True
-    assert "claude-cli/" not in " ".join(captured["command"])
+    joined = " ".join(captured["command"])
+    assert "claude-cli/" not in joined
+    assert "Anthropic/Python" not in joined
 
 
 def test_remote_model_probe_requires_exact_non_kimi_model_identity(

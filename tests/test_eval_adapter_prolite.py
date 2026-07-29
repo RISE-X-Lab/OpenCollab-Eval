@@ -21,6 +21,8 @@ def _row(repo: str, tag: str, instance_id: str) -> dict[str, object]:
         "instance_id": instance_id,
         "repo": repo,
         "problem_statement": "Fix the bug.",
+        "requirements": "Preserve the public behavior.",
+        "interface": "fix(value: str) -> str",
         "base_commit": "abc123",
         "dockerhub_tag": tag,
         "fail_to_pass": '["tests/f2p.test"]',
@@ -54,6 +56,11 @@ def test_prolite_rows_normalize_common_repositories() -> None:
     assert all(task.service_dependencies == () for task in tasks[1:])
     assert tasks[0].fail_to_pass == ("tests/f2p.test",)
     assert tasks[0].pass_to_pass == ("tests/p2p.test",)
+    assert (
+        tasks[0].problem_statement
+        == "Fix the bug.\n\nRequirements:\nPreserve the public behavior.\n\n"
+        "New interfaces introduced:\nfix(value: str) -> str"
+    )
 
 
 def test_workspace_spec_prefers_app_then_testbed() -> None:

@@ -10,6 +10,9 @@ from opencollab import OpenCollab, RunResult
 from opencollab.environments import attach_container
 from opencollab.tools import builtin_tools
 
+from opencollab_eval.benchmarks.task_specification import (
+    compose_task_specification,
+)
 from opencollab_eval.engine.swe_eval_records import read_bounded_json
 from opencollab_eval.usage import DEFAULT_MAX_OUTPUT_TOKENS
 
@@ -26,7 +29,7 @@ from .gen_prediction_constants import (
 def build_task(instance: dict) -> str:
     return (
         f"# Issue to fix in `{instance['repo']}`\n\n"
-        f"{instance['problem_statement']}\n\n"
+        f"{compose_task_specification(instance)}\n\n"
         "Locate the root cause in the source, apply a minimal fix, and ensure the "
         "publicly described behavior is satisfied."
     )

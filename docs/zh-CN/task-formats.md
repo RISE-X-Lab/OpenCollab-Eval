@@ -12,7 +12,9 @@ OpenCollab-Eval 在不同信任边界上接受两种 JSONL 契约。`oc-eval ins
 | --- | --- | --- |
 | `instance_id` | 密封 | 原始基准身份 |
 | `repo` | 公开 | 仓库名称 |
-| `problem_statement` | 公开 | Solver 目标 |
+| `problem_statement` | 公开 | 主要问题描述 |
+| `requirements` | 公开 | 必须满足的行为与验收条件 |
+| `interface` | 公开 | 新增或变化的接口 |
 | `base_commit` | 密封 | 可信源代码修订 |
 | `docker_image` | 密封 | 完整评测镜像名称 |
 | `dockerhub_tag` | 密封 | 与 `--image-repository` 配合使用的镜像标签 |
@@ -23,6 +25,9 @@ OpenCollab-Eval 在不同信任边界上接受两种 JSONL 契约。`oc-eval ins
 | `solver_public_metadata` | 公开 | 明确批准的类 JSON 元数据 |
 
 如果公开提示或元数据值中包含实例 ID、基准提交、镜像、目标、测试补丁或其他密封值，规范化器将拒绝该值。公开任务 ID 是通过带密钥的 HMAC 推导出的标识符，例如 `solver-0123456789abcdef0123456789abcdef`。
+
+适配器始终将 `problem_statement`、`requirements` 和 `interface` 组合成
+Solver 的完整任务规格。任何生成适配器都不得静默丢弃后两个字段。
 
 `oc-eval inspect` 最多读取 64 MiB，并要求使用一份原始 32 字节密钥。
 

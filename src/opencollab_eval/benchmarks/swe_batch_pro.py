@@ -13,6 +13,8 @@ from typing import Any
 
 from opencollab_eval.contracts import BenchmarkTask, JudgeSpec, PublicTask
 
+from .task_specification import compose_task_specification
+
 MAX_DATASET_BYTES = 64 * 1024 * 1024
 
 
@@ -71,9 +73,14 @@ def task_from_row(
         raise ValueError("identity_key must contain at least 32 bytes")
     instance_id = _first_string(row, "instance_id", "task_id", "id")
     repo = _first_string(row, "repo", "repository", "repo_name")
-    problem = _first_string(row, "problem_statement", "problem", "description")
-    if not instance_id or not repo or not problem:
+    raw_problem = _first_string(
+        row, "problem_statement", "problem", "description"
+    )
+    if not instance_id or not repo or not raw_problem:
         raise ValueError("task row requires instance_id, repo, and problem statement")
+    problem = compose_task_specification(
+        {**row, "problem_statement": raw_problem}
+    )
     public_id = "solver-" + hmac.new(identity_key, instance_id.encode(), hashlib.sha256).hexdigest()[:32]
     image = _first_string(row, "docker_image", "image")
     tag = _first_string(row, "dockerhub_tag", "image_tag")

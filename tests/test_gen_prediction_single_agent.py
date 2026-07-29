@@ -215,10 +215,14 @@ def test_single_agent_sealed_fields_do_not_reach_runtime_request(monkeypatch, tm
         "private test patch",
         "private reference patch",
     )
+    requirements = "The public call must preserve empty values."
+    interface = "normalize(value: str) -> str"
     prompt = gp.build_task(
         {
             "repo": "owner/repo",
             "problem_statement": "Fix the public behavior.",
+            "requirements": requirements,
+            "interface": interface,
             "instance_id": sealed_values[0],
             "base_commit": sealed_values[1],
             "FAIL_TO_PASS": [sealed_values[2]],
@@ -242,6 +246,8 @@ def test_single_agent_sealed_fields_do_not_reach_runtime_request(monkeypatch, tm
 
     assert "owner/repo" in prompt
     assert "Fix the public behavior." in prompt
+    assert f"Requirements:\n{requirements}" in prompt
+    assert f"New interfaces introduced:\n{interface}" in prompt
     assert runtime.requests[0].prompt == prompt
     assert all(secret not in prompt for secret in sealed_values)
 

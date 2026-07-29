@@ -231,7 +231,8 @@ sealed judge view. It should keep dataset-specific parsing under `benchmarks`
 or `engine.eval_adapter`.
 
 A new workflow should use only documented OpenCollab public imports and live
-under `workflows`. Its task input should contain public issue information.
+under `workflows`. Its task input should contain the complete benchmark task
+specification. Generation adapters must preserve every solver-visible field.
 
 A new external solver should reuse disposable snapshot preparation, process
 quiescence, and the shared candidate constructor. Its sidecar should report
