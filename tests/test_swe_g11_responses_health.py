@@ -28,8 +28,9 @@ from test_swe_g11_parallel_runner import _args, _load_module
     ],
     ids=["independent-effort", "legacy-fallback", "independent-overrides-legacy"],
 )
+@pytest.mark.parametrize("user_agent", [None, "compatible-client/1.0", "   "])
 def test_remote_model_probe_uses_responses_wire_and_nested_reasoning(
-    monkeypatch, tmp_path, workflow_env
+    monkeypatch, tmp_path, workflow_env, user_agent
 ):
     module = _load_module()
     config = module.resolve_config(
@@ -37,7 +38,12 @@ def test_remote_model_probe_uses_responses_wire_and_nested_reasoning(
             output_dir=tmp_path,
             llm_provider="openai",
             llm_model="gpt-5.6-sol",
-            workflow_env=workflow_env,
+            workflow_env=workflow_env
+            + (
+                [f"OPENCOLLAB_LLM_USER_AGENT={user_agent}"]
+                if user_agent is not None
+                else []
+            ),
         )
     )
     captured = {}
@@ -78,6 +84,13 @@ def test_remote_model_probe_uses_responses_wire_and_nested_reasoning(
     assert 'probe_status="empty_output"' in remote_command
     assert '"reasoning_effort":"xhigh"' in remote_command
     assert '"reasoning_effort":"low"' not in remote_command
+    expected_user_agent = (
+        user_agent.strip()
+        if user_agent and user_agent.strip()
+        else module._shared_health.default_openai_user_agent()
+    )
+    assert expected_user_agent in remote_command
+    assert f"OPENCOLLAB_LLM_USER_AGENT={expected_user_agent}" in config.workflow_env
     assert "OPENCOLLAB_LLM_MAX_RETRIES=10000" in config.workflow_env
 
 

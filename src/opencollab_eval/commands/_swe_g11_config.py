@@ -16,6 +16,7 @@ from opencollab_eval.commands import _swe_eval_layer_integrity as _eval_integrit
 from opencollab_eval.commands.swe_v1_prolite_common import normalize_workflow_env_entries
 from opencollab_eval.engine.solver_backend import (
     KIMI_CODING_BASE_URL,
+    default_openai_user_agent,
     is_kimi_direct_model,
 )
 from opencollab_eval.engine.swe_eval_records import (
@@ -269,11 +270,13 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
     workflow = str(args.workflow or "").strip()
     workflow_env = normalize_workflow_env(getattr(args, "workflow_env", ()))
     workflow_env_values = dict(item.split("=", 1) for item in workflow_env)
+    if llm_provider == "openai" and not workflow_env_values.get(
+        "OPENCOLLAB_LLM_USER_AGENT"
+    ):
+        workflow_env_values["OPENCOLLAB_LLM_USER_AGENT"] = default_openai_user_agent()
     if workflow_env_values.get("OPENCOLLAB_WIRE_PROTOCOL") == "responses":
         workflow_env_values.setdefault("OPENCOLLAB_LLM_MAX_RETRIES", "10000")
-        workflow_env = tuple(
-            f"{key}={value}" for key, value in workflow_env_values.items()
-        )
+    workflow_env = tuple(f"{key}={value}" for key, value in workflow_env_values.items())
     context_window, temperature, top_p, max_output_tokens, workflow_env = _kimi_runtime_defaults(
         llm_model,
         llm_provider=llm_provider,

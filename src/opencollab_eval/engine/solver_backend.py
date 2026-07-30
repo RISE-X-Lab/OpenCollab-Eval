@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from importlib.metadata import version
 from typing import Any
 
 _MODEL_RUNTIME_OPTIONS = (
@@ -11,6 +12,11 @@ _MODEL_RUNTIME_OPTIONS = (
 )
 KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/v1"
 SUPPORTED_KIMI_G11_MODELS = frozenset({"k3", "kimi-for-coding"})
+
+
+def default_openai_user_agent() -> str:
+    """Return the identity used by OpenCollab's AsyncOpenAI client."""
+    return f"AsyncOpenAI/Python {version('openai')}"
 
 
 def normalize_llm_user_agent(value: str) -> str:

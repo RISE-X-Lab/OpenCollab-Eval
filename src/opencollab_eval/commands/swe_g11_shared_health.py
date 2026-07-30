@@ -18,6 +18,7 @@ from opencollab_eval.commands.swe_ssh_transport import (
 )
 from opencollab_eval.commands.swe_v1_prolite_config import get_proxy_token
 from opencollab_eval.engine.solver_backend import (
+    default_openai_user_agent,
     is_kimi_direct_model,
     kimi_response_model_matches,
 )
@@ -190,7 +191,8 @@ def run_remote_model_probe(config: Any, *, get_token=get_proxy_token) -> dict[st
         if config.llm_provider == "anthropic" and claude_version
         else "Anthropic/Python opencollab-eval"
         if config.llm_provider == "anthropic"
-        else ""
+        else workflow_env.get("OPENCOLLAB_LLM_USER_AGENT")
+        or default_openai_user_agent()
     )
     script = r'''import datetime,email.utils,json,math,os,sys,urllib.error,urllib.request
 from opencollab_eval.engine.swe_v1_remote_state import bind_remote_api_network_environment,read_remote_api_environment
