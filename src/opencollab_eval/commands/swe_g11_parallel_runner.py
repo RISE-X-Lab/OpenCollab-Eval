@@ -19,6 +19,9 @@ from opencollab_eval.commands import _swe_g11_config as _config
 from opencollab_eval.commands import _swe_g11_reports as _reports
 from opencollab_eval.commands import swe_g11_parallel_process as _parallel_process
 from opencollab_eval.commands import swe_g11_shared_health as _shared_health
+from opencollab_eval.commands.swe_v1_prolite_common import (
+    ALLOWED_WORKFLOW_ENV_KEYS as _ALLOWED_WORKFLOW_ENV_KEYS,
+)
 from opencollab_eval.commands.swe_v1_prolite_config import get_proxy_token
 
 # Preserve the original import surface while keeping implementation modules focused.
@@ -26,7 +29,7 @@ REPO = _config.REPO
 DEFAULT_REMOTE_ROOT = _config.DEFAULT_REMOTE_ROOT
 DEFAULT_EVAL_WORK_ROOT = _config.DEFAULT_EVAL_WORK_ROOT
 DEFAULT_MODEL_NAME = _config.DEFAULT_MODEL_NAME
-ALLOWED_WORKFLOW_ENV_KEYS = _config.ALLOWED_WORKFLOW_ENV_KEYS
+ALLOWED_WORKFLOW_ENV_KEYS = _ALLOWED_WORKFLOW_ENV_KEYS
 ParallelConfig = _config.ParallelConfig
 SchedulerState = _config.SchedulerState
 RETRYABLE_TASK_REPORT_STATUSES = _config.RETRYABLE_TASK_REPORT_STATUSES

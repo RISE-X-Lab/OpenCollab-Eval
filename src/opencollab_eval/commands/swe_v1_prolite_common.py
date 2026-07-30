@@ -8,6 +8,8 @@ import signal
 import subprocess
 from pathlib import Path
 
+from opencollab_eval.engine.solver_backend import normalize_llm_user_agent
+
 REPO_ROOT = Path(os.environ.get("OPENCOLLAB_EVAL_REPO_ROOT", Path.cwd())).resolve()
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_HOST = os.environ.get("OPENCOLLAB_SWE_HOST", "")
@@ -44,8 +46,25 @@ ALLOWED_WORKFLOW_ENV_KEYS = frozenset(
         "OPENCOLLAB_LLM_CONNECT_TIMEOUT",
         "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT",
         "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT",
+        "OPENCOLLAB_LLM_USER_AGENT",
     }
 )
+
+
+def normalize_workflow_env_entries(values: list[str] | tuple[str, ...]) -> dict[str, str]:
+    normalized: dict[str, str] = {}
+    for item in values:
+        key, separator, value = str(item).partition("=")
+        if not separator or key not in ALLOWED_WORKFLOW_ENV_KEYS:
+            raise ValueError(f"unsupported --workflow-env: {item}")
+        normalized[key] = (
+            normalize_llm_user_agent(value)
+            if key == "OPENCOLLAB_LLM_USER_AGENT"
+            else value
+        )
+    return normalized
+
+
 REMOTE_PROXY_TUNNELS: list[subprocess.Popen[str]] = []
 REMOTE_RUNNER = (
     "from opencollab_eval.engine.swe_v1_remote_runner import run_from_stdin\n"

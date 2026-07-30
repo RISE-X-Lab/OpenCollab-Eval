@@ -109,6 +109,7 @@ def test_workflow_env_accepts_responses_runtime_settings():
             "OPENCOLLAB_LLM_CONNECT_TIMEOUT=30",
             "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT=300",
             "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT=300",
+            "OPENCOLLAB_LLM_USER_AGENT=compatible-client/1.0",
         ]
     ) == {
         "OPENCOLLAB_WIRE_PROTOCOL": "responses",
@@ -117,7 +118,17 @@ def test_workflow_env_accepts_responses_runtime_settings():
         "OPENCOLLAB_LLM_CONNECT_TIMEOUT": "30",
         "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT": "300",
         "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT": "300",
+        "OPENCOLLAB_LLM_USER_AGENT": "compatible-client/1.0",
     }
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["bad\nheader", "client-é", "x" * 257],
+)
+def test_workflow_env_rejects_unsafe_model_user_agent(value):
+    with pytest.raises(ValueError, match="OPENCOLLAB_LLM_USER_AGENT"):
+        runner.normalize_workflow_env([f"OPENCOLLAB_LLM_USER_AGENT={value}"])
 
 
 def test_remote_runner_accepts_bounded_repository_map_setting():
@@ -128,7 +139,10 @@ def test_remote_runner_accepts_bounded_repository_map_setting():
             "remote_repo": "/tmp/repo",
             "base_run_dir": "/tmp/run",
             "workflow": "validation-council-solve",
-            "workflow_env": {"OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES": "0"},
+            "workflow_env": {
+                "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES": "0",
+                "OPENCOLLAB_LLM_USER_AGENT": "compatible-client/1.0",
+            },
             "model_name": "model",
             "session_prefix": "session",
             "remote_proxy_base_url": "http://127.0.0.1:1",
@@ -150,5 +164,9 @@ def test_remote_runner_accepts_bounded_repository_map_setting():
     remote_state.configure(config)
 
     assert remote_state.workflow_env == {
-        "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES": "0"
+        "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES": "0",
+        "OPENCOLLAB_LLM_USER_AGENT": "compatible-client/1.0",
     }
+    config["workflow_env"] = {"OPENCOLLAB_LLM_USER_AGENT": "bad\nheader"}
+    with pytest.raises(ValueError, match="OPENCOLLAB_LLM_USER_AGENT"):
+        remote_state.configure(config)

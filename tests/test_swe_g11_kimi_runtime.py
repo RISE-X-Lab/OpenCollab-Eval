@@ -12,6 +12,14 @@ from opencollab_eval.engine.swe_v1_remote_state import (
 from opencollab_eval.usage import model_context_window
 
 
+def test_g11_rejects_unsafe_model_user_agent():
+    module = _load_module()
+    with pytest.raises(ValueError, match="OPENCOLLAB_LLM_USER_AGENT"):
+        module.resolve_config(
+            _args(workflow_env=["OPENCOLLAB_LLM_USER_AGENT=bad\nheader"])
+        )
+
+
 def test_kimi_for_coding_defaults_to_k27_thinking_runtime():
     module = _load_module()
     config = module.resolve_config(

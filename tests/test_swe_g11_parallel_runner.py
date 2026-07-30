@@ -307,6 +307,7 @@ def test_workflow_env_is_validated_and_forwarded():
         "OPENCOLLAB_TEMPERATURE=1",
         "OPENCOLLAB_TOP_P=1",
         "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY=1",
+        "OPENCOLLAB_LLM_USER_AGENT=compatible-client/1.0",
     )
     config = module.resolve_config(_args(workflow_env=list(expected)))
     command = module.task_command(config, 51)
@@ -335,7 +336,6 @@ def test_task_command_forwards_typed_llm_settings():
 
 def test_workflow_env_rejects_secret_or_arbitrary_keys():
     module = _load_module()
-
     with pytest.raises(ValueError, match="unsupported --workflow-env"):
         module.resolve_config(_args(workflow_env=["OPENCOLLAB_API_KEY=secret"]))
 

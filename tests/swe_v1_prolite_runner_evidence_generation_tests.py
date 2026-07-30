@@ -42,6 +42,26 @@ def test_remote_generation_identity_includes_effective_thinking_default(tmp_path
     assert "OPENCOLLAB_LLM_TRANSPORT" not in inherited
 
 
+def test_remote_generation_identity_includes_model_user_agent(tmp_path):
+    namespace = _remote_namespace(
+        tmp_path,
+        workflow_env={"OPENCOLLAB_LLM_USER_AGENT": "compatible-client/1.0"},
+    )
+
+    assert namespace["generation_runtime_identity"]()["workflow_env"] == {
+        "OPENCOLLAB_THINKING": "false",
+        "OPENCOLLAB_LLM_USER_AGENT": "compatible-client/1.0",
+    }
+    metric = {
+        "model_name": namespace["model_name"],
+        "workflow": namespace["workflow"],
+        **namespace["generation_runtime_identity"](),
+    }
+    assert namespace["generation_identity_matches"]({}, metric, require_patch=False)
+    metric["workflow_env"]["OPENCOLLAB_LLM_USER_AGENT"] = "different-client/1.0"
+    assert not namespace["generation_identity_matches"]({}, metric, require_patch=False)
+
+
 def test_kimi_direct_transport_is_bound_into_generation_identity(tmp_path, monkeypatch):
     env_file = tmp_path / "kimi.env"
     env_file.write_text(

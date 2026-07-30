@@ -13,6 +13,16 @@ KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/v1"
 SUPPORTED_KIMI_G11_MODELS = frozenset({"k3", "kimi-for-coding"})
 
 
+def normalize_llm_user_agent(value: str) -> str:
+    """Validate the model client identity before starting a task."""
+    value = value.strip()
+    if len(value.encode("utf-8")) > 256:
+        raise ValueError("OPENCOLLAB_LLM_USER_AGENT must be at most 256 bytes")
+    if any(not 32 <= ord(char) <= 126 for char in value):
+        raise ValueError("OPENCOLLAB_LLM_USER_AGENT must contain printable ASCII only")
+    return value
+
+
 def is_kimi_direct_model(model: str) -> bool:
     """Return whether a model has a validated direct Kimi G11 profile."""
     return model.strip() in SUPPORTED_KIMI_G11_MODELS

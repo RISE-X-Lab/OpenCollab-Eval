@@ -13,8 +13,11 @@ from pathlib import Path
 from typing import Any
 
 from opencollab_eval.commands import _swe_eval_layer_integrity as _eval_integrity
-from opencollab_eval.commands.swe_v1_prolite_common import ALLOWED_WORKFLOW_ENV_KEYS
-from opencollab_eval.engine.solver_backend import KIMI_CODING_BASE_URL, is_kimi_direct_model
+from opencollab_eval.commands.swe_v1_prolite_common import normalize_workflow_env_entries
+from opencollab_eval.engine.solver_backend import (
+    KIMI_CODING_BASE_URL,
+    is_kimi_direct_model,
+)
 from opencollab_eval.engine.swe_eval_records import (
     SUBMISSION_INTEGRITY_PROVEN,
     metric_submission_integrity,
@@ -153,12 +156,7 @@ def range_label(indices: tuple[int, ...]) -> str:
 
 
 def normalize_workflow_env(values: list[str] | tuple[str, ...]) -> tuple[str, ...]:
-    normalized: dict[str, str] = {}
-    for item in values:
-        key, separator, value = str(item).partition("=")
-        if not separator or key not in ALLOWED_WORKFLOW_ENV_KEYS:
-            raise ValueError(f"unsupported --workflow-env: {item}")
-        normalized[key] = value
+    normalized = normalize_workflow_env_entries(values)
     return tuple(f"{key}={value}" for key, value in normalized.items())
 
 

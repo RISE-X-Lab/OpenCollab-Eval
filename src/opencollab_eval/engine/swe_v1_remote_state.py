@@ -28,7 +28,11 @@ from collections import deque
 from contextlib import contextmanager
 from typing import Any
 
-from opencollab_eval.engine.solver_backend import KIMI_CODING_BASE_URL, is_kimi_direct_model
+from opencollab_eval.engine.solver_backend import (
+    KIMI_CODING_BASE_URL,
+    is_kimi_direct_model,
+    normalize_llm_user_agent,
+)
 from opencollab_eval.engine.swe_eval_records import (
     SUBMISSION_INTEGRITY_INELIGIBLE,
     embedded_workflow_metric,
@@ -261,11 +265,16 @@ def configure(config: dict[str, Any]) -> None:
         "OPENCOLLAB_LLM_CONNECT_TIMEOUT",
         "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT",
         "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT",
+        "OPENCOLLAB_LLM_USER_AGENT",
     }
     unsupported_workflow_env = sorted(set(workflow_env) - allowed_workflow_env)
     if unsupported_workflow_env:
         raise ValueError(
             "unsupported workflow env: " + ", ".join(unsupported_workflow_env)
+        )
+    if "OPENCOLLAB_LLM_USER_AGENT" in workflow_env:
+        workflow_env["OPENCOLLAB_LLM_USER_AGENT"] = normalize_llm_user_agent(
+            workflow_env["OPENCOLLAB_LLM_USER_AGENT"]
         )
     openhands_command = str(cfg.get("openhands_command") or "")
     openhands_command_sha256 = (

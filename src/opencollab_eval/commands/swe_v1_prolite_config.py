@@ -26,7 +26,6 @@ from typing import Any
 from opencollab_eval.commands.swe_ssh_transport import run_checked as run_checked
 from opencollab_eval.commands.swe_ssh_transport import run_ssh_checked
 from opencollab_eval.commands.swe_v1_prolite_common import (
-    ALLOWED_WORKFLOW_ENV_KEYS,
     DEFAULT_BASE_RUN_DIR_PREFIX,
     MAX_PROXY_ENV_BYTES,
     PACKAGE_ROOT,
@@ -37,6 +36,7 @@ from opencollab_eval.commands.swe_v1_prolite_common import (
     SYNC_DIRS,
     SYNC_FILES,
     _redacted,
+    normalize_workflow_env_entries,
 )
 from opencollab_eval.commands.swe_v1_prolite_process import (
     _block_local_spawn_signals,
@@ -230,13 +230,7 @@ def verify_remote_runtime(
 def normalize_workflow_env(
     values: list[str] | tuple[str, ...],
 ) -> dict[str, str]:
-    normalized: dict[str, str] = {}
-    for item in values:
-        key, separator, value = str(item).partition("=")
-        if not separator or key not in ALLOWED_WORKFLOW_ENV_KEYS:
-            raise ValueError(f"unsupported --workflow-env: {item}")
-        normalized[key] = value
-    return normalized
+    return normalize_workflow_env_entries(values)
 
 
 def _read_bounded_regular_text(path: Path, *, max_bytes: int) -> str:
