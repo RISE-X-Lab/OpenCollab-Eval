@@ -33,6 +33,9 @@ DEFAULT_MODEL_NAME = os.environ.get("OPENCOLLAB_SWE_MODEL_NAME", "").strip()
 DEFAULT_IMAGE_REPOSITORY = os.environ.get(
     "OPENCOLLAB_SWE_IMAGE_REPOSITORY", ""
 ).strip()
+MIN_TASK_CLEANUP_MARGIN_SECONDS = 300
+
+
 @dataclass(frozen=True)
 class ParallelConfig:
     indices: tuple[int, ...]
@@ -319,6 +322,13 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
         raise ValueError("--expected-runtime-tree-sha256 must be a lowercase SHA-256")
     if args.no_sync_runtime and not runtime_tree_sha256:
         raise ValueError("--no-sync-runtime requires --expected-runtime-tree-sha256")
+    if args.llm_timeout <= 0:
+        raise ValueError("--llm-timeout must be positive")
+    if args.task_wall_timeout < args.llm_timeout + MIN_TASK_CLEANUP_MARGIN_SECONDS:
+        raise ValueError(
+            "--task-wall-timeout must be at least --llm-timeout plus "
+            f"{MIN_TASK_CLEANUP_MARGIN_SECONDS} seconds"
+        )
     return ParallelConfig(
         indices=indices,
         max_workers=max_workers,

@@ -283,7 +283,7 @@ def test_parallel_token_compact_keeps_missing_cost_markers():
             budget=1,
             max_steps=1,
             swe_timeout=1,
-            task_wall_timeout=1,
+            task_wall_timeout=301,
             eval_timeout=1,
             llm_timeout=1,
             checkpoint_interval=1,

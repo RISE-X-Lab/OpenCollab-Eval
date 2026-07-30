@@ -8,7 +8,6 @@ from ._validation_council_solve_defs import (
     BASELINE_TRIAGE_PROMPT,
     CANDIDATE_TESTS_SCHEMA,
     CODER_PROMPT,
-    CODER_ROLE_TIMEOUT_SECONDS,
     CONTRACT_MINER_PROMPT,
     CONTRACT_SCHEMA,
     DIFF_RISK_PROMPT,
@@ -35,7 +34,6 @@ from ._validation_council_solve_defs import (
     PRE_VALIDATION_FACTORY_PROMPT,
     RISK_BUDGET,
     SHARED_RULES,
-    STRUCTURED_ROLE_TIMEOUT_SECONDS,
     TEST_CARTOGRAPHER_PROMPT,
     TEST_CARTOGRAPHY_SCHEMA,
     TRIAGE_BUDGET,
@@ -66,6 +64,8 @@ from ._validation_council_solve_defs import (
     _triage_brief,
     _trim_judge,
     _verdict_brief,
+    coder_role_timeout_seconds,
+    structured_role_timeout_seconds,
 )
 
 
@@ -91,7 +91,7 @@ async def _judge_candidates(
         label=f"{stage}-validation-judge",
         tools=_read_tools(),
         budget=JUDGE_BUDGET,
-        timeout=STRUCTURED_ROLE_TIMEOUT_SECONDS,
+        timeout=structured_role_timeout_seconds(),
     )
     return _trim_judge(
         _dict_or(
@@ -131,7 +131,7 @@ async def _run_attempt(
         ),
         label=f"coder:r{attempt}",
         tools=_coder_tools(),
-        timeout=CODER_ROLE_TIMEOUT_SECONDS,
+        timeout=coder_role_timeout_seconds(),
     )
     patch_verdict = await ctx.agent(
         PATCH_VALIDATOR_PROMPT.format(
@@ -145,7 +145,7 @@ async def _run_attempt(
         label=f"patch-validator:r{attempt}",
         tools=_tester_tools(),
         budget=VERIFIER_BUDGET,
-        timeout=STRUCTURED_ROLE_TIMEOUT_SECONDS,
+        timeout=structured_role_timeout_seconds(),
     )
     patch_verdict = _dict_or(
         patch_verdict,
@@ -180,7 +180,7 @@ async def _run_attempt(
         label=f"diff-risk-auditor:r{attempt}",
         tools=_risk_tools(),
         budget=RISK_BUDGET,
-        timeout=STRUCTURED_ROLE_TIMEOUT_SECONDS,
+        timeout=structured_role_timeout_seconds(),
     )
     risks = _dict_or(risks, {"risks": [], "summary": "Diff risk auditor returned no structured report."})
 
@@ -195,7 +195,7 @@ async def _run_attempt(
         label=f"post-validation-factory:r{attempt}",
         tools=_read_tools(),
         budget=VALIDATION_FACTORY_BUDGET,
-        timeout=STRUCTURED_ROLE_TIMEOUT_SECONDS,
+        timeout=structured_role_timeout_seconds(),
     )
     post_candidates = _dict_or(
         post_candidates,
@@ -221,7 +221,7 @@ async def _run_attempt(
         label=f"post-validation-triage:r{attempt}",
         tools=_tester_tools(),
         budget=TRIAGE_BUDGET,
-        timeout=STRUCTURED_ROLE_TIMEOUT_SECONDS,
+        timeout=structured_role_timeout_seconds(),
     )
     post_triage = _dict_or(
         post_triage,
@@ -247,7 +247,7 @@ async def _run_attempt(
         label=f"final-verifier:r{attempt}",
         tools=_tester_tools(),
         budget=VERIFIER_BUDGET,
-        timeout=STRUCTURED_ROLE_TIMEOUT_SECONDS,
+        timeout=structured_role_timeout_seconds(),
     )
     final_verdict = _dict_or(
         final_verdict,
@@ -300,7 +300,7 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
         label="analyst-localizer",
         tools=_read_tools(),
         budget=LOCALIZER_BUDGET,
-        timeout=STRUCTURED_ROLE_TIMEOUT_SECONDS,
+        timeout=structured_role_timeout_seconds(),
     )
     localization = _dict_or(
         localization,
@@ -327,7 +327,7 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
                 label="contract-miner",
                 tools=_read_tools(),
                 budget=EVIDENCE_BUDGET,
-                timeout=STRUCTURED_ROLE_TIMEOUT_SECONDS,
+                timeout=structured_role_timeout_seconds(),
             ),
             lambda: ctx.agent(
                 TEST_CARTOGRAPHER_PROMPT.format(
@@ -339,7 +339,7 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
                 label="test-cartographer",
                 tools=_read_tools(),
                 budget=EVIDENCE_BUDGET,
-                timeout=STRUCTURED_ROLE_TIMEOUT_SECONDS,
+                timeout=structured_role_timeout_seconds(),
             ),
         ]
     )
@@ -369,7 +369,7 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
         label="pre-validation-factory",
         tools=_read_tools(),
         budget=VALIDATION_FACTORY_BUDGET,
-        timeout=STRUCTURED_ROLE_TIMEOUT_SECONDS,
+        timeout=structured_role_timeout_seconds(),
     )
     pre_candidates = _dict_or(
         pre_candidates,
@@ -394,7 +394,7 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
             label="baseline-triage",
             tools=_tester_tools(),
             budget=TRIAGE_BUDGET,
-            timeout=STRUCTURED_ROLE_TIMEOUT_SECONDS,
+            timeout=structured_role_timeout_seconds(),
         )
         baseline_triage = _dict_or(
             baseline_triage,

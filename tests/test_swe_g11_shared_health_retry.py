@@ -6,6 +6,21 @@ import pytest
 from test_swe_g11_parallel_runner import _args, _load_module
 
 
+def test_task_wall_timeout_covers_model_round_and_cleanup():
+    module = _load_module()
+
+    config = module.resolve_config(
+        _args(llm_timeout=21_600, task_wall_timeout=30_000)
+    )
+    assert config.llm_timeout == 21_600
+    assert config.task_wall_timeout == 30_000
+
+    with pytest.raises(ValueError, match="task-wall-timeout"):
+        module.resolve_config(
+            _args(llm_timeout=21_600, task_wall_timeout=21_899)
+        )
+
+
 def test_remote_health_records_successful_transport_attempt(tmp_path):
     module = _load_module()
     config = module.resolve_config(_args(output_dir=tmp_path))

@@ -275,6 +275,34 @@ async def test_failed_final_verifier_retries_with_feedback(validation_council_so
     assert any("attempt 1 failed" in message for message in ctx.logs)
 
 
+async def test_role_timeouts_leave_room_for_provider_retry(
+    validation_council_solve,
+    monkeypatch,
+):
+    monkeypatch.setenv("OPENCOLLAB_LLM_TIMEOUT", "1800")
+    ctx = ScriptedCtx(_base_replies())
+
+    await validation_council_solve(ctx, {"goal": "fix empty widget"})
+
+    timeouts = {call["label"]: call.get("timeout") for call in ctx.agent_calls}
+    assert timeouts["coder:r1"] == 1860
+    assert timeouts["analyst-localizer"] == 1860
+    assert timeouts["final-verifier:r1"] == 1860
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "bad"])
+async def test_role_timeouts_reject_invalid_provider_timeout(
+    validation_council_solve,
+    monkeypatch,
+    value,
+):
+    monkeypatch.setenv("OPENCOLLAB_LLM_TIMEOUT", value)
+    ctx = ScriptedCtx(_base_replies())
+
+    with pytest.raises(ValueError, match="OPENCOLLAB_LLM_TIMEOUT"):
+        await validation_council_solve(ctx, {"goal": "fix empty widget"})
+
+
 async def test_retry_feedback_is_bounded(validation_council_solve):
     long_failure = {**FAIL, "findings": "specific failure " * 200}
     ctx = ScriptedCtx(_base_replies(long_failure) + _base_replies(PASS)[6:])
