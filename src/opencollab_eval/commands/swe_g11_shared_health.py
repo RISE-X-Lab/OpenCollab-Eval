@@ -302,8 +302,11 @@ else:
         thinking_proven=False
 actual_model=value.get("model")
 valid=valid and (thinking_proven if provider == "anthropic" else thinking_request_bound)
+probe_status="ok" if valid else "invalid_response"
+if wire == "responses" and value.get("status") == "completed" and value.get("output") == []:
+    probe_status="empty_output"
 print(json.dumps({
-    "status":"ok" if valid else "invalid_response",
+    "status":probe_status,
     "thinking_proven":thinking_proven,
     "thinking_request_bound":thinking_request_bound,
     "thinking_evidence":thinking_evidence if provider != "anthropic" else (
@@ -408,9 +411,19 @@ raise SystemExit(0 if valid else 3)
 
 def _model_probe_failure_is_transient(result: dict[str, Any]) -> bool:
     status = result.get("http_status")
+    empty_output = (
+        result.get("status") == "empty_output"
+        and result.get("model_matches") is True
+        and result.get("wire_protocol_matches") is True
+        and (
+            result.get("thinking_enabled") is not True
+            or result.get("thinking_request_bound") is True
+        )
+    )
     return (
         status in _TRANSIENT_MODEL_PROBE_HTTP_STATUSES
         or result.get("failure_kind") == "timeout"
+        or empty_output
         or result.get("status") == "transport_error"
     )
 

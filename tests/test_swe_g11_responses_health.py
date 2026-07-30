@@ -75,6 +75,7 @@ def test_remote_model_probe_uses_responses_wire_and_nested_reasoning(
     assert 'payload["reasoning"]={"effort":reasoning_effort}' in remote_command
     assert 'payload["max_output_tokens"]=options["max_tokens"]' in remote_command
     assert 'retry_after_seconds' in remote_command
+    assert 'probe_status="empty_output"' in remote_command
     assert '"reasoning_effort":"xhigh"' in remote_command
     assert '"reasoning_effort":"low"' not in remote_command
     assert "OPENCOLLAB_LLM_MAX_RETRIES=10000" in config.workflow_env
@@ -123,10 +124,18 @@ def test_remote_model_probe_rejects_response_from_another_wire(
         for code in (408, 429, 500, 502, 503, 504)
     ]
     + [
+        {
+            "status": "empty_output",
+            "model_matches": True,
+            "wire_protocol_matches": True,
+            "thinking_enabled": True,
+            "thinking_request_bound": True,
+            "direct": True,
+        },
         {"status": "transport_error", "direct": True},
         {"status": "failed", "failure_kind": "timeout", "direct": True},
     ],
-    ids=["408", "429", "500", "502", "503", "504", "transport", "timeout"],
+    ids=["408", "429", "500", "502", "503", "504", "empty", "transport", "timeout"],
 )
 def test_remote_model_probe_waits_through_transient_failures(
     monkeypatch, tmp_path, failure_result
@@ -163,8 +172,36 @@ def test_remote_model_probe_waits_through_transient_failures(
         {"status": "http_error", "http_status": 403, "direct": True},
         {"status": "ok", "model_matches": False, "direct": True},
         {"status": "ok", "wire_protocol_matches": False, "direct": True},
+        {
+            "status": "empty_output",
+            "model_matches": False,
+            "wire_protocol_matches": True,
+            "direct": True,
+        },
+        {
+            "status": "empty_output",
+            "model_matches": True,
+            "wire_protocol_matches": False,
+            "direct": True,
+        },
+        {
+            "status": "empty_output",
+            "model_matches": True,
+            "wire_protocol_matches": True,
+            "thinking_enabled": True,
+            "thinking_request_bound": False,
+            "direct": True,
+        },
     ],
-    ids=["401", "403", "model-mismatch", "wire-mismatch"],
+    ids=[
+        "401",
+        "403",
+        "model-mismatch",
+        "wire-mismatch",
+        "empty-model-mismatch",
+        "empty-wire-mismatch",
+        "empty-thinking-unbound",
+    ],
 )
 def test_remote_model_probe_does_not_retry_permanent_failure(
     monkeypatch, tmp_path, failure_result
