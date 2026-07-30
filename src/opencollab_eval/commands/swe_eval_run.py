@@ -12,7 +12,6 @@ import os
 import plistlib
 import re
 import shutil
-import subprocess
 import sys
 import time
 import urllib.parse
@@ -27,6 +26,8 @@ from opencollab_eval.engine.solver_backend import (
 from opencollab_eval.generation.claude_code_sidecar import relay_socket_path
 from opencollab_eval.usage import model_context_window
 
+from ._launchd import bootstrap_launch_agent
+from ._launchd import launchctl as _launchctl
 from ._swe_eval_relay_health import (
     local_relay_healthy as _local_relay_healthy,
 )
@@ -294,17 +295,12 @@ def _write_plist(path: Path, payload: dict) -> None:
         plistlib.dump(payload, handle, sort_keys=False)
 
 
-def _launchctl(*arguments: str, check: bool = False) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(
-        ["launchctl", *arguments],
-        text=True,
-        capture_output=True,
-        check=False,
+def _bootstrap_launch_agent(*, target: str, installed_path: Path) -> None:
+    bootstrap_launch_agent(
+        target=target,
+        installed_path=installed_path,
+        launchctl=_launchctl,
     )
-    if check and result.returncode != 0:
-        detail = result.stderr.strip() or result.stdout.strip()
-        raise RuntimeError(f"launchctl {' '.join(arguments)} failed: {detail}")
-    return result
 
 
 def _remove_stale_remote_proxy_socket(
@@ -388,7 +384,7 @@ def _ensure_local_proxy_agent(
     if _launchctl("print", target).returncode == 0:
         _launchctl("bootout", target, check=True)
     shutil.copy2(plist_path, installed_path)
-    _launchctl("bootstrap", f"gui/{os.getuid()}", str(installed_path), check=True)
+    _bootstrap_launch_agent(target=target, installed_path=installed_path)
     for _ in range(20):
         if _local_relay_healthy(local_url, upstream_base_url, **health_kwargs):
             return {
@@ -507,7 +503,7 @@ def _ensure_proxy_agent(
         socket_path=remote_socket,
     )
     shutil.copy2(plist_path, installed_path)
-    _launchctl("bootstrap", f"gui/{os.getuid()}", str(installed_path), check=True)
+    _bootstrap_launch_agent(target=target, installed_path=installed_path)
     for _ in range(12):
         if _remote_proxy_healthy(
             ssh_command=ssh_command,
@@ -599,7 +595,7 @@ def _launch_detached(args: argparse.Namespace, raw_arguments: list[str], remaini
     _write_plist(plist_path, payload)
     installed_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(plist_path, installed_path)
-    _launchctl("bootstrap", f"gui/{os.getuid()}", str(installed_path), check=True)
+    _bootstrap_launch_agent(target=target, installed_path=installed_path)
     status = {
         "status": "started",
         "run_id": run_id,

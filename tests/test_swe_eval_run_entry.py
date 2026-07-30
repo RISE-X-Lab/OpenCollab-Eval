@@ -12,6 +12,8 @@ from typing import Any
 
 import pytest
 
+from opencollab_eval.commands import _swe_eval_relay_health as relay_health
+
 MODEL_ARGUMENTS = [
     "--model-name",
     "public-evaluation-model",
@@ -548,9 +550,6 @@ def test_local_model_relay_launches_without_putting_api_key_in_plist(
 
 def test_local_relay_health_rejects_another_upstream(monkeypatch: Any) -> None:
     module = _load_entry_module()
-    relay_health = importlib.import_module(
-        "opencollab_eval.commands._swe_eval_relay_health"
-    )
     class Response:
         def __enter__(self):
             return self
@@ -581,7 +580,7 @@ def test_remote_relay_health_binds_the_expected_upstream(monkeypatch: Any) -> No
     def fake_run(command, **kwargs):
         captured.update(command=command, kwargs=kwargs)
         return SimpleNamespace(returncode=0)
-    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    monkeypatch.setattr(relay_health.subprocess, "run", fake_run)
 
     assert module._remote_proxy_healthy(
         ssh_command="ssh",
@@ -608,7 +607,7 @@ def test_remote_relay_socket_health_requires_private_bound_socket(monkeypatch: A
     def fake_run(command, **kwargs):
         captured.update(command=command, kwargs=kwargs)
         return SimpleNamespace(returncode=0)
-    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    monkeypatch.setattr(relay_health.subprocess, "run", fake_run)
     socket_path = "/tmp/opencollab-llmproxy-18790.sock"
     assert module._remote_proxy_socket_healthy(
         ssh_command="ssh",
