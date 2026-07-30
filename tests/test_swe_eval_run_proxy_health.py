@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 
+import pytest
+
 from opencollab_eval.commands import swe_eval_run
 
 
@@ -26,6 +28,7 @@ def test_local_relay_health_accepts_v1_base(monkeypatch) -> None:
                     "allow_insecure_upstream": False,
                     "compact_tool_schemas": False,
                     "max_upstream_request_bytes": 0,
+                    "upstream_timeout": 900.0,
                     "upstream_base_url_sha256": hashlib.sha256(upstream.encode()).hexdigest(),
                 }
             ).encode()
@@ -38,3 +41,22 @@ def test_local_relay_health_accepts_v1_base(monkeypatch) -> None:
 
     assert swe_eval_run._local_relay_healthy("http://127.0.0.1:8879/v1", upstream) is True
     assert captured["url"] == "http://127.0.0.1:8879/healthz"
+
+
+def test_relay_timeout_uses_the_single_runner_value() -> None:
+    assert swe_eval_run._relay_upstream_timeout(["--llm-timeout", "21600"]) == 21660.0
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["--llm-timeout", "900", "--llm-timeout", "21600"],
+        ["--llm-timeout", "nan"],
+        ["--llm-timeout", "inf"],
+        ["--llm-timeout", "-1"],
+        ["--llm-timeout", "1.5"],
+    ],
+)
+def test_relay_timeout_rejects_ambiguous_or_invalid_values(arguments) -> None:
+    with pytest.raises(RuntimeError, match="llm-timeout"):
+        swe_eval_run._relay_upstream_timeout(arguments)

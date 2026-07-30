@@ -91,6 +91,7 @@ def test_proxy_health_and_authenticated_forwarding(relay: str) -> None:
     assert health["compact_tool_schemas"] is False
     assert health["responses_passthrough"] is True
     assert health["allow_insecure_upstream"] is False
+    assert health["upstream_timeout"] == 5
     assert len(health["upstream_base_url_sha256"]) == 64
     request = urllib.request.Request(
         relay + "/chat/completions",
@@ -217,6 +218,22 @@ def test_proxy_config_requires_explicit_opt_in_for_http_upstream(tmp_path) -> No
     )
 
     assert config.allow_insecure_upstream is True
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf")])
+def test_proxy_config_rejects_invalid_upstream_timeout(tmp_path, timeout) -> None:
+    env_file = tmp_path / "proxy.env"
+    env_file.write_text(
+        "OPENCOLLAB_PROXY_CLIENT_TOKEN=client\nOPENCOLLAB_UPSTREAM_API_KEY=upstream\n",
+        encoding="utf-8",
+    )
+    env_file.chmod(0o600)
+    with pytest.raises(ValueError, match="positive finite"):
+        load_proxy_config(
+            env_file,
+            upstream_base_url="https://api.example.invalid/v1",
+            timeout=timeout,
+        )
 
 
 def test_proxy_health_fingerprint_binds_upstream_url() -> None:

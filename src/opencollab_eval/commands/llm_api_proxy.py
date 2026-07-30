@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import hmac
 import json
+import math
 import stat
 import urllib.error
 import urllib.parse
@@ -68,6 +69,9 @@ def load_proxy_config(
     ):
         expected = "an HTTP or HTTPS" if allow_insecure_upstream else "an HTTPS"
         raise ValueError(f"upstream base URL must be {expected} origin without credentials or query data")
+    timeout = float(timeout)
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("upstream timeout must be a positive finite number")
     return ProxyConfig(
         client_token=_required(values, "OPENCOLLAB_PROXY_CLIENT_TOKEN"),
         upstream_api_key=_required(
@@ -79,7 +83,7 @@ def load_proxy_config(
             "ANTHROPIC_API_KEY",
         ),
         upstream_base_url=base_url.rstrip("/"),
-        timeout=max(1.0, float(timeout)),
+        timeout=timeout,
         allow_insecure_upstream=allow_insecure_upstream,
     )
 
@@ -137,6 +141,7 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                     "responses_passthrough": True,
                     "allow_insecure_upstream": config.allow_insecure_upstream,
                     "max_upstream_request_bytes": config.max_upstream_request_bytes,
+                    "upstream_timeout": config.timeout,
                     "upstream_base_url_sha256": upstream_base_url_sha256(config),
                 },
             )

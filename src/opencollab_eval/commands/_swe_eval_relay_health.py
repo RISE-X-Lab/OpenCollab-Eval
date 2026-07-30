@@ -48,6 +48,7 @@ def remote_proxy_healthy(
     compact_tool_schemas: bool = False,
     max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
+    upstream_timeout: float = 900.0,
 ) -> bool:
     expected = hashlib.sha256(upstream_base_url.rstrip("/").encode()).hexdigest()
     probe = (
@@ -59,6 +60,7 @@ def remote_proxy_healthy(
         "and v.get('allow_insecure_upstream') is (sys.argv[6]=='1') "
         "and v.get('compact_tool_schemas') is (sys.argv[4]=='1') "
         "and v.get('max_upstream_request_bytes')==int(sys.argv[5]) "
+        "and v.get('upstream_timeout')==float(sys.argv[7]) "
         "and v.get('upstream_base_url_sha256')==sys.argv[2] else 3)"
     )
     command = [
@@ -79,6 +81,7 @@ def remote_proxy_healthy(
                 str(int(compact_tool_schemas)),
                 str(max_upstream_request_bytes),
                 str(int(allow_insecure_upstream)),
+                str(upstream_timeout),
             ]
         ),
     ]
@@ -104,12 +107,13 @@ def remote_proxy_socket_healthy(
     compact_tool_schemas: bool = False,
     max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
+    upstream_timeout: float = 900.0,
 ) -> bool:
     expected = hashlib.sha256(upstream_base_url.rstrip("/").encode()).hexdigest()
     probe = "\n".join(
         (
             "import http.client,json,os,socket,stat,sys",
-            "path,expected,relay_mode,compact,max_bytes,allow_insecure=sys.argv[1:7]",
+            "path,expected,relay_mode,compact,max_bytes,allow_insecure,timeout=sys.argv[1:8]",
             "mode=os.stat(path).st_mode",
             "assert stat.S_ISSOCK(mode) and stat.S_IMODE(mode) & 0o077 == 0",
             "client=socket.socket(socket.AF_UNIX)",
@@ -131,6 +135,7 @@ def remote_proxy_socket_healthy(
             "assert value.get('allow_insecure_upstream') is (allow_insecure == '1')",
             "assert value.get('compact_tool_schemas') is (compact == '1')",
             "assert value.get('max_upstream_request_bytes') == int(max_bytes)",
+            "assert value.get('upstream_timeout') == float(timeout)",
             "assert value.get('upstream_base_url_sha256') == expected",
         )
     )
@@ -152,6 +157,7 @@ def remote_proxy_socket_healthy(
                 str(int(compact_tool_schemas)),
                 str(max_upstream_request_bytes),
                 str(int(allow_insecure_upstream)),
+                str(upstream_timeout),
             ]
         ),
     ]
@@ -175,6 +181,7 @@ def local_relay_healthy(
     compact_tool_schemas: bool = False,
     max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
+    upstream_timeout: float = 900.0,
 ) -> bool:
     try:
         with urllib.request.urlopen(url_with_healthz(base_url), timeout=5) as response:
@@ -189,6 +196,7 @@ def local_relay_healthy(
             and payload.get("compact_tool_schemas") is compact_tool_schemas
             and payload.get("max_upstream_request_bytes")
             == max_upstream_request_bytes
+            and payload.get("upstream_timeout") == upstream_timeout
             and payload.get("upstream_base_url_sha256") == expected
         )
     except (OSError, ValueError, urllib.error.URLError):

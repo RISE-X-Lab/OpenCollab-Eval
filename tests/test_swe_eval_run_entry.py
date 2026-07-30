@@ -531,6 +531,8 @@ def test_local_model_relay_launches_without_putting_api_key_in_plist(
             "http://127.0.0.1:8879",
             "--proxy-env-file",
             "/private/tmp/kimi.env",
+            "--llm-timeout",
+            "21600",
         ],
         upstream_base_url="https://api.kimi.com/coding/v1",
     )
@@ -539,6 +541,7 @@ def test_local_model_relay_launches_without_putting_api_key_in_plist(
     program = written[0]["ProgramArguments"]
     assert "opencollab_eval.commands.llm_api_proxy" in program
     assert "--aggregate-chat-stream" in program
+    assert program[program.index("--timeout") + 1] == "21660.0"
     assert "/private/tmp/kimi.env" in program
     assert not any(argument.startswith("sk-") for argument in program)
 

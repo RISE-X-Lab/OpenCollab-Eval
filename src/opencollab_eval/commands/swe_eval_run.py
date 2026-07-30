@@ -78,6 +78,19 @@ def _option_values(arguments: list[str], option: str) -> list[str]:
     return values
 
 
+def _relay_upstream_timeout(arguments: list[str]) -> float:
+    values = _option_values(arguments, "--llm-timeout")
+    if len(values) > 1:
+        raise RuntimeError("--llm-timeout must be specified exactly once")
+    try:
+        timeout = int(values[0]) if values else 900
+    except ValueError as exc:
+        raise RuntimeError("--llm-timeout must be a positive integer") from exc
+    if timeout <= 0:
+        raise RuntimeError("--llm-timeout must be a positive integer")
+    return float(timeout + 60)
+
+
 def _uses_kimi_direct_api(arguments: list[str]) -> bool:
     env_file = _option_value(arguments, "--remote-api-env-file", "").strip()
     if not env_file:
@@ -288,6 +301,7 @@ def _ensure_local_proxy_agent(
     compact_tool_schemas: bool = False,
     max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
+    upstream_timeout: float | None = None,
 ) -> dict:
     local_url = _option_value(remaining, "--local-proxy-base-url", "http://127.0.0.1:8878")
     parsed = urllib.parse.urlparse(local_url)
@@ -297,11 +311,14 @@ def _ensure_local_proxy_agent(
     env_file = _option_value(remaining, "--proxy-env-file", "").strip()
     if not env_file or not upstream_base_url.strip():
         raise RuntimeError("starting the local model relay requires --proxy-env-file and --proxy-upstream-base-url")
+    if upstream_timeout is None:
+        upstream_timeout = _relay_upstream_timeout(remaining)
     health_kwargs = {
         "relay_mode": relay_mode,
         "compact_tool_schemas": compact_tool_schemas,
         "max_upstream_request_bytes": max_upstream_request_bytes,
         "allow_insecure_upstream": allow_insecure_upstream,
+        "upstream_timeout": upstream_timeout,
     }
     if _local_relay_healthy(local_url, upstream_base_url, **health_kwargs):
         return {"status": "already_healthy", "local_url": local_url}
@@ -323,6 +340,8 @@ def _ensure_local_proxy_agent(
             str(port),
             "--upstream-base-url",
             upstream_base_url,
+            "--timeout",
+            str(upstream_timeout),
             *_relay_mode_flags(
                 relay_mode,
                 compact_tool_schemas=compact_tool_schemas,
@@ -363,6 +382,7 @@ def _ensure_proxy_agent(
     max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
 ) -> dict:
+    upstream_timeout = _relay_upstream_timeout(remaining)
     host = _option_value(
         remaining,
         "--host",
@@ -391,12 +411,14 @@ def _ensure_proxy_agent(
         compact_tool_schemas=compact_tool_schemas,
         max_upstream_request_bytes=max_upstream_request_bytes,
         allow_insecure_upstream=allow_insecure_upstream,
+        upstream_timeout=upstream_timeout,
     )
     health_kwargs = {
         "relay_mode": relay_mode,
         "compact_tool_schemas": compact_tool_schemas,
         "max_upstream_request_bytes": max_upstream_request_bytes,
         "allow_insecure_upstream": allow_insecure_upstream,
+        "upstream_timeout": upstream_timeout,
     }
     label = f"com.opencollab.proxy.{_safe_label(host)}.{remote_port}"
     target = f"gui/{os.getuid()}/{label}"
