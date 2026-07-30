@@ -88,7 +88,6 @@ Rules:
 - Read-only roles do not search for write tools.
 - Do not run git commit."""
 
-TASK_BRIEF_BYTES = 640
 EVIDENCE_TEXT_BYTES = 160
 REPORT_BRIEF_BYTES = 320
 EVIDENCE_LIST_ITEMS = 3
@@ -540,8 +539,9 @@ def _bounded_dump(value: Any, limit: int) -> str:
     return _clip(_dump(value), limit)
 
 
-def _goal_brief(goal: str, limit: int = TASK_BRIEF_BYTES) -> str:
-    return _clip(goal, limit)
+def _complete_goal(goal: str) -> str:
+    """Keep every public task field visible to every solver role."""
+    return goal.strip()
 
 
 def _localization_brief(value: dict[str, Any], limit: int = 400) -> str:

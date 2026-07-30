@@ -248,6 +248,24 @@ async def test_happy_path_passes_first_round(validation_council_solve):
     assert len(coder_prompt.encode()) < 850
 
 
+async def test_every_role_receives_the_complete_public_task_specification(
+    validation_council_solve,
+):
+    goal = (
+        "# Public issue\n"
+        + "Problem evidence. " * 80
+        + "\n\nRequirements:\nREQUIREMENT_SENTINEL must remain visible."
+        + "\n\nNew interfaces introduced:\nINTERFACE_SENTINEL must remain visible."
+    )
+    assert len(goal.encode()) > 640
+    ctx = ScriptedCtx(_base_replies())
+
+    await validation_council_solve(ctx, {"goal": goal})
+
+    assert ctx.agent_calls
+    assert all(goal in call["prompt"] for call in ctx.agent_calls)
+
+
 async def test_failed_final_verifier_retries_with_feedback(validation_council_solve):
     ctx = ScriptedCtx(_base_replies(FAIL) + _base_replies(PASS)[6:])
 

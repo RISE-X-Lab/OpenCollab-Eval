@@ -47,10 +47,10 @@ from ._validation_council_solve_defs import (
     _cartography_brief,
     _clip,
     _coder_tools,
+    _complete_goal,
     _contracts_brief,
     _dict_or,
     _feedback,
-    _goal_brief,
     _is_blocked,
     _is_pass,
     _judge_brief,
@@ -83,7 +83,7 @@ async def _judge_candidates(
             rules=SHARED_RULES,
             stage=stage,
             cap=cap,
-            goal=_goal_brief(goal, 320),
+            goal=_complete_goal(goal),
             contracts=_contracts_brief(contracts, 220),
             candidates=_candidates_brief(candidates, cap * 2, 400),
         ),
@@ -124,7 +124,7 @@ async def _run_attempt(
     coder_report = await ctx.agent(
         CODER_PROMPT.format(
             rules=SHARED_RULES,
-            goal=_goal_brief(goal, 240),
+            goal=_complete_goal(goal),
             localization=_localization_brief(localization, 180),
             cartography=_cartography_brief(cartography),
             feedback_block=feedback_block,
@@ -136,7 +136,7 @@ async def _run_attempt(
     patch_verdict = await ctx.agent(
         PATCH_VALIDATOR_PROMPT.format(
             rules=SHARED_RULES,
-            goal=_goal_brief(goal, 400),
+            goal=_complete_goal(goal),
             coder_report=_report_brief(coder_report or "(coder returned no report)", 220),
             pre_judge=_judge_brief(pre_judge, 140),
             baseline_triage=_triage_brief(baseline_triage, 140),
@@ -172,7 +172,7 @@ async def _run_attempt(
     risks = await ctx.agent(
         DIFF_RISK_PROMPT.format(
             rules=SHARED_RULES,
-            goal=_goal_brief(goal, 320),
+            goal=_complete_goal(goal),
             contracts=_contracts_brief(contracts, 220),
             patch_verdict=_verdict_brief(patch_verdict),
         ),
@@ -187,7 +187,7 @@ async def _run_attempt(
     post_candidates = await ctx.agent(
         POST_VALIDATION_FACTORY_PROMPT.format(
             rules=SHARED_RULES,
-            goal=_goal_brief(goal, 280),
+            goal=_complete_goal(goal),
             contracts=_contracts_brief(contracts, 180),
             risks=_risks_brief(risks, 200),
         ),
@@ -214,7 +214,7 @@ async def _run_attempt(
     post_triage = await ctx.agent(
         POST_TRIAGE_PROMPT.format(
             rules=SHARED_RULES,
-            goal=_goal_brief(goal, 320),
+            goal=_complete_goal(goal),
             judge=_judge_brief(post_judge, 200),
         ),
         schema=TRIAGE_SCHEMA,
@@ -232,7 +232,7 @@ async def _run_attempt(
     final_verdict = await ctx.agent(
         FINAL_VERIFIER_PROMPT.format(
             rules=SHARED_RULES,
-            goal=_goal_brief(goal, 480),
+            goal=_complete_goal(goal),
             localization=_localization_brief(localization),
             contracts=_contracts_brief(contracts),
             pre_judge=_judge_brief(pre_judge),
@@ -295,7 +295,7 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
 
     await ctx.phase("localize")
     localization = await ctx.agent(
-        LOCALIZER_PROMPT.format(rules=SHARED_RULES, goal=_goal_brief(goal, 640)),
+        LOCALIZER_PROMPT.format(rules=SHARED_RULES, goal=_complete_goal(goal)),
         schema=LOCALIZATION_SCHEMA,
         label="analyst-localizer",
         tools=_read_tools(),
@@ -320,7 +320,7 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
             lambda: ctx.agent(
                 CONTRACT_MINER_PROMPT.format(
                     rules=SHARED_RULES,
-                    goal=_goal_brief(goal, 360),
+                    goal=_complete_goal(goal),
                     localization=_localization_brief(localization, 160),
                 ),
                 schema=CONTRACT_SCHEMA,
@@ -332,7 +332,7 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
             lambda: ctx.agent(
                 TEST_CARTOGRAPHER_PROMPT.format(
                     rules=SHARED_RULES,
-                    goal=_goal_brief(goal, 360),
+                    goal=_complete_goal(goal),
                     localization=_localization_brief(localization, 160),
                 ),
                 schema=TEST_CARTOGRAPHY_SCHEMA,
@@ -360,7 +360,7 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
     pre_candidates = await ctx.agent(
         PRE_VALIDATION_FACTORY_PROMPT.format(
             rules=SHARED_RULES,
-            goal=_goal_brief(goal, 220),
+            goal=_complete_goal(goal),
             localization=_localization_brief(localization),
             contracts=_contracts_brief(contracts, 120),
             cartography=_report_brief(_cartography_brief(cartography), 180),
@@ -387,7 +387,7 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
         baseline_triage = await ctx.agent(
             BASELINE_TRIAGE_PROMPT.format(
                 rules=SHARED_RULES,
-                goal=_goal_brief(goal, 320),
+                goal=_complete_goal(goal),
                 judge=_judge_brief(pre_judge, 200),
             ),
             schema=TRIAGE_SCHEMA,
