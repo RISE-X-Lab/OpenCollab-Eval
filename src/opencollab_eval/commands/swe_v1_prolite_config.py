@@ -23,7 +23,8 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
-from opencollab_eval.commands.swe_ssh_transport import run_checked, run_ssh_checked
+from opencollab_eval.commands.swe_ssh_transport import run_checked as run_checked
+from opencollab_eval.commands.swe_ssh_transport import run_ssh_checked
 from opencollab_eval.commands.swe_v1_prolite_common import (
     ALLOWED_WORKFLOW_ENV_KEYS,
     DEFAULT_BASE_RUN_DIR_PREFIX,
@@ -212,13 +213,11 @@ def verify_remote_runtime(
         "cd "
         + shlex.quote(remote_runtime_repo)
         + " && PYTHONPATH=src "
-        + shlex.quote(remote_python)
-        + " -c "
+        + shlex.quote(remote_python) + " -c "
         + shlex.quote(probe)
-        + " "
-        + shlex.quote(remote_runtime_repo)
+        + " " + shlex.quote(remote_runtime_repo)
     )
-    result = run_checked([*ssh_command, host, command], timeout=120)
+    result = run_ssh_checked([*ssh_command, host, command], timeout=120, attempts=30, idempotent=True)
     try:
         observed = json.loads(result.stdout)
     except json.JSONDecodeError as exc:

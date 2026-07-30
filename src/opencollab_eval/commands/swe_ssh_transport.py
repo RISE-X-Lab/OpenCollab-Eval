@@ -49,6 +49,11 @@ _RETRYABLE_SSH_TRANSPORT_MARKERS = (
     ("route_unavailable", "no route to host"),
     ("dns_unavailable", "could not resolve hostname"),
 )
+_IDEMPOTENT_DISCONNECT_MARKERS = (
+    "connection closed by",
+    "connection reset by peer",
+    "broken pipe",
+)
 
 
 def run_checked(
@@ -82,6 +87,18 @@ def retryable_ssh_transport_failure(error: CheckedCommandError) -> str:
     return ""
 
 
+def idempotent_ssh_disconnect_failure(error: CheckedCommandError) -> str:
+    """Classify an ambiguous disconnect that is safe only for read-only commands."""
+    if error.returncode != 255:
+        return ""
+    detail = f"{error.stderr}\n{error.stdout}".lower()
+    return (
+        "idempotent_disconnect"
+        if any(marker in detail for marker in _IDEMPOTENT_DISCONNECT_MARKERS)
+        else ""
+    )
+
+
 def run_ssh_checked(
     command: list[str],
     *,
@@ -89,6 +106,7 @@ def run_ssh_checked(
     input_text: str | None = None,
     cwd: str | Path | None = None,
     attempts: int = 3,
+    idempotent: bool = False,
     retry_log: list[dict[str, object]] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Retry only SSH failures proven to precede remote command execution."""
@@ -110,6 +128,7 @@ def run_ssh_checked(
                     cwd=cwd,
                 )
         except subprocess.TimeoutExpired:
+            retryable = idempotent and attempt < attempts
             if retry_log is not None:
                 retry_log.append(
                     {
@@ -117,12 +136,17 @@ def run_ssh_checked(
                         "status": "failed",
                         "returncode": None,
                         "failure_kind": "command_timeout",
-                        "retried": False,
+                        "retried": retryable,
                     }
                 )
-            raise
+            if not retryable:
+                raise
+            time.sleep(min(attempt, 10))
+            continue
         except CheckedCommandError as exc:
             failure_kind = retryable_ssh_transport_failure(exc)
+            if not failure_kind and idempotent:
+                failure_kind = idempotent_ssh_disconnect_failure(exc)
             retryable = bool(failure_kind) and attempt < attempts
             if retry_log is not None:
                 retry_log.append(
@@ -138,7 +162,7 @@ def run_ssh_checked(
             exc.ssh_failure_kind = failure_kind
             if not retryable:
                 raise
-            time.sleep(attempt)
+            time.sleep(min(attempt, 10))
             continue
         if retry_log is not None:
             retry_log.append(
@@ -156,6 +180,7 @@ def run_ssh_checked(
 
 __all__ = [
     "CheckedCommandError",
+    "idempotent_ssh_disconnect_failure",
     "retryable_ssh_transport_failure",
     "run_checked",
     "run_ssh_checked",

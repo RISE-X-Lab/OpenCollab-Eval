@@ -569,6 +569,32 @@ def test_runtime_manifest_rejects_remote_source_drift(monkeypatch, tmp_path):
         )
 
 
+def test_remote_runtime_verification_uses_long_idempotent_retry(monkeypatch):
+    calls = []
+
+    def run_ssh_checked(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            json.dumps({"schema": "opencollab.runtime_tree.v1", "sha256": "a" * 64}),
+            "",
+        )
+
+    monkeypatch.setattr(runner, "run_ssh_checked", run_ssh_checked)
+
+    observed = runner.verify_remote_runtime(
+        ssh_command=["ssh"],
+        host="remote-host",
+        remote_runtime_repo="/remote/runtime",
+        expected=None,
+    )
+
+    assert observed["sha256"] == "a" * 64
+    assert calls[0][1]["attempts"] == 30
+    assert calls[0][1]["idempotent"] is True
+
+
 def test_remote_runtime_rejects_a_hash_valid_incomplete_public_api(monkeypatch, tmp_path):
     remote_runtime = tmp_path / "remote-runtime"
     monkeypatch.setattr(runner, "run_checked", _run_runtime_sync_command_locally)

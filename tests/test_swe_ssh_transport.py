@@ -121,6 +121,119 @@ def test_runtime_sync_retries_pre_session_archive_transfer(monkeypatch):
     ] == [True, True, False]
 
 
+def test_idempotent_ssh_retries_connection_closed_after_remote_start(monkeypatch):
+    attempts = 0
+
+    def run_checked(command, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise CheckedCommandError(
+                command,
+                subprocess.CompletedProcess(
+                    command,
+                    255,
+                    "",
+                    "Connection closed by remote-host port 22\n",
+                ),
+            )
+        return subprocess.CompletedProcess(command, 0, "ok", "")
+
+    monkeypatch.setattr(runner, "run_checked", run_checked)
+    monkeypatch.setattr(runner.time, "sleep", lambda _seconds: None)
+
+    result = runner.run_ssh_checked(
+        ["ssh", "remote-host", "read-only-probe"],
+        attempts=2,
+        idempotent=True,
+    )
+
+    assert result.stdout == "ok"
+    assert attempts == 2
+
+
+def test_non_idempotent_ssh_does_not_retry_ambiguous_disconnect(monkeypatch):
+    attempts = 0
+
+    def run_checked(command, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        raise CheckedCommandError(
+            command,
+            subprocess.CompletedProcess(
+                command,
+                255,
+                "",
+                "Connection closed by remote-host port 22\n",
+            ),
+        )
+
+    monkeypatch.setattr(runner, "run_checked", run_checked)
+
+    with pytest.raises(CheckedCommandError):
+        runner.run_ssh_checked(["ssh", "remote-host", "mutating-command"])
+
+    assert attempts == 1
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        "Permission denied (publickey).\n",
+        "Host key verification failed.\n",
+    ],
+)
+def test_idempotent_ssh_does_not_retry_permanent_255_failures(monkeypatch, stderr):
+    attempts = 0
+
+    def run_checked(command, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        raise CheckedCommandError(
+            command,
+            subprocess.CompletedProcess(command, 255, "", stderr),
+        )
+
+    monkeypatch.setattr(runner, "run_checked", run_checked)
+
+    with pytest.raises(CheckedCommandError):
+        runner.run_ssh_checked(
+            ["ssh", "remote-host", "read-only-probe"],
+            attempts=30,
+            idempotent=True,
+        )
+
+    assert attempts == 1
+
+
+def test_idempotent_ssh_retries_timeout_with_bounded_attempt_log(monkeypatch):
+    attempts = 0
+    retry_log = []
+
+    def run_checked(command, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        raise subprocess.TimeoutExpired(command, 120)
+
+    monkeypatch.setattr(runner, "run_checked", run_checked)
+    monkeypatch.setattr(runner.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        runner.run_ssh_checked(
+            ["ssh", "remote-host", "read-only-probe"],
+            attempts=2,
+            idempotent=True,
+            retry_log=retry_log,
+        )
+
+    assert attempts == 2
+    assert [item["retried"] for item in retry_log] == [True, False]
+    assert [item["failure_kind"] for item in retry_log] == [
+        "command_timeout",
+        "command_timeout",
+    ]
+
+
 def test_runtime_sync_cleans_archive_after_transport_retry_exhaustion(monkeypatch):
     transfers = []
     cleanup_commands = []
