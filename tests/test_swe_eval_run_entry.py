@@ -479,7 +479,7 @@ def test_detached_plist_preserves_empty_pythonpath_components(
     assert payload["EnvironmentVariables"]["PYTHONPATH"] == os.pathsep.join(expected)
 
 
-def test_detach_options_are_not_forwarded_to_child() -> None:
+def test_detach_only_removes_launch_options_from_child() -> None:
     module = _load_entry_module()
 
     assert module._without_launch_options(
@@ -491,7 +491,7 @@ def test_detach_options_are_not_forwarded_to_child() -> None:
             "com.example.eval",
             "--no-persistent-proxy",
         ]
-    ) == ["--indices", "51-100"]
+    ) == ["--indices", "51-100", "--no-persistent-proxy"]
 
 
 def test_persistent_proxy_fails_fast_without_remote_host(
@@ -733,7 +733,7 @@ def test_detach_starts_direct_launch_agent_once(monkeypatch: Any, tmp_path: Path
         "opencollab_eval.commands.swe_eval_run",
     ]
     assert "--detach" not in program
-    assert "--no-persistent-proxy" not in program
+    assert "--no-persistent-proxy" in program
     assert any(call[0] == "bootstrap" for call in launchctl_calls)
 
 

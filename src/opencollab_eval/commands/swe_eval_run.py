@@ -203,7 +203,7 @@ def _without_launch_options(arguments: list[str]) -> list[str]:
         if skip_next:
             skip_next = False
             continue
-        if argument in {"--detach", "--no-persistent-proxy"}:
+        if argument == "--detach":
             continue
         if argument == "--launchd-label":
             skip_next = True
