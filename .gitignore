@@ -1,3 +1,4 @@
+.DS_Store
 .venv/
 .uv-cache/
 .pytest_cache/

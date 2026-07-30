@@ -7,6 +7,8 @@ import json
 import re
 import shlex
 import subprocess
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +23,8 @@ from opencollab_eval.engine.solver_backend import (
 )
 
 _REMOTE_ERROR_TYPES = frozenset({"access_terminated_error"})
+_TRANSIENT_MODEL_PROBE_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
+_MAX_MODEL_PROBE_DELAY_SECONDS = 60.0
 
 
 def response_model_matches(provider: str, requested: str, actual: object) -> bool:
@@ -188,7 +192,7 @@ def run_remote_model_probe(config: Any, *, get_token=get_proxy_token) -> dict[st
         if config.llm_provider == "anthropic"
         else ""
     )
-    script = r'''import json,os,sys,urllib.error,urllib.request
+    script = r'''import datetime,email.utils,json,math,os,sys,urllib.error,urllib.request
 from opencollab_eval.engine.swe_v1_remote_state import bind_remote_api_network_environment,read_remote_api_environment
 base,provider,model,wire,thinking_text,options_text,env_path,user_agent=sys.argv[1:9]
 thinking=thinking_text == "true"
@@ -228,13 +232,29 @@ try:
     with urllib.request.urlopen(request,timeout=120) as response:
         value=json.load(response)
 except urllib.error.HTTPError as exc:
+    retry_after_seconds=None
+    retry_after=exc.headers.get("Retry-After")
+    if retry_after is not None:
+        try:
+            retry_after_seconds=float(retry_after)
+        except (TypeError,ValueError):
+            try:
+                retry_at=email.utils.parsedate_to_datetime(str(retry_after))
+                if retry_at.tzinfo is None:
+                    retry_at=retry_at.replace(tzinfo=datetime.timezone.utc)
+                retry_after_seconds=(retry_at-datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+            except (TypeError,ValueError,OverflowError):
+                retry_after_seconds=None
+        if retry_after_seconds is not None:
+            valid_retry_after=math.isfinite(retry_after_seconds) and retry_after_seconds >= 0
+            retry_after_seconds=min(retry_after_seconds,300.0) if valid_retry_after else None
     try:
         error_payload=json.loads(exc.read(4097)[:4096])
         candidate=error_payload.get("error",{}).get("type", "")
         error_type=candidate if candidate in {"access_terminated_error"} else ""
     except Exception:
         error_type=""
-    print(json.dumps({"status":"http_error","code":exc.code,"error_type":error_type}))
+    print(json.dumps({"status":"http_error","code":exc.code,"error_type":error_type,"retry_after_seconds":retry_after_seconds}))
     raise SystemExit(3)
 except Exception:
     print(json.dumps({"status":"transport_error"}))
@@ -358,6 +378,7 @@ raise SystemExit(0 if valid else 3)
         "direct": True,
         "scope": "shared_infrastructure",
         "http_status": payload.get("code"),
+        "retry_after_seconds": payload.get("retry_after_seconds"),
         "remote_error_type": error_type,
         "provider": config.llm_provider,
         "model": config.llm_model,
@@ -385,10 +406,107 @@ raise SystemExit(0 if valid else 3)
     return summary
 
 
+def _model_probe_failure_is_transient(result: dict[str, Any]) -> bool:
+    status = result.get("http_status")
+    return (
+        status in _TRANSIENT_MODEL_PROBE_HTTP_STATUSES
+        or result.get("failure_kind") == "timeout"
+        or result.get("status") == "transport_error"
+    )
+
+
+def _interruptible_wait(delay: float, interrupted: Callable[[], bool]) -> None:
+    deadline = time.monotonic() + max(0.0, delay)
+    while True:
+        if interrupted():
+            raise InterruptedError("parallel evaluation interrupted")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        time.sleep(min(remaining, 1.0))
+
+
+def wait_for_remote_model_probe(
+    config: Any,
+    *,
+    run_probe: Callable[[Any], dict[str, Any]],
+    write_json: Callable[[Path, object], None],
+    interrupted: Callable[[], bool],
+) -> dict[str, Any]:
+    """Wait through transient provider outages before starting any task."""
+    started = time.monotonic()
+    attempts: list[dict[str, Any]] = []
+    ledger_path = config.output_dir / "model_probe_attempts.json"
+    while True:
+        if interrupted():
+            raise InterruptedError("parallel evaluation interrupted")
+        try:
+            result = run_probe(config)
+        except SharedProbeFailure as exc:
+            elapsed = max(0.0, time.monotonic() - started)
+            attempts.append(
+                {
+                    "attempt": len(attempts) + 1,
+                    "elapsed_seconds": round(elapsed, 3),
+                    "result": exc.result,
+                }
+            )
+            if not _model_probe_failure_is_transient(exc.result):
+                write_json(ledger_path, {"status": "failed", "attempts": attempts})
+                raise
+            deadline = started + max(0, getattr(config, "total_timeout", 0))
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                exhausted = {
+                    **exc.result,
+                    "status": "failed",
+                    "failure_kind": "retry_deadline_exhausted",
+                    "probe_attempts": len(attempts),
+                }
+                write_json(
+                    ledger_path,
+                    {"status": "retry_deadline_exhausted", "attempts": attempts},
+                )
+                raise SharedProbeFailure(
+                    "remote model probe retry deadline exhausted",
+                    exhausted,
+                ) from exc
+            retry_after = exc.result.get("retry_after_seconds")
+            if not isinstance(retry_after, (int, float)) or isinstance(retry_after, bool):
+                retry_after = getattr(config, "retry_delay_seconds", 60) * (
+                    2 ** min(len(attempts) - 1, 6)
+                )
+            delay = min(
+                max(0.0, float(retry_after)),
+                _MAX_MODEL_PROBE_DELAY_SECONDS,
+                remaining,
+            )
+            write_json(
+                ledger_path,
+                {
+                    "status": "waiting",
+                    "next_delay_seconds": round(delay, 3),
+                    "attempts": attempts,
+                },
+            )
+            _interruptible_wait(delay, interrupted)
+            continue
+        attempts.append(
+            {
+                "attempt": len(attempts) + 1,
+                "elapsed_seconds": round(max(0.0, time.monotonic() - started), 3),
+                "result": result,
+            }
+        )
+        write_json(ledger_path, {"status": "ok", "attempts": attempts})
+        return result
+
+
 __all__ = [
     "SharedProbeFailure",
     "remote_health_script",
     "response_model_matches",
     "run_remote_health_checks",
     "run_remote_model_probe",
+    "wait_for_remote_model_probe",
 ]

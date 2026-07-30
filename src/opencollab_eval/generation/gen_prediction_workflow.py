@@ -450,6 +450,7 @@ async def generate(
                         "OPENCOLLAB_TOP_P",
                         "OPENCOLLAB_WIRE_PROTOCOL",
                         "OPENCOLLAB_REASONING_EFFORT",
+                        "OPENCOLLAB_LLM_MAX_RETRIES",
                         "OPENCOLLAB_LLM_CONNECT_TIMEOUT",
                         "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT",
                         "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT",

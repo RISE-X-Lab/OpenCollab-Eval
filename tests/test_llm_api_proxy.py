@@ -35,6 +35,7 @@ class _UpstreamHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("x-request-id", "request-1")
+        self.send_header("Retry-After", "7")
         self.end_headers()
         self.wfile.write(payload)
 
@@ -105,6 +106,7 @@ def test_proxy_health_and_authenticated_forwarding(relay: str) -> None:
     )
     with urllib.request.urlopen(request, timeout=2) as response:
         assert response.headers["x-request-id"] == "request-1"
+        assert response.headers["Retry-After"] == "7"
         assert json.load(response)["choices"][0]["message"]["content"] == "OK"
     observed = _UpstreamHandler.requests[0]
     observed_headers = {key.lower(): value for key, value in observed["headers"].items()}

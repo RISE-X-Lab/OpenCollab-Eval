@@ -267,6 +267,12 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
     llm_provider = str(getattr(args, "llm_provider", "") or "").strip().lower()
     workflow = str(args.workflow or "").strip()
     workflow_env = normalize_workflow_env(getattr(args, "workflow_env", ()))
+    workflow_env_values = dict(item.split("=", 1) for item in workflow_env)
+    if workflow_env_values.get("OPENCOLLAB_WIRE_PROTOCOL") == "responses":
+        workflow_env_values.setdefault("OPENCOLLAB_LLM_MAX_RETRIES", "10000")
+        workflow_env = tuple(
+            f"{key}={value}" for key, value in workflow_env_values.items()
+        )
     context_window, temperature, top_p, max_output_tokens, workflow_env = _kimi_runtime_defaults(
         llm_model,
         llm_provider=llm_provider,

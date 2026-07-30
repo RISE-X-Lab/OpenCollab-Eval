@@ -468,6 +468,15 @@ def run_remote_model_probe(config: ParallelConfig) -> dict[str, Any]:
     return _shared_health.run_remote_model_probe(config, get_token=get_proxy_token)
 
 
+def wait_for_remote_model_probe(config: ParallelConfig) -> dict[str, Any]:
+    return _shared_health.wait_for_remote_model_probe(
+        config,
+        run_probe=run_remote_model_probe,
+        write_json=write_json,
+        interrupted=_parallel_process.interrupted,
+    )
+
+
 def clear_stale_fact_report(config: ParallelConfig) -> None:
     """Remove terminal artifacts when the current task census is not terminal."""
     for name in (
@@ -503,7 +512,7 @@ def _run_parallel(config: ParallelConfig) -> dict[str, Any]:
     except Exception as exc:
         preflight_error = {"type": type(exc).__name__, "message": str(exc)}
     remote_health = run_remote_health_checks(config)
-    remote_health["model_probe"] = run_remote_model_probe(config)
+    remote_health["model_probe"] = wait_for_remote_model_probe(config)
     if preflight_error:
         remote_health["task_preflight"] = {
             "status": "deferred_to_tasks",

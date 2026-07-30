@@ -217,6 +217,9 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                     request_id = response.headers.get("x-request-id", "")
                     if request_id:
                         self.send_header("x-request-id", request_id)
+                    retry_after = response.headers.get("Retry-After", "")
+                    if retry_after:
+                        self.send_header("Retry-After", retry_after)
                     self.send_header("Connection", "close")
                     self.end_headers()
                     self.close_connection = True
@@ -230,6 +233,9 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                 request_id = response.headers.get("x-request-id", "")
                 if request_id:
                     self.send_header("x-request-id", request_id)
+                retry_after = response.headers.get("Retry-After", "")
+                if retry_after:
+                    self.send_header("Retry-After", retry_after)
                 self.send_header("Connection", "close")
                 self.end_headers()
                 self.close_connection = True
