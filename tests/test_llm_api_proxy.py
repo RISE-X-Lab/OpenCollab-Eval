@@ -70,6 +70,7 @@ def relay():
         upstream_api_key="upstream-secret",
         upstream_base_url=f"http://127.0.0.1:{upstream.server_port}/coding/v1",
         timeout=5,
+        direct_upstream=True,
     )
     proxy = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(config))
     proxy.daemon_threads = True
@@ -91,6 +92,7 @@ def test_proxy_health_and_authenticated_forwarding(relay: str) -> None:
     assert health["compact_tool_schemas"] is False
     assert health["responses_passthrough"] is True
     assert health["allow_insecure_upstream"] is False
+    assert health["direct_upstream"] is True
     assert health["upstream_timeout"] == 5
     assert len(health["upstream_base_url_sha256"]) == 64
     request = urllib.request.Request(

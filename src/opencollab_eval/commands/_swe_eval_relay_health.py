@@ -18,6 +18,7 @@ def relay_mode_flags(
     compact_tool_schemas: bool,
     max_upstream_request_bytes: int,
     allow_insecure_upstream: bool = False,
+    direct_upstream: bool = False,
 ) -> list[str]:
     if mode not in {
         "aggregate-chat-stream",
@@ -35,6 +36,8 @@ def relay_mode_flags(
         flags += ["--max-upstream-request-bytes", str(max_upstream_request_bytes)]
     if allow_insecure_upstream:
         flags.append("--allow-insecure-upstream")
+    if direct_upstream:
+        flags.append("--direct-upstream")
     return flags
 
 
@@ -48,6 +51,7 @@ def remote_proxy_healthy(
     compact_tool_schemas: bool = False,
     max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
+    direct_upstream: bool = False,
     upstream_timeout: float = 900.0,
 ) -> bool:
     expected = hashlib.sha256(upstream_base_url.rstrip("/").encode()).hexdigest()
@@ -58,6 +62,7 @@ def remote_proxy_healthy(
         "and v.get('aggregate_chat_stream') is (sys.argv[3]=='aggregate-chat-stream') "
         "and v.get('responses_passthrough') is True "
         "and v.get('allow_insecure_upstream') is (sys.argv[6]=='1') "
+        "and v.get('direct_upstream') is (sys.argv[8]=='1') "
         "and v.get('compact_tool_schemas') is (sys.argv[4]=='1') "
         "and v.get('max_upstream_request_bytes')==int(sys.argv[5]) "
         "and v.get('upstream_timeout')==float(sys.argv[7]) "
@@ -82,6 +87,7 @@ def remote_proxy_healthy(
                 str(max_upstream_request_bytes),
                 str(int(allow_insecure_upstream)),
                 str(upstream_timeout),
+                str(int(direct_upstream)),
             ]
         ),
     ]
@@ -107,13 +113,14 @@ def remote_proxy_socket_healthy(
     compact_tool_schemas: bool = False,
     max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
+    direct_upstream: bool = False,
     upstream_timeout: float = 900.0,
 ) -> bool:
     expected = hashlib.sha256(upstream_base_url.rstrip("/").encode()).hexdigest()
     probe = "\n".join(
         (
             "import http.client,json,os,socket,stat,sys",
-            "path,expected,relay_mode,compact,max_bytes,allow_insecure,timeout=sys.argv[1:8]",
+            "path,expected,relay_mode,compact,max_bytes,allow_insecure,timeout,direct=sys.argv[1:9]",
             "mode=os.stat(path).st_mode",
             "assert stat.S_ISSOCK(mode) and stat.S_IMODE(mode) & 0o077 == 0",
             "client=socket.socket(socket.AF_UNIX)",
@@ -133,6 +140,7 @@ def remote_proxy_socket_healthy(
             "assert value.get('aggregate_chat_stream') is (relay_mode == 'aggregate-chat-stream')",
             "assert value.get('responses_passthrough') is True",
             "assert value.get('allow_insecure_upstream') is (allow_insecure == '1')",
+            "assert value.get('direct_upstream') is (direct == '1')",
             "assert value.get('compact_tool_schemas') is (compact == '1')",
             "assert value.get('max_upstream_request_bytes') == int(max_bytes)",
             "assert value.get('upstream_timeout') == float(timeout)",
@@ -158,6 +166,7 @@ def remote_proxy_socket_healthy(
                 str(max_upstream_request_bytes),
                 str(int(allow_insecure_upstream)),
                 str(upstream_timeout),
+                str(int(direct_upstream)),
             ]
         ),
     ]
@@ -181,6 +190,7 @@ def local_relay_healthy(
     compact_tool_schemas: bool = False,
     max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
+    direct_upstream: bool = False,
     upstream_timeout: float = 900.0,
 ) -> bool:
     try:
@@ -193,6 +203,7 @@ def local_relay_healthy(
             is (relay_mode == "aggregate-chat-stream")
             and payload.get("responses_passthrough") is True
             and payload.get("allow_insecure_upstream") is allow_insecure_upstream
+            and payload.get("direct_upstream") is direct_upstream
             and payload.get("compact_tool_schemas") is compact_tool_schemas
             and payload.get("max_upstream_request_bytes")
             == max_upstream_request_bytes

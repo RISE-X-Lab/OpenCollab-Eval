@@ -36,6 +36,7 @@ class ProxyConfig:
     compact_tool_schemas: bool = False
     max_upstream_request_bytes: int = 0
     allow_insecure_upstream: bool = False
+    direct_upstream: bool = False
 
 
 def _required(values: dict[str, str], *names: str) -> str:
@@ -113,6 +114,12 @@ def _upstream_url(base_url: str, request_path: str) -> str:
 
 
 def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
+    open_upstream = (
+        urllib.request.build_opener(urllib.request.ProxyHandler({})).open
+        if config.direct_upstream
+        else urllib.request.urlopen
+    )
+
     class Handler(BaseHTTPRequestHandler):
         server_version = "OpenCollabEvalProxy/1"
 
@@ -140,6 +147,7 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                     "compact_tool_schemas": config.compact_tool_schemas,
                     "responses_passthrough": True,
                     "allow_insecure_upstream": config.allow_insecure_upstream,
+                    "direct_upstream": config.direct_upstream,
                     "max_upstream_request_bytes": config.max_upstream_request_bytes,
                     "upstream_timeout": config.timeout,
                     "upstream_base_url_sha256": upstream_base_url_sha256(config),
@@ -195,7 +203,7 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                         headers[name] = self.headers[name]
                 request = urllib.request.Request(url, data=body, headers=headers, method="POST")
                 try:
-                    response = urllib.request.urlopen(request, timeout=config.timeout)
+                    response = open_upstream(request, timeout=config.timeout)
                 except urllib.error.HTTPError as exc:
                     response = exc
             except (OSError, ValueError, urllib.error.URLError):
@@ -271,6 +279,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--compact-tool-schemas", action="store_true")
     parser.add_argument("--max-upstream-request-bytes", type=int, default=0)
     parser.add_argument("--allow-insecure-upstream", action="store_true")
+    parser.add_argument("--direct-upstream", action="store_true")
     return parser
 
 
@@ -291,6 +300,7 @@ def main() -> int:
         aggregate_chat_stream=args.aggregate_chat_stream,
         compact_tool_schemas=args.compact_tool_schemas,
         max_upstream_request_bytes=max(0, args.max_upstream_request_bytes),
+        direct_upstream=args.direct_upstream,
     )
     server = ThreadingHTTPServer((args.host, args.port), make_handler(config))
     server.daemon_threads = True

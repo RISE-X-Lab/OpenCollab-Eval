@@ -301,6 +301,7 @@ def _ensure_local_proxy_agent(
     compact_tool_schemas: bool = False,
     max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
+    direct_upstream: bool = False,
     upstream_timeout: float | None = None,
 ) -> dict:
     local_url = _option_value(remaining, "--local-proxy-base-url", "http://127.0.0.1:8878")
@@ -318,6 +319,7 @@ def _ensure_local_proxy_agent(
         "compact_tool_schemas": compact_tool_schemas,
         "max_upstream_request_bytes": max_upstream_request_bytes,
         "allow_insecure_upstream": allow_insecure_upstream,
+        "direct_upstream": direct_upstream,
         "upstream_timeout": upstream_timeout,
     }
     if _local_relay_healthy(local_url, upstream_base_url, **health_kwargs):
@@ -347,6 +349,7 @@ def _ensure_local_proxy_agent(
                 compact_tool_schemas=compact_tool_schemas,
                 max_upstream_request_bytes=max_upstream_request_bytes,
                 allow_insecure_upstream=allow_insecure_upstream,
+                direct_upstream=direct_upstream,
             ),
         ],
         stdout_path=output_dir / "llm-proxy.launch.stdout.log",
@@ -381,6 +384,7 @@ def _ensure_proxy_agent(
     compact_tool_schemas: bool = False,
     max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
+    direct_upstream: bool = False,
 ) -> dict:
     upstream_timeout = _relay_upstream_timeout(remaining)
     host = _option_value(
@@ -411,6 +415,7 @@ def _ensure_proxy_agent(
         compact_tool_schemas=compact_tool_schemas,
         max_upstream_request_bytes=max_upstream_request_bytes,
         allow_insecure_upstream=allow_insecure_upstream,
+        direct_upstream=direct_upstream,
         upstream_timeout=upstream_timeout,
     )
     health_kwargs = {
@@ -418,6 +423,7 @@ def _ensure_proxy_agent(
         "compact_tool_schemas": compact_tool_schemas,
         "max_upstream_request_bytes": max_upstream_request_bytes,
         "allow_insecure_upstream": allow_insecure_upstream,
+        "direct_upstream": direct_upstream,
         "upstream_timeout": upstream_timeout,
     }
     label = f"com.opencollab.proxy.{_safe_label(host)}.{remote_port}"
@@ -528,6 +534,7 @@ def _launch_detached(args: argparse.Namespace, raw_arguments: list[str], remaini
             compact_tool_schemas=args.proxy_compact_tool_schemas,
             max_upstream_request_bytes=args.proxy_max_upstream_request_bytes,
             allow_insecure_upstream=args.proxy_allow_insecure_upstream,
+            direct_upstream=args.proxy_direct_upstream,
         )
     )
     label = args.launchd_label or f"com.opencollab.eval.{_safe_label(run_id)}"
@@ -717,6 +724,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Explicitly allow an HTTP provider URL for the managed relay",
     )
+    parser.add_argument(
+        "--proxy-direct-upstream",
+        action="store_true",
+        help="Bypass host proxy settings for the managed relay upstream",
+    )
     return parser
 
 
@@ -751,6 +763,7 @@ def main(argv: list[str] | None = None) -> int:
             compact_tool_schemas=args.proxy_compact_tool_schemas,
             max_upstream_request_bytes=args.proxy_max_upstream_request_bytes,
             allow_insecure_upstream=args.proxy_allow_insecure_upstream,
+            direct_upstream=args.proxy_direct_upstream,
         )
     return _run_parallel_runner(args, remaining)
 

@@ -26,6 +26,7 @@ def test_local_relay_health_accepts_v1_base(monkeypatch) -> None:
                     "aggregate_chat_stream": True,
                     "responses_passthrough": True,
                     "allow_insecure_upstream": False,
+                    "direct_upstream": False,
                     "compact_tool_schemas": False,
                     "max_upstream_request_bytes": 0,
                     "upstream_timeout": 900.0,

@@ -171,6 +171,7 @@ def test_foreground_entry_binds_responses_relay_configuration(
             "compact_tool_schemas": False,
             "max_upstream_request_bytes": 0,
             "allow_insecure_upstream": False,
+            "direct_upstream": False,
         }
     ]
 
@@ -193,7 +194,8 @@ def test_insecure_upstream_requires_explicit_relay_flag() -> None:
         compact_tool_schemas=False,
         max_upstream_request_bytes=0,
         allow_insecure_upstream=True,
-    ) == ["--allow-insecure-upstream"]
+        direct_upstream=True,
+    ) == ["--allow-insecure-upstream", "--direct-upstream"]
 
 
 def test_detach_propagates_explicit_insecure_upstream(
@@ -229,7 +231,9 @@ def test_detach_propagates_explicit_insecure_upstream(
             "--proxy-upstream-base-url",
             "http://api.example.invalid/v1",
             "--proxy-allow-insecure-upstream",
+            "--proxy-direct-upstream",
         ]
     ) == 0
 
     assert proxy_calls[0]["allow_insecure_upstream"] is True
+    assert proxy_calls[0]["direct_upstream"] is True
