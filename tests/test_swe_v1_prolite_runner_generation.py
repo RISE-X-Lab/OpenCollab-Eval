@@ -210,6 +210,78 @@ def test_structured_provider_failure_rejects_a_conflicting_nonempty_candidate(tm
     assert result["failure_scope"] == "task"
 
 
+def test_eval_only_accepts_exact_proven_candidate_interrupted_by_provider(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    task = "task-1"
+    _seed_remote_completed_generation(namespace, task)
+    metrics_path = namespace["base_run_dir"] / task / "metrics.jsonl"
+    metrics = namespace["read_jsonl"](metrics_path)
+    metrics[0].update(
+        workflow_status="incomplete",
+        runner_returncode=1,
+        runtime_status="failed",
+        error="provider request failed after the candidate was frozen",
+        agent_failures=[
+            {
+                "label": "solver",
+                "exception_type": "PermissionDeniedError",
+                "status_code": 403,
+                "provider_error_type": "access_terminated_error",
+            }
+        ],
+        provider_failure={"status": "provider_request_rejected"},
+    )
+    _write_jsonl(metrics_path, metrics)
+    namespace["ensure_image"] = lambda _image: {
+        "ok": True,
+        "image_id": "sha256:" + "8" * 64,
+    }
+
+    normal = namespace["generation_for_task_once"]({"instance_id": task})
+
+    assert normal["status"] == "technical_generation_provider_evidence_invalid"
+
+    namespace["eval_only"] = True
+    recovered = namespace["generation_for_task_once"]({"instance_id": task})
+
+    assert recovered["status"] == "generation_done"
+    assert recovered["workflow_status"] == "incomplete"
+    assert recovered["record_id"] == "r1"
+    assert recovered["patch_sha256"] == metrics[0]["patch_sha256"]
+    assert recovered["submission_integrity"] == "proven"
+
+
+def test_eval_only_rejects_legacy_candidate_interrupted_by_provider(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    task = "task-1"
+    _seed_remote_completed_generation(namespace, task)
+    metrics_path = namespace["base_run_dir"] / task / "metrics.jsonl"
+    metrics = namespace["read_jsonl"](metrics_path)
+    for field in _proven_submission_integrity():
+        metrics[0].pop(field, None)
+    metrics[0].update(
+        agent_failures=[
+            {
+                "label": "solver",
+                "exception_type": "PermissionDeniedError",
+                "status_code": 403,
+                "provider_error_type": "access_terminated_error",
+            }
+        ],
+        provider_failure={"status": "provider_request_rejected"},
+    )
+    _write_jsonl(metrics_path, metrics)
+    namespace["ensure_image"] = lambda _image: {
+        "ok": True,
+        "image_id": "sha256:" + "8" * 64,
+    }
+    namespace["eval_only"] = True
+
+    result = namespace["generation_for_task_once"]({"instance_id": task})
+
+    assert result["status"] == "technical_generation_provider_evidence_invalid"
+
+
 def _seed_remote_provider_failure(namespace, task, *, run_id=None, corrupt_snapshot=False):
     run_dir = namespace["base_run_dir"] / task
     empty_sha = namespace["patch_sha"]("")

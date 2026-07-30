@@ -214,6 +214,11 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
         task,
         require_identity=not eval_only,
     )
+    artifact_identity_status = historical_generation_identity_status(
+        prediction,
+        metric,
+        task,
+    )
     if not done and not isinstance(metric, dict) and start_count(run_dir) >= max_task_starts:
         return {"status": "generation_start_limit_reached", "task": task, "start_count": start_count(run_dir)}
     image_status = ensure_image(image)
@@ -228,7 +233,9 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
         pairing,
         expected_generation_image_id=expected_generation_image_id,
     )
-    if provider_failure is not None:
+    if provider_failure is not None and not (
+        eval_only and artifact_identity_status == "interrupted_verified"
+    ):
         return provider_failure
     if not done and start_count(run_dir) >= max_task_starts:
         return {

@@ -383,6 +383,13 @@ def historical_generation_identity_status(prediction, metric, task):
             if submission_integrity == SUBMISSION_INTEGRITY_PROVEN
             else "legacy_verified"
         )
+    if (
+        status == "incomplete"
+        and submission_integrity == SUBMISSION_INTEGRITY_PROVEN
+        and metric.get("submission_eligible") is True
+        and current_generation_proof_valid(metric, original_patch)
+    ):
+        return "interrupted_verified"
     return "invalid"
 
 
