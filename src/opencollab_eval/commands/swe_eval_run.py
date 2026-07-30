@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import importlib
 import json
+import math
 import os
 import plistlib
 import re
@@ -88,6 +89,30 @@ def _relay_upstream_timeout(arguments: list[str]) -> float:
         raise RuntimeError("--llm-timeout must be a positive integer") from exc
     if timeout <= 0:
         raise RuntimeError("--llm-timeout must be a positive integer")
+    activity_timeouts: list[float] = []
+    workflow_values = _option_values(arguments, "--workflow-env")
+    for name in (
+        "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT",
+        "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT",
+    ):
+        matches = [
+            value.split("=", 1)[1]
+            for value in workflow_values
+            if value.startswith(name + "=")
+        ]
+        if len(matches) > 1:
+            raise RuntimeError(f"{name} must be specified at most once")
+        if not matches:
+            activity_timeouts.append(180.0)
+            continue
+        try:
+            activity_timeout = float(matches[0])
+        except ValueError as exc:
+            raise RuntimeError(f"{name} must be positive and finite") from exc
+        if not math.isfinite(activity_timeout) or activity_timeout <= 0:
+            raise RuntimeError(f"{name} must be positive and finite")
+        activity_timeouts.append(activity_timeout)
+    timeout = min(timeout, max(activity_timeouts))
     return float(timeout + 60)
 
 

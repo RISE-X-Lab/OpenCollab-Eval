@@ -45,7 +45,44 @@ def test_local_relay_health_accepts_v1_base(monkeypatch) -> None:
 
 
 def test_relay_timeout_uses_the_single_runner_value() -> None:
-    assert swe_eval_run._relay_upstream_timeout(["--llm-timeout", "21600"]) == 21660.0
+    assert swe_eval_run._relay_upstream_timeout(["--llm-timeout", "21600"]) == 240.0
+
+
+def test_relay_timeout_bounds_abandoned_upstream_requests() -> None:
+    arguments = [
+        "--llm-timeout",
+        "21600",
+        "--workflow-env",
+        "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT=1800",
+        "--workflow-env",
+        "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT=600",
+    ]
+
+    assert swe_eval_run._relay_upstream_timeout(arguments) == 1860.0
+
+
+def test_relay_timeout_uses_provider_defaults_for_omitted_activity_limit() -> None:
+    arguments = [
+        "--llm-timeout",
+        "21600",
+        "--workflow-env",
+        "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT=60",
+    ]
+
+    assert swe_eval_run._relay_upstream_timeout(arguments) == 240.0
+
+
+def test_relay_timeout_accepts_finite_fractional_activity_limits() -> None:
+    arguments = [
+        "--llm-timeout",
+        "21600",
+        "--workflow-env",
+        "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT=60.5",
+        "--workflow-env",
+        "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT=180.25",
+    ]
+
+    assert swe_eval_run._relay_upstream_timeout(arguments) == 240.25
 
 
 @pytest.mark.parametrize(
@@ -60,4 +97,24 @@ def test_relay_timeout_uses_the_single_runner_value() -> None:
 )
 def test_relay_timeout_rejects_ambiguous_or_invalid_values(arguments) -> None:
     with pytest.raises(RuntimeError, match="llm-timeout"):
+        swe_eval_run._relay_upstream_timeout(arguments)
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        [
+            "--workflow-env",
+            "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT=1800",
+            "--workflow-env",
+            "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT=600",
+        ],
+        ["--workflow-env", "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT=nan"],
+        ["--workflow-env", "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT=inf"],
+        ["--workflow-env", "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT=0"],
+        ["--workflow-env", "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT=-1"],
+    ],
+)
+def test_relay_timeout_rejects_invalid_activity_limits(arguments) -> None:
+    with pytest.raises(RuntimeError, match="OPENCOLLAB_LLM_"):
         swe_eval_run._relay_upstream_timeout(arguments)
