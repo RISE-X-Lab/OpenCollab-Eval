@@ -743,14 +743,14 @@ def apply_parent_eval_budget(args: argparse.Namespace) -> dict[str, Any] | None:
         counts_by_index.get(index, 0) + effective_additional_attempts
         for index in selected
     )
-    args.max_eval_attempts = effective_additional_attempts
+    args.max_eval_attempts = projected_total_attempts
     return {
         "max_total_eval_attempts": MAX_TOTAL_EVAL_ATTEMPTS,
         "previous_eval_attempts": counts_by_index,
         "final_report_eval_attempts": final_report_counts,
         "remaining_by_index": remaining_by_index,
         "effective_additional_eval_attempts": effective_additional_attempts,
-        "effective_max_eval_attempts": effective_additional_attempts,
+        "effective_max_eval_attempts": projected_total_attempts,
         "projected_total_eval_attempts": projected_total_attempts,
     }
 
