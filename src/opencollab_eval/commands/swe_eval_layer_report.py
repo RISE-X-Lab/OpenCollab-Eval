@@ -516,8 +516,9 @@ def build_report(
                 projection_identity_by_task[task] = projection_identity
         else:
             _integrity.append_issue(task_issues, task, "missing_candidate_identity")
-        eval_attempts_by_task[task] = (
-            eval_attempts_by_task.get(task, 0) + _integrity.eval_attempt_count(attempt["row"])
+    for task in {attempt["task"] for attempt in observed_attempts}:
+        eval_attempts_by_task[task] = _integrity.combined_eval_attempt_count(
+            [attempt for attempt in observed_attempts if attempt["task"] == task]
         )
     for task, indices in indices_by_task.items():
         if len(indices) > 1:
@@ -571,19 +572,21 @@ def build_report(
         )
     accepted_attempts = attempts
     over_budget_evidence: dict[str, list[dict[str, Any]]] = {}
+    over_budget_eval_attempts = 0
     if exhausted:
         accepted_attempts = []
         accepted_eval_attempts: dict[str, int] = {}
         exhausted_tasks = set(exhausted)
-        for attempt in observed_attempts:
+        for attempt, increment in _integrity.eval_attempt_increments(observed_attempts):
             task = attempt["task"]
             if task not in exhausted_tasks:
                 if attempt["round"] <= max_rounds:
                     accepted_attempts.append(attempt)
                 continue
-            next_count = accepted_eval_attempts.get(task, 0) + _integrity.eval_attempt_count(attempt["row"])
+            next_count = accepted_eval_attempts.get(task, 0) + increment
             if next_count > max_eval_attempts:
                 over_budget_evidence.setdefault(task, []).append(attempt)
+                over_budget_eval_attempts += increment
                 continue
             accepted_eval_attempts[task] = next_count
             accepted_attempts.append(attempt)
@@ -627,8 +630,8 @@ def build_report(
             ),
         )
         task_record["attempt_count"] = len(task_attempts)
-        task_record["eval_attempt_count"] = sum(
-            _integrity.eval_attempt_count(attempt["row"]) for attempt in task_attempts
+        task_record["eval_attempt_count"] = _integrity.combined_eval_attempt_count(
+            task_attempts
         )
         task_record["attempts"] = [_compact_attempt(attempt) for attempt in task_attempts]
         observed_attempts_for_task = [attempt for attempt in observed_attempts if attempt["task"] == task]
@@ -674,11 +677,7 @@ def build_report(
         "eval_attempts": sum(int(task.get("eval_attempt_count") or 0) for task in tasks),
         "observed_eval_attempts": sum(eval_attempts_by_task.values()),
         "over_budget_tasks": len(over_budget_evidence),
-        "over_budget_eval_attempts": sum(
-            _integrity.eval_attempt_count(attempt["row"])
-            for task_attempts in over_budget_evidence.values()
-            for attempt in task_attempts
-        ),
+        "over_budget_eval_attempts": over_budget_eval_attempts,
         "eval_retry_tasks": sum(1 for task in tasks if int(task.get("eval_attempt_count") or 0) > 1),
         "eval_success": sum(1 for task in tasks if task["eval_success"]),
         "empty_patch": sum(

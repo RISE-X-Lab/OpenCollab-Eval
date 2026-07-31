@@ -6,6 +6,7 @@ import hashlib
 import re
 from collections import defaultdict
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import Any
 
 from opencollab_eval.engine.swe_eval_discovery import (
@@ -250,6 +251,43 @@ def eval_attempt_count(row: dict[str, Any]) -> int:
         return 0
 
 
+def _eval_ledger_key(attempt: dict[str, Any]) -> tuple[str, str, str]:
+    task = str(attempt.get("task") or "")
+    generation_log = str(attempt.get("generation_log") or "")
+    if generation_log:
+        path = PurePosixPath(generation_log)
+        if path.parent.name == "generation_logs":
+            return (task, "candidate_root", str(path.parent.parent))
+    report_path = str(attempt.get("report_path") or "")
+    if report_path:
+        path = PurePosixPath(report_path)
+        if len(path.parents) >= 4 and path.parents[1].name == "reports":
+            return (task, "candidate_root", str(path.parents[3]))
+    if generation_log:
+        return (task, "generation_log", generation_log)
+    return (task, "source_report", str(attempt.get("source_report") or ""))
+
+
+def eval_attempt_increments(
+    attempts: list[dict[str, Any]],
+) -> list[tuple[dict[str, Any], int]]:
+    """Return per-record increments across cumulative candidate ledgers."""
+    observed_by_ledger: dict[tuple[str, str, str], int] = {}
+    increments = []
+    for attempt in attempts:
+        ledger = _eval_ledger_key(attempt)
+        count = eval_attempt_count(attempt.get("row") or {})
+        previous = observed_by_ledger.get(ledger, 0)
+        increments.append((attempt, max(0, count - previous)))
+        observed_by_ledger[ledger] = max(previous, count)
+    return increments
+
+
+def combined_eval_attempt_count(attempts: list[dict[str, Any]]) -> int:
+    """Count each persisted candidate-ledger attempt exactly once."""
+    return sum(increment for _attempt, increment in eval_attempt_increments(attempts))
+
+
 def successful_pre_eval_recovery(
     attempt: dict[str, Any],
     observed_attempts: list[dict[str, Any]],
@@ -439,6 +477,8 @@ __all__ = [
     "apply_expected_census",
     "attempt_integrity",
     "declared_empty_patch",
+    "combined_eval_attempt_count",
+    "eval_attempt_increments",
     "mark_technical",
     "report_census",
     "strict_index",

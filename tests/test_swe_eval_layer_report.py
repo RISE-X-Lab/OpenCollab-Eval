@@ -387,7 +387,7 @@ def test_eval_layer_report_rejects_cross_run_third_eval_attempt(tmp_path):
     module = _load_module()
     first = _row(1, "task-a", "/run/task-a.outer.log", 100, "technical_eval_failed")
     first["eval"]["attempt_count"] = 2
-    second = _row(1, "task-a", "/run/task-a.outer.log", 100, "eval_done", False)
+    second = _row(1, "task-a", "/other-run/task-a.outer.log", 100, "eval_done", False)
     first_path = _write_json(tmp_path / "first.json", {"rows": [first]})
     second_path = _write_json(tmp_path / "second.json", {"rows": [second]})
 
@@ -404,7 +404,7 @@ def test_eval_layer_report_preserves_over_budget_evidence_outside_final_result(t
     module = _load_module()
     first = _row(1, "task-a", "/run/task-a.outer.log", 100, "technical_eval_failed")
     first["eval"]["attempt_count"] = 2
-    second = _row(1, "task-a", "/run/task-a.outer.log", 100, "eval_done", False)
+    second = _row(1, "task-a", "/other-run/task-a.outer.log", 100, "eval_done", False)
     first_path = _write_json(tmp_path / "first.json", {"rows": [first]})
     second_path = _write_json(tmp_path / "second.json", {"rows": [second]})
 
@@ -424,6 +424,34 @@ def test_eval_layer_report_preserves_over_budget_evidence_outside_final_result(t
     assert task["accepted_eval_status"] == "technical_eval_failed"
     assert task["over_budget_evidence"][0]["eval_status"] == "eval_done"
     assert task["over_budget_evidence"][0]["resolved"] is False
+
+
+def test_eval_layer_report_counts_cumulative_rejudge_ledger_once(tmp_path):
+    module = _load_module()
+    first = _row(
+        1,
+        "task-a",
+        "/run/task-a/generation_logs/task-a.outer.log",
+        100,
+        "technical_eval_failed",
+    )
+    first["eval"]["attempt_count"] = 1
+    second = _row(1, "task-a", "", 100, "eval_done", True)
+    second["eval"]["attempt_count"] = 2
+    second["eval"]["report_path"] = (
+        "/run/task-a/official_eval_rejudge/reports/task-a/report.json"
+    )
+    first_path = _write_json(tmp_path / "first.json", {"rows": [first]})
+    second_path = _write_json(tmp_path / "second.json", {"rows": [second]})
+
+    report = module.build_report([first_path, second_path], max_rounds=2)
+
+    task = report["tasks"][0]
+    assert report["counts"]["observed_eval_attempts"] == 2
+    assert report["counts"]["over_budget_tasks"] == 0
+    assert task["eval_attempt_count"] == 2
+    assert task["eval_status"] == "eval_done"
+    assert task["resolved"] is True
 
 
 def test_eval_layer_report_rejects_missing_candidate_identity_across_reports(tmp_path):
