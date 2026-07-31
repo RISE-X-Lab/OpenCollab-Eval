@@ -659,6 +659,7 @@ def test_generation_shell_forwards_typed_llm_overrides():
     assert 'llm_args+=(--temperature "$LLM_TEMPERATURE")' in shell
     assert 'llm_args+=(--top-p "$LLM_TOP_P")' in shell
     assert 'llm_args+=(--max-output-tokens "$LLM_MAX_OUTPUT_TOKENS")' in shell
+    assert 'llm_args+=(--context-window "$LLM_CONTEXT_WINDOW")' in shell
     assert '${checkpoint_args[@]+"${checkpoint_args[@]}"}' in shell
 
 

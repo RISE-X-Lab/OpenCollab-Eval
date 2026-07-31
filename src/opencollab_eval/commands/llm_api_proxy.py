@@ -418,7 +418,16 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                     config.max_upstream_request_bytes
                     and len(body) > config.max_upstream_request_bytes
                 ):
-                    self._json(413, {"error": "upstream_request_too_large"})
+                    self._json(
+                        400,
+                        {
+                            "error": {
+                                "message": "request exceeds the configured context window byte limit",
+                                "type": "invalid_request_error",
+                                "code": "context_length_exceeded",
+                            }
+                        },
+                    )
                     return
                 upstream_body = (
                     gzip.compress(body, mtime=0)
@@ -503,7 +512,12 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                             timeout=config.timeout,
                             expected_model=expected_model,
                         )
-                    except (ChatStreamError, OSError):
+                    except (ChatStreamError, OSError) as exc:
+                        _diagnostic(
+                            "invalid_upstream_stream",
+                            error=type(exc).__name__,
+                            reason=str(exc).replace(" ", "_"),
+                        )
                         self._json(502, {"error": "invalid_upstream_stream"})
                         return
                     self.send_response(200)

@@ -99,6 +99,17 @@ def test_direct_eval_unresolved_accepts_structured_failure_proof() -> None:
 
     assert direct_eval_done_has_execution_proof(payload) is True
 
+    tests = payload["tests_status"]
+    tests["pass_to_pass_plan"] = json.loads(json.dumps(tests["fail_to_pass_plan"]))
+    tests["pass_to_pass_evidence"] = [
+        {
+            **failure_evidence,
+            "target_failure_proof_matches_plan": False,
+        }
+    ]
+    tests["pass_to_pass_status"] = 1
+    assert direct_eval_done_has_execution_proof(payload) is True
+
     for section in ("candidate_projection", "source_candidate_projection"):
         for field in tuple(payload[section]):
             damaged = json.loads(json.dumps(payload))

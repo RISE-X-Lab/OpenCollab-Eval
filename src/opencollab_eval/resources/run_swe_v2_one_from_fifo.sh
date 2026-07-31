@@ -110,6 +110,9 @@ fi
 if [[ -n "$LLM_MAX_OUTPUT_TOKENS" ]]; then
   llm_args+=(--max-output-tokens "$LLM_MAX_OUTPUT_TOKENS")
 fi
+if [[ -n "$LLM_CONTEXT_WINDOW" ]]; then
+  llm_args+=(--context-window "$LLM_CONTEXT_WINDOW")
+fi
 if [[ "${OPENCOLLAB_SWE_RESUME:-false}" == "true" ]]; then
   checkpoint_args+=(--resume)
 fi

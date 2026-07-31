@@ -363,6 +363,7 @@ async def generate(
             max_output_tokens=cfg.get(
                 "max_output_tokens", DEFAULT_MAX_OUTPUT_TOKENS
             ),
+            context_window=cfg.get("context_window"),
             thinking=cfg.get("thinking", False),
             thinking_params=cfg.get("thinking_params") or None,
             wire_protocol=cfg.get("wire_protocol", "chat_completions"),
@@ -430,7 +431,8 @@ async def generate(
                 "llm_provider": cfg["provider"],
                 "wire_protocol": cfg.get("wire_protocol", "chat_completions"),
                 "reasoning_effort": cfg.get("reasoning_effort"),
-                "context_window": model_context_window(cfg["model"]),
+                "context_window": cfg.get("context_window")
+                or model_context_window(cfg["model"]),
                 "temperature": cfg["temperature"],
                 "top_p": cfg.get("top_p"),
                 "max_output_tokens": cfg.get(
@@ -592,6 +594,7 @@ def main() -> None:
     ap.add_argument("--temperature", type=float)
     ap.add_argument("--top-p", type=float)
     ap.add_argument("--max-output-tokens", type=int)
+    ap.add_argument("--context-window", type=int)
     ap.add_argument("--model-name", default=None, help="model_name_or_path in predictions")
     ap.add_argument("--workflow", default=None,
                     help="Bundled workflow name (e.g. analyst-solve); "
@@ -671,6 +674,10 @@ def main() -> None:
         if args.max_output_tokens <= 0:
             ap.error("--max-output-tokens must be positive")
         cfg["max_output_tokens"] = args.max_output_tokens
+    if args.context_window is not None:
+        if args.context_window <= 0:
+            ap.error("--context-window must be positive")
+        cfg["context_window"] = args.context_window
     model_name = args.model_name or f"opencollab-{wf_label}-{cfg['model']}"
 
     print(f"Instance: {iid}")

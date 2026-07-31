@@ -29,6 +29,7 @@ class ExecutionConfig:
     temperature: float
     top_p: float | None
     max_output_tokens: int
+    context_window: int | None
     thinking: bool
     thinking_params: dict | None
     wire_protocol: str
@@ -259,6 +260,7 @@ async def run_session_or_workflow(
             temperature=config.temperature,
             top_p=config.top_p,
             max_output_tokens=config.max_output_tokens,
+            context_window=config.context_window,
             thinking=config.thinking,
             thinking_params=config.thinking_params,
             wire_protocol=config.wire_protocol,
@@ -289,6 +291,7 @@ async def run_session_or_workflow(
         temperature=config.temperature,
         top_p=config.top_p,
         max_output_tokens=config.max_output_tokens,
+        context_window=config.context_window,
         thinking=config.thinking,
         thinking_params=config.thinking_params,
         wire_protocol=config.wire_protocol,

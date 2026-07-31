@@ -73,6 +73,7 @@ def test_generate_defers_container_patch_extraction(monkeypatch, tmp_path):
             "api_key": "fixture-" + "A" * 24,
             "base_url": "https://model.example.invalid/v1",
             "temperature": 0.0,
+            "context_window": 35_500,
             "thinking": False,
         },
     )
@@ -89,6 +90,7 @@ def test_generate_defers_container_patch_extraction(monkeypatch, tmp_path):
     assert captured["kwargs"]["checkpoint_interval_seconds"] is None
     assert captured["kwargs"]["resume_from_checkpoint"] is False
     assert captured["kwargs"]["defer_patch_extraction"] is True
+    assert captured["kwargs"]["context_window"] == 35_500
     assert captured["kwargs"]["prompt"] == gpw.gp.WORKFLOW_AGENT_PROMPT
     assert "Obey the current software role" in captured["kwargs"]["prompt"]
     assert "public repository evidence only" in captured["kwargs"]["prompt"]
@@ -98,6 +100,7 @@ def test_generate_defers_container_patch_extraction(monkeypatch, tmp_path):
     assert metrics["llm_base_url_sha256"] == gpw.hashlib.sha256(
         b"https://model.example.invalid/v1"
     ).hexdigest()
+    assert metrics["context_window"] == 35_500
     assert metrics["submission_eligible"] is True
     assert current_generation_proof_valid(metrics, patch)
     assert "path_audit" not in metrics["trusted_patch_extraction"]

@@ -191,7 +191,7 @@ def test_aggregate_preserves_identity_reasoning_parallel_tools_and_usage() -> No
                                 "index": 0,
                                 "id": "call-1",
                                 "type": "function",
-                                "function": {"name": "read_", "arguments": '{"path":'},
+                                "function": {"name": "read_file", "arguments": '{"path":'},
                             }
                         ],
                     },
@@ -210,7 +210,12 @@ def test_aggregate_preserves_identity_reasoning_parallel_tools_and_usage() -> No
                         "reasoning_content": "then act",
                         "content": "tools",
                         "tool_calls": [
-                            {"index": 0, "function": {"name": "file", "arguments": '"a.py"}'}},
+                            {
+                                "index": 0,
+                                "id": "",
+                                "type": "function",
+                                "function": {"name": "", "arguments": '"a.py"}'},
+                            },
                             {
                                 "index": 1,
                                 "id": "call-2",

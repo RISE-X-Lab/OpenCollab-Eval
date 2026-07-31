@@ -75,12 +75,12 @@ class _ToolCall:
 
     def add(self, value: dict[str, Any]) -> None:
         call_id = value.get("id")
-        if isinstance(call_id, str):
+        if isinstance(call_id, str) and call_id:
             if self.call_id and call_id != self.call_id:
                 raise ChatStreamError("tool call id changed during streaming")
             self.call_id = call_id
         call_type = value.get("type")
-        if isinstance(call_type, str):
+        if isinstance(call_type, str) and call_type:
             if self.call_type and call_type != self.call_type:
                 raise ChatStreamError("tool call type changed during streaming")
             self.call_type = call_type
@@ -88,7 +88,7 @@ class _ToolCall:
         if not isinstance(function, dict):
             raise ChatStreamError("tool call function must be an object")
         name = function.get("name")
-        if isinstance(name, str):
+        if isinstance(name, str) and name:
             self.name += name
         arguments = function.get("arguments")
         if isinstance(arguments, str):

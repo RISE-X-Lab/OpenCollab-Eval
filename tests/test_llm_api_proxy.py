@@ -280,8 +280,12 @@ def test_proxy_enforces_declared_upstream_request_limit_after_processing() -> No
     try:
         with pytest.raises(urllib.error.HTTPError) as caught:
             urllib.request.urlopen(request, timeout=2)
-        assert caught.value.code == 413
-        assert json.load(caught.value)["error"] == "upstream_request_too_large"
+        assert caught.value.code == 400
+        assert json.load(caught.value)["error"] == {
+            "message": "request exceeds the configured context window byte limit",
+            "type": "invalid_request_error",
+            "code": "context_length_exceeded",
+        }
         assert _UpstreamHandler.requests == []
     finally:
         proxy.shutdown()

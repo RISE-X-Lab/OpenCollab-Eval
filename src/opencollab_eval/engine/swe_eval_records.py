@@ -658,7 +658,8 @@ def direct_eval_done_has_execution_proof(
         expected_p2p_plan,
         require_commands=False,
     )
-    if f2p_status is None or p2p_status is None:
+    plan_statuses = (f2p_status, p2p_status)
+    if all(status is None for status in plan_statuses):
         return False
     if not _runtime_file_dependency_proof(
         payload,
@@ -667,7 +668,12 @@ def direct_eval_done_has_execution_proof(
         expected_p2p_plan,
     ):
         return False
-    expected_resolved = bool(f2p_status == 0 and p2p_status == 0)
+    if 1 in plan_statuses:
+        expected_resolved = False
+    elif None in plan_statuses:
+        return False
+    else:
+        expected_resolved = True
     expected_outcome = "resolved" if expected_resolved else "unresolved"
     return bool(
         payload["resolved"] is expected_resolved

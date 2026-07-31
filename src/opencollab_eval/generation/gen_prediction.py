@@ -207,6 +207,7 @@ def main() -> None:
     ap.add_argument("--temperature", type=float)
     ap.add_argument("--top-p", type=float)
     ap.add_argument("--max-output-tokens", type=int)
+    ap.add_argument("--context-window", type=int)
     ap.add_argument("--model-name", default=None, help="model_name_or_path in predictions")
     ap.add_argument("--max-steps", type=int, default=40)
     ap.add_argument("--budget", type=int, default=1_000_000)
@@ -244,6 +245,10 @@ def main() -> None:
         if args.max_output_tokens <= 0:
             ap.error("--max-output-tokens must be positive")
         cfg["max_output_tokens"] = args.max_output_tokens
+    if args.context_window is not None:
+        if args.context_window <= 0:
+            ap.error("--context-window must be positive")
+        cfg["context_window"] = args.context_window
     model_name = args.model_name or f"opencollab-{cfg['model']}"
 
     print(f"Instance: {iid}")
@@ -286,7 +291,8 @@ def main() -> None:
             {
                 "llm_model": cfg["model"],
                 "llm_provider": cfg["provider"],
-                "context_window": model_context_window(cfg["model"]),
+                "context_window": cfg.get("context_window")
+                or model_context_window(cfg["model"]),
                 "temperature": cfg.get("temperature"),
                 "top_p": cfg.get("top_p"),
                 "max_output_tokens": cfg.get(
