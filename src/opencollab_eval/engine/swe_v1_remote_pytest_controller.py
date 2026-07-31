@@ -297,7 +297,24 @@ def _decode(raw, returncode):
             raise ValueError("pytest phase evidence is invalid")
         phases[node][phase] = outcome
     complete_pass = {"setup": "passed", "call": "passed", "teardown": "passed"}
-    if returncode == 0 and (not nodeids or any(phases.get(node) != complete_pass for node in nodeids)):
+
+    def complete_skip(reports):
+        if reports == {"setup": "skipped"}:
+            return True
+        return (
+            set(reports) == {"setup", "call", "teardown"}
+            and "skipped" in reports.values()
+            and all(outcome in {"passed", "skipped"} for outcome in reports.values())
+        )
+
+    if returncode == 0 and (
+        not nodeids
+        or any(
+            phases.get(node) != complete_pass
+            and not complete_skip(phases.get(node, {}))
+            for node in nodeids
+        )
+    ):
         raise ValueError("pytest success lacks complete per-node evidence")
     return events
 

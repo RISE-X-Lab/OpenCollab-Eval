@@ -338,6 +338,49 @@ def test_jest_json_maps_unique_contiguous_abbreviated_titles():
     assert proof["missing"] == []
 
 
+def test_jest_json_uses_ancestor_titles_to_disambiguate_duplicate_leaf_titles():
+    namespace = _proof_namespace()
+    test_file = "src/app/helpers/elements.test.ts"
+    expected = [
+        f"{test_file} | getDate should not fail for an undefined element",
+        f"{test_file} | isUnread should not fail for an undefined element",
+    ]
+    assertions = [
+        (["elements", "getDate"], "should not fail for an undefined element"),
+        (["elements", "isUnread"], "should not fail for an undefined element"),
+    ]
+    log = json.dumps(
+        {
+            "testResults": [
+                {
+                    "name": "/app/applications/mail/" + test_file,
+                    "assertionResults": [
+                        {
+                            "ancestorTitles": ancestor_titles,
+                            "title": title,
+                            "fullName": " ".join([*ancestor_titles, title]),
+                            "status": "passed",
+                        }
+                        for ancestor_titles, title in assertions
+                    ],
+                }
+            ]
+        }
+    )
+
+    proof = namespace["fail_to_pass_execution_proof"](
+        {"repo_language": "typescript", "repo": "protonmail/webclients"},
+        expected,
+        0,
+        log,
+    )
+
+    assert proof["ok"] is True
+    assert proof["observed"] == expected
+    assert proof["passed"] == expected
+    assert proof["missing"] == []
+
+
 def test_jest_json_does_not_match_abbreviation_across_nested_title_level():
     namespace = _proof_namespace()
     test_file = "test/store.test.ts"

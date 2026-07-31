@@ -113,6 +113,32 @@ def test_incomplete_workflow_with_proven_candidate_continues_to_official_eval(tm
     assert result["submission_eligible"] is True
 
 
+def test_blocked_workflow_with_proven_candidate_continues_to_official_eval(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    task = "task-1"
+    _seed_remote_completed_generation(namespace, task)
+    metrics_path = namespace["base_run_dir"] / task / "metrics.jsonl"
+    metrics = namespace["read_jsonl"](metrics_path)
+    metrics[0].update(
+        workflow_status="blocked",
+        runner_returncode=1,
+        runtime_status="completed",
+        error=None,
+        agent_failures=[],
+    )
+    _write_jsonl(metrics_path, metrics)
+    namespace["ensure_image"] = lambda _image: {
+        "ok": True,
+        "image_id": "sha256:" + "8" * 64,
+    }
+
+    result = namespace["generation_for_task_once"]({"instance_id": task})
+
+    assert result["status"] == "generation_done"
+    assert result["workflow_status"] == "blocked"
+    assert result["submission_eligible"] is True
+
+
 def test_incomplete_workflow_without_proven_eligibility_remains_failed(tmp_path):
     namespace = _remote_namespace(tmp_path)
     task = "task-1"

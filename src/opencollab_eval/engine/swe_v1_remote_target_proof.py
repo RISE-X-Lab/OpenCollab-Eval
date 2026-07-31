@@ -569,15 +569,20 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
                 if isinstance(fragment, list)
                 else []
             )
+            fragment_title = " ".join(fragment_parts)
             normalized = " ".join(str(fragment).split()) if not fragment_parts else ""
             candidates = []
             for item, title in expected_titles.items():
                 expected_title = " ".join(str(title).split())
                 if (
                     fragment_parts
-                    and contiguous_title_parts_match(
-                        expected_title_parts[item],
-                        fragment_parts,
+                    and (
+                        contiguous_title_parts_match(
+                            expected_title_parts[item],
+                            fragment_parts,
+                        )
+                        or fragment_title == expected_title
+                        or fragment_title.endswith(" " + expected_title)
                     )
                 ) or (
                     not fragment_parts

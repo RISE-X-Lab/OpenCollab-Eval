@@ -127,6 +127,24 @@ def test_controller_publishes_complete_low_privilege_pass(tmp_path, request):
     assert proof.parent.stat().st_mode & 0o1777 == 0o1777
 
 
+def test_controller_publishes_normal_skip_for_later_classification(tmp_path, request):
+    result, proof = _run_case(
+        tmp_path,
+        "import pytest\n@pytest.mark.skip(reason='known baseline skip')\n"
+        "def test_target():\n    assert False\n",
+        request,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    events = [json.loads(line) for line in proof.read_text().splitlines()]
+    assert any(
+        event.get("event") == "runtest_logreport"
+        and event.get("outcome") == "skipped"
+        for event in events
+    )
+    assert events[-1]["controller"]["worker_returncode"] == 0
+
+
 def test_controller_preserves_assertion_failure(tmp_path, request):
     result, proof = _run_case(tmp_path, "def test_target():\n    assert False\n", request)
 

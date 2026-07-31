@@ -20,8 +20,8 @@ _GO_BUILD_HEADER_RE = re.compile(
     r"# (?P<package>\S+) \[(?P<test_package>\S+)\.test\]\Z"
 )
 _GO_DEPENDENCY_BUILD_HEADER_RE = re.compile(r"# (?P<package>\S+)\Z")
-_PLAIN_BUILD_FAILURE_RE = re.compile(
-    r"FAIL\s+(?P<package>\S+)\s+\[build failed\]\Z"
+_PLAIN_PACKAGE_FAILURE_RE = re.compile(
+    r"FAIL\s+(?P<package>\S+)\s+\[(?:build|setup) failed\]\Z"
 )
 
 
@@ -72,17 +72,22 @@ def _parse_go_log(
             diagnostic = _PLAIN_TEST_DIAGNOSTIC_RE.fullmatch(line)
             header = _GO_BUILD_HEADER_RE.fullmatch(line)
             dependency_header = _GO_DEPENDENCY_BUILD_HEADER_RE.fullmatch(line)
-            plain_failure = _PLAIN_BUILD_FAILURE_RE.fullmatch(line)
+            plain_failure = _PLAIN_PACKAGE_FAILURE_RE.fullmatch(line)
             if diagnostic is not None:
                 plain_diagnostics.append(
                     (current_build_header, diagnostic.group("path"))
                 )
-            elif header is not None and header.group("package") == header.group("test_package"):
-                current_build_header = header.group("package")
+                if current_build_header and current_build_header not in build_headers:
+                    build_headers.append(current_build_header)
+            elif header is not None and header.group("package") in {
+                header.group("test_package"),
+                header.group("test_package") + "_test",
+            }:
+                current_build_header = header.group("test_package")
                 build_headers.append(current_build_header)
-                dependency_output = False
+                dependency_output = True
             elif dependency_header is not None:
-                current_build_header = ""
+                current_build_header = dependency_header.group("package")
                 dependency_output = True
             elif plain_failure is not None:
                 package = plain_failure.group("package")
@@ -271,15 +276,20 @@ def _legacy_dynamic_command_matches(
     )
 
 
+def _build_unit_matches(package: str, import_path: str) -> bool:
+    build_package = import_path.split(" [", 1)[0]
+    return _package_matches(package, build_package) or (
+        build_package.endswith("_test")
+        and _package_matches(package, build_package.removesuffix("_test"))
+    )
+
+
 def _build_output_for_package(events: list[dict[str, Any]], package: str) -> str:
     return "".join(
         str(event.get("Output") or "")
         for event in events
         if event.get("Action") == "build-output"
-        and _package_matches(
-            package,
-            str(event.get("ImportPath") or "").split(" [", 1)[0],
-        )
+        and _build_unit_matches(package, str(event.get("ImportPath") or ""))
     )
 
 
@@ -436,7 +446,10 @@ def go_failure_proof_matches(
             for event in events
             if event.get("Package") == failed_package and event.get("Action") == "output"
         )
-        if "[build failed]" not in package_output:
+        if not any(
+            marker in package_output
+            for marker in ("[build failed]", "[setup failed]")
+        ):
             return False
         if plain_diagnostics:
             matching_headers = [
@@ -455,9 +468,9 @@ def go_failure_proof_matches(
             build_output = _build_output_for_package(events, failed_package)
             build_failed = any(
                 event.get("Action") == "build-fail"
-                and _package_matches(
+                and _build_unit_matches(
                     failed_package,
-                    str(event.get("ImportPath") or "").split(" [", 1)[0],
+                    str(event.get("ImportPath") or ""),
                 )
                 for event in events
             )

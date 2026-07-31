@@ -547,10 +547,14 @@ def python_parameter_fallback_batches(tests, max_args=80, max_chars=24000):
     if current_declared:
         declared_batches.append(current_declared)
         execution_batches.append(current_execution)
-    fallback_batches = [
-        [target for target in execution if any(_pytest_parameter_parent(value) == target for value in declared)]
-        for declared, execution in zip(declared_batches, execution_batches, strict=True)
-    ]
+    fallback_batches = []
+    for declared in declared_batches:
+        fallback_parents = []
+        for value in declared:
+            parent = _pytest_parameter_parent(value)
+            if parent and parent not in fallback_parents:
+                fallback_parents.append(parent)
+        fallback_batches.append(fallback_parents)
     return declared_batches, execution_batches, fallback_batches
 
 

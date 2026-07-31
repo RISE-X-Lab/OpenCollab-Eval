@@ -99,6 +99,31 @@ def test_qutebrowser_plan_keeps_xvfb_and_parameter_parent_fallback(tmp_path):
     assert plan["proofs"][0]["parameter_fallback_parents"] == [parent]
 
 
+def test_parameter_fallback_parent_order_matches_declared_targets(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    early_parent = "tests/test_many.py::test_early"
+    later_parent = "tests/test_many.py::test_later"
+    targets = [
+        early_parent + "[truncated",
+        later_parent + "[complete]",
+        early_parent + "[complete]",
+    ]
+
+    plan = namespace["prolite_test_plan"]({"repo_language": "python"}, targets)
+    script = namespace["prolite_test_plan_script"](plan, "f2p", "nonce")
+
+    assert plan["declared_targets"] == [
+        early_parent,
+        later_parent + "[complete]",
+        early_parent + "[complete]",
+    ]
+    assert plan["proofs"][0]["parameter_fallback_parents"] == [
+        later_parent,
+        early_parent,
+    ]
+    assert "untrusted test plan is unsupported" not in script
+
+
 def test_mixed_exact_and_parameter_targets_validate_across_batches(tmp_path):
     namespace = _remote_namespace(tmp_path)
     exact = [f"tests/test_many.py::test_exact_{index}" for index in range(80)]
@@ -154,6 +179,76 @@ def test_controller_reserves_proof_before_candidate_execution(tmp_path):
     assert controller["WORKER_UID"] != 65534
     with pytest.raises(FileExistsError):
         controller["_prepare_output"](proof, output)
+
+
+def test_controller_preserves_normal_skip_events(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    controller = {"__name__": "controller_test"}
+    exec(namespace["prolite_pytest_controller_source"](), controller)
+    nodeid = "tests/test_widget.py::test_widget[empty]"
+    events = [
+        {"event": "session_start"},
+        {"event": "collection_finish", "nodeids": [nodeid]},
+        {
+            "event": "runtest_logreport",
+            "nodeid": nodeid,
+            "when": "setup",
+            "outcome": "skipped",
+        },
+        {"event": "session_finish", "exitstatus": 0},
+    ]
+    raw = b"".join(
+        (json.dumps(event, separators=(",", ":")) + "\n").encode()
+        for event in events
+    )
+
+    assert controller["_decode"](raw, 0) == events
+
+    incomplete = [
+        *events[:2],
+        {
+            "event": "runtest_logreport",
+            "nodeid": nodeid,
+            "when": "setup",
+            "outcome": "passed",
+        },
+        events[-1],
+    ]
+    incomplete_raw = b"".join(
+        (json.dumps(event, separators=(",", ":")) + "\n").encode()
+        for event in incomplete
+    )
+    with pytest.raises(
+        ValueError,
+        match="pytest success lacks complete per-node evidence",
+    ):
+        controller["_decode"](incomplete_raw, 0)
+
+    missing_teardown = [
+        *events[:2],
+        {
+            "event": "runtest_logreport",
+            "nodeid": nodeid,
+            "when": "setup",
+            "outcome": "passed",
+        },
+        {
+            "event": "runtest_logreport",
+            "nodeid": nodeid,
+            "when": "call",
+            "outcome": "skipped",
+        },
+        events[-1],
+    ]
+    missing_teardown_raw = b"".join(
+        (json.dumps(event, separators=(",", ":")) + "\n").encode()
+        for event in missing_teardown
+    )
+    with pytest.raises(
+        ValueError,
+        match="pytest success lacks complete per-node evidence",
+    ):
+        controller["_decode"](missing_teardown_raw, 0)
 
 
 def test_eval_output_uses_local_container_directory_for_root_squashed_nfs(tmp_path):
@@ -224,6 +319,20 @@ def test_pytest_pass_accepts_application_error_logging_with_complete_proof(tmp_p
         "no tests ran",
         _session([], command_sha256=proof["command_sha256"], exitstatus=5),
     ) is False
+
+
+def test_pytest_skip_evidence_is_not_counted_as_pass(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    target = "tests/test_widget.py::test_widget"
+    plan = namespace["prolite_test_plan"]({"repo_language": "python"}, [target])
+    proof = plan["proofs"][0]
+    skipped = _session(
+        [target],
+        command_sha256=proof["command_sha256"],
+        outcome="skipped",
+    )
+
+    assert namespace["_plan_log_proof_matches"](proof, "1 skipped", skipped) is False
 
 
 def test_parameter_parent_proof_rejects_unrelated_collection(tmp_path):

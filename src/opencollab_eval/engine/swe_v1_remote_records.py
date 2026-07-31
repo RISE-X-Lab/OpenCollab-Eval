@@ -428,7 +428,7 @@ def completed_generation_identity(prediction, metric, task, *, require_submissio
         return returncode == 0
     if status == "done_with_timeout_patch":
         return returncode == 124
-    if status == "incomplete":
+    if status in {"blocked", "incomplete"}:
         return bool(
             returncode == 1
             and metric.get("runtime_status") == "completed"
