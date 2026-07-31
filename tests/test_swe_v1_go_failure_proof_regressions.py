@@ -129,6 +129,62 @@ def test_external_test_package_json_build_failure_proves_target_failure():
     )
 
 
+def test_multi_package_build_failure_is_not_hidden_by_other_target_passes():
+    command = "exact discovery command"
+    failed_package = "github.com/navidrome/navidrome/core/agents/lastfm"
+    passing_packages = {
+        "github.com/navidrome/navidrome/core/agents/listenbrainz": "TestListenBrainz",
+        "github.com/navidrome/navidrome/core/agents/spotify": "TestSpotify",
+    }
+    discoveries = [
+        _discovery("./core/agents/lastfm", "TestLastFM", "core/agents/lastfm/client_test.go"),
+        *(
+            _discovery("./" + package.split("github.com/navidrome/navidrome/", 1)[1], test, "unused_test.go")
+            for package, test in passing_packages.items()
+        ),
+    ]
+    events = [
+        {
+            "ImportPath": failed_package + " [" + failed_package + ".test]",
+            "Action": "build-output",
+            "Output": "core/agents/lastfm/client_test.go:131:18: client.GetToken undefined\n",
+        },
+        {"ImportPath": failed_package + " [" + failed_package + ".test]", "Action": "build-fail"},
+        {
+            "Action": "output",
+            "Package": failed_package,
+            "Output": f"FAIL\t{failed_package} [build failed]\n",
+        },
+        {"Action": "fail", "Package": failed_package},
+        *(
+            {"Action": "pass", "Package": package, "Test": test}
+            for package, test in passing_packages.items()
+        ),
+    ]
+    proof = {
+        "kind": "go_json_test_pass",
+        "tests": ["TestLastFM", *passing_packages.values()],
+        "dynamic_discovery": True,
+    }
+    log = "\n".join((*discoveries, *(json.dumps(event) for event in events)))
+
+    assert go_failure_proof_matches(
+        proof,
+        log,
+        expected_command=command,
+        observed_command=command,
+    )
+
+    events.append({"Action": "pass", "Package": failed_package, "Test": "TestLastFM"})
+    contradictory_log = "\n".join((*discoveries, *(json.dumps(event) for event in events)))
+    assert not go_failure_proof_matches(
+        proof,
+        contradictory_log,
+        expected_command=command,
+        observed_command=command,
+    )
+
+
 def test_candidate_production_source_build_failure_proves_target_failure():
     command = "exact discovery command"
     package = "example.invalid/project/internal/server"

@@ -488,8 +488,6 @@ def go_failure_proof_matches(
         observed_command=observed_command,
     ):
         return True
-    if any(event.get("Test") in expected for event in events):
-        return False
     legacy_dynamic = _legacy_dynamic_command_matches(
         proof,
         expected_command,
@@ -570,6 +568,13 @@ def go_failure_proof_matches(
         if len(matching_bindings) != 1:
             return False
         binding = matching_bindings[0]
+        if any(
+            event.get("Test") in binding["tests"]
+            and isinstance(event.get("Package"), str)
+            and _package_matches(binding["package"], event["Package"])
+            for event in events
+        ):
+            return False
         package_output = "".join(
             str(event.get("Output") or "")
             for event in events
