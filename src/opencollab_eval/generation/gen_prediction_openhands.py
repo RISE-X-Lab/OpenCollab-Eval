@@ -28,6 +28,7 @@ from opencollab_eval.engine.swe_v1_remote_records import read_tail_text  # noqa:
 
 from . import container_quiescence as container_guard  # noqa: E402
 from . import gen_prediction as gp  # noqa: E402
+from . import openhands_events  # noqa: E402
 from .external_solver_containers import cleanup_external_solver_containers  # noqa: E402
 from .external_solver_usage import (  # noqa: E402
     _append_usage_record,
@@ -392,6 +393,7 @@ def _run_openhands(
         result["external_solver_usage_evidence"] = external_solver_usage_evidence
     if external_solver_error is not None:
         result["external_solver_error"] = external_solver_error
+    result.update(openhands_events.terminal_error_evidence(stdout_log))
     return result
 
 
@@ -602,6 +604,7 @@ def main() -> None:
                     f"OpenHands generation command failed with status {metrics.get('status', 'unknown')}"
                 )
             metrics["submitted_patch_chars"] = len(patch)
+            generation_error = generation_error or openhands_events.apply_empty_patch_failure(metrics, patch)
             if "workflow_status" not in metrics and metrics.get("status") == "done":
                 metrics["workflow_status"] = (
                     "done" if patch.strip() else "empty_patch_after_done"
