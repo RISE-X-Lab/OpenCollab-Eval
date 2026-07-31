@@ -9,12 +9,14 @@ import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest.mock import Mock
 
 import pytest
 from openai.types.chat import ChatCompletion
 
 from opencollab_eval.commands.llm_api_proxy import (
     ProxyConfig,
+    _DirectResponse,
     load_proxy_config,
     make_handler,
     upstream_base_url_sha256,
@@ -510,7 +512,21 @@ def test_direct_proxy_cancels_upstream_when_client_leaves_before_headers() -> No
         upstream.server_close()
 
 
-def test_proxy_aggregates_chat_stream_without_losing_request_or_response_evidence() -> None:
+def test_direct_response_delegates_bounded_line_reads_and_closes() -> None:
+    response = Mock(status=200, headers={})
+    response.readline.return_value = b"line\n"
+    connection = Mock()
+    with _DirectResponse(response, connection) as direct:
+        assert direct.readline(5) == b"line\n"
+    response.readline.assert_called_once_with(5)
+    response.close.assert_called_once_with()
+    connection.close.assert_called_once_with()
+
+
+@pytest.mark.parametrize("direct_upstream", [False, True])
+def test_proxy_aggregates_chat_stream_without_losing_request_or_response_evidence(
+    direct_upstream: bool,
+) -> None:
     _AggregatingUpstreamHandler.requests = []
     _AggregatingUpstreamHandler.status = 200
     _AggregatingUpstreamHandler.content_type = "text/event-stream"
@@ -533,6 +549,7 @@ def test_proxy_aggregates_chat_stream_without_losing_request_or_response_evidenc
                 upstream_base_url=f"http://127.0.0.1:{upstream.server_port}/v1",
                 timeout=5,
                 aggregate_chat_stream=True,
+                direct_upstream=direct_upstream,
             )
         ),
     )
@@ -710,7 +727,10 @@ def test_proxy_rejects_non_sse_success_during_aggregation(content_type: str) -> 
         upstream.server_close()
 
 
-def test_proxy_aborts_stream_that_stalls_after_first_chunk() -> None:
+@pytest.mark.parametrize("direct_upstream", [False, True])
+def test_proxy_aborts_stream_that_stalls_after_first_chunk(
+    direct_upstream: bool,
+) -> None:
     class StallingHandler(BaseHTTPRequestHandler):
         def log_message(self, _format: str, *_args: object) -> None:
             return
@@ -742,6 +762,7 @@ def test_proxy_aborts_stream_that_stalls_after_first_chunk() -> None:
                 upstream_base_url=f"http://127.0.0.1:{upstream.server_port}/v1",
                 timeout=0.05,
                 aggregate_chat_stream=True,
+                direct_upstream=direct_upstream,
             )
         ),
     )

@@ -238,6 +238,9 @@ class _DirectResponse:
     def read1(self, size: int = -1) -> bytes:
         return self._response.read1(size)
 
+    def readline(self, size: int = -1) -> bytes:
+        return self._response.readline(size)
+
 
 def _client_disconnected(client: socket.socket) -> bool:
     try:
