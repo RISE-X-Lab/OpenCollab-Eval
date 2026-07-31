@@ -120,6 +120,47 @@ def test_streaming_request_can_drop_only_tool_schema_annotations() -> None:
     assert actual["messages"] == request["messages"]
 
 
+def test_tool_schema_compaction_does_not_require_streaming() -> None:
+    request = {
+        "model": "deepseek-v4-pro",
+        "messages": [{"role": "user", "content": "inspect"}],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "file_read",
+                    "description": "Long model-facing prose.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "description": "A repository path.",
+                            }
+                        },
+                        "required": ["path"],
+                    },
+                },
+            }
+        ],
+    }
+
+    encoded, aggregate, model = streaming_chat_request(
+        json.dumps(request).encode(),
+        compact_tool_schemas=True,
+        enable_stream=False,
+    )
+    actual = json.loads(encoded)
+
+    assert aggregate is False
+    assert model == "deepseek-v4-pro"
+    assert "stream" not in actual
+    assert actual["tools"][0]["function"]["name"] == "file_read"
+    assert "description" not in actual["tools"][0]["function"]
+    path_schema = actual["tools"][0]["function"]["parameters"]["properties"]["path"]
+    assert "description" not in path_schema
+
+
 @pytest.mark.parametrize(
     "body",
     [b"not-json", b"[]", b'{"stream_options":1}', b'{"messages":[]}'],

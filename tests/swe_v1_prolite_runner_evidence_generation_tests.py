@@ -62,6 +62,18 @@ def test_remote_generation_identity_includes_model_user_agent(tmp_path):
     assert not namespace["generation_identity_matches"]({}, metric, require_patch=False)
 
 
+def test_remote_generation_identity_includes_tool_result_limit(tmp_path):
+    namespace = _remote_namespace(
+        tmp_path,
+        workflow_env={"OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS": "1200"},
+    )
+
+    assert namespace["generation_runtime_identity"]()["workflow_env"] == {
+        "OPENCOLLAB_THINKING": "false",
+        "OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS": "1200",
+    }
+
+
 def test_kimi_direct_transport_is_bound_into_generation_identity(tmp_path, monkeypatch):
     env_file = tmp_path / "kimi.env"
     env_file.write_text(

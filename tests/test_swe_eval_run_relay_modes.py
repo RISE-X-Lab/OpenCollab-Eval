@@ -169,6 +169,7 @@ def test_foreground_entry_binds_responses_relay_configuration(
             "upstream_base_url": "https://api.example.invalid/v1",
             "relay_mode": "responses-pass-through",
             "compact_tool_schemas": False,
+            "gzip_upstream_request": False,
             "max_upstream_request_bytes": 0,
             "allow_insecure_upstream": False,
             "direct_upstream": False,
@@ -182,8 +183,9 @@ def test_native_responses_mode_uses_raw_passthrough() -> None:
     assert module._relay_mode_flags(
         "responses-pass-through",
         compact_tool_schemas=False,
+        gzip_upstream_request=True,
         max_upstream_request_bytes=0,
-    ) == []
+    ) == ["--gzip-upstream-request"]
 
 
 def test_insecure_upstream_requires_explicit_relay_flag() -> None:
@@ -232,8 +234,10 @@ def test_detach_propagates_explicit_insecure_upstream(
             "http://api.example.invalid/v1",
             "--proxy-allow-insecure-upstream",
             "--proxy-direct-upstream",
+            "--proxy-gzip-upstream-request",
         ]
     ) == 0
 
     assert proxy_calls[0]["allow_insecure_upstream"] is True
     assert proxy_calls[0]["direct_upstream"] is True
+    assert proxy_calls[0]["gzip_upstream_request"] is True

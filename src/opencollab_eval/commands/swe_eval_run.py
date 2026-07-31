@@ -319,8 +319,7 @@ def _ensure_local_proxy_agent(
     remaining: list[str],
     upstream_base_url: str,
     relay_mode: str = "aggregate-chat-stream",
-    compact_tool_schemas: bool = False,
-    max_upstream_request_bytes: int = 0,
+    compact_tool_schemas: bool = False, gzip_upstream_request: bool = False, max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
     direct_upstream: bool = False,
     upstream_timeout: float | None = None,
@@ -338,6 +337,7 @@ def _ensure_local_proxy_agent(
     health_kwargs = {
         "relay_mode": relay_mode,
         "compact_tool_schemas": compact_tool_schemas,
+        "gzip_upstream_request": gzip_upstream_request,
         "max_upstream_request_bytes": max_upstream_request_bytes,
         "allow_insecure_upstream": allow_insecure_upstream,
         "direct_upstream": direct_upstream,
@@ -368,6 +368,7 @@ def _ensure_local_proxy_agent(
             *_relay_mode_flags(
                 relay_mode,
                 compact_tool_schemas=compact_tool_schemas,
+                gzip_upstream_request=gzip_upstream_request,
                 max_upstream_request_bytes=max_upstream_request_bytes,
                 allow_insecure_upstream=allow_insecure_upstream,
                 direct_upstream=direct_upstream,
@@ -402,8 +403,7 @@ def _ensure_proxy_agent(
     remaining: list[str],
     upstream_base_url: str = "",
     relay_mode: str = "aggregate-chat-stream",
-    compact_tool_schemas: bool = False,
-    max_upstream_request_bytes: int = 0,
+    compact_tool_schemas: bool = False, gzip_upstream_request: bool = False, max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
     direct_upstream: bool = False,
 ) -> dict:
@@ -434,6 +434,7 @@ def _ensure_proxy_agent(
         upstream_base_url=upstream_base_url,
         relay_mode=relay_mode,
         compact_tool_schemas=compact_tool_schemas,
+        gzip_upstream_request=gzip_upstream_request,
         max_upstream_request_bytes=max_upstream_request_bytes,
         allow_insecure_upstream=allow_insecure_upstream,
         direct_upstream=direct_upstream,
@@ -442,6 +443,7 @@ def _ensure_proxy_agent(
     health_kwargs = {
         "relay_mode": relay_mode,
         "compact_tool_schemas": compact_tool_schemas,
+        "gzip_upstream_request": gzip_upstream_request,
         "max_upstream_request_bytes": max_upstream_request_bytes,
         "allow_insecure_upstream": allow_insecure_upstream,
         "direct_upstream": direct_upstream,
@@ -553,6 +555,7 @@ def _launch_detached(args: argparse.Namespace, raw_arguments: list[str], remaini
             upstream_base_url=args.proxy_upstream_base_url,
             relay_mode=args.proxy_mode,
             compact_tool_schemas=args.proxy_compact_tool_schemas,
+            gzip_upstream_request=args.proxy_gzip_upstream_request,
             max_upstream_request_bytes=args.proxy_max_upstream_request_bytes,
             allow_insecure_upstream=args.proxy_allow_insecure_upstream,
             direct_upstream=args.proxy_direct_upstream,
@@ -735,6 +738,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Remove non-semantic tool schema annotations before relay calls",
     )
     parser.add_argument(
+        "--proxy-gzip-upstream-request", action="store_true", help="Use deterministic gzip for provider requests"
+    )
+    parser.add_argument(
         "--proxy-max-upstream-request-bytes",
         type=int,
         default=0,
@@ -782,6 +788,7 @@ def main(argv: list[str] | None = None) -> int:
             upstream_base_url=args.proxy_upstream_base_url,
             relay_mode=args.proxy_mode,
             compact_tool_schemas=args.proxy_compact_tool_schemas,
+            gzip_upstream_request=args.proxy_gzip_upstream_request,
             max_upstream_request_bytes=args.proxy_max_upstream_request_bytes,
             allow_insecure_upstream=args.proxy_allow_insecure_upstream,
             direct_upstream=args.proxy_direct_upstream,

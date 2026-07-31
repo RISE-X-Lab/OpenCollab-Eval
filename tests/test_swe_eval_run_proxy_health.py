@@ -28,6 +28,7 @@ def test_local_relay_health_accepts_v1_base(monkeypatch) -> None:
                     "allow_insecure_upstream": False,
                     "direct_upstream": False,
                     "compact_tool_schemas": False,
+                    "gzip_upstream_request": False,
                     "max_upstream_request_bytes": 0,
                     "upstream_timeout": 900.0,
                     "upstream_base_url_sha256": hashlib.sha256(upstream.encode()).hexdigest(),

@@ -99,12 +99,14 @@ def test_workflow_env_accepts_sampling_settings_and_rejects_secrets():
             "OPENCOLLAB_MAX_OUTPUT_TOKENS=32768",
             "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES=0",
             "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY=1",
+            "OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS=1200",
         ]
     ) == {
         "OPENCOLLAB_TEMPERATURE": "1",
         "OPENCOLLAB_MAX_OUTPUT_TOKENS": "32768",
         "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES": "0",
         "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY": "1",
+        "OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS": "1200",
     }
     with pytest.raises(ValueError, match="unsupported --workflow-env"):
         runner.normalize_workflow_env(["OPENCOLLAB_API_KEY=secret"])
@@ -152,6 +154,7 @@ def test_remote_runner_accepts_bounded_repository_map_setting():
             "workflow_env": {
                 "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES": "0",
                 "OPENCOLLAB_LLM_USER_AGENT": "compatible-client/1.0",
+                "OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS": "1200",
             },
             "model_name": "model",
             "session_prefix": "session",
@@ -176,6 +179,7 @@ def test_remote_runner_accepts_bounded_repository_map_setting():
     assert remote_state.workflow_env == {
         "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES": "0",
         "OPENCOLLAB_LLM_USER_AGENT": "compatible-client/1.0",
+        "OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS": "1200",
     }
     config["workflow_env"] = {"OPENCOLLAB_LLM_USER_AGENT": "bad\nheader"}
     with pytest.raises(ValueError, match="OPENCOLLAB_LLM_USER_AGENT"):

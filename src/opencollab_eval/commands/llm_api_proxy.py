@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import hmac
 import http.client
@@ -44,6 +45,7 @@ class ProxyConfig:
     timeout: float
     aggregate_chat_stream: bool = False
     compact_tool_schemas: bool = False
+    gzip_upstream_request: bool = False
     max_upstream_request_bytes: int = 0
     allow_insecure_upstream: bool = False
     direct_upstream: bool = False
@@ -347,6 +349,7 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                     "kind": "authenticated_model_relay",
                     "aggregate_chat_stream": config.aggregate_chat_stream,
                     "compact_tool_schemas": config.compact_tool_schemas,
+                    "gzip_upstream_request": config.gzip_upstream_request,
                     "responses_passthrough": True,
                     "allow_insecure_upstream": config.allow_insecure_upstream,
                     "direct_upstream": config.direct_upstream,
@@ -396,7 +399,9 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                             seen_request_shapes.add(body_sha256)
                     if first_observation:
                         _diagnostic("request_shape", **shape)
-                if config.aggregate_chat_stream and request_path in {
+                if (
+                    config.aggregate_chat_stream or config.compact_tool_schemas
+                ) and request_path in {
                     "/chat/completions",
                     "/v1/chat/completions",
                 }:
@@ -404,6 +409,7 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                         body, aggregate_stream, expected_model = streaming_chat_request(
                             body,
                             compact_tool_schemas=config.compact_tool_schemas,
+                            enable_stream=config.aggregate_chat_stream,
                         )
                     except ChatStreamError:
                         self._json(400, {"error": "invalid_chat_request"})
@@ -414,6 +420,11 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                 ):
                     self._json(413, {"error": "upstream_request_too_large"})
                     return
+                upstream_body = (
+                    gzip.compress(body, mtime=0)
+                    if config.gzip_upstream_request
+                    else body
+                )
                 headers = {
                     "Authorization": f"Bearer {config.upstream_api_key}",
                     "x-api-key": config.upstream_api_key,
@@ -421,6 +432,8 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                     "Accept": self.headers.get("Accept", "application/json"),
                     "User-Agent": user_agent,
                 }
+                if config.gzip_upstream_request:
+                    headers["Content-Encoding"] = "gzip"
                 headers.update(codex_headers)
                 originator = self.headers.get("originator", "").strip()
                 if not originator and codex_compatible:
@@ -437,7 +450,9 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                 for name in ("anthropic-version", "anthropic-beta"):
                     if self.headers.get(name):
                         headers[name] = self.headers[name]
-                request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+                request = urllib.request.Request(
+                    url, data=upstream_body, headers=headers, method="POST"
+                )
                 upstream_started = time.monotonic()
                 try:
                     response = (
@@ -459,6 +474,7 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                     latency_s=f"{time.monotonic() - upstream_started:.3f}",
                     path=request_path,
                     request_bytes=len(body),
+                    wire_request_bytes=len(upstream_body),
                     status=int(response.status),
                 )
             except (OSError, ValueError, urllib.error.URLError):
@@ -543,6 +559,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=float, default=900.0)
     parser.add_argument("--aggregate-chat-stream", action="store_true")
     parser.add_argument("--compact-tool-schemas", action="store_true")
+    parser.add_argument("--gzip-upstream-request", action="store_true")
     parser.add_argument("--max-upstream-request-bytes", type=int, default=0)
     parser.add_argument("--allow-insecure-upstream", action="store_true")
     parser.add_argument("--direct-upstream", action="store_true")
@@ -553,8 +570,6 @@ def main() -> int:
     args = build_parser().parse_args()
     if args.host not in {"127.0.0.1", "::1", "localhost"}:
         raise SystemExit("proxy host must be loopback")
-    if args.compact_tool_schemas and not args.aggregate_chat_stream:
-        raise SystemExit("--compact-tool-schemas requires a chat compatibility mode")
     config = load_proxy_config(
         args.env_file,
         upstream_base_url=args.upstream_base_url,
@@ -565,6 +580,7 @@ def main() -> int:
         config,
         aggregate_chat_stream=args.aggregate_chat_stream,
         compact_tool_schemas=args.compact_tool_schemas,
+        gzip_upstream_request=args.gzip_upstream_request,
         max_upstream_request_bytes=max(0, args.max_upstream_request_bytes),
         direct_upstream=args.direct_upstream,
     )

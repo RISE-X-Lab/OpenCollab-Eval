@@ -33,8 +33,9 @@ def streaming_chat_request(
     body: bytes,
     *,
     compact_tool_schemas: bool = False,
+    enable_stream: bool = True,
 ) -> tuple[bytes, bool, str]:
-    """Enable upstream streaming while preserving every caller parameter."""
+    """Prepare a chat request while preserving every caller parameter."""
     try:
         payload = json.loads(body)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -44,10 +45,17 @@ def streaming_chat_request(
     model = payload.get("model")
     if not isinstance(model, str) or not model.strip():
         raise ChatStreamError("request model must be a non-empty string")
-    if payload.get("stream") is True:
-        return body, False, model
+    changed = False
     if compact_tool_schemas and "tools" in payload:
         payload["tools"] = _without_schema_annotations(payload["tools"])
+        changed = True
+    if not enable_stream or payload.get("stream") is True:
+        encoded = (
+            json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
+            if changed
+            else body
+        )
+        return encoded, False, model
     options = payload.get("stream_options")
     if options is None:
         options = {}

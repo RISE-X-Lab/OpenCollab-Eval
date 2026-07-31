@@ -16,6 +16,7 @@ def relay_mode_flags(
     mode: str,
     *,
     compact_tool_schemas: bool,
+    gzip_upstream_request: bool = False,
     max_upstream_request_bytes: int,
     allow_insecure_upstream: bool = False,
     direct_upstream: bool = False,
@@ -32,6 +33,8 @@ def relay_mode_flags(
         flags.append("--aggregate-chat-stream")
     if compact_tool_schemas:
         flags.append("--compact-tool-schemas")
+    if gzip_upstream_request:
+        flags.append("--gzip-upstream-request")
     if max_upstream_request_bytes:
         flags += ["--max-upstream-request-bytes", str(max_upstream_request_bytes)]
     if allow_insecure_upstream:
@@ -49,6 +52,7 @@ def remote_proxy_healthy(
     upstream_base_url: str,
     relay_mode: str = "aggregate-chat-stream",
     compact_tool_schemas: bool = False,
+    gzip_upstream_request: bool = False,
     max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
     direct_upstream: bool = False,
@@ -64,6 +68,7 @@ def remote_proxy_healthy(
         "and v.get('allow_insecure_upstream') is (sys.argv[6]=='1') "
         "and v.get('direct_upstream') is (sys.argv[8]=='1') "
         "and v.get('compact_tool_schemas') is (sys.argv[4]=='1') "
+        "and v.get('gzip_upstream_request') is (sys.argv[9]=='1') "
         "and v.get('max_upstream_request_bytes')==int(sys.argv[5]) "
         "and v.get('upstream_timeout')==float(sys.argv[7]) "
         "and v.get('upstream_base_url_sha256')==sys.argv[2] else 3)"
@@ -88,6 +93,7 @@ def remote_proxy_healthy(
                 str(int(allow_insecure_upstream)),
                 str(upstream_timeout),
                 str(int(direct_upstream)),
+                str(int(gzip_upstream_request)),
             ]
         ),
     ]
@@ -111,6 +117,7 @@ def remote_proxy_socket_healthy(
     upstream_base_url: str,
     relay_mode: str = "aggregate-chat-stream",
     compact_tool_schemas: bool = False,
+    gzip_upstream_request: bool = False,
     max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
     direct_upstream: bool = False,
@@ -120,7 +127,7 @@ def remote_proxy_socket_healthy(
     probe = "\n".join(
         (
             "import http.client,json,os,socket,stat,sys",
-            "path,expected,relay_mode,compact,max_bytes,allow_insecure,timeout,direct=sys.argv[1:9]",
+            "path,expected,relay_mode,compact,max_bytes,allow_insecure,timeout,direct,gzip_request=sys.argv[1:10]",
             "mode=os.stat(path).st_mode",
             "assert stat.S_ISSOCK(mode) and stat.S_IMODE(mode) & 0o077 == 0",
             "client=socket.socket(socket.AF_UNIX)",
@@ -142,6 +149,7 @@ def remote_proxy_socket_healthy(
             "assert value.get('allow_insecure_upstream') is (allow_insecure == '1')",
             "assert value.get('direct_upstream') is (direct == '1')",
             "assert value.get('compact_tool_schemas') is (compact == '1')",
+            "assert value.get('gzip_upstream_request') is (gzip_request == '1')",
             "assert value.get('max_upstream_request_bytes') == int(max_bytes)",
             "assert value.get('upstream_timeout') == float(timeout)",
             "assert value.get('upstream_base_url_sha256') == expected",
@@ -167,6 +175,7 @@ def remote_proxy_socket_healthy(
                 str(int(allow_insecure_upstream)),
                 str(upstream_timeout),
                 str(int(direct_upstream)),
+                str(int(gzip_upstream_request)),
             ]
         ),
     ]
@@ -188,6 +197,7 @@ def local_relay_healthy(
     *,
     relay_mode: str = "aggregate-chat-stream",
     compact_tool_schemas: bool = False,
+    gzip_upstream_request: bool = False,
     max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
     direct_upstream: bool = False,
@@ -205,6 +215,7 @@ def local_relay_healthy(
             and payload.get("allow_insecure_upstream") is allow_insecure_upstream
             and payload.get("direct_upstream") is direct_upstream
             and payload.get("compact_tool_schemas") is compact_tool_schemas
+            and payload.get("gzip_upstream_request") is gzip_upstream_request
             and payload.get("max_upstream_request_bytes")
             == max_upstream_request_bytes
             and payload.get("upstream_timeout") == upstream_timeout
