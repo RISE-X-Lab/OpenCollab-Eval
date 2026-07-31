@@ -52,10 +52,11 @@ def eval_only_reconciliation_reports(
     parent_output_dir: Path,
     current_report: Path,
 ) -> list[Path]:
-    """Select the newest cumulative eval-only evidence for every task."""
+    """Select cumulative execution evidence and the newest verdict per task."""
     candidates = set(parent_output_dir.glob("task_*_eval_only_*.json"))
     candidates.add(current_report.absolute())
-    selected: dict[int, tuple[tuple[int, int, str], Path]] = {}
+    selected_execution: dict[int, tuple[tuple[int, int, str], Path]] = {}
+    selected_verdict: dict[int, tuple[tuple[int, int, str], Path]] = {}
     for path in candidates:
         path = path.absolute()
         info = path.lstat()
@@ -68,11 +69,26 @@ def eval_only_reconciliation_reports(
         if len(rows) != 1 or len(indices) != 1:
             raise RuntimeError(f"eval-only report must contain one indexed row: {path}")
         index = next(iter(indices))
-        count = _integrity.eval_attempt_count(rows[0])
-        score = (count, info.st_mtime_ns, str(path))
-        if index not in selected or score > selected[index][0]:
-            selected[index] = (score, path)
-    return [selected[index][1] for index in sorted(selected)]
+        evaluation = rows[0].get("eval")
+        represented = (
+            evaluation.get("attempt_count") if isinstance(evaluation, dict) else 0
+        )
+        if isinstance(represented, bool) or not isinstance(represented, int):
+            represented = 0
+        verdict_score = (max(0, represented), info.st_mtime_ns, str(path))
+        if index not in selected_verdict or verdict_score > selected_verdict[index][0]:
+            selected_verdict[index] = (verdict_score, path)
+        executed = _integrity.eval_attempt_count(rows[0])
+        execution_score = (executed, info.st_mtime_ns, str(path))
+        if executed and (
+            index not in selected_execution
+            or execution_score > selected_execution[index][0]
+        ):
+            selected_execution[index] = (execution_score, path)
+    selected_paths = {
+        entry[1] for selected in (selected_execution, selected_verdict) for entry in selected.values()
+    }
+    return sorted(selected_paths, key=str)
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

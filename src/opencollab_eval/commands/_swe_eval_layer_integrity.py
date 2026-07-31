@@ -251,6 +251,124 @@ def eval_attempt_count(row: dict[str, Any]) -> int:
         return 0
 
 
+def claims_evidence_only_rejudgement(
+    report: dict[str, Any],
+    row: dict[str, Any],
+) -> bool:
+    reconciliation = report.get("rejudgement")
+    evaluation = row.get("eval")
+    summary = evaluation.get("summary") if isinstance(evaluation, dict) else None
+    rejudgement = summary.get("rejudgement") if isinstance(summary, dict) else None
+    return bool(
+        isinstance(reconciliation, dict)
+        and reconciliation.get("schema") == "opencollab.eval_only_reconciliation.v1"
+        and isinstance(evaluation, dict)
+        and evaluation.get("status") == "eval_done"
+        and evaluation.get("executed") is False
+        and isinstance(rejudgement, dict)
+        and rejudgement.get("schema") == "opencollab.prolite_direct_eval_rejudgement.v1"
+    )
+
+
+def report_is_evidence_only_rejudgement(report: dict[str, Any]) -> bool:
+    rows = report.get("rows")
+    return bool(
+        isinstance(rows, list)
+        and rows
+        and all(
+            isinstance(row, dict) and claims_evidence_only_rejudgement(report, row)
+            for row in rows
+        )
+    )
+
+
+def report_evidence_order(item: tuple[Any, dict[str, Any], Any]) -> tuple[bool, str]:
+    return report_is_evidence_only_rejudgement(item[1]), str(item[0])
+
+
+def row_attempt_identity(row: dict[str, Any]) -> dict[str, str] | None:
+    generation = row.get("generation")
+    evaluation = row.get("eval")
+    summary = evaluation.get("summary") if isinstance(evaluation, dict) else None
+    if not isinstance(generation, dict) or not isinstance(summary, dict):
+        return None
+    identity = {
+        "task": str(row.get("task") or ""),
+        "record_id": str(generation.get("record_id") or ""),
+        "patch_sha256": str(
+            generation.get("source_patch_sha256")
+            or generation.get("patch_sha256")
+            or ""
+        ),
+        "eval_patch_sha256": str(
+            generation.get("eval_patch_sha256")
+            or summary.get("eval_patch_sha256")
+            or ""
+        ),
+        "eval_spec_sha256": str(summary.get("eval_spec_sha256") or ""),
+        "eval_image_id": str(summary.get("eval_image_id") or ""),
+    }
+    return identity if all(identity.values()) else None
+
+
+def evidence_only_rejudgement_binding(
+    report: dict[str, Any],
+    row: dict[str, Any],
+) -> tuple[dict[str, str], int] | None:
+    """Bind a derived verdict to the exact preceding official-eval ledger."""
+    reconciliation = report.get("rejudgement")
+    evaluation = row.get("eval")
+    summary = evaluation.get("summary") if isinstance(evaluation, dict) else None
+    rejudgement = summary.get("rejudgement") if isinstance(summary, dict) else None
+    matching = (
+        rejudgement.get("matching_eval_attempts")
+        if isinstance(rejudgement, dict)
+        else None
+    )
+    represented = evaluation.get("attempt_count") if isinstance(evaluation, dict) else None
+    identity = row_attempt_identity(row)
+    if not (
+        isinstance(reconciliation, dict)
+        and reconciliation.get("schema") == "opencollab.eval_only_reconciliation.v1"
+        and claims_evidence_only_rejudgement(report, row)
+        and isinstance(rejudgement, dict)
+        and rejudgement.get("schema")
+        == "opencollab.prolite_direct_eval_rejudgement.v1"
+        and rejudgement.get("added_eval_attempts") == 0
+        and not isinstance(matching, bool)
+        and isinstance(matching, int)
+        and matching > 0
+        and not isinstance(represented, bool)
+        and isinstance(represented, int)
+        and represented == matching
+        and identity is not None
+        and rejudgement.get("attempt_identity") == identity
+    ):
+        return None
+    return identity, matching
+
+
+def evidence_only_source_round(
+    report: dict[str, Any],
+    row: dict[str, Any],
+    task: str,
+    observed_attempts: list[dict[str, Any]],
+) -> int | None:
+    """Find the real official-eval round represented by a derived verdict."""
+    binding = evidence_only_rejudgement_binding(report, row)
+    if binding is None:
+        return None
+    identity, matching_count = binding
+    rounds = [
+        attempt["round"]
+        for attempt in observed_attempts
+        if attempt["task"] == task
+        and eval_attempt_count(attempt["row"]) == matching_count
+        and row_attempt_identity(attempt["row"]) == identity
+    ]
+    return max(rounds) if rounds else None
+
+
 def _eval_ledger_key(attempt: dict[str, Any]) -> tuple[str, str, str]:
     task = str(attempt.get("task") or "")
     generation_log = str(attempt.get("generation_log") or "")

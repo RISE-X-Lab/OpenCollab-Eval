@@ -420,9 +420,9 @@ def build_report(
     global_census_issues: list[str] = []
     inferred_indices: list[int] = []
     seen_rows: set[tuple[str, int | None, str]] = set()
-    ordered_report_paths = sorted(report_paths, key=lambda path: str(path))
-    for source_order, path in enumerate(ordered_report_paths, start=1):
-        report, load_error = _report_io.load_json_with_error(path)
+    loaded_reports = [(path, *_report_io.load_json_with_error(path)) for path in report_paths]
+    ordered_reports = sorted(loaded_reports, key=_integrity.report_evidence_order)
+    for source_order, (path, report, load_error) in enumerate(ordered_reports, start=1):
         if load_error:
             global_census_issues.append(f"{load_error}:{path}")
             continue
@@ -453,8 +453,19 @@ def build_report(
                 if index is not None:
                     _integrity.append_issue(issues_by_index, index, "duplicate_task_row")
             seen_rows.add(row_key)
-            round_number = rounds_by_task.get(task, 0) + 1
-            rounds_by_task[task] = round_number
+            if _integrity.claims_evidence_only_rejudgement(report, row):
+                round_number = _integrity.evidence_only_source_round(report, row, task, observed_attempts)
+                if round_number is None:
+                    round_number = rounds_by_task.get(task, 0) + 1
+                    rounds_by_task[task] = round_number
+                    _integrity.append_issue(
+                        task_issues,
+                        task,
+                        "orphan_evidence_only_rejudgement",
+                    )
+            else:
+                round_number = rounds_by_task.get(task, 0) + 1
+                rounds_by_task[task] = round_number
             observed = {
                 "round": round_number,
                 "source_order": source_order,
@@ -698,7 +709,7 @@ def build_report(
         "max_rounds": max_rounds,
         "max_eval_attempts": max_eval_attempts,
         "allow_over_budget_evidence": allow_over_budget_evidence,
-        "source_reports": [str(path) for path in ordered_report_paths],
+        "source_reports": [str(item[0]) for item in ordered_reports],
         "used_source_reports": sorted(used_reports),
         "expected_indices": list(expected),
         "census_errors": global_census_issues,

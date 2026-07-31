@@ -121,6 +121,52 @@ def test_eval_only_reconciliation_rejects_symlink_current_report(tmp_path):
         runner.eval_only_reconciliation_reports(parent, current)
 
 
+def test_eval_only_reconciliation_keeps_execution_and_derived_verdict(tmp_path):
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    task = "instance_owner__repo-82"
+    executed = parent / "task_82_eval_only_executed.json"
+    executed.write_text(
+        json.dumps(
+            {
+                "rows": [
+                    {
+                        **_row(82, task, "/run/task.log", 10, "technical_eval_failed"),
+                        "eval": {
+                            "status": "technical_eval_failed",
+                            "attempt_count": 2,
+                            "executed": True,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    derived = parent / "task_82_eval_only_rejudged.json"
+    derived.write_text(
+        json.dumps(
+            {
+                "rows": [
+                    {
+                        **_row(82, task, "/run/task.log", 10, "eval_done", True),
+                        "eval": {
+                            "status": "eval_done",
+                            "attempt_count": 2,
+                            "executed": False,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    selected = runner.eval_only_reconciliation_reports(parent, derived)
+
+    assert set(selected) == {executed, derived}
+
+
 def test_eval_only_parent_budget_allows_only_the_remaining_attempt(tmp_path):
     parent = tmp_path / "parent"
     parent.mkdir()
