@@ -39,6 +39,7 @@ from opencollab_eval.commands.swe_v1_prolite_process import (
     _restore_local_spawn_signals,
     terminate_local_process_group,
 )
+from opencollab_eval.commands.swe_v1_prolite_report import eval_only_reconciliation_reports
 
 _SSH_LIVENESS_OPTIONS = (
     "-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "ServerAliveInterval=30",
@@ -760,15 +761,12 @@ def update_parent_fact_report(args: argparse.Namespace) -> dict[str, Any]:
     parent_summary = parent_output_dir / "parallel_summary.json"
     if not parent_summary.exists():
         raise RuntimeError(f"missing parent parallel summary: {parent_summary}")
-
     command = [
         sys.executable,
         "-m",
         "opencollab_eval.commands.swe_eval_layer_report",
         "--report-json",
         str(parent_summary),
-        "--report-json",
-        str(args.json_output.resolve()),
         "--max-rounds",
         "2",
         "--allow-over-budget-evidence",
@@ -777,6 +775,8 @@ def update_parent_fact_report(args: argparse.Namespace) -> dict[str, Any]:
         "--markdown-output",
         str(parent_output_dir / "final_eval_layer_report.md"),
     ]
+    for report_path in eval_only_reconciliation_reports(parent_output_dir, args.json_output):
+        command.extend(["--report-json", str(report_path)])
     token_cost = parent_output_dir / "parallel_token_cost_summary.json"
     if token_cost.exists():
         command.extend(["--token-cost-json", str(token_cost)])

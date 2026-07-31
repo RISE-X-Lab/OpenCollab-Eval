@@ -9,6 +9,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from opencollab_eval.commands import _swe_eval_layer_integrity as _integrity
+from opencollab_eval.commands import _swe_report_io
 from opencollab_eval.safe_files import write_regular_bytes_atomic
 
 
@@ -44,6 +46,33 @@ def write_local_report(summary: dict[str, Any], json_path: Path, md_path: Path) 
         **md_expectation,
     )
     write_regular_bytes_atomic(json_path, json_payload, **json_expectation)
+
+
+def eval_only_reconciliation_reports(
+    parent_output_dir: Path,
+    current_report: Path,
+) -> list[Path]:
+    """Select the newest cumulative eval-only evidence for every task."""
+    candidates = set(parent_output_dir.glob("task_*_eval_only_*.json"))
+    candidates.add(current_report.absolute())
+    selected: dict[int, tuple[tuple[int, int, str], Path]] = {}
+    for path in candidates:
+        path = path.absolute()
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode):
+            raise RuntimeError(f"eval-only report must be a regular file: {path}")
+        report = _swe_report_io.load_json(path)
+        rows = [row for row in report.get("rows") or [] if isinstance(row, dict)]
+        indices = {_integrity.strict_index(row.get("index")) for row in rows}
+        indices.discard(None)
+        if len(rows) != 1 or len(indices) != 1:
+            raise RuntimeError(f"eval-only report must contain one indexed row: {path}")
+        index = next(iter(indices))
+        count = _integrity.eval_attempt_count(rows[0])
+        score = (count, info.st_mtime_ns, str(path))
+        if index not in selected or score > selected[index][0]:
+            selected[index] = (score, path)
+    return [selected[index][1] for index in sorted(selected)]
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

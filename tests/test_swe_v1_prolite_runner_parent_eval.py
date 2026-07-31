@@ -71,6 +71,56 @@ def test_eval_only_reconciles_the_parent_final_report(tmp_path):
     assert final["tasks"][0]["resolved"] is False
 
 
+def test_eval_only_reconciliation_preserves_prior_task_results(tmp_path):
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    task_82 = "instance_owner__repo-82"
+    task_83 = "instance_owner__repo-83"
+    parent_rows = [
+        _row(82, task_82, "/run/task-82.log", 10, "technical_eval_failed"),
+        _row(83, task_83, "/run/task-83.log", 10, "technical_eval_failed"),
+    ]
+    (parent / "parallel_summary.json").write_text(
+        json.dumps({"results": [{"rows": parent_rows}]}),
+        encoding="utf-8",
+    )
+    prior = parent / "task_82_eval_only_old.json"
+    prior.write_text(
+        json.dumps({"rows": [_row(82, task_82, "/run/task-82.log", 10, "eval_done", True)]}),
+        encoding="utf-8",
+    )
+    current = parent / "task_83_eval_only_current.json"
+    current.write_text(
+        json.dumps({"rows": [_row(83, task_83, "/run/task-83.log", 10, "eval_done", False)]}),
+        encoding="utf-8",
+    )
+    args = SimpleNamespace(parent_output_dir=parent, json_output=current, usd_cny=None)
+
+    runner.update_parent_fact_report(args)
+
+    final = json.loads((parent / "final_eval_layer_report.json").read_text(encoding="utf-8"))
+    by_index = {task["index"]: task for task in final["tasks"]}
+    assert by_index[82]["resolved"] is True
+    assert by_index[83]["resolved"] is False
+
+
+def test_eval_only_reconciliation_rejects_symlink_current_report(tmp_path):
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    real = tmp_path / "real.json"
+    real.write_text(
+        json.dumps(
+            {"rows": [_row(82, "instance_owner__repo-82", "/run/task.log", 10, "eval_done", True)]}
+        ),
+        encoding="utf-8",
+    )
+    current = parent / "current.json"
+    current.symlink_to(real)
+
+    with pytest.raises(RuntimeError, match="must be a regular file"):
+        runner.eval_only_reconciliation_reports(parent, current)
+
+
 def test_eval_only_parent_budget_allows_only_the_remaining_attempt(tmp_path):
     parent = tmp_path / "parent"
     parent.mkdir()
