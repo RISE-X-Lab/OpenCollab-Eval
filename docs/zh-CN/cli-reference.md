@@ -72,6 +72,19 @@ oc-eval final-report \
 
 完整证据契约请参阅 [final-report.md](final-report.md)。
 
+### `oc-eval rejudge-queue`
+
+此命令继续评测一组已经绑定证据的候选。队列计划把每个任务绑定到父运行、题号、运行 ID、评测目录与补丁 SHA-256。所有子进程均关闭模型生成。
+
+```bash
+oc-eval rejudge-queue \
+  --plan /absolute/path/rejudge-plan.json \
+  --output-dir /absolute/path/rejudge-state \
+  --workers 2
+```
+
+只有任务、记录 ID、源补丁 SHA-256、评测补丁 SHA-256、候选投影和直接测试执行证据都匹配时，队列才会跳过已有终态报告。互相冲突的结论会直接失败。其余任务在配置的并发限制内运行，继续遵守父运行的评测次数预算，并自动刷新父事实报告。状态文件会在每次状态变化后更新，因此中断后可以使用同一计划再次启动。
+
 ## Solver 协调器
 
 ```bash
@@ -94,6 +107,7 @@ python -m opencollab_eval.commands.swe_eval_run --help
 | `opencollab_eval.commands.swe_g11_parallel_runner` | 协调一个兼容 G1.1 的并行批次 |
 | `opencollab_eval.commands.swe_eval_layer_report` | 将有界评测轮次合并成一份事实报告 |
 | `opencollab_eval.commands.swe_rejudge_direct_eval` | 重新评测一个已经显式绑定的现有候选 |
+| `opencollab_eval.commands.swe_rejudge_queue` | 继续评测一个有界候选队列 |
 | `opencollab_eval.commands.swe_token_cost_summary` | 汇总已记录的模型用量与配置价格 |
 | `opencollab_eval.commands.swe_frozen_manifest` | 在 Solver 启动前验证冻结任务清单 |
 

@@ -155,3 +155,141 @@ def test_exact_target_setup_failure_proves_target_failure():
         expected_command=command,
         observed_command=command,
     )
+
+
+def test_exact_running_target_timeout_proves_target_failure():
+    command = "exact discovery command"
+    package = "go.flipt.io/flipt/internal/server"
+    target = "TestEvaluate_FirstRolloutRuleIsZero"
+    events = (
+        {"Action": "run", "Package": package, "Test": target},
+        {
+            "Action": "output",
+            "Package": package,
+            "Output": "panic: test timed out after 10m0s\n",
+        },
+        {
+            "Action": "output",
+            "Package": package,
+            "Test": target,
+            "Output": f"{package}.{target}.func1(0xc000321dc0)\n",
+        },
+        {
+            "Action": "output",
+            "Package": package,
+            "Output": f"FAIL\t{package}\t600.120s\n",
+        },
+        {"Action": "fail", "Package": package, "Elapsed": 600.12},
+    )
+    log = "\n".join(
+        (
+            _discovery("./internal/server", target, "internal/server/evaluator_test.go"),
+            *(json.dumps(event) for event in events),
+        )
+    )
+
+    assert go_failure_proof_matches(
+        _dynamic_proof(target),
+        log,
+        expected_command=command,
+        observed_command=command,
+    )
+    assert not go_failure_proof_matches(
+        _dynamic_proof(target),
+        log,
+        expected_command=command,
+        observed_command=command + " changed",
+    )
+
+
+def test_generic_package_timeout_does_not_prove_target_failure():
+    command = "exact discovery command"
+    package = "go.flipt.io/flipt/internal/server"
+    target = "TestEvaluate_FirstRolloutRuleIsZero"
+    log = "\n".join(
+        (
+            _discovery("./internal/server", target, "internal/server/evaluator_test.go"),
+            json.dumps({"Action": "run", "Package": package, "Test": target}),
+            json.dumps(
+                {
+                    "Action": "output",
+                    "Package": package,
+                    "Output": "panic: test timed out after 10m0s\n",
+                }
+            ),
+            json.dumps({"Action": "fail", "Package": package, "Elapsed": 600.12}),
+        )
+    )
+
+    assert not go_failure_proof_matches(
+        _dynamic_proof(target),
+        log,
+        expected_command=command,
+        observed_command=command,
+    )
+
+
+def test_passed_target_is_not_blamed_for_an_unrelated_timeout():
+    command = "exact discovery command"
+    package = "go.flipt.io/flipt/internal/server"
+    target = "TestWanted"
+    log = "\n".join(
+        (
+            _discovery("./internal/server", target, "internal/server/evaluator_test.go"),
+            json.dumps({"Action": "run", "Package": package, "Test": target}),
+            json.dumps({"Action": "pass", "Package": package, "Test": target}),
+            json.dumps({"Action": "run", "Package": package, "Test": "TestUnrelated"}),
+            json.dumps(
+                {
+                    "Action": "output",
+                    "Package": package,
+                    "Output": "panic: test timed out after 10m0s\nTestWanted\n",
+                }
+            ),
+            json.dumps({"Action": "fail", "Package": package, "Elapsed": 600.12}),
+        )
+    )
+
+    assert not go_failure_proof_matches(
+        _dynamic_proof(target),
+        log,
+        expected_command=command,
+        observed_command=command,
+    )
+
+
+def test_skipped_target_is_not_blamed_for_an_unrelated_timeout():
+    command = "exact discovery command"
+    package = "go.flipt.io/flipt/internal/server"
+    target = "TestWanted"
+    log = "\n".join(
+        (
+            _discovery("./internal/server", target, "internal/server/evaluator_test.go"),
+            json.dumps({"Action": "run", "Package": package, "Test": target}),
+            json.dumps(
+                {
+                    "Action": "output",
+                    "Package": package,
+                    "Test": target,
+                    "Output": "TestWanted skipped by platform\n",
+                }
+            ),
+            json.dumps({"Action": "skip", "Package": package, "Test": target}),
+            json.dumps({"Action": "run", "Package": package, "Test": "TestUnrelated"}),
+            json.dumps(
+                {
+                    "Action": "output",
+                    "Package": package,
+                    "Output": "panic: test timed out after 10m0s\n",
+                }
+            ),
+            json.dumps({"Action": "fail", "Package": package, "Elapsed": 600.12}),
+        )
+    )
+
+    assert not go_failure_proof_matches(
+        _dynamic_proof(target),
+        log,
+        expected_command=command,
+        observed_command=command,
+    )

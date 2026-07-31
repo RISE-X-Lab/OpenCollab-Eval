@@ -72,6 +72,10 @@ def build_parser() -> argparse.ArgumentParser:
         "swe-v1-prolite",
         help="Run one bounded SWE Pro-Lite slice through the remote production runner",
     )
+    subparsers.add_parser(
+        "rejudge-queue",
+        help="Resume official evaluation for evidence-bound existing candidates",
+    )
     return parser
 
 
@@ -81,6 +85,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from opencollab_eval.commands.swe_v1_prolite_runner import main as run_swe_v1_prolite
 
         return run_swe_v1_prolite(prog="oc-eval swe-v1-prolite", argv=arguments[1:])
+    if arguments[:1] == ["rejudge-queue"]:
+        from opencollab_eval.commands.swe_rejudge_queue import main as run_rejudge_queue
+
+        return run_rejudge_queue(arguments[1:])
     args = build_parser().parse_args(arguments)
     if args.command == "inspect":
         identity_key = load_identity_key(args.identity_key_file)

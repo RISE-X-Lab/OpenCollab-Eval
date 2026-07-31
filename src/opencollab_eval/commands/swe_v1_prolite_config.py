@@ -790,4 +790,10 @@ def validate_run_id(value: str) -> str:
     return value
 
 
+def expected_candidate_identity(args: argparse.Namespace) -> dict[str, str]:
+    names = ("expected_task", "expected_record_id", "expected_source_patch_sha256",
+             "expected_eval_patch_sha256")
+    return {name: str(getattr(args, name, "")) for name in names}
+
+
 __all__ = [name for name in globals() if not name.startswith("__")]

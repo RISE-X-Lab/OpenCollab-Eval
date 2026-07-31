@@ -678,7 +678,7 @@ def main():
                 require_identity=False,
             )
             if done:
-                gen = generation_done_result(
+                gen = eval_only_candidate_identity_error(gen := generation_done_result(
                     task,
                     prediction,
                     metric,
@@ -689,7 +689,7 @@ def main():
                         metric,
                         task,
                     ),
-                )
+                )) or gen
             else:
                 gen = {
                     "status": "skipped_no_generation_patch",

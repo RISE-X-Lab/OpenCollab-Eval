@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import fcntl
 import hashlib
 import json
 import shlex
@@ -15,6 +14,11 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from opencollab_eval.commands.swe_v1_parent_eval_lock import (
+    ParentEvalLock,  # noqa: F401
+    parent_eval_lock,  # noqa: F401
+    parent_report_lock,  # noqa: F401
+)
 from opencollab_eval.commands.swe_v1_prolite_common import (
     LOCAL_SPAWN_SIGNALS,
     MAX_TOTAL_EVAL_ATTEMPTS,
@@ -26,6 +30,7 @@ from opencollab_eval.commands.swe_v1_prolite_common import (
 )
 from opencollab_eval.commands.swe_v1_prolite_config import (
     ensure_remote_proxy,
+    expected_candidate_identity,
     get_proxy_token,
     normalize_workflow_env,
     sync_runtime,
@@ -43,8 +48,7 @@ from opencollab_eval.commands.swe_v1_prolite_report import eval_only_reconciliat
 
 _SSH_LIVENESS_OPTIONS = (
     "-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "ServerAliveInterval=30",
-    "-o", "ServerAliveCountMax=3", "-o", "TCPKeepAlive=yes",
-)
+    "-o", "ServerAliveCountMax=3", "-o", "TCPKeepAlive=yes",)
 
 def _ssh_with_liveness_options(command: list[str]) -> list[str]:
     if not command or Path(command[0]).name != "ssh":
@@ -431,7 +435,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
         "max_task_starts": args.max_task_starts,
         "max_eval_attempts": args.max_eval_attempts,
         "eval_only": eval_only,
-        "eval_dir_name": eval_dir_name,
+        "eval_dir_name": eval_dir_name, **expected_candidate_identity(args),
         "dry_run": args.dry_run,
     }
     remote_pythonpath = str(Path(args.remote_runtime_repo) / "src")
@@ -681,30 +685,6 @@ def _final_report_task_eval_counts(report: dict[str, Any]) -> dict[int, int]:
             continue
         counts[index] = max(counts.get(index, 0), count)
     return counts
-
-
-class ParentEvalLock:
-    def __init__(self, parent_output_dir: Path):
-        self.path = parent_output_dir.resolve() / ".eval_only.lock"
-        self.handle: Any | None = None
-
-    def __enter__(self) -> ParentEvalLock:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.handle = self.path.open("a+", encoding="utf-8")
-        fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX)
-        return self
-
-    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
-        if self.handle is not None:
-            fcntl.flock(self.handle.fileno(), fcntl.LOCK_UN)
-            self.handle.close()
-            self.handle = None
-
-
-def parent_eval_lock(args: argparse.Namespace) -> ParentEvalLock:
-    if not args.eval_only or args.parent_output_dir is None:
-        raise RuntimeError("eval-only runs require a parent output directory")
-    return ParentEvalLock(args.parent_output_dir)
 
 
 def apply_parent_eval_budget(args: argparse.Namespace) -> dict[str, Any] | None:

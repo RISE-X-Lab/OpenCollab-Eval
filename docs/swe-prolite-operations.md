@@ -221,6 +221,12 @@ candidate. The unified Solver coordinator rejects historical evaluation-only
 options so a normal experiment cannot silently skip generation. Record every
 authorized re-evaluation in the experiment protocol.
 
+Use `oc-eval rejudge-queue` when several verified candidates need the same
+maintenance operation. The queue runs only `--eval-only` children, fixes
+`--max-task-starts` and empty-patch retries at zero, checks the planned patch
+SHA-256 before accepting a terminal report, and refreshes cumulative parent
+reports automatically.
+
 ## Completion criteria
 
 A successful batch command can still contain unresolved tasks. Treat the JSON

@@ -519,6 +519,32 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
     }
 
 
+def eval_only_candidate_identity_error(result):
+    expected = {
+        "task": expected_task,
+        "record_id": expected_record_id,
+        "source_patch_sha256": expected_source_patch_sha256,
+        "eval_patch_sha256": expected_eval_patch_sha256,
+    }
+    if not any(expected.values()):
+        return None
+    observed = {
+        "task": str(result.get("task") or ""),
+        "record_id": str(result.get("record_id") or ""),
+        "source_patch_sha256": str(result.get("source_patch_sha256") or result.get("patch_sha256") or ""),
+        "eval_patch_sha256": str(result.get("eval_patch_sha256") or result.get("patch_sha256") or ""),
+    }
+    if observed == expected:
+        return None
+    return {
+        "status": "candidate_identity_mismatch",
+        "task": result.get("task"),
+        "eval_only": True,
+        "expected_candidate_identity": expected,
+        "observed_candidate_identity": observed,
+    }
+
+
 def generation_for_task(row):
     attempts = []
     force_new_generation = False

@@ -158,6 +158,10 @@ def _complete_remote_config(config: dict) -> dict:
     completed.setdefault("max_eval_attempts", 2)
     completed.setdefault("eval_only", False)
     completed.setdefault("eval_dir_name", "official_eval")
+    completed.setdefault("expected_task", "")
+    completed.setdefault("expected_record_id", "")
+    completed.setdefault("expected_source_patch_sha256", "")
+    completed.setdefault("expected_eval_patch_sha256", "")
     return completed
 
 
@@ -209,6 +213,10 @@ def _remote_config(tmp_path, **overrides):
         "max_eval_attempts": 2,
         "eval_only": False,
         "eval_dir_name": "official_eval",
+        "expected_task": "",
+        "expected_record_id": "",
+        "expected_source_patch_sha256": "",
+        "expected_eval_patch_sha256": "",
         "dry_run": False,
     }
     cfg.update(overrides)

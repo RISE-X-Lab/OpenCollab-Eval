@@ -128,6 +128,18 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--max-task-starts", type=int, default=3, help="Maximum Solver starts per task")
     parser.add_argument("--max-eval-attempts", type=int, default=2, help="Maximum official evaluations per candidate")
     parser.add_argument("--eval-only", action="store_true", help="Re-evaluate one explicitly bound existing candidate")
+    parser.add_argument("--expected-task", default="", help="Required task ID for an eval-only candidate")
+    parser.add_argument("--expected-record-id", default="", help="Required record ID for an eval-only candidate")
+    parser.add_argument(
+        "--expected-source-patch-sha256",
+        default="",
+        help="Required source patch SHA-256 for an eval-only candidate",
+    )
+    parser.add_argument(
+        "--expected-eval-patch-sha256",
+        default="",
+        help="Required evaluation patch SHA-256 for an eval-only candidate",
+    )
     parser.add_argument("--eval-dir-name", default="official_eval", help="Official evaluation directory name")
     parser.add_argument("--parent-output-dir", type=Path, help="Bound parent run used by eval-only mode")
     parser.add_argument("--usd-cny", type=float, help="Optional exchange rate for cost reports")
@@ -193,6 +205,25 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
         r"[0-9a-f]{64}", args.expected_runtime_tree_sha256
     ):
         parser.error("--expected-runtime-tree-sha256 must be a lowercase SHA-256")
+    expected_candidate_fields = (
+        args.expected_task,
+        args.expected_record_id,
+        args.expected_source_patch_sha256,
+        args.expected_eval_patch_sha256,
+    )
+    if any(expected_candidate_fields) and not all(expected_candidate_fields):
+        parser.error("eval-only candidate identity requires task, record ID, and both patch SHA-256 values")
+    if any(expected_candidate_fields) and not args.eval_only:
+        parser.error("expected candidate identity is supported only with --eval-only")
+    for option, value in (("--expected-task", args.expected_task), ("--expected-record-id", args.expected_record_id)):
+        if value and (len(value.encode("utf-8")) > 256 or any(ord(character) < 32 for character in value)):
+            parser.error(f"{option} is invalid")
+    for option, value in (
+        ("--expected-source-patch-sha256", args.expected_source_patch_sha256),
+        ("--expected-eval-patch-sha256", args.expected_eval_patch_sha256),
+    ):
+        if value and re.fullmatch(r"[0-9a-f]{64}", value) is None:
+            parser.error(f"{option} must be a lowercase SHA-256")
     if args.no_sync_runtime and not args.eval_only and not args.expected_runtime_tree_sha256:
         parser.error("--no-sync-runtime requires --expected-runtime-tree-sha256")
     try:
@@ -261,7 +292,8 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
                 args.markdown_output,
             )
             summary["parent_eval_budget"] = parent_eval_budget
-            summary["parent_fact_report"] = update_parent_fact_report(args)  # noqa: F405
+            with parent_report_lock(args):  # noqa: F405
+                summary["parent_fact_report"] = update_parent_fact_report(args)  # noqa: F405
             write_local_report(  # noqa: F405
                 summary,
                 args.json_output,

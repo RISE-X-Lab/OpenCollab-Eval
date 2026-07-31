@@ -293,6 +293,67 @@ def _build_output_for_package(events: list[dict[str, Any]], package: str) -> str
     )
 
 
+def _target_timeout_matches(
+    proof: dict[str, Any],
+    events: list[dict[str, Any]],
+    discoveries: list[dict[str, Any]],
+    declared_tests: list[str],
+    *,
+    expected_command: str,
+    observed_command: str,
+) -> bool:
+    if proof.get("dynamic_discovery") is True and (
+        not expected_command or expected_command != observed_command
+    ):
+        return False
+    bindings = _proof_bindings(proof, discoveries, declared_tests)
+    if not bindings or not _events_match_bindings(events, bindings):
+        return False
+    failed_packages = {
+        str(event.get("Package") or "")
+        for event in events
+        if event.get("Action") == "fail" and event.get("Package")
+    }
+    for binding in bindings:
+        matching_packages = [
+            package
+            for package in failed_packages
+            if _package_matches(binding["package"], package)
+        ]
+        if len(matching_packages) != 1:
+            continue
+        package = matching_packages[0]
+        package_output = "".join(
+            str(event.get("Output") or "")
+            for event in events
+            if event.get("Package") == package and event.get("Action") == "output"
+        )
+        if "panic: test timed out after " not in package_output:
+            continue
+        for test in binding["tests"]:
+            actions = {
+                str(event.get("Action") or "")
+                for event in events
+                if event.get("Package") == package and event.get("Test") == test
+            }
+            ran = any(
+                event.get("Action") == "run"
+                and event.get("Test") == test
+                and event.get("Package") == package
+                for event in events
+            )
+            target_output = "".join(
+                str(event.get("Output") or "")
+                for event in events
+                if event.get("Action") == "output"
+                and event.get("Package") == package
+                and event.get("Test") == test
+            )
+            if ran and actions.isdisjoint({"pass", "fail", "skip"}) and test in target_output:
+                return True
+    return False
+
+
 def go_pass_proof_matches(proof: dict[str, Any], log_text: str) -> bool:
     """Require every declared Go test pass event from its planned package set."""
     declared_tests = _declared_tests(proof)
@@ -371,6 +432,15 @@ def go_failure_proof_matches(
             and _events_match_bindings(events, bindings)
             and _dynamic_test_events_match_owners(events, bindings)
         )
+    if _target_timeout_matches(
+        proof,
+        events,
+        discoveries,
+        declared_tests,
+        expected_command=expected_command,
+        observed_command=observed_command,
+    ):
+        return True
     if any(event.get("Test") in expected for event in events):
         return False
     legacy_dynamic = _legacy_dynamic_command_matches(

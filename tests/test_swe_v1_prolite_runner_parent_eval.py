@@ -296,6 +296,29 @@ def test_parent_eval_lock_excludes_a_second_process(tmp_path):
     assert probe.returncode == 0, probe.stderr
 
 
+def test_eval_only_task_locks_allow_distinct_indices_to_run_independently(tmp_path):
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    first = SimpleNamespace(
+        eval_only=True,
+        parent_output_dir=parent,
+        start_index=25,
+        limit=1,
+    )
+    second = SimpleNamespace(
+        eval_only=True,
+        parent_output_dir=parent,
+        start_index=27,
+        limit=1,
+    )
+
+    with runner.parent_eval_lock(first) as first_lock:
+        with runner.parent_eval_lock(second) as second_lock:
+            assert first_lock.path != second_lock.path
+            assert first_lock.path.name == ".eval_only.task-25-25.lock"
+            assert second_lock.path.name == ".eval_only.task-27-27.lock"
+
+
 def test_eval_only_cli_requires_a_parent_output_dir(tmp_path):
     proc = subprocess.run(
         [sys.executable, "-m", "opencollab_eval.commands.swe_v1_prolite_runner", "--eval-only", "--dry-run"],

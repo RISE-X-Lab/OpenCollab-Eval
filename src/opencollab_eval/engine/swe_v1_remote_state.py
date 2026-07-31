@@ -88,6 +88,10 @@ max_task_starts = 0
 max_eval_attempts = 2
 eval_only = False
 eval_dir_name = ""
+expected_task = ""
+expected_record_id = ""
+expected_source_patch_sha256 = ""
+expected_eval_patch_sha256 = ""
 dry_run = False
 
 ACTIVE_CHILD_PGIDS: set[int] = set()
@@ -200,7 +204,9 @@ def configure(config: dict[str, Any]) -> None:
     global image_repository
     global remote_proxy_base_url, start_index, limit, budget, max_steps
     global swe_timeout, task_wall_timeout, eval_timeout, checkpoint_interval
-    global max_task_starts, max_eval_attempts, eval_only, eval_dir_name, dry_run
+    global max_task_starts, max_eval_attempts, eval_only, eval_dir_name
+    global expected_task, expected_record_id, expected_source_patch_sha256, expected_eval_patch_sha256
+    global dry_run
     global ACTIVE_CHILD_PGIDS, ACTIVE_FIFO_PATHS
     global RUNNER_LOCK_FD, RUNNER_OWNER_RECORD, RUNNER_STATE_THREAD_LOCK
 
@@ -333,6 +339,27 @@ def configure(config: dict[str, Any]) -> None:
         or eval_dir_name in {".", ".."}
     ):
         raise ValueError("eval_dir_name must be a single directory name")
+    expected_task = str(cfg.get("expected_task") or "")
+    expected_record_id = str(cfg.get("expected_record_id") or "")
+    expected_source_patch_sha256 = str(cfg.get("expected_source_patch_sha256") or "")
+    expected_eval_patch_sha256 = str(cfg.get("expected_eval_patch_sha256") or "")
+    expected_candidate_fields = (
+        expected_task,
+        expected_record_id,
+        expected_source_patch_sha256,
+        expected_eval_patch_sha256,
+    )
+    if any(expected_candidate_fields) and (
+        not eval_only
+        or not all(expected_candidate_fields)
+        or len(expected_task.encode("utf-8")) > 256
+        or len(expected_record_id.encode("utf-8")) > 256
+        or any(ord(character) < 32 for character in expected_task)
+        or any(ord(character) < 32 for character in expected_record_id)
+        or re.fullmatch(r"[0-9a-f]{64}", expected_source_patch_sha256) is None
+        or re.fullmatch(r"[0-9a-f]{64}", expected_eval_patch_sha256) is None
+    ):
+        raise ValueError("invalid expected eval-only candidate identity")
     dry_run = bool(cfg["dry_run"])
     ACTIVE_CHILD_PGIDS = set()
     ACTIVE_FIFO_PATHS = set()

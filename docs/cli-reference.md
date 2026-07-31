@@ -81,6 +81,28 @@ oc-eval final-report \
 
 See [final-report.md](final-report.md) for the complete evidence contract.
 
+### `oc-eval rejudge-queue`
+
+This command resumes official evaluation for a bounded list of existing
+candidates. The queue plan binds every job to a parent run, task index, run ID,
+evaluation directory, and patch SHA-256. Model generation is disabled for
+every child process.
+
+```bash
+oc-eval rejudge-queue \
+  --plan /absolute/path/rejudge-plan.json \
+  --output-dir /absolute/path/rejudge-state \
+  --workers 2
+```
+
+The queue skips an existing terminal report only when its task, record ID,
+source patch SHA-256, evaluation patch SHA-256, candidate projection, and
+direct test-execution proof all match. Conflicting verdicts fail closed.
+Remaining jobs run concurrently within the configured limit, retain the parent
+attempt budget, and refresh each parent fact report. Its state file is updated
+after every transition, so interrupted queues can be started again with the
+same plan.
+
 ## Solver coordinator
 
 ```bash
@@ -113,6 +135,7 @@ top-level CLI.
 | `opencollab_eval.commands.swe_g11_parallel_runner` | Coordinate a parallel G1.1-compatible batch |
 | `opencollab_eval.commands.swe_eval_layer_report` | Merge bounded evaluation rounds into one fact report |
 | `opencollab_eval.commands.swe_rejudge_direct_eval` | Re-evaluate an explicitly bound existing candidate |
+| `opencollab_eval.commands.swe_rejudge_queue` | Resume official evaluation for a bounded candidate queue |
 | `opencollab_eval.commands.swe_token_cost_summary` | Summarize recorded model usage and configured prices |
 | `opencollab_eval.commands.swe_frozen_manifest` | Validate a frozen task manifest before Solver launch |
 

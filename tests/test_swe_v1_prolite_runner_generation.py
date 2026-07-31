@@ -308,6 +308,48 @@ def test_eval_only_rejects_legacy_candidate_interrupted_by_provider(tmp_path):
     assert result["status"] == "technical_generation_provider_evidence_invalid"
 
 
+def test_eval_only_rejects_candidate_identity_drift_before_evaluation(tmp_path):
+    namespace = _remote_namespace(
+        tmp_path,
+        eval_only=True,
+        expected_task="task-1",
+        expected_record_id="r1",
+        expected_source_patch_sha256="a" * 64,
+        expected_eval_patch_sha256="b" * 64,
+    )
+
+    matching = namespace["eval_only_candidate_identity_error"](
+        {
+            "task": "task-1",
+            "record_id": "r1",
+            "source_patch_sha256": "a" * 64,
+            "eval_patch_sha256": "b" * 64,
+        }
+    )
+    drifted = namespace["eval_only_candidate_identity_error"](
+        {
+            "task": "task-1",
+            "record_id": "r1",
+            "source_patch_sha256": "a" * 64,
+            "eval_patch_sha256": "c" * 64,
+        }
+    )
+    task_drifted = namespace["eval_only_candidate_identity_error"](
+        {
+            "task": "task-2",
+            "record_id": "r1",
+            "source_patch_sha256": "a" * 64,
+            "eval_patch_sha256": "b" * 64,
+        }
+    )
+
+    assert matching is None
+    assert drifted["status"] == "candidate_identity_mismatch"
+    assert drifted["observed_candidate_identity"]["eval_patch_sha256"] == "c" * 64
+    assert task_drifted["status"] == "candidate_identity_mismatch"
+    assert task_drifted["observed_candidate_identity"]["task"] == "task-2"
+
+
 def _seed_remote_provider_failure(namespace, task, *, run_id=None, corrupt_snapshot=False):
     run_dir = namespace["base_run_dir"] / task
     empty_sha = namespace["patch_sha"]("")
