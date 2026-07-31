@@ -224,7 +224,7 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
     ):
         if value and re.fullmatch(r"[0-9a-f]{64}", value) is None:
             parser.error(f"{option} must be a lowercase SHA-256")
-    if args.no_sync_runtime and not args.eval_only and not args.expected_runtime_tree_sha256:
+    if args.no_sync_runtime and not args.expected_runtime_tree_sha256:
         parser.error("--no-sync-runtime requires --expected-runtime-tree-sha256")
     try:
         normalize_workflow_env(args.workflow_env)  # noqa: F405

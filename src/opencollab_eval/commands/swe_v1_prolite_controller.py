@@ -296,8 +296,6 @@ def prepare_runtime_summary(
     *,
     eval_only: bool,
 ) -> dict[str, Any]:
-    if eval_only:
-        return {}
     expected = str(getattr(args, "expected_runtime_tree_sha256", "") or "")
     if not args.no_sync_runtime:
         return sync_runtime(

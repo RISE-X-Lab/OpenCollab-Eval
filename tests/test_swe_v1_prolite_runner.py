@@ -313,6 +313,7 @@ def _eval_only_args(**overrides):
         "ssh_command": "ssh",
         "eval_only": True,
         "no_sync_runtime": True,
+        "expected_runtime_tree_sha256": "a" * 64,
         "host": "example",
         "remote_proxy_base_url": "http://remote",
         "remote_runtime_repo": "/remote/repo",
@@ -337,6 +338,15 @@ def _eval_only_args(**overrides):
     }
     values.update(overrides)
     return SimpleNamespace(**values)
+
+
+@pytest.fixture(autouse=True)
+def _verified_runtime(monkeypatch):
+    monkeypatch.setattr(
+        runner,
+        "verify_remote_runtime",
+        lambda **kwargs: {"sha256": "a" * 64},
+    )
 
 
 def test_runtime_drift_stops_before_remote_runner_and_model_launch(monkeypatch):
@@ -578,6 +588,7 @@ def test_run_remote_recovers_terminal_summary_when_primary_ssh_hangs(monkeypatch
         eval_only=True,
         no_ensure_remote_proxy=True,
         no_sync_runtime=True,
+        expected_runtime_tree_sha256="a" * 64,
         host="example",
         local_proxy_base_url="http://127.0.0.1:8878",
         remote_proxy_base_url="http://127.0.0.1:18788",

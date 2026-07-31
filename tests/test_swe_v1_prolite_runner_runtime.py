@@ -193,7 +193,11 @@ def test_no_sync_runtime_verifies_shared_preflight_identity(monkeypatch):
     }
 
 
-def test_runtime_preparation_forwards_the_selected_remote_python(monkeypatch):
+@pytest.mark.parametrize("eval_only", [False, True])
+def test_runtime_preparation_forwards_the_selected_remote_python(
+    monkeypatch,
+    eval_only,
+):
     captured = {}
 
     def fake_sync(**kwargs):
@@ -209,7 +213,7 @@ def test_runtime_preparation_forwards_the_selected_remote_python(monkeypatch):
         remote_python="/remote/venv/bin/python",
     )
 
-    summary = runner.prepare_runtime_summary(args, ["ssh"], eval_only=False)
+    summary = runner.prepare_runtime_summary(args, ["ssh"], eval_only=eval_only)
 
     assert captured == {
         "ssh_command": ["ssh"],
@@ -220,7 +224,11 @@ def test_runtime_preparation_forwards_the_selected_remote_python(monkeypatch):
     assert summary == {"source_tree": {"verified": True}}
 
 
-def test_no_sync_runtime_without_shared_preflight_identity_fails_closed(monkeypatch):
+@pytest.mark.parametrize("eval_only", [False, True])
+def test_no_sync_runtime_without_shared_preflight_identity_fails_closed(
+    monkeypatch,
+    eval_only,
+):
     calls = []
     monkeypatch.setattr(runner, "verify_remote_runtime", lambda **kwargs: calls.append(kwargs))
     args = SimpleNamespace(
@@ -231,7 +239,7 @@ def test_no_sync_runtime_without_shared_preflight_identity_fails_closed(monkeypa
     )
 
     with pytest.raises(RuntimeError, match="requires --expected-runtime-tree-sha256"):
-        runner.prepare_runtime_summary(args, ["ssh"], eval_only=False)
+        runner.prepare_runtime_summary(args, ["ssh"], eval_only=eval_only)
 
     assert calls == []
 

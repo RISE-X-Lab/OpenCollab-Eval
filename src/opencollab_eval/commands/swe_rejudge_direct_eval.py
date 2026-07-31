@@ -13,6 +13,7 @@ import tempfile
 import unicodedata
 from pathlib import Path
 
+from opencollab_eval.commands import _swe_eval_layer_integrity
 from opencollab_eval.engine.swe_eval_records import direct_eval_done_has_execution_proof
 from opencollab_eval.engine.swe_test_plan_contract import validated_test_plan_kind
 from opencollab_eval.engine.swe_v1_remote_artifacts import (
@@ -91,6 +92,34 @@ def _write_exclusive(path: Path, data: bytes, mode: int = 0o644) -> None:
         os.fsync(fd)
     finally:
         os.close(fd)
+
+
+def _publish_exclusive_after(
+    path: Path,
+    data: bytes,
+    unchanged: tuple[tuple[Path, bytes], ...],
+) -> None:
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(fd, 0o644)
+        offset = 0
+        while offset < len(data):
+            written = os.write(fd, data[offset:])
+            if written <= 0:
+                raise OSError(f"zero-byte write: {temporary}")
+            offset += written
+        os.fsync(fd)
+        os.close(fd)
+        fd = -1
+        for source_path, expected in unchanged:
+            if _read_regular_bytes(source_path, limit=MAX_JSON_DOCUMENT_BYTES) != expected:
+                raise RuntimeError(f"source artifact changed during reconciliation: {source_path}")
+        os.link(temporary, path)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        temporary.unlink(missing_ok=True)
 
 
 def _json_bytes(value: object) -> bytes:
@@ -324,16 +353,127 @@ def rejudge(eval_dir: Path, output_dir: Path) -> dict:
     return derived
 
 
+def reconcile_launcher_report(
+    launcher_report: Path,
+    derived_output_dir: Path,
+    output_path: Path,
+) -> dict:
+    """Publish one eval-only row that binds a derived verdict to its launcher."""
+    launcher_raw, launcher = _read_json(launcher_report)
+    derived_raw, derived = _read_json(derived_output_dir / "summary.json")
+    source_raw, source = _read_json(derived_output_dir / "source_summary.json")
+    rows = launcher.get("rows")
+    if not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict):
+        raise RuntimeError("launcher report must contain exactly one task row")
+    row = rows[0]
+    evaluation = row.get("eval")
+    generation = row.get("generation")
+    if not isinstance(evaluation, dict) or evaluation.get("summary") != source:
+        raise RuntimeError("launcher evaluation does not bind the rejudged source summary")
+    if not isinstance(generation, dict):
+        raise RuntimeError("launcher report lacks generation identity")
+    task = validate_task_identity(derived.get("task"))
+    expected = {
+        "task": task,
+        "record_id": derived.get("record_id"),
+        "source_patch_sha256": derived.get("source_patch_sha256"),
+        "eval_patch_sha256": derived.get("eval_patch_sha256"),
+    }
+    observed = {
+        "task": row.get("task"),
+        "record_id": generation.get("record_id"),
+        "source_patch_sha256": generation.get("source_patch_sha256"),
+        "eval_patch_sha256": generation.get("eval_patch_sha256"),
+    }
+    rejudgement = derived.get("rejudgement")
+    attempt_identity = (
+        rejudgement.get("attempt_identity") if isinstance(rejudgement, dict) else None
+    )
+    expected_attempt_identity = {
+        "task": task,
+        "record_id": derived.get("record_id"),
+        "patch_sha256": derived.get("source_patch_sha256"),
+        "eval_patch_sha256": derived.get("eval_patch_sha256"),
+        "eval_spec_sha256": derived.get("eval_spec_sha256"),
+        "eval_image_id": derived.get("eval_image_id"),
+    }
+    matching_attempts = (
+        rejudgement.get("matching_eval_attempts") if isinstance(rejudgement, dict) else None
+    )
+    if (
+        expected != observed
+        or derived.get("schema") != "opencollab.prolite_direct_eval.v2"
+        or not isinstance(rejudgement, dict)
+        or rejudgement.get("schema") != "opencollab.prolite_direct_eval_rejudgement.v1"
+        or rejudgement.get("source_summary_sha256") != _sha256(source_raw)
+        or rejudgement.get("added_eval_attempts") != 0
+        or isinstance(matching_attempts, bool)
+        or not isinstance(matching_attempts, int)
+        or matching_attempts < 1
+        or attempt_identity != expected_attempt_identity
+        or not isinstance(derived.get("eval_spec_sha256"), str)
+        or _SHA256_RE.fullmatch(derived["eval_spec_sha256"]) is None
+        or not isinstance(derived.get("eval_image_id"), str)
+        or _IMAGE_ID_RE.fullmatch(derived["eval_image_id"]) is None
+        or not direct_eval_done_has_execution_proof(derived)
+    ):
+        raise RuntimeError("derived verdict does not bind the launcher candidate")
+    reconciled = json.loads(launcher_raw)
+    reconciled_row = reconciled["rows"][0]
+    reconciled_row["eval"].update(
+        status="eval_done",
+        summary=derived,
+        report_path=str(derived_output_dir / "report.json"),
+        executed=False,
+        eval_patch_sha256=derived["eval_patch_sha256"],
+    )
+    integrity = _swe_eval_layer_integrity.attempt_integrity(reconciled_row, task)
+    if integrity.reasons or not integrity.direct_execution_proven:
+        raise RuntimeError("reconciled launcher report lacks complete task evidence")
+    reconciled.update(
+        status="done",
+        rejudgement={
+            "schema": "opencollab.eval_only_reconciliation.v1",
+            "launcher_report": str(launcher_report),
+            "launcher_report_sha256": _sha256(launcher_raw),
+            "derived_summary": str(derived_output_dir / "summary.json"),
+            "derived_summary_sha256": _sha256(derived_raw),
+        },
+    )
+    _publish_exclusive_after(
+        output_path,
+        _json_bytes(reconciled),
+        (
+            (launcher_report, launcher_raw),
+            (derived_output_dir / "summary.json", derived_raw),
+            (derived_output_dir / "source_summary.json", source_raw),
+        ),
+    )
+    return reconciled
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--eval-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--launcher-report", type=Path)
+    parser.add_argument("--reconciliation-output", type=Path)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if bool(args.launcher_report) != bool(args.reconciliation_output):
+        raise SystemExit("--launcher-report and --reconciliation-output must be used together")
     result = rejudge(args.eval_dir, args.output_dir)
+    if args.launcher_report is not None:
+        reconciled = reconcile_launcher_report(
+            args.launcher_report,
+            args.output_dir,
+            args.reconciliation_output,
+        )
+        result["reconciliation_output"] = str(args.reconciliation_output)
+        result["reconciliation_status"] = reconciled["status"]
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 

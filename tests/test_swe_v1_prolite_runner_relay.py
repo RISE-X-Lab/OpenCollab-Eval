@@ -15,6 +15,7 @@ def _eval_only_args() -> SimpleNamespace:
         ssh_command="ssh",
         eval_only=True,
         no_sync_runtime=True,
+        expected_runtime_tree_sha256="a" * 64,
         host="example",
         remote_proxy_base_url="http://remote",
         remote_runtime_repo="/remote/repo",
@@ -48,6 +49,15 @@ def _eval_only_args() -> SimpleNamespace:
         eval_dir_name="official_eval",
         dry_run=False,
         total_timeout=240000,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _verified_runtime(monkeypatch):
+    monkeypatch.setattr(
+        runner,
+        "verify_remote_runtime",
+        lambda **kwargs: {"sha256": "a" * 64},
     )
 
 
