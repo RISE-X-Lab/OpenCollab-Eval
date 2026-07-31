@@ -381,6 +381,43 @@ def test_jest_json_uses_ancestor_titles_to_disambiguate_duplicate_leaf_titles():
     assert proof["missing"] == []
 
 
+def test_jest_json_does_not_treat_word_suffix_as_hierarchy_boundary():
+    namespace = _proof_namespace()
+    test_file = "src/app/helpers/elements.test.ts"
+    expected = [f"{test_file} | getDate should not fail for an undefined element"]
+    log = json.dumps(
+        {
+            "testResults": [
+                {
+                    "name": "/app/applications/mail/" + test_file,
+                    "assertionResults": [
+                        {
+                            "ancestorTitles": ["elements", "not getDate"],
+                            "title": "should not fail for an undefined element",
+                            "fullName": (
+                                "elements not getDate "
+                                "should not fail for an undefined element"
+                            ),
+                            "status": "passed",
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+
+    proof = namespace["fail_to_pass_execution_proof"](
+        {"repo_language": "typescript", "repo": "protonmail/webclients"},
+        expected,
+        0,
+        log,
+    )
+
+    assert proof["ok"] is False
+    assert proof["observed"] == []
+    assert proof["missing"] == expected
+
+
 def test_jest_json_does_not_match_abbreviation_across_nested_title_level():
     namespace = _proof_namespace()
     test_file = "test/store.test.ts"

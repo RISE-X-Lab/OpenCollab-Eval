@@ -563,13 +563,23 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
                 for offset in range(len(observed_values) - width + 1)
             )
 
+        def hierarchy_suffix_title_matches(expected_title, observed_parts):
+            observed_values = [
+                " ".join(str(part).split())
+                for part in observed_parts
+                if str(part).strip()
+            ]
+            return any(
+                " ".join(observed_values[offset:]) == expected_title
+                for offset in range(len(observed_values))
+            )
+
         def canonical_expected_item(fragment, test_file=""):
             fragment_parts = (
                 [" ".join(str(part).split()) for part in fragment]
                 if isinstance(fragment, list)
                 else []
             )
-            fragment_title = " ".join(fragment_parts)
             normalized = " ".join(str(fragment).split()) if not fragment_parts else ""
             candidates = []
             for item, title in expected_titles.items():
@@ -581,8 +591,10 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
                             expected_title_parts[item],
                             fragment_parts,
                         )
-                        or fragment_title == expected_title
-                        or fragment_title.endswith(" " + expected_title)
+                        or hierarchy_suffix_title_matches(
+                            expected_title,
+                            fragment_parts,
+                        )
                     )
                 ) or (
                     not fragment_parts
