@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import http.client
 import json
+import socket
 import threading
 import time
 import urllib.error
@@ -102,6 +103,8 @@ def test_proxy_health_and_authenticated_forwarding(relay: str) -> None:
             "Authorization": "Bearer client-secret",
             "Content-Type": "application/json",
             "User-Agent": "OpenAI/Python test",
+            "originator": "opencollab-eval",
+            "x-openai-internal-codex-responses-lite": "false",
             "anthropic-version": "2023-06-01",
             "anthropic-beta": "context-1m-2025-08-07",
         },
@@ -117,6 +120,8 @@ def test_proxy_health_and_authenticated_forwarding(relay: str) -> None:
     assert observed_headers["authorization"] == "Bearer upstream-secret"
     assert observed_headers["x-api-key"] == "upstream-secret"
     assert observed_headers["user-agent"] == "OpenAI/Python test"
+    assert observed_headers["originator"] == "opencollab-eval"
+    assert observed_headers["x-openai-internal-codex-responses-lite"] == "false"
     assert observed_headers["anthropic-version"] == "2023-06-01"
     assert observed_headers["anthropic-beta"] == "context-1m-2025-08-07"
 
@@ -126,12 +131,18 @@ def test_proxy_health_and_authenticated_forwarding(relay: str) -> None:
         headers={
             "Authorization": "Bearer client-secret",
             "Content-Type": "application/json",
+            "User-Agent": "codex_cli_rs/0.146.0-alpha.3.1",
         },
         method="POST",
     )
     with urllib.request.urlopen(responses_request, timeout=2) as response:
         assert response.status == 200
     assert _UpstreamHandler.requests[1]["path"] == "/coding/v1/responses"
+    responses_headers = {
+        key.lower(): value for key, value in _UpstreamHandler.requests[1]["headers"].items()
+    }
+    assert responses_headers["originator"] == "Codex Desktop"
+    assert responses_headers["x-openai-internal-codex-responses-lite"] == "true"
 
 
 def test_proxy_rejects_wrong_token_without_contacting_upstream(relay: str) -> None:
@@ -147,6 +158,96 @@ def test_proxy_rejects_wrong_token_without_contacting_upstream(relay: str) -> No
     assert _UpstreamHandler.requests == []
 
 
+def test_proxy_returns_retryable_502_without_invented_retry_after() -> None:
+    class DisconnectingHandler(BaseHTTPRequestHandler):
+        def log_message(self, _format: str, *_args: object) -> None:
+            return
+
+        def do_POST(self) -> None:  # noqa: N802
+            self.rfile.read(int(self.headers["Content-Length"]))
+            self.connection.shutdown(socket.SHUT_RDWR)
+            self.connection.close()
+
+    upstream = ThreadingHTTPServer(("127.0.0.1", 0), DisconnectingHandler)
+    proxy = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        make_handler(
+            ProxyConfig(
+                client_token="client-secret",
+                upstream_api_key="upstream-secret",
+                upstream_base_url=f"http://127.0.0.1:{upstream.server_port}",
+                timeout=5,
+                direct_upstream=True,
+            )
+        ),
+    )
+    proxy.daemon_threads = True
+    threads = [
+        threading.Thread(target=upstream.serve_forever, daemon=True),
+        threading.Thread(target=proxy.serve_forever, daemon=True),
+    ]
+    for thread in threads:
+        thread.start()
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{proxy.server_port}/v1/responses",
+        data=b"{}",
+        headers={"Authorization": "Bearer client-secret"},
+        method="POST",
+    )
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(request, timeout=2)
+        assert caught.value.code == 502
+        assert caught.value.headers.get("Retry-After") is None
+    finally:
+        proxy.shutdown()
+        upstream.shutdown()
+        proxy.server_close()
+        upstream.server_close()
+
+
+def test_responses_rejects_uncancellable_default_transport() -> None:
+    _UpstreamHandler.requests = []
+    upstream = ThreadingHTTPServer(("127.0.0.1", 0), _UpstreamHandler)
+    proxy = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        make_handler(
+            ProxyConfig(
+                client_token="client-secret",
+                upstream_api_key="upstream-secret",
+                upstream_base_url=f"http://127.0.0.1:{upstream.server_port}",
+                timeout=5,
+            )
+        ),
+    )
+    proxy.daemon_threads = True
+    threads = [
+        threading.Thread(target=upstream.serve_forever, daemon=True),
+        threading.Thread(target=proxy.serve_forever, daemon=True),
+    ]
+    for thread in threads:
+        thread.start()
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{proxy.server_port}/v1/responses",
+        data=b'{"model":"gpt-fake","input":"hello"}',
+        headers={"Authorization": "Bearer client-secret"},
+        method="POST",
+    )
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(request, timeout=2)
+        assert caught.value.code == 400
+        assert json.load(caught.value) == {
+            "error": "responses_require_cancellable_transport"
+        }
+        assert _UpstreamHandler.requests == []
+    finally:
+        proxy.shutdown()
+        upstream.shutdown()
+        proxy.server_close()
+        upstream.server_close()
+
+
 def test_proxy_enforces_declared_upstream_request_limit_after_processing() -> None:
     _UpstreamHandler.requests = []
     upstream = ThreadingHTTPServer(("127.0.0.1", 0), _UpstreamHandler)
@@ -159,6 +260,7 @@ def test_proxy_enforces_declared_upstream_request_limit_after_processing() -> No
                 upstream_base_url=f"http://127.0.0.1:{upstream.server_port}/v1",
                 timeout=5,
                 max_upstream_request_bytes=16,
+                direct_upstream=True,
             )
         ),
     )
@@ -338,6 +440,70 @@ def test_proxy_forwards_first_sse_event_before_upstream_closes() -> None:
     finally:
         release_upstream.set()
         connection.close()
+        proxy.shutdown()
+        upstream.shutdown()
+        proxy.server_close()
+        upstream.server_close()
+
+
+def test_direct_proxy_cancels_upstream_when_client_leaves_before_headers() -> None:
+    upstream_received = threading.Event()
+    upstream_eof = threading.Event()
+    request_count = 0
+
+    class WaitingHandler(BaseHTTPRequestHandler):
+        def log_message(self, _format: str, *_args: object) -> None:
+            return
+
+        def do_POST(self) -> None:  # noqa: N802
+            nonlocal request_count
+            self.rfile.read(int(self.headers["Content-Length"]))
+            request_count += 1
+            upstream_received.set()
+            self.connection.settimeout(2)
+            try:
+                while self.connection.recv(1):
+                    pass
+            except TimeoutError:
+                return
+            upstream_eof.set()
+
+    upstream = ThreadingHTTPServer(("127.0.0.1", 0), WaitingHandler)
+    proxy = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        make_handler(
+            ProxyConfig(
+                client_token="client-secret",
+                upstream_api_key="upstream-secret",
+                upstream_base_url=f"http://127.0.0.1:{upstream.server_port}",
+                timeout=5,
+                direct_upstream=True,
+            )
+        ),
+    )
+    proxy.daemon_threads = True
+    threads = [
+        threading.Thread(target=upstream.serve_forever, daemon=True),
+        threading.Thread(target=proxy.serve_forever, daemon=True),
+    ]
+    for thread in threads:
+        thread.start()
+    client = socket.create_connection(("127.0.0.1", proxy.server_port), timeout=2)
+    try:
+        request = (
+            b"POST /v1/responses HTTP/1.1\r\n"
+            b"Host: localhost\r\n"
+            b"Authorization: Bearer client-secret\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: 2\r\n\r\n{}"
+        )
+        client.sendall(request)
+        assert upstream_received.wait(1)
+        client.close()
+        assert upstream_eof.wait(1), "the abandoned upstream request remained open"
+        assert request_count == 1
+    finally:
+        client.close()
         proxy.shutdown()
         upstream.shutdown()
         proxy.server_close()

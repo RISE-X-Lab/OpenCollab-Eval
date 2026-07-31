@@ -5,12 +5,20 @@ from __future__ import annotations
 import argparse
 import hashlib
 import hmac
+import http.client
 import json
 import math
+import queue
+import select
+import socket
 import stat
+import sys
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from dataclasses import dataclass, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -24,6 +32,8 @@ from opencollab_eval.commands.swe_v1_prolite_config import load_shell_env
 
 MAX_REQUEST_BYTES = 32 * 1024 * 1024
 MAX_RESPONSE_BYTES = 64 * 1024 * 1024
+MAX_RECORDED_REQUEST_SHAPES = 2048
+UPSTREAM_OPEN_POLL_SECONDS = 0.1
 
 
 @dataclass(frozen=True)
@@ -113,12 +123,193 @@ def _upstream_url(base_url: str, request_path: str) -> str:
     return base_url + path
 
 
-def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
-    open_upstream = (
-        urllib.request.build_opener(urllib.request.ProxyHandler({})).open
-        if config.direct_upstream
-        else urllib.request.urlopen
+def _codex_responses_request(body: bytes) -> tuple[bytes, dict[str, str]]:
+    payload = json.loads(body)
+    if not isinstance(payload, dict):
+        raise ValueError("Responses request must be a JSON object")
+    payload.setdefault("include", ["reasoning.encrypted_content"])
+    payload.setdefault("parallel_tool_calls", False)
+    payload.setdefault("text", {"verbosity": "low"})
+    reasoning = payload.get("reasoning")
+    if isinstance(reasoning, dict):
+        reasoning.setdefault("context", "all_turns")
+    if not payload.get("prompt_cache_key"):
+        input_value = payload.get("input")
+        root_input = input_value[0] if isinstance(input_value, list) and input_value else input_value
+        seed = json.dumps(
+            {
+                "instructions": payload.get("instructions"),
+                "model": payload.get("model"),
+                "root_input": root_input,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        payload["prompt_cache_key"] = str(uuid.uuid5(uuid.NAMESPACE_URL, seed))
+    session_id = str(uuid.uuid5(uuid.NAMESPACE_URL, str(payload["prompt_cache_key"])))
+    turn_seed = json.dumps(payload.get("input"), sort_keys=True, separators=(",", ":"))
+    turn_id = str(uuid.uuid5(uuid.UUID(session_id), turn_seed))
+    installation_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "opencollab-eval"))
+    window_id = f"{session_id}:0"
+    turn_metadata = {
+        "installation_id": installation_id,
+        "request_kind": "turn",
+        "session_id": session_id,
+        "thread_id": session_id,
+        "thread_source": "user",
+        "turn_id": turn_id,
+        "window_id": window_id,
+    }
+    client_metadata = payload.setdefault("client_metadata", {})
+    if isinstance(client_metadata, dict):
+        for name, value in {
+            "session_id": session_id,
+            "thread_id": session_id,
+            "turn_id": turn_id,
+            "x-codex-installation-id": installation_id,
+            "x-codex-turn-metadata": json.dumps(turn_metadata, separators=(",", ":")),
+            "x-codex-window-id": window_id,
+        }.items():
+            client_metadata.setdefault(name, value)
+    headers = {
+        "session-id": session_id,
+        "thread-id": session_id,
+        "x-client-request-id": str(uuid.uuid4()),
+        "x-codex-beta-features": "remote_compaction_v2",
+        "x-codex-turn-metadata": json.dumps(turn_metadata, separators=(",", ":")),
+        "x-codex-window-id": window_id,
+    }
+    return json.dumps(payload, separators=(",", ":")).encode(), headers
+
+
+class _ClientDisconnected(ConnectionError):
+    pass
+
+
+def _diagnostic(event: str, **fields: object) -> None:
+    details = " ".join(f"{name}={value}" for name, value in sorted(fields.items()))
+    print(f"model_relay {event} {details}".rstrip(), file=sys.stderr, flush=True)
+
+
+def _responses_request_shape(body: bytes, user_agent: str) -> dict[str, object]:
+    payload = json.loads(body)
+    if not isinstance(payload, dict):
+        raise ValueError("Responses request must be a JSON object")
+    input_items = payload.get("input")
+    tools = payload.get("tools")
+    reasoning = payload.get("reasoning")
+    return {
+        "body_sha256": hashlib.sha256(body).hexdigest(),
+        "fields": ",".join(sorted(str(key) for key in payload)),
+        "input_items": len(input_items) if isinstance(input_items, list) else 1,
+        "reasoning_effort": (
+            reasoning.get("effort", "") if isinstance(reasoning, dict) else ""
+        ),
+        "request_bytes": len(body),
+        "tools": len(tools) if isinstance(tools, list) else 0,
+        "user_agent_sha256": hashlib.sha256(user_agent.encode()).hexdigest(),
+    }
+
+
+class _DirectResponse:
+    def __init__(
+        self,
+        response: http.client.HTTPResponse,
+        connection: http.client.HTTPConnection,
+    ) -> None:
+        self._response = response
+        self._connection = connection
+        self.status = response.status
+        self.headers = response.headers
+
+    def __enter__(self) -> _DirectResponse:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        self._response.close()
+        self._connection.close()
+
+    def read(self, size: int = -1) -> bytes:
+        return self._response.read(size)
+
+    def read1(self, size: int = -1) -> bytes:
+        return self._response.read1(size)
+
+
+def _client_disconnected(client: socket.socket) -> bool:
+    try:
+        readable, _, _ = select.select([client], [], [], 0)
+        return bool(readable) and not client.recv(1, socket.MSG_PEEK)
+    except (BlockingIOError, InterruptedError):
+        return False
+    except OSError:
+        return True
+
+
+def _abort_connection(connection: http.client.HTTPConnection) -> None:
+    upstream_socket = connection.sock
+    if upstream_socket is not None:
+        try:
+            upstream_socket.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+    connection.close()
+
+
+def _open_direct_upstream(
+    request: urllib.request.Request,
+    client: socket.socket,
+    timeout: float,
+) -> _DirectResponse:
+    parsed = urllib.parse.urlsplit(request.full_url)
+    connection_type = (
+        http.client.HTTPSConnection if parsed.scheme == "https" else http.client.HTTPConnection
     )
+    connection = connection_type(parsed.hostname, parsed.port, timeout=timeout)
+    target = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
+    result: queue.Queue[tuple[_DirectResponse | None, BaseException | None]] = queue.Queue()
+
+    def open_response() -> None:
+        try:
+            connection.request(
+                request.get_method(),
+                target,
+                body=request.data,
+                headers=dict(request.header_items()),
+            )
+            result.put((_DirectResponse(connection.getresponse(), connection), None))
+        except BaseException as exc:
+            result.put((None, exc))
+
+    worker = threading.Thread(target=open_response, daemon=True)
+    worker.start()
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or _client_disconnected(client):
+            _abort_connection(connection)
+            worker.join(1)
+            if remaining <= 0:
+                raise TimeoutError("upstream response headers timed out")
+            raise _ClientDisconnected("downstream client disconnected")
+        try:
+            response, error = result.get(
+                timeout=min(UPSTREAM_OPEN_POLL_SECONDS, remaining)
+            )
+        except queue.Empty:
+            continue
+        if error is not None:
+            raise error
+        assert response is not None
+        return response
+
+
+def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
+    seen_request_shapes: set[str] = set()
+    seen_request_shapes_lock = threading.Lock()
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "OpenCollabEvalProxy/1"
@@ -126,11 +317,19 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
         def log_message(self, _format: str, *_args: object) -> None:
             return
 
-        def _json(self, status: int, payload: dict[str, object]) -> None:
+        def _json(
+            self,
+            status: int,
+            payload: dict[str, object],
+            *,
+            retry_after: int | None = None,
+        ) -> None:
             body = json.dumps(payload, separators=(",", ":")).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
+            if retry_after is not None:
+                self.send_header("Retry-After", str(retry_after))
             self.end_headers()
             self.wfile.write(body)
 
@@ -170,9 +369,30 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
             body = self.rfile.read(length)
             aggregate_stream = False
             expected_model = ""
+            codex_headers: dict[str, str] = {}
             try:
                 request_path = urllib.parse.urlsplit(self.path).path
                 url = _upstream_url(config.upstream_base_url, self.path)
+                if (
+                    request_path in {"/responses", "/v1/responses"}
+                    and not config.direct_upstream
+                ):
+                    self._json(400, {"error": "responses_require_cancellable_transport"})
+                    return
+                user_agent = self.headers.get("User-Agent", "opencollab-eval")
+                codex_compatible = user_agent.startswith("codex_cli_rs/")
+                if codex_compatible and request_path in {"/responses", "/v1/responses"}:
+                    body, codex_headers = _codex_responses_request(body)
+                    shape = _responses_request_shape(body, user_agent)
+                    body_sha256 = str(shape["body_sha256"])
+                    with seen_request_shapes_lock:
+                        first_observation = body_sha256 not in seen_request_shapes
+                        if first_observation:
+                            if len(seen_request_shapes) >= MAX_RECORDED_REQUEST_SHAPES:
+                                seen_request_shapes.clear()
+                            seen_request_shapes.add(body_sha256)
+                    if first_observation:
+                        _diagnostic("request_shape", **shape)
                 if config.aggregate_chat_stream and request_path in {
                     "/chat/completions",
                     "/v1/chat/completions",
@@ -196,17 +416,60 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                     "x-api-key": config.upstream_api_key,
                     "Content-Type": self.headers.get("Content-Type", "application/json"),
                     "Accept": self.headers.get("Accept", "application/json"),
-                    "User-Agent": self.headers.get("User-Agent", "opencollab-eval"),
+                    "User-Agent": user_agent,
                 }
+                headers.update(codex_headers)
+                originator = self.headers.get("originator", "").strip()
+                if not originator and codex_compatible:
+                    originator = "Codex Desktop"
+                if originator:
+                    headers["originator"] = originator
+                responses_lite = self.headers.get(
+                    "x-openai-internal-codex-responses-lite", ""
+                ).strip()
+                if responses_lite:
+                    headers["x-openai-internal-codex-responses-lite"] = responses_lite
+                elif codex_compatible:
+                    headers["x-openai-internal-codex-responses-lite"] = "true"
                 for name in ("anthropic-version", "anthropic-beta"):
                     if self.headers.get(name):
                         headers[name] = self.headers[name]
                 request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+                upstream_started = time.monotonic()
                 try:
-                    response = open_upstream(request, timeout=config.timeout)
+                    response = (
+                        _open_direct_upstream(request, self.connection, config.timeout)
+                        if config.direct_upstream
+                        else urllib.request.urlopen(request, timeout=config.timeout)
+                    )
                 except urllib.error.HTTPError as exc:
                     response = exc
+                except _ClientDisconnected:
+                    _diagnostic(
+                        "client_disconnected",
+                        latency_s=f"{time.monotonic() - upstream_started:.3f}",
+                        path=request_path,
+                    )
+                    return
+                _diagnostic(
+                    "upstream_response",
+                    latency_s=f"{time.monotonic() - upstream_started:.3f}",
+                    path=request_path,
+                    request_bytes=len(body),
+                    status=int(response.status),
+                )
             except (OSError, ValueError, urllib.error.URLError):
+                _diagnostic(
+                    "upstream_error",
+                    error=sys.exc_info()[0].__name__,
+                    latency_s=(
+                        f"{time.monotonic() - upstream_started:.3f}"
+                        if "upstream_started" in locals()
+                        else "0.000"
+                    ),
+                    path=urllib.parse.urlsplit(self.path).path,
+                    request_bytes=len(body) if "body" in locals() else 0,
+                )
                 self._json(502, {"error": "upstream_request_failed"})
                 return
             with response:
