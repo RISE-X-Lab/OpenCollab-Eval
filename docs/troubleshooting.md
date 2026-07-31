@@ -88,15 +88,20 @@ The following conditions remain technical failures.
 | --- | --- |
 | Empty or unsupported target plan | No executable statement of required work |
 | Zero collected tests | No target execution occurred |
-| Import or collection failure without bound proof | Target outcome is unknown |
-| Patch application failure | Tests did not run against the bound candidate |
+| Import or collection failure without bound candidate attribution | Target outcome is unknown |
+| Bound source rejection before an expected candidate tree exists | Candidate is unresolved |
+| Projection or official-worktree application failure | Evaluation state is inconsistent |
 | Patch SHA mismatch | Generation and evaluation refer to different candidates |
 | Missing or unsafe log | The target proof cannot be verified |
+| Container removal failure after quiescence | Operational warning |
 | Non-quiescent cleanup | Repository state can still change |
 
-A nonzero test command becomes unresolved only when structured evidence proves
-that the intended declared target executed and failed against the bound
-candidate.
+A candidate becomes unresolved when structured evidence proves an exact target
+failure or skip, a candidate-caused build, setup, import, or dependency
+failure, or a bound source rejection before generation records an expected
+candidate tree. A contradictory source rejection or any prepared-base
+rejection remains technical. A nonzero command without candidate attribution
+remains technical.
 
 ## A result appears stale
 

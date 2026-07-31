@@ -198,20 +198,21 @@ def eval_model_patch(prediction):
     return filter_model_patch_for_eval(prediction_patch(prediction))
 
 
-def eval_python_source_paths(prediction):
+def eval_candidate_source_paths(prediction):
     paths = []
     for block in split_patch_blocks(eval_model_patch(prediction)):
         path = patch_block_target_path(block)
-        if (
-            path
-            and path.endswith(".py")
-            and not is_eval_test_path(path)
-            and path not in paths
-        ):
+        if path and not is_eval_test_path(path) and path not in paths:
             paths.append(path)
     if len(paths) > 1024 or sum(len(path.encode("utf-8")) for path in paths) > 128 * 1024:
         return []
     return paths
+
+
+def eval_python_source_paths(prediction):
+    return [
+        path for path in eval_candidate_source_paths(prediction) if path.endswith(".py")
+    ]
 
 
 def model_patch_filter_evidence(prediction):

@@ -18,6 +18,7 @@ from opencollab_eval.engine.eval_candidate_projection import (
     CandidateProjectionError,
     build_prepared_projection,
     build_source_projection,
+    candidate_projection_failure_valid,
     candidate_projection_valid,
     verify_prepared_worktree,
 )
@@ -129,6 +130,98 @@ def test_projection_rejects_patch_and_tree_identity_drift(tmp_path: Path) -> Non
     patch_path.write_text(patch + "\n")
     with pytest.raises(CandidateProjectionError, match="SHA-256"):
         build_source_projection(repository, base_commit, patch_path, expectation_path)
+
+
+def test_projection_reports_bound_patch_not_applicable(tmp_path: Path) -> None:
+    repository, base_commit, _patch = _repository(tmp_path)
+    base_tree = _git(repository, "rev-parse", "HEAD^{tree}")
+    patch = (
+        "diff --git a/calculator.py b/calculator.py\n"
+        "--- a/calculator.py\n"
+        "+++ b/calculator.py\n"
+        "@@ -1 +1 @@\n"
+        "-content that is absent\n"
+        "+replacement\n"
+    )
+    expectation = _expectation(patch, base_commit=base_commit, base_tree=base_tree)
+    patch_path, expectation_path = _write_inputs(tmp_path, patch, expectation)
+
+    with pytest.raises(CandidateProjectionError) as raised:
+        build_source_projection(repository, base_commit, patch_path, expectation_path)
+
+    assert raised.value.error_kind == "patch_not_applicable"
+    report = raised.value.context["failure_report"]
+    assert candidate_projection_failure_valid(
+        report,
+        expectation,
+        base_commit=base_commit,
+        base_tree=base_tree,
+    ) is True
+    report["record_id"] = "wrong"
+    assert candidate_projection_failure_valid(
+        report,
+        expectation,
+        base_commit=base_commit,
+        base_tree=base_tree,
+    ) is False
+
+
+def test_legacy_source_rejection_requires_the_callers_trusted_base(
+    tmp_path: Path,
+) -> None:
+    repository, base_commit, _patch = _repository(tmp_path)
+    base_tree = _git(repository, "rev-parse", "HEAD^{tree}")
+    patch = (
+        "diff --git a/calculator.py b/calculator.py\n"
+        "--- a/calculator.py\n"
+        "+++ b/calculator.py\n"
+        "@@ -1 +1 @@\n"
+        "-content that is absent\n"
+        "+replacement\n"
+    )
+    expectation = _expectation(patch)
+    patch_path, expectation_path = _write_inputs(tmp_path, patch, expectation)
+
+    with pytest.raises(CandidateProjectionError) as raised:
+        build_source_projection(repository, base_commit, patch_path, expectation_path)
+
+    report = raised.value.context["failure_report"]
+    assert candidate_projection_failure_valid(
+        report,
+        expectation,
+        base_commit=base_commit,
+        base_tree=base_tree,
+    )
+    assert not candidate_projection_failure_valid(
+        report,
+        expectation,
+        base_commit="f" * 40,
+        base_tree=base_tree,
+    )
+    assert not candidate_projection_failure_valid(
+        report,
+        expectation,
+        base_commit=base_commit,
+        base_tree="f" * 40,
+    )
+
+
+def test_projection_runtime_error_is_not_candidate_attributable(
+    tmp_path: Path,
+) -> None:
+    repository, _base_commit, patch = _repository(tmp_path)
+    patch_path, expectation_path = _write_inputs(tmp_path, patch, _expectation(patch))
+
+    with pytest.raises(CandidateProjectionError) as raised:
+        build_source_projection(
+            repository,
+            "f" * 40,
+            patch_path,
+            expectation_path,
+        )
+
+    assert raised.value.error_kind == "projection_runtime_error"
+    assert "failure_report" not in raised.value.context
 
 
 def test_legacy_projection_keeps_full_v1_identity_checks() -> None:

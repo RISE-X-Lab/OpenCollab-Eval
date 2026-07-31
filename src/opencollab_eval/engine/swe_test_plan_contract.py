@@ -6,6 +6,7 @@ import hashlib
 import pathlib
 import re
 import shlex
+import unicodedata
 from typing import Any
 
 from opencollab_eval.engine.swe_v1_remote_target_proof import (
@@ -16,6 +17,7 @@ from opencollab_eval.engine.swe_v1_remote_target_proof import (
     tutanota_test_command,
     verified_js_test_files,
 )
+from opencollab_eval.patch_diff import is_eval_test_path, normalize_patch_path
 
 PLAN_SCHEMA = "opencollab.prolite_test_plan.v2"
 EMPTY_PLAN_KIND = "empty"
@@ -232,12 +234,18 @@ def _valid_exact_go_plan(plan: dict[str, Any]) -> bool:
         if binding is None:
             return False
         test, package, test_file, expected_command = binding
-        if command != expected_command or proof != {
+        expected_proof = {
             "kind": "go_json_test_pass",
             "test": test,
             "package": package,
             "test_file": test_file,
-        }:
+        }
+        candidate_paths = proof.get("candidate_source_paths")
+        if candidate_paths is not None:
+            if not _valid_candidate_source_paths(candidate_paths):
+                return False
+            expected_proof["candidate_source_paths"] = candidate_paths
+        if command != expected_command or proof != expected_proof:
             return False
     return True
 
@@ -253,11 +261,17 @@ def _valid_dynamic_go_plan(plan: dict[str, Any]) -> bool:
     ):
         return False
     proof = plan["proofs"][0]
-    if proof != {
+    expected_proof = {
         "kind": "go_json_test_pass",
         "tests": targets,
         "dynamic_discovery": True,
-    }:
+    }
+    candidate_paths = proof.get("candidate_source_paths")
+    if candidate_paths is not None:
+        if not _valid_candidate_source_paths(candidate_paths):
+            return False
+        expected_proof["candidate_source_paths"] = candidate_paths
+    if proof != expected_proof:
         return False
     return plan["commands"] == [go_test_command(targets)]
 
@@ -294,6 +308,33 @@ def _valid_runtime_dependencies(value: list[Any]) -> bool:
     return True
 
 
+def _valid_candidate_source_paths(value: Any) -> bool:
+    if (
+        not isinstance(value, list)
+        or not value
+        or len(value) > 1024
+        or any(not isinstance(path, str) for path in value)
+        or len(set(value)) != len(value)
+        or sum(len(path.encode("utf-8")) for path in value) > 128 * 1024
+    ):
+        return False
+    for path in value:
+        pure = pathlib.PurePosixPath(path)
+        if (
+            not path
+            or normalize_patch_path(path) != path
+            or "\\" in path
+            or pure.is_absolute()
+            or not pure.parts
+            or "/".join(pure.parts) != path
+            or any(part in {"", ".", ".."} for part in pure.parts)
+            or any(unicodedata.category(character).startswith("C") for character in path)
+            or is_eval_test_path(path)
+        ):
+            return False
+    return True
+
+
 def _valid_javascript_plan(plan: dict[str, Any]) -> bool:
     if (
         plan["target_batches"] != [plan["declared_targets"]]
@@ -316,6 +357,7 @@ def _valid_javascript_plan(plan: dict[str, Any]) -> bool:
             "test_patch_files",
             "test_files",
             "target_file",
+            "candidate_source_paths",
         }
     ):
         return False
@@ -325,6 +367,7 @@ def _valid_javascript_plan(plan: dict[str, Any]) -> bool:
     test_patch_files = proof.get("test_patch_files", [])
     language = proof.get("repo_language")
     repo = proof.get("repo")
+    candidate_paths = proof.get("candidate_source_paths")
     if (
         not declared_files
         or not isinstance(test_files, list)
@@ -349,6 +392,8 @@ def _valid_javascript_plan(plan: dict[str, Any]) -> bool:
         or language not in _JAVASCRIPT_LANGUAGES
         or not isinstance(repo, str)
         or repo != repo.strip().lower()
+        or candidate_paths is not None
+        and not _valid_candidate_source_paths(candidate_paths)
     ):
         return False
     adapter = plan["adapter"]

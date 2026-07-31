@@ -80,51 +80,63 @@ def _pytest_fallback_parents_match_targets(targets, fallback_parents):
     )
 
 
-def _pytest_structured_proof_matches(
+def _pytest_complete_skip(reports):
+    if reports == {"setup": "skipped"}:
+        return True
+    if reports == {"setup": "skipped", "teardown": "passed"}:
+        return True
+    return (
+        set(reports) == {"setup", "call", "teardown"}
+        and "skipped" in reports.values()
+        and all(outcome in {"passed", "skipped"} for outcome in reports.values())
+    )
+
+
+def _pytest_structured_execution(
     targets,
     proof_text,
-    _log_text,
     fallback_parents=None,
     command_sha256="",
 ):
     try:
         events = [json.loads(line) for line in proof_text.splitlines() if line.strip()]
     except json.JSONDecodeError:
-        return False
+        return None
     if (
         not events
         or any(not isinstance(event, dict) for event in events)
         or not _pytest_controller_proof_matches(events, command_sha256)
+        or events[0].get("event") != "session_start"
+        or events[-1].get("event") != "session_finish"
+        or sum(event.get("event") == "session_start" for event in events) != 1
     ):
-        return False
-    if events[0].get("event") != "session_start" or events[-1].get("event") != "session_finish":
-        return False
-    if sum(event.get("event") == "session_start" for event in events) != 1:
-        return False
+        return None
     collections = [event for event in events if event.get("event") == "collection_finish"]
     finishes = [event for event in events if event.get("event") == "session_finish"]
-    if len(collections) != 1 or len(finishes) != 1 or finishes[0].get("exitstatus") != 0:
-        return False
+    if len(collections) != 1 or len(finishes) != 1:
+        return None
+    exitstatus = finishes[0].get("exitstatus")
     nodeids = collections[0].get("nodeids")
     if (
-        not isinstance(nodeids, list)
+        isinstance(exitstatus, bool)
+        or not isinstance(exitstatus, int)
+        or not isinstance(nodeids, list)
         or not nodeids
         or len(set(nodeids)) != len(nodeids)
         or any(not isinstance(node, str) or not node for node in nodeids)
     ):
-        return False
+        return None
     fallback_parents = fallback_parents or []
     if fallback_parents and not _pytest_fallback_parents_match_targets(
         targets, fallback_parents
     ):
-        return False
-    exact_targets = list(targets)
-    allowed_targets = [*exact_targets, *fallback_parents]
+        return None
+    allowed_targets = [*targets, *fallback_parents]
     if any(
         not any(_pytest_target_matches_node(target, node) for target in allowed_targets)
         for node in nodeids
     ):
-        return False
+        return None
     reports = {}
     for event in events:
         if event.get("event") != "runtest_logreport":
@@ -139,29 +151,48 @@ def _pytest_structured_proof_matches(
             or outcome not in {"passed", "failed", "skipped"}
             or phase in reports.get(node, {})
         ):
-            return False
+            return None
         reports.setdefault(node, {})[phase] = outcome
-    complete_pass = {"setup": "passed", "call": "passed", "teardown": "passed"}
-    exact_matches = {
-        target: [
+    target_nodes = {}
+    for target in targets:
+        matching = [
             node for node in nodeids if _pytest_target_matches_node(target, node)
         ]
-        for target in exact_targets
-    }
-    for target, matching in exact_matches.items():
-        if matching:
-            if any(reports.get(node) != complete_pass for node in matching):
-                return False
-            continue
-        parent = _pytest_parameter_parent(target)
-        if not parent or parent not in fallback_parents:
-            return False
-        parent_matches = [node for node in nodeids if node.startswith(parent + "[")]
-        if not parent_matches or any(
-            reports.get(node) != complete_pass for node in parent_matches
-        ):
-            return False
-    return True
+        if not matching:
+            parent = _pytest_parameter_parent(target)
+            if not parent or parent not in fallback_parents:
+                return None
+            matching = [node for node in nodeids if node.startswith(parent + "[")]
+        if not matching:
+            return None
+        target_nodes[target] = matching
+    return exitstatus, reports, target_nodes
+
+
+def _pytest_structured_proof_matches(
+    targets,
+    proof_text,
+    _log_text,
+    fallback_parents=None,
+    command_sha256="",
+):
+    execution = _pytest_structured_execution(
+        targets,
+        proof_text,
+        fallback_parents,
+        command_sha256,
+    )
+    if execution is None:
+        return False
+    exitstatus, reports, target_nodes = execution
+    if exitstatus != 0:
+        return False
+    complete_pass = {"setup": "passed", "call": "passed", "teardown": "passed"}
+    return all(
+        reports.get(node) == complete_pass
+        for matching in target_nodes.values()
+        for node in matching
+    )
 
 
 def _pytest_structured_failure_proof_matches(
@@ -170,54 +201,48 @@ def _pytest_structured_failure_proof_matches(
     fallback_parents=None,
     command_sha256="",
 ):
-    try:
-        events = [json.loads(line) for line in proof_text.splitlines() if line.strip()]
-    except json.JSONDecodeError:
-        return False
-    if (
-        not events
-        or any(not isinstance(event, dict) for event in events)
-        or not _pytest_controller_proof_matches(events, command_sha256)
-    ):
-        return False
-    starts = [event for event in events if event.get("event") == "session_start"]
-    collections = [event for event in events if event.get("event") == "collection_finish"]
-    finishes = [event for event in events if event.get("event") == "session_finish"]
-    if len(starts) != 1 or len(collections) != 1 or len(finishes) != 1:
-        return False
-    if finishes[0].get("exitstatus") in {None, 0}:
-        return False
-    nodeids = collections[0].get("nodeids")
-    if not isinstance(nodeids, list) or not nodeids or any(
-        not isinstance(node, str) or not node for node in nodeids
-    ):
-        return False
-    fallback_parents = fallback_parents or []
-    if fallback_parents and not _pytest_fallback_parents_match_targets(
-        targets, fallback_parents
-    ):
-        return False
-    exact_targets = (
-        [target for target in targets if not _pytest_parameter_parent(target)]
-        if fallback_parents
-        else list(targets)
+    execution = _pytest_structured_execution(
+        targets,
+        proof_text,
+        fallback_parents,
+        command_sha256,
     )
-    allowed_targets = [*exact_targets, *fallback_parents]
-    if fallback_parents and any(
-        not any(_pytest_target_matches_node(target, node) for target in allowed_targets)
-        for node in nodeids
-    ):
+    if execution is None:
         return False
-    return any(
-        event.get("event") == "runtest_logreport"
-        and event.get("nodeid") in nodeids
-        and event.get("when") in {"setup", "call", "teardown"}
-        and event.get("outcome") == "failed"
-        and any(
-            _pytest_target_matches_node(target, event["nodeid"])
-            for target in allowed_targets
-        )
-        for event in events
+    exitstatus, reports, target_nodes = execution
+    return exitstatus != 0 and any(
+        "failed" in reports.get(node, {}).values()
+        for matching in target_nodes.values()
+        for node in matching
+    )
+
+
+def _pytest_structured_skip_proof_matches(
+    targets,
+    proof_text,
+    fallback_parents=None,
+    command_sha256="",
+):
+    execution = _pytest_structured_execution(
+        targets,
+        proof_text,
+        fallback_parents,
+        command_sha256,
+    )
+    if execution is None:
+        return False
+    exitstatus, reports, target_nodes = execution
+    selected = [
+        reports.get(node, {})
+        for matching in target_nodes.values()
+        for node in matching
+    ]
+    complete_pass = {"setup": "passed", "call": "passed", "teardown": "passed"}
+    return bool(
+        exitstatus == 0
+        and selected
+        and all(report == complete_pass or _pytest_complete_skip(report) for report in selected)
+        and any(_pytest_complete_skip(report) for report in selected)
     )
 
 
@@ -434,15 +459,6 @@ def _pytest_collection_failure_proof_matches(
             target_files.append(path)
     if not target_files:
         return False
-    collected_paths = re.findall(
-        r"(?m)^\s*_*\s*ERROR collecting (\S+?)(?:\s+_+)?\s*$",
-        str(log_text or ""),
-    )
-    normalized_collected = {
-        path.replace("\\", "/").removeprefix("./") for path in collected_paths
-    }
-    if normalized_collected != set(target_files):
-        return False
     log_text = str(log_text or "")
     if len(target_files) == 1 and _pytest_bound_import_failure_matches(
         target_files[0],
@@ -478,8 +494,9 @@ def _pytest_collection_failure_proof_matches(
 
     target_traceback = any(traceback_has(path) for path in target_files)
     semantic_exception = re.search(
-        r"(?m)^E\s+(?:AssertionError|AttributeError|KeyError|NameError|"
-        r"NotImplementedError|RuntimeError|TypeError|ValueError)(?::|$)",
+        r"(?m)^(?:E\s+)?(?:AssertionError|AttributeError|ImportError|KeyError|"
+        r"ModuleNotFoundError|NameError|NotImplementedError|RuntimeError|"
+        r"SyntaxError|TypeError|ValueError)(?::|$)",
         log_text,
     )
     candidate_traceback = any(traceback_has(path) for path in candidate_source_paths)

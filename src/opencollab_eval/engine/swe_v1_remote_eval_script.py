@@ -58,7 +58,9 @@ if [ "$base_commit_status" -eq 0 ]; then
     --repo "$repo_root" --base-commit "$expected_base_commit" \
     --declared-base-commit "$expected_base_commit" \
     --patch /eval_input/model.patch --expectation /eval_input/candidate_expectation.json \
-    --output /eval_output/source_candidate_projection.json > /eval_output/model_patch.log 2>&1
+    --output /eval_output/source_candidate_projection.json \
+    --failure-output /eval_output/candidate_projection_failure.json \
+    > /eval_output/model_patch.log 2>&1
   source_projection_status=$?
 fi
 
@@ -178,7 +180,9 @@ if [ "$base_commit_status" -eq 0 ] && [ "$before_repo_status" -eq 0 ] && [ "$pos
       --repo "$repo_root" --base-commit "$baseline_head" \
       --patch /eval_input/model.patch --expectation /eval_input/candidate_expectation.json \
       --source-projection /eval_output/source_candidate_projection.json \
-      --output /eval_output/candidate_projection.json >> /eval_output/model_patch.log 2>&1
+      --output /eval_output/candidate_projection.json \
+      --failure-output /eval_output/candidate_projection_failure.json \
+      >> /eval_output/model_patch.log 2>&1
     model_status=$?
   fi
   if [ "$model_status" -eq 0 ]; then apply_model_patch_strict; model_status=$?; fi

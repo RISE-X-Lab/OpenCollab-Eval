@@ -105,15 +105,25 @@ def test_prolite_rows_require_explicit_image_source() -> None:
 
 def test_technical_failure_classification_is_specific() -> None:
     assert classify_technical_failure(
-        log_text="Error: connect ECONNREFUSED 127.0.0.1:6379"
-    ) == ("redis_unavailable",)
-    assert classify_technical_failure(log_text="redis configured but tests passed") == ()
+        failure_scope="shared_infrastructure",
+        direct_probe_failed=True,
+    ) == ("shared_infrastructure_probe_failed",)
     assert classify_technical_failure(
-        log_text="stat /app: no such file or directory",
-        returncode=1,
-    ) == ("workspace_root_missing",)
-    assert classify_technical_failure(log_text="deadline exceeded") == ("timeout",)
-    assert classify_technical_failure(returncode=2) == ("process_failed",)
+        evidence_missing=True,
+        execution_quiesced=False,
+    ) == ("evaluation_process_not_quiesced",)
+    assert classify_technical_failure(
+        failure_scope="task",
+        direct_probe_failed=True,
+        candidate_attributable=True,
+    ) == ()
+    assert classify_technical_failure(
+        candidate_attributable=True,
+        execution_quiesced=False,
+    ) == ("evaluation_process_not_quiesced",)
+    assert classify_technical_failure(failure_scope="unknown") == (
+        "invalid_failure_scope",
+    )
 
 
 def test_load_jsonl_dataset(tmp_path: Path) -> None:

@@ -279,18 +279,26 @@ replace `record_id` and full SHA-256 pairing.
 | Terminal result | Required facts |
 | --- | --- |
 | Resolved | Eligible patch, verified projection and cleanup, safe artifacts, and passing target evidence |
-| Unresolved | Complete official evaluation with valid failing evidence for at least one declared target |
-| Technical failure | Invalid generation, identity, projection, setup, evidence, artifact, cleanup, or infrastructure |
+| Unresolved | Bound evidence proves a declared target failure, skip, candidate-caused pre-test failure, or source rejection before an expected candidate tree exists |
+| Technical failure | Candidate identity or evaluation state is insufficient to decide correctness |
 
 The evaluator derives its verdict from a durable artifact snapshot. Technical
-reasons include unsafe or missing output, incomplete target evidence, Docker
-failure, non-quiescent processes, failed container cleanup, baseline mismatch,
-candidate projection mismatch, service setup failure, repository preparation
-failure, patch application failure, and infrastructure signatures in target
-logs.
+reasons include unsafe or missing identity evidence, an unsupported plan, an
+unknown target outcome, Docker execution failure, non-quiescent processes,
+baseline mismatch, projection runtime failure, repository preparation failure,
+and directly probed infrastructure failure. Log wording alone does not assign
+an infrastructure cause.
 
-`resolved` becomes true only when the technical-reason set is empty and
-`target_evidence_passed` returns true for every F2P and P2P evidence batch.
+`resolved` becomes true only when every declared F2P and P2P target has bound
+passing evidence. One bound candidate failure is enough for `unresolved`, even
+when later batches did not run. Unknown evidence remains technical until a
+separate bound failure already determines the candidate outcome. Container
+removal failure after the process group stopped and the workspace froze is
+recorded as an operational warning. Failure to quiesce remains technical.
+A trusted source rejection proves `unresolved` only when generation did not
+already record an expected candidate tree. A later source rejection that
+contradicts such a tree, or any rejection against the prepared evaluation base,
+is a technical projection inconsistency.
 
 ## Evaluation state
 

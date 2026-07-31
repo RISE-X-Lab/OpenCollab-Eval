@@ -68,6 +68,16 @@ def read_eval_output_artifacts(*args, **kwargs):
     return _read_eval_output_artifacts(*args, **kwargs)
 
 
+def _assert_resolved_verdict(verdict: dict) -> None:
+    assert verdict == {
+        "outcome": "resolved",
+        "outcome_basis": ["all_declared_targets_passed"],
+        "technical_reasons": [], "technical_error": False,
+        "resolved": True, "summary_status": "done",
+        "output_artifact_errors": [], "operational_warnings": [],
+    }
+
+
 def _seed_output(
     report_dir: Path,
     f2p_plan: dict,
@@ -172,12 +182,7 @@ def test_aggregate_command_permission_errors_are_diagnostic_only(tmp_path: Path)
         "unsafe:f2p.command:UnsafeRecordInputError",
         "unsafe:p2p.command:UnsafeRecordInputError",
     }
-    assert verdict == {
-        "technical_reasons": [],
-        "technical_error": False,
-        "resolved": True,
-        "summary_status": "done",
-    }
+    _assert_resolved_verdict(verdict)
 
 
 def test_eval_artifacts_require_two_complete_base_snapshots(tmp_path: Path) -> None:
@@ -619,15 +624,10 @@ def test_exact_target_pass_overrides_an_unrelated_suite_failure(tmp_path: Path) 
     assert artifacts["f2p_evidence"][0]["status"] == 1
     assert artifacts["f2p_evidence"][0]["target_proof_matches_plan"] is True
     assert artifacts["f2p_evidence"][0]["target_failure_proof_matches_plan"] is False
-    assert verdict == {
-        "technical_reasons": [],
-        "technical_error": False,
-        "resolved": True,
-        "summary_status": "done",
-    }
+    _assert_resolved_verdict(verdict)
 
 
-def test_dependency_service_failure_is_a_task_technical_failure(tmp_path: Path) -> None:
+def test_log_text_alone_cannot_assign_infrastructure_failure(tmp_path: Path) -> None:
     f2p_plan, p2p_plan = _plans()
     report_dir = tmp_path / "reports" / "task-1"
     _seed_output(
@@ -646,7 +646,9 @@ def test_dependency_service_failure_is_a_task_technical_failure(tmp_path: Path) 
         container_cleanup={"ok": True},
     )
 
-    assert "fail_to_pass_infra" in verdict["technical_reasons"]
+    assert "fail_to_pass_evidence" in verdict["technical_reasons"]
+    assert "fail_to_pass_infra" not in verdict["technical_reasons"]
+    assert verdict["outcome"] == "technical_failure"
     assert verdict["technical_error"] is True
     assert verdict["resolved"] is False
 

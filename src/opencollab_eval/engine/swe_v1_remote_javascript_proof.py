@@ -5,10 +5,6 @@
 from opencollab_eval.engine.swe_v1_remote_records import *
 from opencollab_eval.engine.swe_v1_remote_state import *
 
-_JS_REPOSITORY_MODULE_NAMESPACES = {
-    "protonmail/webclients": ("@proton/",),
-}
-
 
 def _js_path_matches(left, right):
     left = str(left or "").replace("\\", "/").removeprefix("./")
@@ -21,11 +17,6 @@ def _js_path_matches(left, right):
 
 
 def _js_suite_module_mock_bindings(row, target_files):
-    namespaces = _JS_REPOSITORY_MODULE_NAMESPACES.get(
-        str(row.get("repo") or "").lower()
-    )
-    if not namespaces:
-        return []
     bindings = []
     for block in split_patch_blocks(str(row.get("test_patch") or "")):
         path = patch_block_target_path(block)
@@ -39,7 +30,11 @@ def _js_suite_module_mock_bindings(row, target_files):
             if not match:
                 continue
             module = match.group(2)
-            if module.startswith(namespaces) and module not in modules:
+            if (
+                module
+                and len(module.encode("utf-8")) <= 4096
+                and module not in modules
+            ):
                 modules.append(module)
         if modules:
             bindings.append({"suite": path, "modules": modules})
@@ -63,13 +58,10 @@ def _js_suite_load_failure_proof_matches(
 ):
     if not expected_command or expected_command != observed_command:
         return False
-    repo = str(proof.get("repo") or "").lower()
-    namespaces = _JS_REPOSITORY_MODULE_NAMESPACES.get(repo)
     bindings = proof.get("suite_module_mocks")
     targets = proof.get("targets")
     if (
-        not namespaces
-        or not isinstance(bindings, list)
+        not isinstance(bindings, list)
         or not bindings
         or len(bindings) > 64
         or not isinstance(targets, list)
@@ -99,7 +91,7 @@ def _js_suite_load_failure_proof_matches(
             or len(set(modules)) != len(modules)
             or any(
                 not isinstance(module, str)
-                or not module.startswith(namespaces)
+                or not module
                 or len(module.encode("utf-8")) > 4096
                 for module in modules
             )
@@ -144,7 +136,6 @@ def _js_suite_load_failure_proof_matches(
         not missing
         or "Test suite failed to run" not in message
         or missing.group(1) not in bound_modules
-        or not missing.group(1).startswith(namespaces)
         or not _js_path_matches(missing.group(2), target_suite)
     ):
         return False
@@ -154,10 +145,68 @@ def _js_suite_load_failure_proof_matches(
     ) is not None
 
 
+def _js_candidate_failure_proof_matches(
+    proof,
+    log_text,
+    expected_command,
+    observed_command,
+):
+    if not expected_command or expected_command != observed_command:
+        return False
+    targets = proof.get("targets")
+    candidate_paths = proof.get("candidate_source_paths")
+    if (
+        not isinstance(targets, list)
+        or not targets
+        or not isinstance(candidate_paths, list)
+        or not candidate_paths
+    ):
+        return False
+    target_suites = {
+        str(target).split(" | ", 1)[0].replace("\\", "/").removeprefix("./")
+        for target in targets
+    }
+    reports = []
+    for line in str(log_text or "").splitlines():
+        try:
+            value = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(value, dict) and "numTotalTestSuites" in value:
+            reports.append(value)
+    if len(reports) != 1 or reports[0].get("success") is not False:
+        return False
+    results = reports[0].get("testResults")
+    if not isinstance(results, list) or not results:
+        return False
+    messages = [
+        str(result.get("message") or "").replace("\\", "/")
+        for result in results
+        if isinstance(result, dict)
+        and result.get("status") == "failed"
+        and any(_js_path_matches(result.get("name"), suite) for suite in target_suites)
+    ]
+    error_markers = (
+        "Cannot find module",
+        "ReferenceError",
+        "SyntaxError",
+        "TypeError",
+        "Test suite failed to run",
+    )
+    return bool(
+        messages
+        and any(
+            any(path in message for path in candidate_paths)
+            and any(marker in message for marker in error_markers)
+            for message in messages
+        )
+    )
+
+
 
 
 __all__ = [
-    "_JS_REPOSITORY_MODULE_NAMESPACES",
+    "_js_candidate_failure_proof_matches",
     "_js_path_matches",
     "_js_suite_load_failure_proof_matches",
     "_js_suite_module_mock_bindings",

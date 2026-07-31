@@ -119,7 +119,6 @@ class _NoopHealthServer:
 
 def _proof_namespace() -> dict[str, object]:
     return {
-        "eval_log_has_infra_failure": remote_generation.eval_log_has_infra_failure,
         "fail_to_pass_execution_proof": remote_target_proof.fail_to_pass_execution_proof,
     }
 

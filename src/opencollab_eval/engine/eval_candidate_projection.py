@@ -21,6 +21,7 @@ else:
 EXPECTATION_SCHEMA = "opencollab.eval_candidate_expectation.v1"
 SOURCE_PROJECTION_SCHEMA = "opencollab.eval_candidate_source_projection.v1"
 PROJECTION_SCHEMA = "opencollab.eval_candidate_projection.v2"
+PROJECTION_FAILURE_SCHEMA = "opencollab.eval_candidate_projection_failure.v1"
 _OID_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 _IDENTITY_KEYS = (
@@ -45,10 +46,110 @@ _V2_KEYS = {
     "prepared_candidate_tree", "worktree_candidate_tree", "generation_tree_matches",
     "official_worktree_matches", *_IDENTITY_KEYS,
 }
+_FAILURE_KEYS = {
+    "schema", "status", "error_kind", "phase", "instance_id", "record_id",
+    "run_identity_sha256", "source_patch_sha256", "eval_patch_sha256",
+    "source_base_commit", "source_anonymous_base", "source_base_tree",
+    "source_candidate_tree", "expected_candidate_tree",
+    "verified_base_commit", "verified_base_tree", "source_projection_sha256",
+}
 
 
 class CandidateProjectionError(RuntimeError):
     """Raised when a patch cannot be bound to its declared evaluation base."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_kind: str = "projection_runtime_error",
+        context: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.error_kind = error_kind
+        self.context = dict(context or {})
+
+
+def candidate_projection_failure_valid(
+    report: object,
+    expectation: object,
+    *,
+    source_projection: object | None = None,
+    base_commit: str = "",
+    base_tree: str = "",
+) -> bool:
+    """Validate a bound patch-not-applicable result from trusted projection."""
+    if (
+        not isinstance(report, dict)
+        or not _expectation_valid(expectation)
+        or set(report) != _FAILURE_KEYS
+        or report.get("schema") != PROJECTION_FAILURE_SCHEMA
+        or report.get("status") != "failed"
+        or report.get("error_kind") != "patch_not_applicable"
+        or report.get("phase") not in {"source", "prepared"}
+        or any(report.get(key) != expectation.get(key) for key in _IDENTITY_KEYS)
+    ):
+        return False
+    verified_commit = str(report.get("verified_base_commit") or "")
+    verified_tree = str(report.get("verified_base_tree") or "")
+    if (
+        _OID_RE.fullmatch(verified_commit) is None
+        or _OID_RE.fullmatch(verified_tree) is None
+        or len(verified_commit) != len(verified_tree)
+    ):
+        return False
+    if report["phase"] == "source":
+        return bool(
+            report.get("source_projection_sha256") == ""
+            and _OID_RE.fullmatch(base_commit)
+            and _OID_RE.fullmatch(base_tree)
+            and verified_commit == base_commit
+            and verified_tree == base_tree
+            and (
+                not expectation.get("source_base_commit")
+                or verified_commit == expectation.get("source_base_commit")
+            )
+            and (
+                not expectation.get("source_base_tree")
+                or verified_tree == expectation.get("source_base_tree")
+            )
+        )
+    return bool(
+        source_projection_valid(source_projection, expectation)
+        and report.get("source_projection_sha256")
+        == source_projection_sha256(source_projection)
+        and (not base_commit or verified_commit == base_commit)
+        and (not base_tree or verified_tree == base_tree)
+    )
+
+
+def candidate_rejection_is_conclusive(report: object) -> bool:
+    """Return whether a bound projection rejection proves candidate failure."""
+    return bool(
+        isinstance(report, dict)
+        and report.get("phase") == "source"
+        and not report.get("expected_candidate_tree")
+    )
+
+
+def _projection_failure(
+    expectation: dict[str, Any],
+    *,
+    phase: str,
+    base_commit: str,
+    base_tree: str,
+    source_digest: str = "",
+) -> dict[str, Any]:
+    return {
+        "schema": PROJECTION_FAILURE_SCHEMA,
+        "status": "failed",
+        "error_kind": "patch_not_applicable",
+        "phase": phase,
+        **{key: value for key, value in expectation.items() if key != "schema"},
+        "verified_base_commit": base_commit,
+        "verified_base_tree": base_tree,
+        "source_projection_sha256": source_digest,
+    }
 
 
 def _expectation_valid(value: object) -> bool:
@@ -206,6 +307,60 @@ def candidate_projection_valid(
     )
 
 
+def prepared_candidate_projection_valid(
+    report: object,
+    expectation: object,
+    source_projection: object,
+) -> bool:
+    """Validate a candidate whose trusted projection finished before apply."""
+    if (
+        not isinstance(report, dict)
+        or not _expectation_valid(expectation)
+        or not source_projection_valid(source_projection, expectation)
+        or set(report) != _V2_KEYS
+        or report.get("schema") != PROJECTION_SCHEMA
+        or report.get("status") != "prepared"
+        or any(report.get(key) != expectation.get(key) for key in _IDENTITY_KEYS)
+        or report.get("source_projection_sha256")
+        != source_projection_sha256(source_projection)
+        or report.get("worktree_candidate_tree") != ""
+        or report.get("official_worktree_matches") is not None
+    ):
+        return False
+    source_base = str(report.get("verified_source_base_tree") or "")
+    source_candidate = str(report.get("verified_source_candidate_tree") or "")
+    prepared_base = str(report.get("prepared_base_tree") or "")
+    prepared_candidate = str(report.get("prepared_candidate_tree") or "")
+    return bool(
+        all(
+            _OID_RE.fullmatch(str(report.get(key) or ""))
+            for key in (
+                "verified_source_base_commit",
+                "verified_source_anonymous_base",
+                "verified_source_base_tree",
+                "verified_source_candidate_tree",
+                "prepared_base_commit",
+                "prepared_base_tree",
+                "prepared_candidate_tree",
+            )
+        )
+        and len(source_candidate) == len(source_base)
+        and len(prepared_candidate) == len(prepared_base)
+        and source_candidate != source_base
+        and prepared_candidate != prepared_base
+        and all(
+            report.get(target) == source_projection.get(source)
+            for target, source in (
+                ("verified_source_base_commit", "verified_source_base_commit"),
+                ("verified_source_anonymous_base", "verified_source_anonymous_base"),
+                ("verified_source_base_tree", "verified_source_base_tree"),
+                ("verified_source_candidate_tree", "verified_source_candidate_tree"),
+                ("generation_tree_matches", "generation_tree_matches"),
+            )
+        )
+    )
+
+
 def _read_expectation(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -218,7 +373,14 @@ def _read_expectation(path: Path) -> dict[str, Any]:
     return value
 
 
-def _git(repo: Path, args: list[str], env: dict[str, str]) -> str:
+def _git(
+    repo: Path,
+    args: list[str],
+    env: dict[str, str],
+    *,
+    failure_kind: str = "projection_runtime_error",
+    failure_context: dict[str, str] | None = None,
+) -> str:
     try:
         completed = subprocess.run(
             [
@@ -245,6 +407,12 @@ def _git(repo: Path, args: list[str], env: dict[str, str]) -> str:
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise CandidateProjectionError("candidate projection Git command failed") from exc
     if completed.returncode != 0:
+        if failure_kind == "patch_not_applicable":
+            raise CandidateProjectionError(
+                "candidate patch does not apply to the verified base",
+                error_kind=failure_kind,
+                context=failure_context,
+            )
         detail = completed.stderr.strip().splitlines()[-1:] or ["unknown Git failure"]
         raise CandidateProjectionError(f"candidate projection Git command failed: {detail[0]}")
     return completed.stdout.strip()
@@ -311,6 +479,8 @@ def project_candidate(repo: Path, base_commit: str, patch_path: Path) -> tuple[s
             repo,
             ["apply", "--cached", "--binary", "--whitespace=nowarn", str(patch_path)],
             environment,
+            failure_kind="patch_not_applicable",
+            failure_context={"base_commit": base_commit, "base_tree": base_tree},
         )
         candidate_tree = _git(repo, ["write-tree"], environment)
     if _OID_RE.fullmatch(base_tree) is None or _OID_RE.fullmatch(candidate_tree) is None:
@@ -337,7 +507,19 @@ def build_source_projection(
     patch_sha256 = _patch_sha256(patch_path)
     if patch_sha256 != expectation["eval_patch_sha256"]:
         raise CandidateProjectionError("evaluation patch SHA-256 does not match its expectation")
-    resolved_source_base, base_tree, candidate_tree = project_candidate(repo, base_commit, patch_path)
+    try:
+        resolved_source_base, base_tree, candidate_tree = project_candidate(
+            repo, base_commit, patch_path
+        )
+    except CandidateProjectionError as exc:
+        if exc.error_kind == "patch_not_applicable":
+            exc.context["failure_report"] = _projection_failure(
+                expectation,
+                phase="source",
+                base_commit=exc.context["base_commit"],
+                base_tree=exc.context["base_tree"],
+            )
+        raise
     declared_base = str(declared_base_commit or resolved_source_base).strip().lower()
     if _OID_RE.fullmatch(declared_base) is None:
         raise CandidateProjectionError("declared evaluation base commit is invalid")
@@ -389,9 +571,20 @@ def build_prepared_projection(
     if patch_sha256 != expectation["eval_patch_sha256"]:
         raise CandidateProjectionError("evaluation patch SHA-256 does not match its expectation")
     source = _read_source_projection(source_projection_path, expectation)
-    prepared_base, prepared_tree, prepared_candidate = project_candidate(
-        repo, prepared_base_commit, patch_path
-    )
+    try:
+        prepared_base, prepared_tree, prepared_candidate = project_candidate(
+            repo, prepared_base_commit, patch_path
+        )
+    except CandidateProjectionError as exc:
+        if exc.error_kind == "patch_not_applicable":
+            exc.context["failure_report"] = _projection_failure(
+                expectation,
+                phase="prepared",
+                base_commit=exc.context["base_commit"],
+                base_tree=exc.context["base_tree"],
+                source_digest=source["projection_sha256"],
+            )
+        raise
     return {
         "schema": PROJECTION_SCHEMA,
         "status": "prepared",
@@ -521,6 +714,7 @@ def main(argv: list[str] | None = None) -> int:
     source.add_argument("--patch", type=Path, required=True)
     source.add_argument("--expectation", type=Path, required=True)
     source.add_argument("--output", type=Path, required=True)
+    source.add_argument("--failure-output", type=Path)
     prepared = commands.add_parser("prepared")
     prepared.add_argument("--repo", type=Path, required=True)
     prepared.add_argument("--base-commit", required=True)
@@ -528,6 +722,7 @@ def main(argv: list[str] | None = None) -> int:
     prepared.add_argument("--expectation", type=Path, required=True)
     prepared.add_argument("--source-projection", type=Path, required=True)
     prepared.add_argument("--output", type=Path, required=True)
+    prepared.add_argument("--failure-output", type=Path)
     verify = commands.add_parser("verify-worktree")
     verify.add_argument("--repo", type=Path, required=True)
     verify.add_argument("--patch", type=Path, required=True)
@@ -550,6 +745,13 @@ def main(argv: list[str] | None = None) -> int:
             projection = verify_prepared_worktree(args.repo, args.patch, args.projection)
             output = args.projection
     except CandidateProjectionError as exc:
+        failure_output = getattr(args, "failure_output", None)
+        failure_report = exc.context.get("failure_report")
+        if failure_output is not None and isinstance(failure_report, dict):
+            failure_output.write_text(
+                json.dumps(failure_report, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
         print(str(exc))
         return 1
     output.write_text(json.dumps(projection, sort_keys=True) + "\n", encoding="utf-8")
@@ -563,11 +765,14 @@ if __name__ == "__main__":
 __all__ = [
     "CandidateProjectionError",
     "EXPECTATION_SCHEMA",
+    "PROJECTION_FAILURE_SCHEMA",
     "PROJECTION_SCHEMA",
     "SOURCE_PROJECTION_SCHEMA",
     "build_prepared_projection",
     "build_source_projection",
     "candidate_projection_valid",
+    "candidate_projection_failure_valid",
+    "candidate_rejection_is_conclusive",
     "project_candidate",
     "source_projection_sha256",
     "source_projection_valid",

@@ -66,7 +66,7 @@ def verified_plan_patch_selection(row, prediction, metric):
     if not fail_to_pass:
         return None
     pass_to_pass = parse_literal_list(row.get("pass_to_pass") or row.get("PASS_TO_PASS"))
-    candidate_source_paths = eval_python_source_paths(prediction)
+    candidate_source_paths = eval_candidate_source_paths(prediction)
     f2p_plan = prolite_test_plan(
         row,
         fail_to_pass,

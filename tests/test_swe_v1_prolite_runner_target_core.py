@@ -97,20 +97,6 @@ def test_patch_fallback_accepts_verified_already_applied_test_patch(tmp_path):
 def test_eval_integrity_detects_missing_tests_and_proves_go_targets():
     namespace = _proof_namespace()
 
-    assert namespace["eval_log_has_infra_failure"](4, "collected 0 items") is True
-    assert namespace["eval_log_has_infra_failure"](5, "no tests ran") is True
-    assert namespace["eval_log_has_infra_failure"](
-        1, "no required module provides package example.invalid/dependency"
-    ) is False
-    assert namespace["eval_log_has_infra_failure"](
-        1, "request failed: getaddrinfo EAI_AGAIN nodejs.org"
-    ) is True
-    assert namespace["eval_log_has_infra_failure"](
-        4,
-        "ERROR: not found: tests/test_feature.py::test_feature\n"
-        "collected 0 items / 1 error\nno tests ran\n"
-        "ImportError: cannot import name 'feature'",
-    ) is False
     go_log = "\n".join(
         [
             json.dumps({"Action": "run", "Test": "TestA"}),
@@ -503,8 +489,6 @@ def test_python_proof_preserves_passes_across_partial_batch_failure():
     assert proof["failed"] == [expected[2]]
     assert proof["missing"] == [expected[3]]
     assert proof["ok"] is False
-    assert namespace["eval_log_has_infra_failure"](1, log) is False
-
     malformed_expected = ["tests/test_feature.py::test_param[value with newline"]
     malformed_log = "\n".join(
         [

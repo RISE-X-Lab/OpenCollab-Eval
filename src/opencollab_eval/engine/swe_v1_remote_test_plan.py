@@ -114,6 +114,11 @@ def _plan_log_failure_proof_matches(
             log_text,
             expected_command,
             observed_command,
+        ) or _js_candidate_failure_proof_matches(
+            proof,
+            log_text,
+            expected_command,
+            observed_command,
         )
     if proof.get("kind") != "go_json_test_pass":
         return False
@@ -122,6 +127,24 @@ def _plan_log_failure_proof_matches(
         log_text,
         expected_command=expected_command,
         observed_command=observed_command,
+    )
+
+
+def _plan_log_skip_proof_matches(proof, proof_text=""):
+    """Recognize a complete command whose declared Pytest target was skipped."""
+    if not isinstance(proof, dict) or proof.get("kind") != "pytest_structured_reports":
+        return False
+    targets = proof.get("targets")
+    return bool(
+        isinstance(targets, list)
+        and targets
+        and all(isinstance(target, str) and target for target in targets)
+        and _pytest_structured_skip_proof_matches(
+            targets,
+            proof_text,
+            proof.get("parameter_fallback_parents"),
+            proof.get("command_sha256"),
+        )
     )
 
 
@@ -198,6 +221,11 @@ def prolite_test_plan(
         and any("::" in item or item.endswith(".py") for item in tests)
     )
     if python_targets:
+        python_candidate_paths = [
+            str(path)
+            for path in candidate_source_paths or []
+            if str(path).endswith(".py")
+        ]
         tests = compact_python_test_targets(
             tests,
             selected,
@@ -232,8 +260,8 @@ def prolite_test_plan(
             }
             if fallback_parents:
                 proof["parameter_fallback_parents"] = fallback_parents
-            if candidate_source_paths:
-                proof["candidate_source_paths"] = list(candidate_source_paths)
+            if python_candidate_paths:
+                proof["candidate_source_paths"] = python_candidate_paths
             target_imports = _python_test_patch_import_bindings(row, batch)
             if target_imports:
                 proof["repo"] = repo
@@ -257,19 +285,20 @@ def prolite_test_plan(
         specs = [go_exact_test_spec(item) for item in tests]
         if any(spec is None for spec in specs):
             if all(is_go_test_name(item) for item in tests) and dynamic_go_targets_supported(tests):
+                proof = {
+                    "kind": "go_json_test_pass",
+                    "tests": tests,
+                    "dynamic_discovery": True,
+                }
+                if candidate_source_paths:
+                    proof["candidate_source_paths"] = list(candidate_source_paths)
                 return _test_plan(
                     "go-test-json-discovery",
                     tests,
                     [tests],
                     [go_test_command(tests)],
                     "runtime_discovered_exact_test_events",
-                    proofs=[
-                        {
-                            "kind": "go_json_test_pass",
-                            "tests": tests,
-                            "dynamic_discovery": True,
-                        }
-                    ],
+                    proofs=[proof],
                 )
             return _unsupported_test_plan(tests)
         exact_specs = [spec for spec in specs if spec is not None]
@@ -281,15 +310,17 @@ def prolite_test_plan(
             + shlex.quote(spec["run_pattern"])
             for spec in exact_specs
         ]
-        proofs = [
-            {
+        proofs = []
+        for spec in exact_specs:
+            proof = {
                 "kind": "go_json_test_pass",
                 "test": spec["test"],
                 "package": spec["package"],
                 "test_file": spec["test_file"],
             }
-            for spec in exact_specs
-        ]
+            if candidate_source_paths:
+                proof["candidate_source_paths"] = list(candidate_source_paths)
+            proofs.append(proof)
         return _test_plan(
             "go-test-json",
             tests,
@@ -324,6 +355,8 @@ def prolite_test_plan(
             "repo_language": language,
             "repo": repo,
         }
+        if candidate_source_paths:
+            proof["candidate_source_paths"] = list(candidate_source_paths)
         if files != declared_js_test_files(tests):
             proof["selected_test_files"] = selected
             proof["test_patch_files"] = test_patch_files
@@ -412,6 +445,7 @@ __all__ = [
     "_is_runnable_test_command",
     "_plan_log_failure_proof_matches",
     "_plan_log_proof_matches",
+    "_plan_log_skip_proof_matches",
     "_targets_with_paths",
     "_test_plan",
     "_unsupported_test_plan",

@@ -17,12 +17,34 @@ def _discovery(package: str, test: str, test_file: str) -> str:
     )
 
 
-def _dynamic_proof(test: str) -> dict[str, object]:
-    return {
+def _dynamic_proof(
+    test: str,
+    *,
+    candidate_source_paths: list[str] | None = None,
+) -> dict[str, object]:
+    proof: dict[str, object] = {
         "kind": "go_json_test_pass",
         "tests": [test],
         "dynamic_discovery": True,
     }
+    if candidate_source_paths is not None:
+        proof["candidate_source_paths"] = candidate_source_paths
+    return proof
+
+
+def _legacy_command(test: str) -> str:
+    return rf'''python3 -c 'import json
+import pathlib
+import re
+import subprocess
+names = json.loads('["{test}"]')
+for path in pathlib.Path(".").rglob("*_test.go"):
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if re.search(r"(?m)^func\s+" + re.escape(name) + r"\s*\(", text):
+        pass
+print("unable to map Go tests to packages: " + "")
+subprocess.run(["go", "test", "-count=1", "-json", package, "-run", pattern])
+' '''
 
 
 def test_external_test_package_plain_build_failure_proves_target_failure():
@@ -101,6 +123,97 @@ def test_external_test_package_json_build_failure_proves_target_failure():
 
     assert go_failure_proof_matches(
         _dynamic_proof("TestSubsonicApiResponses"),
+        log,
+        expected_command=command,
+        observed_command=command,
+    )
+
+
+def test_candidate_production_source_build_failure_proves_target_failure():
+    command = "exact discovery command"
+    package = "example.invalid/project/internal/server"
+    target = "TestEvaluate"
+    events = (
+        {
+            "ImportPath": package + " [" + package + ".test]",
+            "Action": "build-output",
+            "Output": "internal/server/evaluator.go:42:9: undefined: rollout\n",
+        },
+        {
+            "ImportPath": package + " [" + package + ".test]",
+            "Action": "build-fail",
+        },
+        {
+            "Action": "output",
+            "Package": package,
+            "Output": f"FAIL\t{package} [build failed]\n",
+        },
+        {"Action": "fail", "Package": package},
+    )
+    log = "\n".join(
+        (
+            _discovery("./internal/server", target, "internal/server/evaluator_test.go"),
+            *(json.dumps(event) for event in events),
+        )
+    )
+    proof = _dynamic_proof(
+        target,
+        candidate_source_paths=["internal/server/evaluator.go"],
+    )
+
+    assert go_failure_proof_matches(
+        proof,
+        log,
+        expected_command=command,
+        observed_command=command,
+    )
+    assert not go_failure_proof_matches(
+        _dynamic_proof(target),
+        log,
+        expected_command=command,
+        observed_command=command,
+    )
+    proof["candidate_source_paths"] = ["internal/server/unrelated.go"]
+    assert not go_failure_proof_matches(
+        proof,
+        log,
+        expected_command=command,
+        observed_command=command,
+    )
+
+
+def test_legacy_dynamic_production_failure_requires_candidate_path():
+    target = "TestScanner"
+    command = _legacy_command(target)
+    package = "github.com/navidrome/navidrome/scanner"
+    log = "".join(
+        json.dumps(event) + "\n"
+        for event in (
+            {
+                "ImportPath": f"{package} [{package}.test]",
+                "Action": "build-output",
+                "Output": "scanner/walk_dir_tree.go:21:20: undefined: walkResults\n",
+            },
+            {"ImportPath": f"{package} [{package}.test]", "Action": "build-fail"},
+            {
+                "Action": "output",
+                "Package": package,
+                "Output": f"FAIL\t{package} [build failed]\n",
+            },
+            {"Action": "fail", "Package": package},
+        )
+    )
+    proof = {"kind": "go_json_test_pass", "tests": [target]}
+
+    assert not go_failure_proof_matches(
+        proof,
+        log,
+        expected_command=command,
+        observed_command=command,
+    )
+    proof["candidate_source_paths"] = ["scanner/walk_dir_tree.go"]
+    assert go_failure_proof_matches(
+        proof,
         log,
         expected_command=command,
         observed_command=command,

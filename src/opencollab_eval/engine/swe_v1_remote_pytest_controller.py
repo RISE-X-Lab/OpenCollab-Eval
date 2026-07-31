@@ -301,6 +301,8 @@ def _decode(raw, returncode):
     def complete_skip(reports):
         if reports == {"setup": "skipped"}:
             return True
+        if reports == {"setup": "skipped", "teardown": "passed"}:
+            return True
         return (
             set(reports) == {"setup", "call", "teardown"}
             and "skipped" in reports.values()

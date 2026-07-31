@@ -68,7 +68,7 @@ def eval_for_task_once(row, patch_selection=None):
         write_json(summary_path, summary)
         return {"status": "blocked_missing_eval_spec", "task": task, "summary": summary}
     pass_to_pass = parse_literal_list(row.get("pass_to_pass") or row.get("PASS_TO_PASS"))
-    candidate_source_paths = eval_python_source_paths(prediction)
+    candidate_source_paths = eval_candidate_source_paths(prediction)
     f2p_plan = prolite_test_plan(
         row,
         fail_to_pass,
@@ -439,7 +439,7 @@ def eval_for_task_once(row, patch_selection=None):
         artifacts, docker_exit=docker_exit, cleanup_quiesced=cleanup_quiesced,
         container_cleanup=container_cleanup
     )
-    output_artifact_errors = artifacts["output_artifact_errors"]
+    output_artifact_errors = verdict["output_artifact_errors"]
     diagnostic_artifact_errors = artifacts["diagnostic_artifact_errors"]
     base_commit_status = artifacts["base_commit_status"]
     service_status = artifacts["service_status"]
@@ -461,14 +461,14 @@ def eval_for_task_once(row, patch_selection=None):
     model_patch_log_tail = artifacts["model_patch_log_tail"]
     test_patch_log_tail = artifacts["test_patch_log_tail"]
     technical_reasons = verdict["technical_reasons"]
-    technical_error = verdict["technical_error"]
-    resolved = verdict["resolved"]
-    summary_status = verdict["summary_status"]
+    technical_error, resolved, summary_status = verdict["technical_error"], verdict["resolved"], verdict["summary_status"]
+    outcome_fields = {key: verdict[key] for key in ("outcome", "outcome_basis", "operational_warnings")}
     report = {
         "schema": "opencollab.prolite_direct_eval.v2",
         "status": summary_status,
         "instance_id": task,
         "resolved": resolved,
+        **outcome_fields,
         "patch_successfully_applied": model_status == 0,
         "error": bool(technical_error),
         "technical_reasons": technical_reasons,
@@ -478,7 +478,7 @@ def eval_for_task_once(row, patch_selection=None):
         "cleanup_quiesced": cleanup_quiesced,
         "container_cleanup": container_cleanup,
         "patch_sha256": row_patch_sha(prediction),
-        "base_snapshot_integrity": artifacts["base_snapshot"], "candidate_projection": artifacts["candidate_projection"], "source_candidate_projection": artifacts["source_candidate_projection"],
+        "base_snapshot_integrity": artifacts["base_snapshot"], "candidate_projection_failure": artifacts["candidate_projection_failure"], "candidate_projection": artifacts["candidate_projection"], "source_candidate_projection": artifacts["source_candidate_projection"],
         "runtime_dependencies": artifacts["runtime_dependencies"], "runtime_dependency_identities": runtime_dependency_identities,
         **patch_evidence,
         "record_id": row_record_id(prediction),
@@ -517,6 +517,7 @@ def eval_for_task_once(row, patch_selection=None):
         "status": summary_status,
         "task": task,
         "resolved": resolved,
+        **outcome_fields,
         "patch_sha256": row_patch_sha(prediction),
         **patch_evidence,
         "record_id": row_record_id(prediction),
@@ -529,10 +530,9 @@ def eval_for_task_once(row, patch_selection=None):
         "docker_exit": docker_exit,
         "cleanup_quiesced": cleanup_quiesced,
         "container_cleanup": container_cleanup,
-        "report_path": str(report_path),
-        "command_log": str(command_log),
-        "runtime_dependencies": artifacts["runtime_dependencies"],
-        "candidate_projection": artifacts["candidate_projection"], "source_candidate_projection": artifacts["source_candidate_projection"],
+        "report_path": str(report_path), "command_log": str(command_log),
+        "base_snapshot_integrity": artifacts["base_snapshot"], "runtime_dependencies": artifacts["runtime_dependencies"],
+        "candidate_projection_failure": artifacts["candidate_projection_failure"], "candidate_projection": artifacts["candidate_projection"], "source_candidate_projection": artifacts["source_candidate_projection"],
         "runtime_dependency_identities": runtime_dependency_identities,
         "tests_status": report["tests_status"],
     }

@@ -253,6 +253,9 @@ def test_eval_cleanup_failure_still_writes_technical_summary(monkeypatch, tmp_pa
     assert result["summary"]["resolved"] is False
     assert "unsafe_or_missing_output_artifact" in result["summary"]["technical_reasons"]
     assert "cleanup:temporary_output:PermissionError" in result["summary"][
+        "operational_warnings"
+    ]
+    assert "cleanup:temporary_output:PermissionError" not in result["summary"][
         "output_artifact_errors"
     ]
 

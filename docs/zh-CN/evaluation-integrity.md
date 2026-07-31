@@ -267,18 +267,22 @@ projection、prepared projection、official report 和 aggregate row 必须在
 | Terminal result | 必要事实 |
 | --- | --- |
 | Resolved | Eligible patch、verified projection 与 cleanup、safe artifact 和 passing target evidence |
-| Unresolved | 完整 official evaluation，以及至少一个 declared target 的有效 failing evidence |
-| Technical failure | generation、identity、projection、evidence、cleanup 或 infrastructure 无效 |
+| Unresolved | 绑定证据证明 declared target 失败、跳过、候选引起测试前失败，或预期候选 tree 产生前的可信源投影拒绝 |
+| Technical failure | 候选身份或评测状态不足以判断候选是否正确 |
 
 evaluator 根据 durable artifact snapshot 推导 verdict。technical reason
-包括 unsafe 或 missing output、incomplete target evidence、Docker failure、
-non-quiescent process、failed container cleanup、baseline mismatch、
-candidate projection mismatch、service setup failure、repository preparation
-failure、patch application failure，以及 target log 中的 infrastructure
-signature。
+包括身份工件不安全或缺失、目标计划不受支持、目标结果未知、Docker 执行失败、
+进程未静止、基线不匹配、投影运行失败、仓库准备失败，以及经过直接探测确认的
+公共基础设施故障。日志文字本身无法判定基础设施故障。
 
-只有 technical-reason set 为空，并且每个 F2P 与 P2P evidence batch 上的
-`target_evidence_passed` 都返回 true，`resolved` 才会成为 true。
+只有每个 declared F2P 与 P2P target 都具有绑定的 passing evidence，
+`resolved` 才会成为 true。一个绑定的候选失败已经足以得到 `unresolved`，
+后续 batch 没有运行也不会覆盖这一结论。若尚无其他绑定失败，未知 evidence
+仍属于技术失败。进程组已经停止且工作区已经冻结后，容器删除失败会记录为运行
+告警。进程无法静止仍属于技术失败。
+只有生成阶段尚未记录预期候选 tree 时，可信源投影拒绝才足以证明
+`unresolved`。如果源投影拒绝与已经记录的候选 tree 冲突，或补丁在评测准备
+基线上遭到拒绝，就说明投影状态不一致，应判为技术失败。
 
 ## 评测状态
 

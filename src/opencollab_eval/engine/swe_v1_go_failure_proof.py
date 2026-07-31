@@ -8,12 +8,12 @@ import re
 from typing import Any
 
 GO_TARGET_DISCOVERY_PREFIX = "OPENCOLLAB_GO_TARGET_DISCOVERY "
-_TEST_DIAGNOSTIC_RE = re.compile(
-    r"(?m)(?P<path>(?:[A-Za-z]:)?[^:\r\n]*?[^/\\:\r\n]+_test\.go):"
+_GO_DIAGNOSTIC_RE = re.compile(
+    r"(?m)(?P<path>(?:[A-Za-z]:)?[^:\r\n]*?[^/\\:\r\n]+\.go):"
     r"[0-9]+(?::[0-9]+)?:"
 )
-_PLAIN_TEST_DIAGNOSTIC_RE = re.compile(
-    r"(?P<path>(?:[A-Za-z]:)?[^:\r\n]*?[^/\\:\r\n]+_test\.go):"
+_PLAIN_GO_DIAGNOSTIC_RE = re.compile(
+    r"(?P<path>(?:[A-Za-z]:)?[^:\r\n]*?[^/\\:\r\n]+\.go):"
     r"[0-9]+(?::[0-9]+)?:[^\r\n]+\Z"
 )
 _GO_BUILD_HEADER_RE = re.compile(
@@ -69,7 +69,7 @@ def _parse_go_log(
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
-            diagnostic = _PLAIN_TEST_DIAGNOSTIC_RE.fullmatch(line)
+            diagnostic = _PLAIN_GO_DIAGNOSTIC_RE.fullmatch(line)
             header = _GO_BUILD_HEADER_RE.fullmatch(line)
             dependency_header = _GO_DEPENDENCY_BUILD_HEADER_RE.fullmatch(line)
             plain_failure = _PLAIN_PACKAGE_FAILURE_RE.fullmatch(line)
@@ -133,6 +133,48 @@ def _diagnostic_belongs_to_package(observed: str, package: str) -> bool:
     if not package_path or package_path == ".":
         return observed_parent in {"", "."}
     return observed_parent == package_path or observed_parent.endswith("/" + package_path)
+
+
+def _candidate_diagnostic_belongs_to_package(
+    observed: str,
+    package: str,
+    candidate_source_paths: list[str],
+) -> bool:
+    normalized = str(observed or "").replace("\\", "/").removeprefix("./")
+    matches = [
+        path
+        for path in candidate_source_paths
+        if normalized == path or normalized.endswith("/" + path)
+    ]
+    if len(matches) != 1 or not matches[0].endswith(".go"):
+        return False
+    parent = pathlib.PurePosixPath(matches[0]).parent.as_posix()
+    package_path = str(package or "").replace("\\", "/").removeprefix("./").strip("/")
+    return package_path in {"", "."} and parent in {"", "."} or bool(
+        package_path
+        and (parent == package_path or parent.endswith("/" + package_path))
+    )
+
+
+def _legacy_diagnostic_belongs_to_package(
+    observed: str,
+    package: str,
+    candidate_source_paths: list[str],
+) -> bool:
+    normalized = str(observed or "").replace("\\", "/").removeprefix("./")
+    parent = pathlib.PurePosixPath(normalized).parent.as_posix().strip("/")
+    package_path = str(package or "").replace("\\", "/").removeprefix("./").strip("/")
+    package_matches = parent in {"", "."} or bool(
+        package_path == parent or package_path.endswith("/" + parent)
+    )
+    if not package_matches:
+        return False
+    if normalized.endswith("_test.go"):
+        return True
+    return any(
+        normalized == path or normalized.endswith("/" + path)
+        for path in candidate_source_paths
+    )
 
 
 def _dynamic_bindings(
@@ -400,6 +442,11 @@ def go_failure_proof_matches(
     if not declared_tests or parsed is None:
         return False
     events, discoveries, plain_diagnostics, build_headers = parsed
+    candidate_source_paths = [
+        str(path).replace("\\", "/").removeprefix("./")
+        for path in proof.get("candidate_source_paths") or []
+        if isinstance(path, str)
+    ]
     expected = set(declared_tests)
     exact_failures = [
         event
@@ -489,6 +536,10 @@ def go_failure_proof_matches(
             if event.get("Package") == failed_package and event.get("Action") == "output"
         )
         build_output = _build_output_for_package(events, failed_package)
+        diagnostics = [
+            match.group("path")
+            for match in _GO_DIAGNOSTIC_RE.finditer(build_output)
+        ]
         return bool(
             "[build failed]" in package_output
             and any(
@@ -499,7 +550,15 @@ def go_failure_proof_matches(
                 )
                 for event in events
             )
-            and _TEST_DIAGNOSTIC_RE.search(build_output)
+            and diagnostics
+            and all(
+                _legacy_diagnostic_belongs_to_package(
+                    path,
+                    failed_package,
+                    candidate_source_paths,
+                )
+                for path in diagnostics
+            )
         )
     proven_packages = []
     for failed_package in failed_packages:
@@ -546,12 +605,14 @@ def go_failure_proof_matches(
             )
             if not build_failed:
                 return False
-            diagnostics = [
-                match.group("path")
-                for match in _TEST_DIAGNOSTIC_RE.finditer(build_output)
-            ]
+            diagnostics = [match.group("path") for match in _GO_DIAGNOSTIC_RE.finditer(build_output)]
         if not diagnostics or not all(
             _diagnostic_belongs_to_package(path, binding["package"])
+            or _candidate_diagnostic_belongs_to_package(
+                path,
+                binding["package"],
+                candidate_source_paths,
+            )
             for path in diagnostics
         ):
             return False

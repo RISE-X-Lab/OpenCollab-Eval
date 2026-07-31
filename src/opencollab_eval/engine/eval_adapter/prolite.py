@@ -7,7 +7,6 @@ classify technical failures without starting Docker or invoking an LLM.
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -20,6 +19,7 @@ from opencollab_eval.engine.eval_adapter.models import (
     TaskSpec,
     WorkspaceSpec,
 )
+from opencollab_eval.engine.workspace_integrity import FailureScope
 
 DEFAULT_DATASET_NAME = "swe-batch-pro-lite"
 DEFAULT_REPO_ROOT_CANDIDATES = ("/app", "/testbed")
@@ -124,38 +124,31 @@ def patch_candidate_from_diff(
 
 def classify_technical_failure(
     *,
-    log_text: str = "",
-    returncode: int | None = None,
-    status: str = "",
+    failure_scope: FailureScope | str = FailureScope.NONE,
+    direct_probe_failed: bool = False,
+    evidence_missing: bool = False,
+    execution_quiesced: bool = True,
+    candidate_attributable: bool = False,
+    verdict_available: bool = False,
 ) -> tuple[str, ...]:
-    text = f"{status}\n{log_text}".lower()
-    reasons: list[str] = []
-
-    if (
-        ("127.0.0.1:6379" in text or "redis" in text)
-        and _matches(text, "econnrefused", "connection refused", "connect failed")
-    ):
-        reasons.append("redis_unavailable")
-    if _matches(text, "cannot connect to the docker daemon", "docker daemon", "docker.sock"):
-        reasons.append("docker_unavailable")
-    if _matches(text, "is already in use by container", "conflict. the container name"):
-        reasons.append("docker_name_conflict")
-    if _matches(text, "no such container", "container not found"):
-        reasons.append("docker_container_missing")
-    if "no such file or directory" in text and _matches(text, "/app", "/testbed"):
-        reasons.append("workspace_root_missing")
-    if _matches(text, "ssh: connect", "connection reset by peer", "connection timed out"):
-        reasons.append("ssh_unavailable")
-    if _matches(text, "timed out", "timeout", "deadline exceeded"):
-        reasons.append("timeout")
-    if _matches(text, "apply_patch", "test_patch", "patch failed", "does not apply"):
-        reasons.append("test_patch_apply_failed")
-    if _matches(text, "missing_report", "report not found", "no report"):
-        reasons.append("missing_eval_report")
-
-    if returncode not in (None, 0) and not reasons:
-        reasons.append("process_failed")
-    return tuple(dict.fromkeys(reasons))
+    try:
+        scope = (
+            failure_scope
+            if isinstance(failure_scope, FailureScope)
+            else FailureScope(str(failure_scope))
+        )
+    except ValueError:
+        return ("invalid_failure_scope",)
+    if not execution_quiesced:
+        return ("evaluation_process_not_quiesced",)
+    if candidate_attributable or verdict_available:
+        return ()
+    reasons = []
+    if evidence_missing:
+        reasons.append("evaluation_evidence_missing")
+    if direct_probe_failed and scope is not FailureScope.NONE:
+        reasons.append(f"{scope.value}_probe_failed")
+    return tuple(reasons)
 
 
 def is_technical_failure(**kwargs: Any) -> bool:
@@ -203,7 +196,3 @@ def _service_dependencies(
     if "nodebb" in haystack:
         return ("redis",)
     return ()
-
-
-def _matches(text: str, *needles: str) -> bool:
-    return any(re.search(re.escape(needle.lower()), text) for needle in needles)

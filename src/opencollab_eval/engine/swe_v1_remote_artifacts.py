@@ -11,10 +11,13 @@ import uuid
 from pathlib import Path, PurePosixPath
 
 from opencollab_eval.engine.eval_candidate_projection import (
+    candidate_projection_failure_valid,
     candidate_projection_valid,
+    prepared_candidate_projection_valid,
     source_projection_sha256,
     source_projection_valid,
 )
+from opencollab_eval.engine.swe_eval_outcome import derive_eval_verdict
 from opencollab_eval.engine.swe_generation_proof import (
     preparation_input_valid,
     solver_git_snapshot_valid,
@@ -23,13 +26,13 @@ from opencollab_eval.engine.swe_test_evidence import target_evidence_passed
 from opencollab_eval.engine.swe_v1_remote_commands import (
     _plan_log_failure_proof_matches,
     _plan_log_proof_matches,
+    _plan_log_skip_proof_matches,
 )
 from opencollab_eval.engine.swe_v1_remote_core import (
     RecordInputFormatError,
     RecordInputLimitError,
     atomic_write_bytes,
 )
-from opencollab_eval.engine.swe_v1_remote_generation import eval_log_has_infra_failure
 from opencollab_eval.engine.swe_v1_remote_records import read_tail_text
 from opencollab_eval.engine.swe_v1_remote_state import (
     MAX_EXIT_STATUS_BYTES,
@@ -46,6 +49,7 @@ _FIXED_EVAL_OUTPUT_NAMES = (
     "base_commit.exit",
     "base_commit.log",
     "base_snapshot.json",
+    "candidate_projection_failure.json",
     "candidate_projection.json",
     "source_candidate_projection.json",
     "runtime_dependencies.json",
@@ -247,6 +251,11 @@ def _read_candidate_projection(output_dir, errors, expectation, base_snapshot):
             errors.append("unsafe:source_candidate_projection.json:invalid_integrity")
             source_projection = {}
     common_valid = candidate_projection_valid(report, expectation, source_projection)
+    prepared_valid = prepared_candidate_projection_valid(
+        report,
+        expectation,
+        source_projection,
+    )
     if isinstance(report, dict) and report.get("schema") == "opencollab.eval_candidate_projection.v1":
         valid = bool(
             common_valid
@@ -260,7 +269,7 @@ def _read_candidate_projection(output_dir, errors, expectation, base_snapshot):
         )
     else:
         valid = bool(
-            common_valid
+            (common_valid or prepared_valid)
             and isinstance(preparation, dict)
             and report.get("verified_source_base_commit") == preparation.get("expected_base_commit")
             and report.get("verified_source_base_tree") == preparation.get("base_tree")
@@ -270,6 +279,77 @@ def _read_candidate_projection(output_dir, errors, expectation, base_snapshot):
         )
     if not valid:
         errors.append("unsafe:candidate_projection.json:invalid_integrity")
+        return {}, {}
+    return report, source_projection
+
+
+def _read_candidate_projection_failure(
+    output_dir,
+    errors,
+    expectation,
+    base_snapshot,
+):
+    path = output_dir / "candidate_projection_failure.json"
+    try:
+        with open_regular_binary(path) as handle:
+            size = os.fstat(handle.fileno()).st_size
+            if size > MAX_TEST_EVIDENCE_BYTES:
+                raise RecordInputLimitError(
+                    f"candidate projection failure exceeds byte limit: {path}"
+                )
+            report = json.loads(handle.read(MAX_TEST_EVIDENCE_BYTES + 1))
+    except FileNotFoundError:
+        return {}, {}
+    except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        errors.append(f"unsafe:candidate_projection_failure.json:{type(exc).__name__}")
+        return {}, {}
+    source_projection = {}
+    if isinstance(report, dict) and report.get("phase") == "prepared":
+        raw_source = _read_required_bytes(
+            output_dir,
+            errors,
+            "source_candidate_projection.json",
+            MAX_TEST_EVIDENCE_BYTES,
+        )
+        try:
+            source_projection = json.loads(raw_source)
+        except (TypeError, UnicodeDecodeError, json.JSONDecodeError):
+            errors.append("unsafe:source_candidate_projection.json:invalid_json")
+            source_projection = {}
+    preparation = (
+        base_snapshot.get("preparation_input_snapshot")
+        if isinstance(base_snapshot, dict)
+        else None
+    )
+    source_failure = isinstance(report, dict) and report.get("phase") == "source"
+    bound_base = preparation if source_failure else base_snapshot
+    base_commit = str(
+        bound_base.get("expected_base_commit" if source_failure else "anonymous_head")
+        or ""
+        if isinstance(bound_base, dict)
+        else ""
+    )
+    base_tree = str(
+        bound_base.get("base_tree") or ""
+        if isinstance(bound_base, dict)
+        else ""
+    )
+    if (
+        not candidate_projection_failure_valid(
+            report,
+            expectation,
+            source_projection=source_projection,
+            base_commit=base_commit,
+            base_tree=base_tree,
+        )
+        or source_failure
+        and (
+            not isinstance(preparation, dict)
+            or report.get("verified_base_commit") != preparation.get("expected_base_commit")
+            or report.get("verified_base_tree") != preparation.get("base_tree")
+        )
+    ):
+        errors.append("unsafe:candidate_projection_failure.json:invalid_integrity")
         return {}, {}
     return report, source_projection
 
@@ -285,6 +365,8 @@ def _read_runtime_dependencies(
     text = _read_required_text(
         output_dir, errors, "runtime_dependencies.json", MAX_TEST_EVIDENCE_BYTES
     )
+    if not text:
+        return {}
     try:
         report = json.loads(text)
     except (TypeError, json.JSONDecodeError):
@@ -453,6 +535,10 @@ def _read_plan_evidence(output_dir, errors, prefix, plan, proof_nonce):
                     expected_command,
                     observed_command,
                 ),
+                "target_skip_proof_matches_plan": _plan_log_skip_proof_matches(
+                    proof,
+                    proof_text,
+                ),
                 "artifact_safe": len(errors) == error_count,
             }
         )
@@ -515,12 +601,22 @@ def read_eval_output_artifacts(
     f2p_log_tail = _read_text(output_dir, errors, "f2p.log")
     p2p_log_tail = _read_text(output_dir, errors, "p2p.log")
     base_snapshot = _read_integrity_report(output_dir, errors, expected_base_commit)
-    candidate_projection, source_candidate_projection = _read_candidate_projection(
-        output_dir,
-        errors,
-        candidate_expectation,
-        base_snapshot,
+    candidate_projection_failure, source_candidate_projection = (
+        _read_candidate_projection_failure(
+            output_dir,
+            errors,
+            candidate_expectation,
+            base_snapshot,
+        )
     )
+    candidate_projection = {}
+    if not candidate_projection_failure:
+        candidate_projection, source_candidate_projection = _read_candidate_projection(
+            output_dir,
+            errors,
+            candidate_expectation,
+            base_snapshot,
+        )
     runtime_dependencies = _read_runtime_dependencies(
         output_dir,
         errors,
@@ -551,6 +647,7 @@ def read_eval_output_artifacts(
         "output_artifact_errors": errors,
         "base_commit_status": base_commit_status,
         "base_snapshot": base_snapshot,
+        "candidate_projection_failure": candidate_projection_failure,
         "candidate_projection": candidate_projection,
         "source_candidate_projection": source_candidate_projection,
         "runtime_dependencies": runtime_dependencies,
@@ -587,6 +684,7 @@ def read_eval_output_artifacts(
             1000,
         ),
         "diagnostic_artifact_errors": diagnostic_errors,
+        "operational_warnings": [],
         "service_bootstrap_log_tail": _read_text(
             output_dir,
             errors,
@@ -628,70 +726,9 @@ def publish_and_read_eval_output_artifacts(
         expected_eval_image_id,
         candidate_expectation,
     )
-    artifacts["output_artifact_errors"] = (
-        publish_errors + cleanup_errors + artifacts["output_artifact_errors"]
-    )
+    artifacts["output_artifact_errors"] = publish_errors + artifacts["output_artifact_errors"]
+    artifacts["operational_warnings"] = cleanup_errors
     return artifacts
-
-
-def _plan_evidence_mismatch(artifacts, prefix):
-    evidence = artifacts[f"{prefix}_evidence"]
-    status = artifacts[f"{prefix}_status"]
-    aggregate_status = next(
-        (item["status"] for item in evidence if item["status"] != 0),
-        0,
-    )
-    return not artifacts[f"{prefix}_execution_evidence_complete"] or bool(
-        evidence and aggregate_status != status
-    )
-
-
-def derive_eval_verdict(artifacts, *, docker_exit, cleanup_quiesced, container_cleanup):
-    """Derive a verdict only from an already complete artifact snapshot."""
-    f2p_evidence = artifacts["f2p_evidence"]
-    p2p_evidence = artifacts["p2p_evidence"]
-    f2p_status = artifacts["f2p_status"]
-    p2p_status = artifacts["p2p_status"]
-    reason_checks = (
-        ("unsafe_or_missing_output_artifact", bool(artifacts["output_artifact_errors"])),
-        ("fail_to_pass_evidence", _plan_evidence_mismatch(artifacts, "f2p")),
-        ("pass_to_pass_evidence", _plan_evidence_mismatch(artifacts, "p2p")),
-        ("docker_exit", docker_exit != 0),
-        ("process_cleanup", not cleanup_quiesced),
-        ("container_cleanup", not container_cleanup.get("ok")),
-        ("base_commit", artifacts["base_commit_status"] != 0),
-        ("base_snapshot_integrity", not artifacts["base_snapshot"]),
-        ("candidate_projection", not artifacts["candidate_projection"]),
-        ("service_bootstrap", artifacts["service_status"] != 0),
-        ("before_repo", artifacts["before_status"] != 0),
-        (
-            "post_before_base_commit",
-            artifacts["post_before_base_status"] != 0,
-        ),
-        ("model_patch", artifacts["model_status"] != 0),
-        ("test_patch", artifacts["test_status"] != 0),
-        (
-            "fail_to_pass_infra",
-            eval_log_has_infra_failure(f2p_status, artifacts["f2p_log_tail"]),
-        ),
-        (
-            "pass_to_pass_infra",
-            eval_log_has_infra_failure(p2p_status, artifacts["p2p_log_tail"]),
-        ),
-    )
-    technical_reasons = [reason for reason, active in reason_checks if active]
-    technical_error = bool(technical_reasons)
-    resolved = bool(
-        not technical_error
-        and all(target_evidence_passed(item) is True for item in f2p_evidence)
-        and all(target_evidence_passed(item) is True for item in p2p_evidence)
-    )
-    return {
-        "technical_reasons": technical_reasons,
-        "technical_error": technical_error,
-        "resolved": resolved,
-        "summary_status": "technical_eval_failed" if technical_error else "done",
-    }
 
 
 __all__ = [

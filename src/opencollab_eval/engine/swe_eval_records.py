@@ -14,7 +14,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
 
-from opencollab_eval.engine.eval_candidate_projection import candidate_projection_valid
+from opencollab_eval.engine.eval_candidate_projection import (
+    candidate_projection_failure_valid,
+    candidate_projection_valid,
+    candidate_rejection_is_conclusive,
+)
 from opencollab_eval.engine.swe_test_evidence import target_evidence_passed
 from opencollab_eval.engine.swe_test_plan_contract import validated_test_plan_kind
 
@@ -412,7 +416,8 @@ def _direct_eval_plan_status(
         return None
     statuses: list[int] = []
     outcomes: list[bool] = []
-    for item in evidence:
+    unknown_batches: list[int] = []
+    for index, item in enumerate(evidence, 1):
         if not isinstance(item, dict):
             return None
         status = item.get("status")
@@ -426,15 +431,23 @@ def _direct_eval_plan_status(
                 "artifact_safe",
             )
         ):
-            return None
+            unknown_batches.append(index)
+            statuses.append(status)
+            continue
         outcome = target_evidence_passed(item)
         if outcome is None:
-            return None
+            unknown_batches.append(index)
+            statuses.append(status)
+            continue
         statuses.append(status)
         outcomes.append(outcome)
     reported_status = tests_status.get(f"{prefix}_status")
     if isinstance(reported_status, bool) or not isinstance(reported_status, int):
         return None
+    if unknown_batches:
+        if not outcomes or all(outcomes):
+            return None
+        return 1
     expected_status = next((status for status in statuses if status != 0), 0)
     if reported_status != expected_status:
         return None
@@ -532,19 +545,87 @@ def direct_eval_done_has_execution_proof(
         or payload.get("docker_exit") != 0
         or payload.get("cleanup_quiesced") is not True
         or not isinstance(payload.get("container_cleanup"), dict)
-        or payload["container_cleanup"].get("ok") is not True
         or _SHA256_RE.fullmatch(eval_spec_sha256) is None
         or _SHA256_RE.fullmatch(eval_patch_sha256) is None
         or expected_eval_spec_sha256
         and eval_spec_sha256 != expected_eval_spec_sha256
     ):
         return False
+    warnings = payload.get("operational_warnings", [])
+    if (
+        not isinstance(warnings, list)
+        or any(not isinstance(item, str) or len(item) > 512 for item in warnings)
+        or payload["container_cleanup"].get("ok") is not True
+        and "container_removal_failed_after_stop" not in warnings
+    ):
+        return False
     expectation = payload.get("candidate_expectation")
     projection = payload.get("candidate_projection")
+    projection_failure = payload.get("candidate_projection_failure")
+    task = payload.get("task", payload.get("instance_id"))
+    tests_status = payload.get("tests_status")
+    if not isinstance(expectation, dict) or not isinstance(tests_status, dict):
+        return False
+    base_snapshot = payload.get("base_snapshot_integrity")
+    preparation = (
+        base_snapshot.get("preparation_input_snapshot")
+        if isinstance(base_snapshot, dict)
+        else None
+    )
+    source_failure = (
+        isinstance(projection_failure, dict)
+        and projection_failure.get("phase") == "source"
+    )
+    bound_base = preparation if source_failure else base_snapshot
+    candidate_rejected = bool(
+        isinstance(projection_failure, dict)
+        and candidate_rejection_is_conclusive(projection_failure)
+        and candidate_projection_failure_valid(
+            projection_failure,
+            expectation,
+            source_projection=payload.get("source_candidate_projection"),
+            base_commit=str(
+                bound_base.get(
+                    "expected_base_commit" if source_failure else "anonymous_head"
+                )
+                or ""
+                if isinstance(bound_base, dict)
+                else ""
+            ),
+            base_tree=str(
+                bound_base.get("base_tree") or ""
+                if isinstance(bound_base, dict)
+                else ""
+            ),
+        )
+        and projection_failure.get("instance_id") == task
+        and projection_failure.get("record_id") == payload.get("record_id")
+        and projection_failure.get("eval_patch_sha256") == eval_patch_sha256
+    )
+    if candidate_rejected:
+        required_zero = (
+            "base_commit_status",
+            "before_repo_status",
+            "post_before_base_status",
+        )
+        model_status = tests_status.get("model_patch_status")
+        return bool(
+            payload["resolved"] is False
+            and payload.get("outcome", "unresolved") == "unresolved"
+            and payload.get(
+                "outcome_basis",
+                ["candidate_patch_could_not_be_applied"],
+            )
+            == ["candidate_patch_could_not_be_applied"]
+            and not projection
+            and all(tests_status.get(field) == 0 for field in required_zero)
+            and isinstance(model_status, int)
+            and not isinstance(model_status, bool)
+            and model_status != 0
+        )
     if (
-        not isinstance(expectation, dict)
-        or not isinstance(projection, dict)
-        or projection.get("instance_id") != payload.get("task", payload.get("instance_id"))
+        not isinstance(projection, dict)
+        or projection.get("instance_id") != task
         or projection.get("record_id") != payload.get("record_id")
         or projection.get("eval_patch_sha256") != eval_patch_sha256
         or not candidate_projection_valid(
@@ -553,9 +634,6 @@ def direct_eval_done_has_execution_proof(
             payload.get("source_candidate_projection"),
         )
     ):
-        return False
-    tests_status = payload.get("tests_status")
-    if not isinstance(tests_status, dict):
         return False
     for field in (
         "base_commit_status",
@@ -589,7 +667,12 @@ def direct_eval_done_has_execution_proof(
         expected_p2p_plan,
     ):
         return False
-    return payload["resolved"] is bool(f2p_status == 0 and p2p_status == 0)
+    expected_resolved = bool(f2p_status == 0 and p2p_status == 0)
+    expected_outcome = "resolved" if expected_resolved else "unresolved"
+    return bool(
+        payload["resolved"] is expected_resolved
+        and payload.get("outcome", expected_outcome) == expected_outcome
+    )
 
 
 def workflow_result(row: dict[str, Any] | None) -> dict[str, Any]:

@@ -644,36 +644,6 @@ def eval_summary_matches_prediction(
     return True
 
 
-def eval_log_has_infra_failure(exit_status, log_text):
-    if exit_status in {124, 126, 127}:
-        return True
-    if exit_status == 0:
-        return False
-    normalized_log = str(log_text or "").lower()
-    no_tests_executed = bool(
-        re.search(r"\b(?:collected 0 items|no tests (?:ran|collected))\b", normalized_log)
-    )
-    explicit_target_failure = bool(
-        re.search(r"(?:error:\s+not found:|importerror:|modulenotfounderror:)", normalized_log)
-    )
-    if no_tests_executed and not explicit_target_failure:
-        return True
-    infrastructure_patterns = (
-        r"(?:redis|mongodb|mongo|postgres(?:ql)?|mysql|elasticsearch|rabbitmq|kafka)"
-        r".{0,160}(?:connection refused|unavailable|failed to connect|timed? out)",
-        r"(?:connectionerror|serverselectiontimeouterror|socket\.gaierror|eai_again)"
-        r".{0,160}(?:connection refused|unavailable|failed to connect|timed? out|name resolution)?",
-        r"(?:temporary failure in name resolution|could not resolve host|network is unreachable)",
-        r"(?:enospc|no space left on device|disk quota exceeded|read-only file system|input/output error)",
-    )
-    for line in normalized_log.splitlines():
-        if "assertionerror" in line or re.search(r"\bexpected\b", line):
-            continue
-        if any(re.search(pattern, line) for pattern in infrastructure_patterns):
-            return True
-    return False
-
-
 def _eval_container_state(candidate):
     owner_label = candidate["owner_label"]
     owner_schema_label = candidate["owner_schema_label"]

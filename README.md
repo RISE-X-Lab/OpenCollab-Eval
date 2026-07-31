@@ -234,15 +234,19 @@ After official evaluation, a task has one of three terminal outcomes.
 | Outcome | Meaning |
 | --- | --- |
 | Resolved | The declared targets ran and passed for the bound candidate |
-| Unresolved | The declared targets ran and at least one target failed |
+| Unresolved | Bound evidence proves that the candidate did not satisfy at least one declared target |
 | Technical failed | The evaluation did not produce a verifiable task result |
 
 Each report stores the task, run, and record IDs, the full patch SHA-256, the
 runtime, the target plan, the commands that ran, the cleanup result, and the
-official report. These fields show which patch the tests actually used. A task
-is unresolved only after the intended target ran and failed. Import errors,
-collection errors, unsupported plans, missing logs, and identity mismatches are
-technical failures.
+official report. These fields show which patch the tests actually used. Exact
+target failures, target skips, and candidate-caused build, setup, import, or
+dependency failures are unresolved. A patch that the trusted source projection
+proves cannot apply is also unresolved when generation did not record an
+expected candidate tree. A rejection that contradicts an expected tree, or
+occurs against the prepared evaluation base, is technical. Unsupported plans,
+missing evidence, identity drift, projection runtime errors, and non-quiescent
+execution are technical failures.
 
 The evaluator records one structured event for each Python test node. Go tests
 are checked through `go test -json`. JavaScript results are read by parsers for
@@ -490,10 +494,10 @@ python -m opencollab_eval.commands.swe_eval_run \
 | 终态 | 含义 |
 | --- | --- |
 | Resolved | 指定目标针对绑定候选运行并全部通过 |
-| Unresolved | 指定目标已经运行，且至少有一个目标失败 |
+| Unresolved | 绑定证据证明候选没有满足至少一个指定目标 |
 | 技术失败 | 评测没有产生可核验的题目结果 |
 
-每份报告都保存任务、运行和记录 ID，以及完整的补丁 SHA-256、运行时、目标计划、实际命令、清理结果和官方报告。这些信息用于确认测试使用的确实是本次生成的补丁。只有目标确实运行并失败，任务才会被记为 unresolved。导入错误、收集错误、不支持的计划、日志缺失和身份不匹配都属于技术失败。
+每份报告都保存任务、运行和记录 ID，以及完整的补丁 SHA-256、运行时、目标计划、实际命令、清理结果和官方报告。这些信息用于确认测试使用的确实是本次生成的补丁。目标精确失败、目标跳过以及由候选引起的构建、初始化、导入和依赖失败都属于 unresolved。只有生成阶段尚未记录预期候选 tree 时，可信源投影明确证明补丁无法应用才属于 unresolved。拒绝证据与预期 tree 冲突，或补丁在评测准备基线上遭到拒绝时，结果属于技术失败。目标计划不受支持、证据缺失、身份漂移、投影运行错误和执行结束后仍有进程写入也属于技术失败。
 
 Python 测试由评测控制器启动，并按 Pytest 节点记录结构化事件。Go 测试通过 `go test -json` 检查。JavaScript 结果由对应测试框架的解析器读取。无法识别的目标语法会被记为技术失败。
 

@@ -356,18 +356,39 @@ def test_javascript_plan_rejects_noncanonical_proof_dispatch_metadata(
     assert validated_test_plan_kind(plan, require_commands=True) is None
 
 
-def test_task9_jest_suite_load_failure_binds_official_mock_and_exact_command(tmp_path):
+@pytest.mark.parametrize(
+    "candidate_paths",
+    [
+        [{"path": "src/widget.ts"}],
+        [["src/widget.ts"]],
+        ["../src/widget.ts"],
+        ["/src/widget.ts"],
+        ["src//widget.ts"],
+        ["src/widget.ts\nforged"],
+    ],
+)
+def test_javascript_plan_rejects_untrusted_candidate_path_shapes(
+    tmp_path,
+    candidate_paths,
+):
     namespace = _remote_namespace(tmp_path)
-    suite = (
-        "packages/components/components/drawer/views/SecurityCenter/PassAliases/"
-        "PassAliases.test.tsx"
+    plan = namespace["prolite_test_plan"](
+        {"repo_language": "javascript"},
+        ["test/widget.test.js"],
     )
+    plan["proofs"][0]["candidate_source_paths"] = candidate_paths
+
+    assert validated_test_plan_kind(plan, require_commands=True) is None
+
+
+def test_jest_suite_load_failure_binds_declared_mock_without_repo_special_case(
+    tmp_path,
+):
+    namespace = _remote_namespace(tmp_path)
+    suite = "packages/widget/Widget.test.tsx"
     declared_suite = suite
-    missing_module = (
-        "@proton/components/components/drawer/views/SecurityCenter/PassAliases/"
-        "usePassAliasesProviderSetup"
-    )
-    target = declared_suite + " | PassAliases renders the aliases list"
+    missing_module = "@example/widget/provider"
+    target = declared_suite + " | Widget renders the value"
     test_patch = (
         f"diff --git a/{suite} b/{suite}\n"
         f"--- a/{suite}\n"
@@ -380,7 +401,7 @@ def test_task9_jest_suite_load_failure_binds_official_mock_and_exact_command(tmp
     plan = namespace["prolite_test_plan"](
         {
             "repo_language": "js",
-            "repo": "protonmail/webclients",
+            "repo": "example/widgets",
             "selected_test_files_to_run": json.dumps([suite]),
             "test_patch": test_patch,
         },
@@ -415,7 +436,7 @@ def test_task9_jest_suite_load_failure_binds_official_mock_and_exact_command(tmp
         proof, log, "", command, command
     ) is True
     rejected = (
-        log.replace(missing_module, "@proton/components/unbound", 1),
+        log.replace(missing_module, "@example/unbound", 1),
         log.replace(declared_suite, "components/other.test.tsx", 1),
         log.replace("numRuntimeErrorTestSuites\": 1", "numRuntimeErrorTestSuites\": 0"),
         log.replace("Cannot find module", "Validation Error"),
@@ -428,3 +449,53 @@ def test_task9_jest_suite_load_failure_binds_official_mock_and_exact_command(tmp
     assert namespace["_plan_log_failure_proof_matches"](
         proof, log, "", command, command + " changed"
     ) is False
+
+
+def test_jest_candidate_source_failure_is_bound_to_target_and_patch(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    suite = "test/widget.test.ts"
+    source = "src/widget.ts"
+    target = suite + " | Widget returns its value"
+    plan = namespace["prolite_test_plan"](
+        {
+            "repo_language": "typescript",
+            "repo": "example/widgets",
+            "selected_test_files_to_run": json.dumps([suite]),
+        },
+        [target],
+        candidate_source_paths=[source],
+    )
+    proof = plan["proofs"][0]
+    command = plan["commands"][0]
+    result = {
+        "numFailedTestSuites": 1,
+        "numRuntimeErrorTestSuites": 1,
+        "numTotalTestSuites": 1,
+        "numTotalTests": 0,
+        "success": False,
+        "testResults": [
+            {
+                "assertionResults": [],
+                "name": "/app/" + suite,
+                "status": "failed",
+                "message": f"Test suite failed to run\nReferenceError: {source}: missingName",
+            }
+        ],
+    }
+    log = f"FAIL {suite}\n" + json.dumps(result) + "\n"
+
+    assert proof["candidate_source_paths"] == [source]
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        log,
+        "",
+        command,
+        command,
+    )
+    assert not namespace["_plan_log_failure_proof_matches"](
+        proof,
+        log.replace(source, "src/unrelated.ts"),
+        "",
+        command,
+        command,
+    )
