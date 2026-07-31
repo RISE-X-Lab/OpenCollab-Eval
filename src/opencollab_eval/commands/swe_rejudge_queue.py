@@ -181,7 +181,6 @@ def _row_terminal(row: dict[str, Any], *, job: dict[str, Any]) -> bool:
     integrity = _swe_eval_layer_integrity.attempt_integrity(row, job["task"])
     return (
         isinstance(summary, dict)
-        and summary.get("status") == "eval_done"
         and isinstance(summary.get("resolved"), bool)
         and integrity.direct_execution_proven
         and not integrity.reasons
@@ -223,7 +222,11 @@ def _candidate_identity_status(job: dict[str, Any]) -> str:
 def _terminal_report(job: dict[str, Any]) -> tuple[Path | None, str]:
     parent = Path(job["parent_output_dir"])
     matches: list[tuple[int, str, Path, bool]] = []
-    paths = [parent / "parallel_summary.json", *parent.glob(f"task_{job['index']}_eval_only_*.json")]
+    paths = {
+        parent / "parallel_summary.json",
+        *parent.glob(f"task_{job['index']}_eval_only_*.json"),
+        *parent.glob(f"task_{job['index']}_*_eval_only_*.json"),
+    }
     for path in paths:
         try:
             info = path.lstat()

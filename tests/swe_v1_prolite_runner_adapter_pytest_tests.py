@@ -335,6 +335,93 @@ def test_pytest_skip_evidence_is_not_counted_as_pass(tmp_path):
     assert namespace["_plan_log_proof_matches"](proof, "1 skipped", skipped) is False
 
 
+def test_parameter_parent_ignores_an_unrequested_skipped_sibling(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    parent = "tests/test_many.py::test_case"
+    target = parent + "[declared]"
+    plan = namespace["prolite_test_plan"]({"repo_language": "python"}, [target])
+    proof = plan["proofs"][0]
+    events = [
+        {"event": "session_start"},
+        {
+            "event": "collection_finish",
+            "nodeids": [target, parent + "[unrequested]"],
+        },
+        *[
+            {
+                "event": "runtest_logreport",
+                "nodeid": target,
+                "when": phase,
+                "outcome": "passed",
+            }
+            for phase in ("setup", "call", "teardown")
+        ],
+        {
+            "event": "runtest_logreport",
+            "nodeid": parent + "[unrequested]",
+            "when": "setup",
+            "outcome": "skipped",
+        },
+        {"event": "session_finish", "exitstatus": 0},
+    ]
+
+    assert namespace["_plan_log_proof_matches"](
+        proof,
+        "1 passed, 1 skipped",
+        _proof_text(
+            events,
+            returncode=0,
+            command_sha256=proof["command_sha256"],
+        ),
+    ) is True
+
+
+def test_parameter_parent_cannot_hide_an_incomplete_exact_target(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    exact = "tests/test_other.py::test_exact"
+    parent = "tests/test_many.py::test_case"
+    missing_parameter = parent + "[missing]"
+    plan = namespace["prolite_test_plan"](
+        {"repo_language": "python"},
+        [exact, missing_parameter],
+    )
+    proof = plan["proofs"][0]
+    fallback_sibling = parent + "[runtime]"
+    events = [
+        {"event": "session_start"},
+        {
+            "event": "collection_finish",
+            "nodeids": [exact, fallback_sibling],
+        },
+        {
+            "event": "runtest_logreport",
+            "nodeid": exact,
+            "when": "setup",
+            "outcome": "skipped",
+        },
+        *[
+            {
+                "event": "runtest_logreport",
+                "nodeid": fallback_sibling,
+                "when": phase,
+                "outcome": "passed",
+            }
+            for phase in ("setup", "call", "teardown")
+        ],
+        {"event": "session_finish", "exitstatus": 0},
+    ]
+
+    assert namespace["_plan_log_proof_matches"](
+        proof,
+        "1 passed, 1 skipped",
+        _proof_text(
+            events,
+            returncode=0,
+            command_sha256=proof["command_sha256"],
+        ),
+    ) is False
+
+
 def test_parameter_parent_proof_rejects_unrelated_collection(tmp_path):
     namespace = _remote_namespace(tmp_path)
     parent = "tests/test_many.py::test_case"

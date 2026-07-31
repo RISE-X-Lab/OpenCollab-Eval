@@ -118,11 +118,7 @@ def _pytest_structured_proof_matches(
         targets, fallback_parents
     ):
         return False
-    exact_targets = (
-        [target for target in targets if not _pytest_parameter_parent(target)]
-        if fallback_parents
-        else list(targets)
-    )
+    exact_targets = list(targets)
     allowed_targets = [*exact_targets, *fallback_parents]
     if any(
         not any(_pytest_target_matches_node(target, node) for target in allowed_targets)
@@ -145,20 +141,24 @@ def _pytest_structured_proof_matches(
         ):
             return False
         reports.setdefault(node, {})[phase] = outcome
-    for target in exact_targets:
-        matching = [node for node in nodeids if _pytest_target_matches_node(target, node)]
-        if not matching or any(
-            reports.get(node)
-            != {"setup": "passed", "call": "passed", "teardown": "passed"}
-            for node in matching
-        ):
+    complete_pass = {"setup": "passed", "call": "passed", "teardown": "passed"}
+    exact_matches = {
+        target: [
+            node for node in nodeids if _pytest_target_matches_node(target, node)
+        ]
+        for target in exact_targets
+    }
+    for target, matching in exact_matches.items():
+        if matching:
+            if any(reports.get(node) != complete_pass for node in matching):
+                return False
+            continue
+        parent = _pytest_parameter_parent(target)
+        if not parent or parent not in fallback_parents:
             return False
-    for parent in fallback_parents:
-        matching = [node for node in nodeids if node.startswith(parent + "[")]
-        if not matching or any(
-            reports.get(node)
-            != {"setup": "passed", "call": "passed", "teardown": "passed"}
-            for node in matching
+        parent_matches = [node for node in nodeids if node.startswith(parent + "[")]
+        if not parent_matches or any(
+            reports.get(node) != complete_pass for node in parent_matches
         ):
             return False
     return True

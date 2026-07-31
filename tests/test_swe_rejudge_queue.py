@@ -23,7 +23,14 @@ def _accept_terminal(monkeypatch) -> None:
     )
 
 
-def _terminal_report(path: Path, *, index: int, patch_sha256: str, resolved: bool) -> None:
+def _terminal_report(
+    path: Path,
+    *,
+    index: int,
+    patch_sha256: str,
+    resolved: bool,
+    summary_status: str = "eval_done",
+) -> None:
     path.write_text(
         json.dumps(
             {
@@ -39,7 +46,7 @@ def _terminal_report(path: Path, *, index: int, patch_sha256: str, resolved: boo
                         },
                         "eval": {
                             "status": "eval_done",
-                            "summary": {"status": "eval_done", "resolved": resolved},
+                            "summary": {"status": summary_status, "resolved": resolved},
                         },
                     }
                 ]
@@ -110,6 +117,29 @@ def test_queue_skips_a_single_exact_terminal_candidate(tmp_path, monkeypatch):
     plan, parent = _plan(tmp_path)
     current = parent / "task_25_eval_only_current.json"
     _terminal_report(current, index=25, patch_sha256="a" * 64, resolved=False)
+    monkeypatch.setattr(
+        queue,
+        "update_parent_fact_report",
+        lambda args: {"status": "done", "report_json": str(args.json_output)},
+    )
+
+    result = queue.run_queue(plan, tmp_path / "state", workers=2)
+
+    assert result["counts"] == {"skipped_terminal": 1}
+    assert next(iter(result["jobs"].values()))["report"] == str(current)
+
+
+def test_queue_accepts_a_direct_eval_done_summary(tmp_path, monkeypatch):
+    _accept_terminal(monkeypatch)
+    plan, parent = _plan(tmp_path)
+    current = parent / "task_25_deadbeef_eval_only_queue_current.json"
+    _terminal_report(
+        current,
+        index=25,
+        patch_sha256="a" * 64,
+        resolved=False,
+        summary_status="done",
+    )
     monkeypatch.setattr(
         queue,
         "update_parent_fact_report",
