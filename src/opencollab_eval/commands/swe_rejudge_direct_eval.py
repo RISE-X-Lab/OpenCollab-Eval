@@ -303,9 +303,12 @@ def rejudge(eval_dir: Path, output_dir: Path) -> dict:
     derived.update(
         {
             "status": verdict["summary_status"],
+            "outcome": verdict["outcome"],
+            "outcome_basis": verdict["outcome_basis"],
             "resolved": verdict["resolved"],
             "technical_reasons": verdict["technical_reasons"],
-                "output_artifact_errors": artifacts["output_artifact_errors"],
+            "operational_warnings": verdict["operational_warnings"],
+            "output_artifact_errors": artifacts["output_artifact_errors"],
                 "diagnostic_artifact_errors": artifacts["diagnostic_artifact_errors"],
                 "candidate_projection": artifacts["candidate_projection"],
                 "source_candidate_projection": artifacts["source_candidate_projection"],

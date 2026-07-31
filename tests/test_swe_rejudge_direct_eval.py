@@ -713,7 +713,8 @@ def test_rejudge_writes_derived_summary_without_mutating_evidence(
         "schema": "opencollab.prolite_direct_eval.v2",
         "status": "technical_eval_failed",
         "task": task,
-        "resolved": False,
+        "resolved": False, "operational_warnings": [],
+        "outcome": "technical_failure", "outcome_basis": ["evaluation_prerequisite_failed"],
         "record_id": record_id,
         "patch_sha256": patch_sha,
         "eval_patch_sha256": eval_patch_sha,
@@ -778,7 +779,6 @@ def test_rejudge_writes_derived_summary_without_mutating_evidence(
         assert attempts_path.read_bytes() == attempts_before
         assert not output_dir.exists()
         return
-
     derived = rejudge(eval_dir, output_dir)
 
     assert derived["status"] == "done"
