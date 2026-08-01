@@ -69,6 +69,16 @@ from ._validation_council_solve_defs import (
 )
 
 
+async def _required_agent(ctx: Any, prompt: str, **kwargs: Any) -> Any:
+    """Fail the workflow when a role receives no model response at all."""
+    tokens_before = ctx.tokens_spent()
+    result = await ctx.agent(prompt, **kwargs)
+    if (result is None or result == "") and ctx.tokens_spent() <= tokens_before:
+        label = str(kwargs.get("label") or "agent")
+        raise RuntimeError(f"{label} completed without a successful model response")
+    return result
+
+
 async def _judge_candidates(
     ctx: Any,
     *,
@@ -78,7 +88,8 @@ async def _judge_candidates(
     stage: str,
     cap: int,
 ) -> dict[str, Any]:
-    judge = await ctx.agent(
+    judge = await _required_agent(
+        ctx,
         JUDGE_PROMPT.format(
             rules=SHARED_RULES,
             stage=stage,
@@ -121,7 +132,8 @@ async def _run_attempt(
     injected_test_paths: list[str],
 ) -> dict[str, Any]:
     feedback_block = FEEDBACK_BLOCK.format(feedback=_clip(feedback, 220)) if feedback else ""
-    coder_report = await ctx.agent(
+    coder_report = await _required_agent(
+        ctx,
         CODER_PROMPT.format(
             rules=SHARED_RULES,
             goal=_complete_goal(goal),
@@ -133,7 +145,8 @@ async def _run_attempt(
         tools=_coder_tools(),
         timeout=coder_role_timeout_seconds(),
     )
-    patch_verdict = await ctx.agent(
+    patch_verdict = await _required_agent(
+        ctx,
         PATCH_VALIDATOR_PROMPT.format(
             rules=SHARED_RULES,
             goal=_complete_goal(goal),
@@ -169,7 +182,8 @@ async def _run_attempt(
         }
 
     await ctx.phase(f"diff-risk:r{attempt}")
-    risks = await ctx.agent(
+    risks = await _required_agent(
+        ctx,
         DIFF_RISK_PROMPT.format(
             rules=SHARED_RULES,
             goal=_complete_goal(goal),
@@ -184,7 +198,8 @@ async def _run_attempt(
     )
     risks = _dict_or(risks, {"risks": [], "summary": "Diff risk auditor returned no structured report."})
 
-    post_candidates = await ctx.agent(
+    post_candidates = await _required_agent(
+        ctx,
         POST_VALIDATION_FACTORY_PROMPT.format(
             rules=SHARED_RULES,
             goal=_complete_goal(goal),
@@ -211,7 +226,8 @@ async def _run_attempt(
         cap=MAX_APPROVED_POST_TESTS,
     )
 
-    post_triage = await ctx.agent(
+    post_triage = await _required_agent(
+        ctx,
         POST_TRIAGE_PROMPT.format(
             rules=SHARED_RULES,
             goal=_complete_goal(goal),
@@ -229,7 +245,8 @@ async def _run_attempt(
     )
 
     await ctx.phase(f"final-verify:r{attempt}")
-    final_verdict = await ctx.agent(
+    final_verdict = await _required_agent(
+        ctx,
         FINAL_VERIFIER_PROMPT.format(
             rules=SHARED_RULES,
             goal=_complete_goal(goal),
@@ -294,7 +311,8 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
     injected_test_paths = [str(path) for path in args.get("injected_test_paths") or [] if str(path)]
 
     await ctx.phase("localize")
-    localization = await ctx.agent(
+    localization = await _required_agent(
+        ctx,
         LOCALIZER_PROMPT.format(rules=SHARED_RULES, goal=_complete_goal(goal)),
         schema=LOCALIZATION_SCHEMA,
         label="analyst-localizer",
@@ -315,6 +333,7 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
     )
 
     await ctx.phase("evidence")
+    evidence_tokens_before = ctx.tokens_spent()
     evidence_reports = await ctx.parallel(
         [
             lambda: ctx.agent(
@@ -343,6 +362,8 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
             ),
         ]
     )
+    if not any(report is not None for report in evidence_reports) and ctx.tokens_spent() <= evidence_tokens_before:
+        raise RuntimeError("evidence roles completed without a successful model response")
     contracts = _dict_or(evidence_reports[0] if evidence_reports else None, {"contracts": []})
     cartography = _dict_or(
         evidence_reports[1] if len(evidence_reports) > 1 else None,
@@ -357,7 +378,8 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
     )
 
     await ctx.phase("pre-validate")
-    pre_candidates = await ctx.agent(
+    pre_candidates = await _required_agent(
+        ctx,
         PRE_VALIDATION_FACTORY_PROMPT.format(
             rules=SHARED_RULES,
             goal=_complete_goal(goal),
@@ -384,7 +406,8 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
         cap=MAX_APPROVED_PRE_TESTS,
     )
     if _accepted_count(pre_judge):
-        baseline_triage = await ctx.agent(
+        baseline_triage = await _required_agent(
+            ctx,
             BASELINE_TRIAGE_PROMPT.format(
                 rules=SHARED_RULES,
                 goal=_complete_goal(goal),

@@ -3,9 +3,11 @@ from __future__ import annotations
 import gzip
 import json
 import threading
+import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 
+import pytest
 from llm_api_proxy_compression_support import RecordingUpstreamHandler
 
 from opencollab_eval.commands.llm_api_proxy import ProxyConfig, make_handler
@@ -61,6 +63,46 @@ def test_proxy_gzips_upstream_request_without_changing_json() -> None:
         assert headers["content-encoding"] == "gzip"
         assert len(observed["body"]) < len(body)
         assert gzip.decompress(observed["body"]) == body
+    finally:
+        _stop_relay(proxy, upstream)
+
+
+def test_proxy_applies_request_limit_to_compressed_wire_bytes() -> None:
+    upstream, proxy = _start_relay(
+        gzip_upstream_request=True,
+        max_upstream_request_bytes=256,
+    )
+    payload = {
+        "model": "deepseek-v4-pro",
+        "messages": [{"role": "user", "content": "repeated context " * 2000}],
+    }
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    assert len(body) > 256
+    assert len(gzip.compress(body, mtime=0)) <= 256
+    try:
+        _post_json(proxy, payload)
+        observed = RecordingUpstreamHandler.requests[0]
+        assert len(observed["body"]) <= 256
+        assert gzip.decompress(observed["body"]) == body
+    finally:
+        _stop_relay(proxy, upstream)
+
+
+def test_proxy_rejects_request_when_compressed_wire_bytes_exceed_limit() -> None:
+    upstream, proxy = _start_relay(
+        gzip_upstream_request=True,
+        max_upstream_request_bytes=64,
+    )
+    payload = {
+        "model": "deepseek-v4-pro",
+        "messages": [{"role": "user", "content": "0123456789abcdef" * 100}],
+    }
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            _post_json(proxy, payload)
+        assert caught.value.code == 413
+        assert json.load(caught.value)["error"]["code"] == "upstream_request_too_large"
+        assert RecordingUpstreamHandler.requests == []
     finally:
         _stop_relay(proxy, upstream)
 

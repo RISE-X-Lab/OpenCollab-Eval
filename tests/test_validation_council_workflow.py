@@ -461,5 +461,19 @@ async def test_missing_goal_is_an_error_before_any_agent(validation_council_solv
     assert ctx.agent_calls == []
 
 
+async def test_zero_call_localizer_failure_stops_before_other_roles(
+    validation_council_solve,
+):
+    ctx = ScriptedCtx([None])
+
+    with pytest.raises(
+        RuntimeError,
+        match="analyst-localizer completed without a successful model response",
+    ):
+        await validation_council_solve(ctx, {"goal": "fix empty widget"})
+
+    assert [call["label"] for call in ctx.agent_calls] == ["analyst-localizer"]
+
+
 def test_discovery_registers_validation_council_workflow():
     assert run_validation_council_solve.__workflow_spec__.name == "validation-council-solve"

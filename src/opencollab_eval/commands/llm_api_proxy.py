@@ -35,6 +35,7 @@ MAX_REQUEST_BYTES = 32 * 1024 * 1024
 MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 MAX_RECORDED_REQUEST_SHAPES = 2048
 UPSTREAM_OPEN_POLL_SECONDS = 0.1
+UPSTREAM_REQUEST_LIMIT_BASIS = "wire_bytes"
 
 
 @dataclass(frozen=True)
@@ -354,6 +355,7 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                     "allow_insecure_upstream": config.allow_insecure_upstream,
                     "direct_upstream": config.direct_upstream,
                     "max_upstream_request_bytes": config.max_upstream_request_bytes,
+                    "upstream_request_limit_basis": UPSTREAM_REQUEST_LIMIT_BASIS,
                     "upstream_timeout": config.timeout,
                     "upstream_base_url_sha256": upstream_base_url_sha256(config),
                 },
@@ -414,26 +416,34 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                     except ChatStreamError:
                         self._json(400, {"error": "invalid_chat_request"})
                         return
-                if (
-                    config.max_upstream_request_bytes
-                    and len(body) > config.max_upstream_request_bytes
-                ):
-                    self._json(
-                        400,
-                        {
-                            "error": {
-                                "message": "request exceeds the configured context window byte limit",
-                                "type": "invalid_request_error",
-                                "code": "context_length_exceeded",
-                            }
-                        },
-                    )
-                    return
                 upstream_body = (
                     gzip.compress(body, mtime=0)
                     if config.gzip_upstream_request
                     else body
                 )
+                if (
+                    config.max_upstream_request_bytes
+                    and len(upstream_body) > config.max_upstream_request_bytes
+                ):
+                    _diagnostic(
+                        "request_rejected",
+                        limit_basis=UPSTREAM_REQUEST_LIMIT_BASIS,
+                        limit_bytes=config.max_upstream_request_bytes,
+                        path=request_path,
+                        request_bytes=len(body),
+                        wire_request_bytes=len(upstream_body),
+                    )
+                    self._json(
+                        413,
+                        {
+                            "error": {
+                                "message": "encoded upstream request exceeds the configured wire byte limit",
+                                "type": "request_too_large",
+                                "code": "upstream_request_too_large",
+                            }
+                        },
+                    )
+                    return
                 headers = {
                     "Authorization": f"Bearer {config.upstream_api_key}",
                     "x-api-key": config.upstream_api_key,
@@ -615,6 +625,7 @@ if __name__ == "__main__":
 
 __all__ = [
     "ProxyConfig",
+    "UPSTREAM_REQUEST_LIMIT_BASIS",
     "build_parser",
     "load_proxy_config",
     "main",

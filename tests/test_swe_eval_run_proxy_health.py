@@ -45,6 +45,53 @@ def test_local_relay_health_accepts_v1_base(monkeypatch) -> None:
     assert captured["url"] == "http://127.0.0.1:8879/healthz"
 
 
+@pytest.mark.parametrize(
+    ("limit_basis", "expected"),
+    [(None, False), ("request_bytes", False), ("wire_bytes", True)],
+)
+def test_local_relay_health_requires_wire_byte_limit_contract(
+    monkeypatch, limit_basis, expected
+) -> None:
+    upstream = "https://api.example.invalid/v1"
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            payload = {
+                "kind": "authenticated_model_relay",
+                "aggregate_chat_stream": True,
+                "responses_passthrough": True,
+                "allow_insecure_upstream": False,
+                "direct_upstream": False,
+                "compact_tool_schemas": False,
+                "gzip_upstream_request": True,
+                "max_upstream_request_bytes": 8_500,
+                "upstream_timeout": 900.0,
+                "upstream_base_url_sha256": hashlib.sha256(upstream.encode()).hexdigest(),
+            }
+            if limit_basis is not None:
+                payload["upstream_request_limit_basis"] = limit_basis
+            return json.dumps(payload).encode()
+
+    monkeypatch.setattr(
+        swe_eval_run.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: Response(),
+    )
+
+    assert swe_eval_run._local_relay_healthy(
+        "http://127.0.0.1:8879/v1",
+        upstream,
+        gzip_upstream_request=True,
+        max_upstream_request_bytes=8_500,
+    ) is expected
+
+
 def test_relay_timeout_uses_the_single_runner_value() -> None:
     assert swe_eval_run._relay_upstream_timeout(["--llm-timeout", "21600"]) == 240.0
 

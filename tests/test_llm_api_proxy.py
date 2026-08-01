@@ -97,6 +97,7 @@ def test_proxy_health_and_authenticated_forwarding(relay: str) -> None:
     assert health["responses_passthrough"] is True
     assert health["allow_insecure_upstream"] is False
     assert health["direct_upstream"] is True
+    assert health["upstream_request_limit_basis"] == "wire_bytes"
     assert health["upstream_timeout"] == 5
     assert len(health["upstream_base_url_sha256"]) == 64
     request = urllib.request.Request(
@@ -280,11 +281,11 @@ def test_proxy_enforces_declared_upstream_request_limit_after_processing() -> No
     try:
         with pytest.raises(urllib.error.HTTPError) as caught:
             urllib.request.urlopen(request, timeout=2)
-        assert caught.value.code == 400
+        assert caught.value.code == 413
         assert json.load(caught.value)["error"] == {
-            "message": "request exceeds the configured context window byte limit",
-            "type": "invalid_request_error",
-            "code": "context_length_exceeded",
+            "message": "encoded upstream request exceeds the configured wire byte limit",
+            "type": "request_too_large",
+            "code": "upstream_request_too_large",
         }
         assert _UpstreamHandler.requests == []
     finally:

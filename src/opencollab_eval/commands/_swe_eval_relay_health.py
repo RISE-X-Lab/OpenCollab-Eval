@@ -70,6 +70,7 @@ def remote_proxy_healthy(
         "and v.get('compact_tool_schemas') is (sys.argv[4]=='1') "
         "and v.get('gzip_upstream_request') is (sys.argv[9]=='1') "
         "and v.get('max_upstream_request_bytes')==int(sys.argv[5]) "
+        "and (int(sys.argv[5])==0 or v.get('upstream_request_limit_basis')=='wire_bytes') "
         "and v.get('upstream_timeout')==float(sys.argv[7]) "
         "and v.get('upstream_base_url_sha256')==sys.argv[2] else 3)"
     )
@@ -151,6 +152,7 @@ def remote_proxy_socket_healthy(
             "assert value.get('compact_tool_schemas') is (compact == '1')",
             "assert value.get('gzip_upstream_request') is (gzip_request == '1')",
             "assert value.get('max_upstream_request_bytes') == int(max_bytes)",
+            "assert int(max_bytes) == 0 or value.get('upstream_request_limit_basis') == 'wire_bytes'",
             "assert value.get('upstream_timeout') == float(timeout)",
             "assert value.get('upstream_base_url_sha256') == expected",
         )
@@ -218,6 +220,10 @@ def local_relay_healthy(
             and payload.get("gzip_upstream_request") is gzip_upstream_request
             and payload.get("max_upstream_request_bytes")
             == max_upstream_request_bytes
+            and (
+                max_upstream_request_bytes == 0
+                or payload.get("upstream_request_limit_basis") == "wire_bytes"
+            )
             and payload.get("upstream_timeout") == upstream_timeout
             and payload.get("upstream_base_url_sha256") == expected
         )
