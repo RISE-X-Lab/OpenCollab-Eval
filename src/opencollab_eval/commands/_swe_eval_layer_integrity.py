@@ -74,6 +74,17 @@ def _empty_patch_integrity(row: dict[str, Any], task: str) -> AttemptIntegrity:
         reasons.append("empty_patch_workflow_status_invalid")
     if generation.get("submission_integrity") != "empty_patch_proven":
         reasons.append("empty_patch_integrity_unproven")
+    expected_model = str(generation.get("llm_model") or "")
+    if (
+        not expected_model
+        or generation.get("trajectory_models") != [expected_model]
+        or isinstance(generation.get("trajectory_llm_call_count"), bool)
+        or not isinstance(generation.get("trajectory_llm_call_count"), int)
+        or generation["trajectory_llm_call_count"] < 1
+        or not _full_sha(generation.get("trajectory_sha256"))
+        or generation.get("wire_protocol") not in {"chat_completions", "responses"}
+    ):
+        reasons.append("empty_patch_llm_execution_unproven")
     expected_integrity_fields = {
         "submission_eligible": False,
         "execution_quiesced": True,

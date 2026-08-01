@@ -487,15 +487,20 @@ def _pytest_collection_failure_proof_matches(
         return False
 
     def traceback_has(path):
+        escaped = re.escape(path)
         return re.search(
-            r"(?m)^(?:.*?/)?" + re.escape(path) + r":[0-9]+(?::|$)",
+            r"(?m)^(?:(?:.*?/)?"
+            + escaped
+            + r":[0-9]+(?::|$)|E\s+File [\"'](?:.*?/)?"
+            + escaped
+            + r"[\"'], line [0-9]+$)",
             log_text,
         ) is not None
 
     target_traceback = any(traceback_has(path) for path in target_files)
     semantic_exception = re.search(
         r"(?m)^(?:E\s+)?(?:AssertionError|AttributeError|ImportError|KeyError|"
-        r"ModuleNotFoundError|NameError|NotImplementedError|RuntimeError|"
+        r"IndentationError|ModuleNotFoundError|NameError|NotImplementedError|RuntimeError|"
         r"SyntaxError|TypeError|ValueError)(?::|$)",
         log_text,
     )
@@ -638,6 +643,7 @@ __all__ = [
     "_pytest_parameter_parent",
     "_pytest_structured_failure_proof_matches",
     "_pytest_structured_proof_matches",
+    "_pytest_structured_skip_proof_matches",
     "_pytest_target_matches_node",
     "_python_module_is_repo_local",
     "_python_repo_module_roots",

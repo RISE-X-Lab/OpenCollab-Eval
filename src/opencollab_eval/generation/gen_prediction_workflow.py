@@ -157,23 +157,23 @@ def _result_metrics(result) -> dict:
     }
 
 
-def _verified_provider_models(
+def _verified_llm_calls(
     trajectory_path: str | None,
     *,
     artifact_root: Path,
     expected_model: str,
     expected_reasoning_effort: str | None,
     wire_protocol: str,
-) -> tuple[list[str], str | None]:
-    if wire_protocol != "responses":
-        return [], None
+) -> tuple[list[str], list[str], str, int]:
+    if wire_protocol not in {"chat_completions", "responses"}:
+        raise RuntimeError(f"Unsupported trajectory wire protocol {wire_protocol!r}")
     if not trajectory_path:
-        raise RuntimeError("Responses execution did not produce a trajectory")
+        raise RuntimeError("LLM execution did not produce a trajectory")
     path = Path(trajectory_path)
     try:
         resolved = path.resolve(strict=True)
         if not resolved.is_relative_to(artifact_root.resolve(strict=True)):
-            raise RuntimeError("Responses trajectory is outside the current artifact root")
+            raise RuntimeError("LLM trajectory is outside the current artifact root")
         with open_regular_binary(path) as handle:
             before = os.fstat(handle.fileno())
             raw = handle.read(16 * 1024 * 1024 + 1)
@@ -187,40 +187,53 @@ def _verified_provider_models(
             after.st_mtime_ns,
             after.st_ctime_ns,
         ):
-            raise RuntimeError("Responses trajectory changed while reading")
+            raise RuntimeError("LLM trajectory changed while reading")
         if len(raw) > 16 * 1024 * 1024:
-            raise RuntimeError("Responses trajectory exceeds 16 MiB")
+            raise RuntimeError("LLM trajectory exceeds 16 MiB")
         lines = raw.decode("utf-8").splitlines()
     except (OSError, UnicodeDecodeError) as exc:
-        raise RuntimeError("Responses trajectory cannot be read") from exc
-    models: list[str] = []
+        raise RuntimeError("LLM trajectory cannot be read") from exc
+    requested_models: list[str] = []
+    provider_models: list[str] = []
     for line in lines:
         try:
             record = json.loads(line)
         except json.JSONDecodeError as exc:
-            raise RuntimeError("Responses trajectory contains invalid JSON") from exc
+            raise RuntimeError("LLM trajectory contains invalid JSON") from exc
         if not isinstance(record, dict) or record.get("type") != "llm_call":
             continue
         payload = record.get("payload")
         if not isinstance(payload, dict):
-            raise RuntimeError("Responses llm_call is missing its payload")
-        if payload.get("wire_protocol") != "responses":
-            raise RuntimeError("Responses trajectory contains a mixed wire protocol")
+            raise RuntimeError("LLM call is missing its payload")
+        observed_protocol = payload.get("wire_protocol")
+        if observed_protocol != wire_protocol:
+            raise RuntimeError("LLM trajectory contains a mixed wire protocol")
+        requested = payload.get("model")
+        if requested != expected_model:
+            raise RuntimeError(
+                f"LLM requested model mismatch expected {expected_model!r} got {requested!r}"
+            )
         observed = payload.get("provider_model")
         if observed != expected_model:
             raise RuntimeError(
-                f"Responses provider model mismatch expected {expected_model!r} got {observed!r}"
+                f"LLM provider model mismatch expected {expected_model!r} got {observed!r}"
             )
         observed_effort = payload.get("reasoning_effort")
-        if observed_effort != expected_reasoning_effort:
+        if wire_protocol == "responses" and observed_effort != expected_reasoning_effort:
             raise RuntimeError(
-                "Responses reasoning effort mismatch "
+                "LLM reasoning effort mismatch "
                 f"expected {expected_reasoning_effort!r} got {observed_effort!r}"
             )
-        models.append(observed)
-    if not models:
-        raise RuntimeError("Responses trajectory contains no verified LLM call")
-    return sorted(set(models)), hashlib.sha256(raw).hexdigest()
+        requested_models.append(requested)
+        provider_models.append(observed)
+    if not requested_models:
+        raise RuntimeError("LLM trajectory contains no verified LLM call")
+    return (
+        sorted(set(requested_models)),
+        sorted(set(provider_models)),
+        hashlib.sha256(raw).hexdigest(),
+        len(requested_models),
+    )
 
 
 def _workflow_status_for_result(result, patch: str) -> str:
@@ -384,7 +397,12 @@ async def generate(
             result.agent_failures
         )
         try:
-            provider_models, trajectory_sha256 = _verified_provider_models(
+            (
+                trajectory_models,
+                provider_models,
+                trajectory_sha256,
+                trajectory_llm_call_count,
+            ) = _verified_llm_calls(
                 result.trajectory_path,
                 artifact_root=workflow_log_dir / "trajectories" / task.task_id,
                 expected_model=cfg["model"],
@@ -393,8 +411,10 @@ async def generate(
             )
         except RuntimeError as exc:
             result.error = str(exc)
+            trajectory_models = []
             provider_models = []
             trajectory_sha256 = None
+            trajectory_llm_call_count = 0
         outer_extraction_allowed = bool(
             result.execution_quiesced
             and result.injected_path_cleanup_proven
@@ -426,8 +446,10 @@ async def generate(
         metrics.update(
             {
                 "llm_model": cfg["model"],
+                "trajectory_models": trajectory_models,
                 "provider_models": provider_models,
                 "trajectory_sha256": trajectory_sha256,
+                "trajectory_llm_call_count": trajectory_llm_call_count,
                 "llm_provider": cfg["provider"],
                 "wire_protocol": cfg.get("wire_protocol", "chat_completions"),
                 "reasoning_effort": cfg.get("reasoning_effort"),

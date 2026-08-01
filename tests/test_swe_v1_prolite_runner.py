@@ -778,14 +778,15 @@ def test_remote_runner_does_not_count_non_executed_eval_states():
     assert '"executed": False' in once_source
 
 
-def test_remote_runner_classifies_completed_empty_patch_as_solver_result():
+def test_remote_runner_rejects_empty_patch_without_verified_llm_call():
     result = remote_records.empty_patch_result(
         "task",
         {"instance_id": "task", "record_id": "r1", "model_patch": ""},
         {"workflow_status": "empty_patch_after_done"},
         "record_id",
     )
-    assert result["status"] == "empty_patch"
+    assert result["status"] == "generation_failed"
+    assert result["submission_integrity"] == "empty_patch_unproven"
     source = inspect.getsource(remote_generation.generation_for_task)
     assert '"phase": "empty_patch_retry"' in source
     assert "generation_identity_matches" in inspect.getsource(

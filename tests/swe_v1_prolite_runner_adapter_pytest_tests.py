@@ -7,6 +7,8 @@ import json
 
 from swe_v1_prolite_runner_test_support import _remote_namespace, pytest
 
+from opencollab_eval.engine import swe_v1_remote_test_plan as production_test_plan
+
 
 def _proof_text(events, *, returncode: int, command_sha256: str) -> str:
     raw = "".join(
@@ -333,6 +335,7 @@ def test_pytest_skip_evidence_is_not_counted_as_pass(tmp_path):
     )
 
     assert namespace["_plan_log_proof_matches"](proof, "1 skipped", skipped) is False
+    assert production_test_plan._plan_log_skip_proof_matches(proof, skipped) is True
 
 
 def test_parameter_parent_ignores_an_unrequested_skipped_sibling(tmp_path):
@@ -517,10 +520,39 @@ def test_collection_attribute_error_is_bound_to_candidate_module(tmp_path):
     assert namespace["_plan_log_failure_proof_matches"](
         proof, log, collection, command, command
     ) is False
-
     proof["candidate_source_paths"] = [
         "docs/examples/qutebrowser/config/configfiles.py"
     ]
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof, log, collection, command, command
+    ) is False
+
+
+def test_collection_indentation_error_is_bound_to_candidate_source(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    target = "openlibrary/tests/solr/test_update_work.py::test_update"
+    candidate = "openlibrary/solr/update_work.py"
+    plan = namespace["prolite_test_plan"](
+        {"repo_language": "python"},
+        [target],
+        candidate_source_paths=[candidate],
+    )
+    proof = plan["proofs"][0]
+    command = plan["commands"][0]
+    collection = _session([], command_sha256=proof["command_sha256"], exitstatus=4)
+    log = (
+        "ERROR collecting openlibrary/tests/solr/test_update_work.py\n"
+        "openlibrary/tests/solr/test_update_work.py:5: in <module>\n"
+        "    from openlibrary.solr import update_work\n"
+        "E     File \"/app/openlibrary/solr/update_work.py\", line 1171\n"
+        "E       docstring\n"
+        "E   IndentationError: unexpected indent\n"
+    )
+
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof, log, collection, command, command
+    ) is True
+    proof["candidate_source_paths"] = ["openlibrary/solr/other.py"]
     assert namespace["_plan_log_failure_proof_matches"](
         proof, log, collection, command, command
     ) is False

@@ -669,6 +669,12 @@ def test_report_reuse_accepts_only_a_production_proven_empty_patch(tmp_path):
         "test_patch_isolation_failed": False,
         "worktree_integrity_proven": True,
         "patch_produced": False,
+        "llm_model": "deepseek-v4-pro",
+        "trajectory_models": ["deepseek-v4-pro"],
+        "provider_models": ["deepseek-v4-pro"],
+        "trajectory_sha256": "b" * 64,
+        "trajectory_llm_call_count": 3,
+        "wire_protocol": "chat_completions",
         **trusted_patch_proof_fields(""),
     }
     prediction = {
@@ -703,6 +709,22 @@ def test_report_reuse_accepts_only_a_production_proven_empty_patch(tmp_path):
     missing_evidence = json.loads(json.dumps(summary))
     missing_evidence["rows"][0]["generation"].pop("execution_quiesced")
     assert module.report_is_reusable(missing_evidence, config, 51) is False
+
+    missing_call = json.loads(json.dumps(summary))
+    missing_call["rows"][0]["generation"]["trajectory_llm_call_count"] = 0
+    assert module.report_is_reusable(missing_call, config, 51) is False
+
+    zero_call_metric = {
+        **metric,
+        "trajectory_models": [],
+        "trajectory_sha256": None,
+        "trajectory_llm_call_count": 0,
+    }
+    zero_call = remote_records.empty_patch_result(
+        task, prediction, zero_call_metric, "record_id"
+    )
+    assert zero_call["status"] == "generation_failed"
+    assert zero_call["submission_integrity"] == "empty_patch_unproven"
 
     forged = {**summary, "rows": [dict(summary["rows"][0])]}
     forged["rows"][0]["generation"] = {
@@ -759,7 +781,6 @@ def test_run_one_does_not_rewrite_a_weak_legacy_empty_patch_report(tmp_path):
     original_text = json.dumps(legacy)
     report_path.write_text(original_text, encoding="utf-8")
     calls = 0
-
     def fake_run(command, **kwargs):
         nonlocal calls
         calls += 1
@@ -773,7 +794,6 @@ def test_run_one_does_not_rewrite_a_weak_legacy_empty_patch_report(tmp_path):
         result = module.run_one(config, 51)
     finally:
         module._run_task_process = original_run
-
     assert calls == 1
     assert result["completed"] is True
     assert result["reused_existing_report"] is False

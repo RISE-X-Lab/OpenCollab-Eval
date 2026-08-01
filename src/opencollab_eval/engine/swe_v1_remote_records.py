@@ -3,7 +3,7 @@
 # ruff: noqa: F403, F405
 
 from opencollab_eval.engine.swe_eval_records import SUBMISSION_INTEGRITY_PROVEN
-from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid
+from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid, generation_llm_calls_proven
 from opencollab_eval.engine.swe_v1_remote_core import *
 from opencollab_eval.engine.swe_v1_remote_state import *
 from opencollab_eval.patch_diff import *
@@ -459,6 +459,12 @@ GENERATION_INTEGRITY_FIELDS = (
     "checkpoint_result",
     "solver_git_snapshot",
     "trusted_patch_extraction",
+    "llm_model",
+    "trajectory_models",
+    "provider_models",
+    "trajectory_sha256",
+    "trajectory_llm_call_count",
+    "wire_protocol",
 )
 
 
@@ -504,10 +510,11 @@ def empty_patch_result(task, prediction, metric, pairing, **extra):
         and metric.get("test_patch_isolation_failed") is False
         and metric.get("worktree_integrity_proven") is True
         and metric.get("patch_produced") is False
+        and generation_llm_calls_proven(metric)
         and current_generation_proof_valid(metric, "")
     )
     result = {
-        "status": "empty_patch",
+        "status": "empty_patch" if empty_patch_integrity_proven else "generation_failed",
         "task": task,
         "pairing": pairing,
         "patch_len": len(prediction_patch(prediction)),
@@ -789,6 +796,4 @@ exit 2
         "details": result["stderr"] or result["stdout"],
         "container_cleanup": cleanup,
     }
-
-
 __all__ = [name for name in globals() if not name.startswith("__")]

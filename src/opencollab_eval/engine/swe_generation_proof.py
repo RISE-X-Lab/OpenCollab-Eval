@@ -389,6 +389,25 @@ def current_generation_proof_valid(metric: Any, patch: str) -> bool:
     )
 
 
+def generation_llm_calls_proven(metric: Any) -> bool:
+    """Require one identity-bound trajectory with the configured model."""
+    if not isinstance(metric, dict):
+        return False
+    model = metric.get("llm_model")
+    return bool(
+        isinstance(model, str)
+        and model
+        and metric.get("trajectory_models") == [model]
+        and metric.get("provider_models") == [model]
+        and isinstance(metric.get("trajectory_llm_call_count"), int)
+        and not isinstance(metric.get("trajectory_llm_call_count"), bool)
+        and metric["trajectory_llm_call_count"] > 0
+        and isinstance(metric.get("trajectory_sha256"), str)
+        and _SHA256_RE.fullmatch(metric["trajectory_sha256"])
+        and metric.get("wire_protocol") in {"chat_completions", "responses"}
+    )
+
+
 def current_generation_summary_proof_valid(metric: Any) -> bool:
     """Validate proof shape and patch identity in a report row without patch text."""
     if not isinstance(metric, dict):
@@ -418,6 +437,7 @@ __all__ = [
     "MAX_WORKSPACE_FILE_BYTES",
     "current_generation_proof_valid",
     "current_generation_summary_proof_valid",
+    "generation_llm_calls_proven",
     "preparation_input_valid",
     "solver_git_snapshot_valid",
     "trusted_patch_extraction_valid",

@@ -25,21 +25,23 @@ def test_responses_trajectory_binds_verified_provider_model(tmp_path):
         encoding="utf-8",
     )
 
-    models, digest = gpw._verified_provider_models(
+    requested, providers, digest, call_count = gpw._verified_llm_calls(
         str(trace),
         artifact_root=tmp_path,
         expected_model="gpt-requested",
         expected_reasoning_effort=None,
         wire_protocol="responses",
     )
-    assert models == ["gpt-requested"]
+    assert requested == ["gpt-requested"]
+    assert providers == ["gpt-requested"]
     assert len(digest) == 64
+    assert call_count == 1
 
     record = json.loads(trace.read_text(encoding="utf-8"))
     record["payload"]["provider_model"] = "gpt-other"
     trace.write_text(json.dumps(record) + "\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="provider model mismatch"):
-        gpw._verified_provider_models(
+        gpw._verified_llm_calls(
             str(trace),
             artifact_root=tmp_path,
             expected_model="gpt-requested",
@@ -48,18 +50,93 @@ def test_responses_trajectory_binds_verified_provider_model(tmp_path):
         )
 
 
+def test_chat_completions_trajectory_binds_requested_model_and_requires_a_call(
+    tmp_path,
+):
+    trace = tmp_path / "trajectory.jsonl"
+    trace.write_text(
+        json.dumps(
+            {
+                "type": "llm_call",
+                "payload": {
+                    "wire_protocol": "chat_completions",
+                    "model": "deepseek-v4-pro",
+                    "provider_model": "deepseek-v4-pro",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    requested, providers, digest, call_count = gpw._verified_llm_calls(
+        str(trace),
+        artifact_root=tmp_path,
+        expected_model="deepseek-v4-pro",
+        expected_reasoning_effort=None,
+        wire_protocol="chat_completions",
+    )
+    assert requested == ["deepseek-v4-pro"]
+    assert providers == ["deepseek-v4-pro"]
+    assert len(digest) == 64
+    assert call_count == 1
+
+    trace.write_text(
+        json.dumps({"type": "workflow_phase", "payload": {}}) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError, match="no verified LLM call"):
+        gpw._verified_llm_calls(
+            str(trace),
+            artifact_root=tmp_path,
+            expected_model="deepseek-v4-pro",
+            expected_reasoning_effort=None,
+            wire_protocol="chat_completions",
+        )
+
+
+@pytest.mark.parametrize("missing", ["wire_protocol", "provider_model"])
+def test_chat_completions_trajectory_requires_explicit_response_identity(
+    tmp_path, missing
+):
+    payload = {
+        "wire_protocol": "chat_completions",
+        "model": "deepseek-v4-pro",
+        "provider_model": "deepseek-v4-pro",
+    }
+    payload.pop(missing)
+    trace = tmp_path / "trajectory.jsonl"
+    trace.write_text(
+        json.dumps({"type": "llm_call", "payload": payload}) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="wire protocol|provider model"):
+        gpw._verified_llm_calls(
+            str(trace),
+            artifact_root=tmp_path,
+            expected_model="deepseek-v4-pro",
+            expected_reasoning_effort=None,
+            wire_protocol="chat_completions",
+        )
+
+
 @pytest.mark.parametrize(
     "payload,match",
     [
         (
-            {"wire_protocol": "chat_completions", "provider_model": "gpt-requested"},
+            {
+                "wire_protocol": "chat_completions",
+                "model": "gpt-requested",
+                "provider_model": "gpt-requested",
+            },
             "mixed wire protocol",
         ),
-        ({"provider_model": "gpt-requested"}, "mixed wire protocol"),
-        ({"wire_protocol": "responses"}, "provider model mismatch"),
+        ({"wire_protocol": "responses"}, "requested model mismatch"),
         (
             {
                 "wire_protocol": "responses",
+                "model": "gpt-requested",
                 "provider_model": "gpt-requested",
                 "reasoning_effort": "high",
             },
@@ -74,7 +151,7 @@ def test_responses_trajectory_rejects_incomplete_identity(tmp_path, payload, mat
         encoding="utf-8",
     )
     with pytest.raises(RuntimeError, match=match):
-        gpw._verified_provider_models(
+        gpw._verified_llm_calls(
             str(trace),
             artifact_root=tmp_path,
             expected_model="gpt-requested",
@@ -93,7 +170,7 @@ def test_responses_trajectory_rejects_external_and_symlinked_files(tmp_path):
 
     for path in (external, link):
         with pytest.raises(RuntimeError, match="outside|cannot be read"):
-            gpw._verified_provider_models(
+            gpw._verified_llm_calls(
                 str(path),
                 artifact_root=artifact_root,
                 expected_model="gpt-requested",

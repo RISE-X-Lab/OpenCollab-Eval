@@ -23,6 +23,20 @@ from opencollab_eval.engine.swe_generation_proof import current_generation_proof
 from opencollab_eval.runtime_config import resolve_runtime_config
 
 
+@pytest.fixture(autouse=True)
+def _verified_llm_trajectory(monkeypatch):
+    monkeypatch.setattr(
+        gpw,
+        "_verified_llm_calls",
+        lambda _path, *, expected_model, **_kwargs: (
+            [expected_model],
+            [],
+            "a" * 64,
+            1,
+        ),
+    )
+
+
 def test_generate_defers_container_patch_extraction(monkeypatch, tmp_path):
     captured = {}
 
