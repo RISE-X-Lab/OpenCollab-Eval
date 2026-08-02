@@ -249,10 +249,10 @@ async def test_happy_path_passes_first_round(validation_council_solve):
     coder_prompt = next(call["prompt"] for call in ctx.agent_calls if call["label"] == "coder:r1")
     assert "widget.py" in coder_prompt
     assert "Call one tool per turn" in coder_prompt
-    assert "Every file_read needs offset and limit at most 15" in coder_prompt
+    assert "Every file_read needs offset and limit at most 10" in coder_prompt
     assert "Search each named symbol once" in coder_prompt
-    assert "one adjacent window only if\ncut off" in coder_prompt
-    assert "Never scan a whole file or repeat a search" in coder_prompt
+    assert "continuing adjacent windows only\nuntil that definition ends" in coder_prompt
+    assert "Never scan unrelated code or repeat a search" in coder_prompt
     assert "After ten reads or searches" in coder_prompt
     assert "raw ---/+++/@@ text" in coder_prompt
     assert "never a\nBegin Patch" in coder_prompt
