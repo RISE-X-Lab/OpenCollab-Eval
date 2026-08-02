@@ -50,7 +50,7 @@ def test_wait_for_terminal_summary_survives_a_transport_outage(monkeypatch):
     observations = iter(
         [
             None,
-            {"runner_state": "alive", "summary": {"status": "running"}},
+            None,
             {"runner_state": "dead", "summary": {"status": "done"}},
         ]
     )
@@ -77,6 +77,32 @@ def test_wait_for_terminal_summary_survives_a_transport_outage(monkeypatch):
     )
 
     assert summary == {"status": "done"}
+
+
+def test_wait_for_terminal_summary_stops_after_repeated_probe_failures(monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr(
+        runner, "probe_remote_execution_state", lambda **kwargs: None
+    )
+    monkeypatch.setattr(runner.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        runner.time,
+        "sleep",
+        lambda seconds: clock.__setitem__(0, clock[0] + seconds),
+    )
+
+    summary = runner.wait_for_terminal_remote_summary(
+        ssh_command=["ssh"],
+        host="example",
+        base_run_dir="/remote/run",
+        remote_runtime_repo="/remote/runtime",
+        owner_nonce="a" * 32,
+        payload={},
+        deadline=300_000,
+    )
+
+    assert summary is None
+    assert clock[0] == runner.REMOTE_COMPLETION_POLL_SECONDS * 2
 
 
 def test_run_remote_recovers_after_primary_ssh_transport_loss(monkeypatch):
@@ -109,3 +135,24 @@ def test_run_remote_recovers_after_primary_ssh_transport_loss(monkeypatch):
     assert cleanup_calls == []
     assert summary["status"] == "done"
     assert summary["remote_transport"]["reason"] == "primary_transport_lost"
+
+
+def test_run_remote_keeps_primary_transport_during_side_probe_outage(monkeypatch):
+    class ExitedProcess:
+        pid = 4321
+        returncode = 0
+
+    monkeypatch.setattr(runner.subprocess, "Popen", lambda *args, **kwargs: ExitedProcess())
+    monkeypatch.setattr(runner, "probe_remote_execution_state", lambda **kwargs: None)
+
+    def unavailable_side_probes(*args, poll_callback, **kwargs):
+        for _ in range(4):
+            poll_callback()
+        return '{"status":"done"}', ""
+
+    monkeypatch.setattr(runner, "_bounded_remote_communicate", unavailable_side_probes)
+    monkeypatch.setattr(runner, "_local_process_group_exists", lambda pid: False)
+
+    summary = runner.run_remote(_eval_only_args())
+
+    assert summary["status"] == "done"

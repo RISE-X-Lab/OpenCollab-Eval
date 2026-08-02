@@ -22,6 +22,7 @@ from opencollab_eval.commands.swe_v1_parent_eval_lock import (
 from opencollab_eval.commands.swe_v1_prolite_common import (
     LOCAL_SPAWN_SIGNALS,
     MAX_TOTAL_EVAL_ATTEMPTS,
+    REMOTE_COMPLETION_MAX_CONSECUTIVE_PROBE_FAILURES,
     REMOTE_COMPLETION_POLL_SECONDS,
     REMOTE_COMPLETION_PROBE_TIMEOUT_SECONDS,
     REMOTE_TERMINAL_STATUSES,
@@ -203,6 +204,7 @@ def wait_for_terminal_remote_summary(
     remote_python: str = "python3",
 ) -> dict[str, Any] | None:
     """Wait through a transport outage without starting or stopping the remote run."""
+    consecutive_probe_failures = 0
     while True:
         observed = probe_remote_execution_state(
             ssh_command=ssh_command,
@@ -212,7 +214,15 @@ def wait_for_terminal_remote_summary(
             remote_python=remote_python,
             owner_nonce=owner_nonce,
         )
-        if observed is not None:
+        if observed is None:
+            consecutive_probe_failures += 1
+            if (
+                consecutive_probe_failures
+                >= REMOTE_COMPLETION_MAX_CONSECUTIVE_PROBE_FAILURES
+            ):
+                return None
+        else:
+            consecutive_probe_failures = 0
             state = observed.get("runner_state")
             summary = observed.get("summary")
             if state in {"dead", "identity_mismatch"}:
