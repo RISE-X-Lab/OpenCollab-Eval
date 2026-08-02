@@ -100,6 +100,7 @@ def test_workflow_env_accepts_sampling_settings_and_rejects_secrets():
             "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES=0",
             "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY=1",
             "OPENCOLLAB_EAGER_TOOL_KEEP_RECENT=1",
+            "OPENCOLLAB_HISTORY_KEEP_RECENT_GROUPS=1",
             "OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS=1200",
         ]
     ) == {
@@ -108,6 +109,7 @@ def test_workflow_env_accepts_sampling_settings_and_rejects_secrets():
         "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES": "0",
         "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY": "1",
         "OPENCOLLAB_EAGER_TOOL_KEEP_RECENT": "1",
+        "OPENCOLLAB_HISTORY_KEEP_RECENT_GROUPS": "1",
         "OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS": "1200",
     }
     with pytest.raises(ValueError, match="unsupported --workflow-env"):
@@ -156,6 +158,7 @@ def test_remote_runner_accepts_bounded_repository_map_setting():
             "workflow_env": {
                 "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES": "0",
                 "OPENCOLLAB_EAGER_TOOL_KEEP_RECENT": "1",
+                "OPENCOLLAB_HISTORY_KEEP_RECENT_GROUPS": "1",
                 "OPENCOLLAB_LLM_USER_AGENT": "compatible-client/1.0",
                 "OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS": "1200",
             },
@@ -182,6 +185,7 @@ def test_remote_runner_accepts_bounded_repository_map_setting():
     assert remote_state.workflow_env == {
         "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES": "0",
         "OPENCOLLAB_EAGER_TOOL_KEEP_RECENT": "1",
+        "OPENCOLLAB_HISTORY_KEEP_RECENT_GROUPS": "1",
         "OPENCOLLAB_LLM_USER_AGENT": "compatible-client/1.0",
         "OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS": "1200",
     }
