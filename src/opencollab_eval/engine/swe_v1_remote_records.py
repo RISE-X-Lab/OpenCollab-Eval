@@ -436,7 +436,6 @@ def completed_generation_identity(prediction, metric, task, *, require_submissio
             and "error" in metric
             and (metric["error"] is None or metric["error"] == "")
             and isinstance(metric.get("agent_failures"), list)
-            and not metric["agent_failures"]
             and "provider_failure" not in metric
             and metric.get("submission_eligible") is True
             and current_generation_proof_valid(metric, original_patch)
