@@ -99,6 +99,7 @@ def test_workflow_env_accepts_sampling_settings_and_rejects_secrets():
             "OPENCOLLAB_MAX_OUTPUT_TOKENS=32768",
             "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES=0",
             "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY=1",
+            "OPENCOLLAB_EAGER_TOOL_KEEP_RECENT=1",
             "OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS=1200",
         ]
     ) == {
@@ -106,6 +107,7 @@ def test_workflow_env_accepts_sampling_settings_and_rejects_secrets():
         "OPENCOLLAB_MAX_OUTPUT_TOKENS": "32768",
         "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES": "0",
         "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY": "1",
+        "OPENCOLLAB_EAGER_TOOL_KEEP_RECENT": "1",
         "OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS": "1200",
     }
     with pytest.raises(ValueError, match="unsupported --workflow-env"):

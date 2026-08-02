@@ -306,7 +306,7 @@ def test_workflow_env_is_validated_and_forwarded():
     expected = (
         "OPENCOLLAB_TEMPERATURE=1",
         "OPENCOLLAB_TOP_P=1",
-        "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY=1",
+        "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY=1", "OPENCOLLAB_EAGER_TOOL_KEEP_RECENT=1",
         "OPENCOLLAB_LLM_USER_AGENT=compatible-client/1.0", "OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS=1200",
     )
     config = module.resolve_config(_args(workflow_env=list(expected)))
