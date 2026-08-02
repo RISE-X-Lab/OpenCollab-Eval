@@ -132,6 +132,7 @@ async def _run_attempt(
     injected_test_paths: list[str],
 ) -> dict[str, Any]:
     feedback_block = FEEDBACK_BLOCK.format(feedback=_clip(feedback, 220)) if feedback else ""
+    failures_before = len(getattr(ctx, "agent_failures", ()))
     coder_report = await _required_agent(
         ctx,
         CODER_PROMPT.format(
@@ -147,6 +148,14 @@ async def _run_attempt(
     )
     source_changed = await _source_diff_present(ctx, injected_test_paths)
     if source_changed is False:
+        failures = getattr(ctx, "agent_failures", ())
+        if len(failures) > failures_before:
+            failure = failures[-1]
+            raise RuntimeError(
+                "coder session failed before producing a source diff "
+                f"({failure.get('exception_type', 'unknown provider error')}, "
+                f"status={failure.get('status_code')})"
+            )
         no_diff_verdict = {
             "verdict": "FAIL",
             "findings": (

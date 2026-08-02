@@ -22,6 +22,7 @@ class ScriptedCtx:
         self.agent_calls: list[dict[str, Any]] = []
         self.phases: list[str] = []
         self.logs: list[str] = []
+        self.agent_failures: tuple[dict[str, Any], ...] = ()
 
     def tokens_spent(self) -> int:
         return 123
@@ -247,15 +248,44 @@ async def test_happy_path_passes_first_round(validation_council_solve):
     assert "do not search for write tools" in all_prompts
     coder_prompt = next(call["prompt"] for call in ctx.agent_calls if call["label"] == "coder:r1")
     assert "widget.py" in coder_prompt
-    assert "next call must read at most 20 lines" in coder_prompt
-    assert "read the next adjacent 20" in coder_prompt
-    assert "lines instead of searching again" in coder_prompt
-    assert "Use one\nfocused tool call per turn" in coder_prompt
-    assert "never repeat a successful search" in coder_prompt
+    assert "Never read a\nwhole file" in coder_prompt
+    assert "Every file_read must set offset and limit at most 20" in coder_prompt
+    assert "Call exactly\none tool per turn" in coder_prompt
+    assert "adjacent 20-line windows instead of searching again" in coder_prompt
+    assert "Never repeat a successful\nsearch" in coder_prompt
     assert "raw ---/+++/@@ text" in coder_prompt
     assert "never a Begin Patch" in coder_prompt
     assert "file_write for one unique replacement" in coder_prompt
     assert len(coder_prompt.encode()) < 850
+
+
+async def test_coder_provider_failure_without_diff_aborts_for_technical_retry(
+    validation_council_solve,
+):
+    class FailingCoderCtx(NoSourceDiffCtx):
+        coder_spent = False
+
+        def tokens_spent(self) -> int:
+            return 124 if self.coder_spent else 123
+
+        async def agent(self, prompt, *, label=None, **kwargs):
+            result = await super().agent(prompt, label=label, **kwargs)
+            if label == "coder:r1":
+                self.coder_spent = True
+                self.agent_failures = (
+                    {
+                        "label": label,
+                        "exception_type": "APITimeoutError",
+                        "status_code": 408,
+                        "provider_error_type": None,
+                    },
+                )
+            return result
+
+    ctx = FailingCoderCtx([LOCALIZATION, CONTRACTS, CARTOGRAPHY, CANDIDATES, JUDGE, TRIAGE, None])
+
+    with pytest.raises(RuntimeError, match="coder session failed before producing a source diff"):
+        await validation_council_solve(ctx, {"description": "fix empty widget"})
 
 
 async def test_every_role_receives_the_complete_public_task_specification(
