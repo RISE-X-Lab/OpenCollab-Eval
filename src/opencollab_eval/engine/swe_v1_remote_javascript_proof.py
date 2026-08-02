@@ -50,6 +50,42 @@ def _js_test_patch_files(row):
     return files
 
 
+def _js_candidate_module_bindings(candidate_patch, candidate_source_paths):
+    def line_modules(source):
+        static = re.match(
+            r"\s*(?:import|export)\s+(?:.*?\s+from\s+)?['\"]([^'\"]+)['\"]",
+            source,
+        )
+        calls = re.findall(
+            r"\b(?:require|import)\(\s*['\"]([^'\"]+)['\"]\s*\)",
+            source,
+        )
+        return ([static.group(1)] if static else []) + calls
+
+    candidate_paths = set(candidate_source_paths or [])
+    bindings = []
+    for block in split_patch_blocks(str(candidate_patch or "")):
+        path = patch_block_target_path(block)
+        if path not in candidate_paths:
+            continue
+        added_modules = []
+        removed_modules = set()
+        for line in block:
+            if not line or line[0] not in "+-" or line.startswith(("+++", "---")):
+                continue
+            for module in line_modules(line[1:]):
+                if not module or len(module.encode("utf-8")) > 4096:
+                    continue
+                if line[0] == "-":
+                    removed_modules.add(module)
+                elif module not in added_modules:
+                    added_modules.append(module)
+        modules = [module for module in added_modules if module not in removed_modules]
+        if modules:
+            bindings.append({"path": path, "modules": modules})
+    return bindings
+
+
 def _js_suite_load_failure_proof_matches(
     proof,
     log_text,
@@ -186,26 +222,34 @@ def _js_candidate_failure_proof_matches(
         and result.get("status") == "failed"
         and any(_js_path_matches(result.get("name"), suite) for suite in target_suites)
     ]
-    error_markers = (
-        "Cannot find module",
-        "ReferenceError",
-        "SyntaxError",
-        "TypeError",
-        "Test suite failed to run",
-    )
+    module_bindings = proof.get("candidate_module_bindings")
+
+    def candidate_failure_in(message):
+        missing = re.search(
+            r"Cannot find module ['\"]([^'\"]+)['\"] from ['\"]([^'\"]+)['\"]",
+            message,
+        )
+        if missing:
+            return any(
+                isinstance(binding, dict)
+                and missing.group(1) in (binding.get("modules") or [])
+                and _js_path_matches(binding.get("path"), missing.group(2))
+                for binding in module_bindings or []
+            )
+        return any(path in message for path in candidate_paths) and any(
+            marker in message for marker in ("ReferenceError", "SyntaxError", "TypeError")
+        )
+
     return bool(
         messages
-        and any(
-            any(path in message for path in candidate_paths)
-            and any(marker in message for marker in error_markers)
-            for message in messages
-        )
+        and any(candidate_failure_in(message) for message in messages)
     )
 
 
 
 
 __all__ = [
+    "_js_candidate_module_bindings",
     "_js_candidate_failure_proof_matches",
     "_js_path_matches",
     "_js_suite_load_failure_proof_matches",

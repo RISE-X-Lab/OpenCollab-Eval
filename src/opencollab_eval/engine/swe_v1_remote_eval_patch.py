@@ -71,13 +71,13 @@ def verified_plan_patch_selection(row, prediction, metric):
         row,
         fail_to_pass,
         target_file="/eval_input/f2p.targets.json",
-        candidate_source_paths=candidate_source_paths,
+        candidate_source_paths=candidate_source_paths, candidate_patch=eval_model_patch(prediction),
     )
     p2p_plan = prolite_test_plan(
         row,
         pass_to_pass,
         target_file="/eval_input/p2p.targets.json",
-        candidate_source_paths=candidate_source_paths,
+        candidate_source_paths=candidate_source_paths, candidate_patch=eval_model_patch(prediction),
     )
     if not f2p_plan["coverage_verified"] or (
         pass_to_pass and not p2p_plan["coverage_verified"]

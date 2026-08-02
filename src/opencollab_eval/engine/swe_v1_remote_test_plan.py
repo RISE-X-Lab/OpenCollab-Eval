@@ -204,6 +204,7 @@ def prolite_test_plan(
     max_chars=24000,
     target_file="",
     candidate_source_paths=None,
+    candidate_patch="",
 ):
     language = str(row.get("repo_language") or "").lower()
     repo = str(row.get("repo") or "").lower()
@@ -357,6 +358,12 @@ def prolite_test_plan(
         }
         if candidate_source_paths:
             proof["candidate_source_paths"] = list(candidate_source_paths)
+            module_bindings = _js_candidate_module_bindings(
+                candidate_patch,
+                candidate_source_paths,
+            )
+            if module_bindings:
+                proof["candidate_module_bindings"] = module_bindings
         if files != declared_js_test_files(tests):
             proof["selected_test_files"] = selected
             proof["test_patch_files"] = test_patch_files

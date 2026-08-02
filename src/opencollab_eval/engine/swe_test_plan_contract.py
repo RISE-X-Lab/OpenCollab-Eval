@@ -335,6 +335,39 @@ def _valid_candidate_source_paths(value: Any) -> bool:
     return True
 
 
+def _valid_candidate_module_bindings(value: Any, candidate_paths: Any) -> bool:
+    if not isinstance(value, list) or not value or len(value) > 1024:
+        return False
+    if not isinstance(candidate_paths, list):
+        return False
+    paths = []
+    for binding in value:
+        if not isinstance(binding, dict) or set(binding) != {"path", "modules"}:
+            return False
+        path, modules = binding["path"], binding["modules"]
+        if (
+            path not in candidate_paths
+            or path in paths
+            or not isinstance(modules, list)
+            or not modules
+            or len(modules) > 256
+            or len(set(modules)) != len(modules)
+            or any(
+                not isinstance(module, str)
+                or not module
+                or len(module.encode("utf-8")) > 4096
+                or any(
+                    unicodedata.category(character).startswith("C")
+                    for character in module
+                )
+                for module in modules
+            )
+        ):
+            return False
+        paths.append(path)
+    return True
+
+
 def _valid_javascript_plan(plan: dict[str, Any]) -> bool:
     if (
         plan["target_batches"] != [plan["declared_targets"]]
@@ -358,6 +391,7 @@ def _valid_javascript_plan(plan: dict[str, Any]) -> bool:
             "test_files",
             "target_file",
             "candidate_source_paths",
+            "candidate_module_bindings",
         }
     ):
         return False
@@ -368,6 +402,7 @@ def _valid_javascript_plan(plan: dict[str, Any]) -> bool:
     language = proof.get("repo_language")
     repo = proof.get("repo")
     candidate_paths = proof.get("candidate_source_paths")
+    candidate_module_bindings = proof.get("candidate_module_bindings")
     if (
         not declared_files
         or not isinstance(test_files, list)
@@ -394,6 +429,8 @@ def _valid_javascript_plan(plan: dict[str, Any]) -> bool:
         or repo != repo.strip().lower()
         or candidate_paths is not None
         and not _valid_candidate_source_paths(candidate_paths)
+        or candidate_module_bindings is not None
+        and not _valid_candidate_module_bindings(candidate_module_bindings, candidate_paths)
     ):
         return False
     adapter = plan["adapter"]
