@@ -261,6 +261,7 @@ def test_claude_code_entry_has_single_attempt_external_solver_defaults(
             captured["argv"] = list(sys.argv)
             return 0
     monkeypatch.setattr(module, "_load_module", lambda name: FakeRunner)
+    monkeypatch.setattr(module, "_require_claude_code_configuration", lambda **kwargs: None)
     assert module.main(
         [
             "--indices",

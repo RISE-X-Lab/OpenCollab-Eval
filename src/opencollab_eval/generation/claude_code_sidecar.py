@@ -17,6 +17,38 @@ SOLVER = "claude-code"
 EXPECTED_MODEL = "glm-5.2"
 EXPECTED_CLI_VERSION = "2.1.175"
 MAX_STREAM_BYTES = 512 * 1024 * 1024
+RUNTIME_ENV_KEYS = (
+    "OPENCOLLAB_CLAUDE_EXPECTED_MODEL",
+    "OPENCOLLAB_CLAUDE_EXPECTED_VERSION",
+    "OPENCOLLAB_CLAUDE_RUNTIME_IMAGE",
+    "OPENCOLLAB_CLAUDE_RUNTIME_IMAGE_ID",
+)
+
+
+def validate_runtime_workflow_settings(values: list[str]) -> dict[str, str]:
+    settings: dict[str, str] = {}
+    for value in values:
+        name, separator, configured = value.partition("=")
+        if not separator or name not in RUNTIME_ENV_KEYS:
+            continue
+        if name in settings:
+            raise ValueError(f"claude-code requires exactly one {name} workflow setting")
+        settings[name] = configured.strip()
+    missing = sorted(set(RUNTIME_ENV_KEYS) - set(settings))
+    if missing:
+        raise ValueError("claude-code requires workflow settings: " + ", ".join(missing))
+    expected = {
+        "OPENCOLLAB_CLAUDE_EXPECTED_MODEL": EXPECTED_MODEL,
+        "OPENCOLLAB_CLAUDE_EXPECTED_VERSION": EXPECTED_CLI_VERSION,
+    }
+    for name, value in expected.items():
+        if settings[name] != value:
+            raise ValueError(f"claude-code requires {name}={value}")
+    if not settings["OPENCOLLAB_CLAUDE_RUNTIME_IMAGE"]:
+        raise ValueError("claude-code requires a non-empty runtime image")
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", settings["OPENCOLLAB_CLAUDE_RUNTIME_IMAGE_ID"]) is None:
+        raise ValueError("claude-code requires an immutable runtime image SHA-256")
+    return settings
 
 
 def _sha256(path: Path) -> str:

@@ -272,6 +272,10 @@ def configure(config: dict[str, Any]) -> None:
         "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT",
         "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT",
         "OPENCOLLAB_LLM_USER_AGENT",
+        "OPENCOLLAB_CLAUDE_EXPECTED_MODEL",
+        "OPENCOLLAB_CLAUDE_EXPECTED_VERSION",
+        "OPENCOLLAB_CLAUDE_RUNTIME_IMAGE",
+        "OPENCOLLAB_CLAUDE_RUNTIME_IMAGE_ID",
     }
     unsupported_workflow_env = sorted(set(workflow_env) - allowed_workflow_env)
     if unsupported_workflow_env:

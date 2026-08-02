@@ -99,7 +99,6 @@ def test_run_openhands_passes_effective_runtime_settings(
         f"/trusted/runs/{leaked_id}/workflow_logs",
     )
     monkeypatch.setenv("SWE_TASK_ID", leaked_id)
-
     _install_fake_openhands_process(
         monkeypatch,
         stdout="done",
