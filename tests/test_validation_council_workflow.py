@@ -248,14 +248,15 @@ async def test_happy_path_passes_first_round(validation_council_solve):
     assert "do not search for write tools" in all_prompts
     coder_prompt = next(call["prompt"] for call in ctx.agent_calls if call["label"] == "coder:r1")
     assert "widget.py" in coder_prompt
-    assert "Never read a\nwhole file" in coder_prompt
-    assert "Every file_read must set offset and limit at most 15" in coder_prompt
-    assert "Call exactly\none tool per turn" in coder_prompt
-    assert "adjacent 15-line windows instead of searching again" in coder_prompt
-    assert "Never repeat a successful\nsearch" in coder_prompt
+    assert "Call one tool per turn" in coder_prompt
+    assert "Every file_read needs offset and limit at most 15" in coder_prompt
+    assert "Search each named symbol once" in coder_prompt
+    assert "one adjacent window only if\ncut off" in coder_prompt
+    assert "Never scan a whole file or repeat a search" in coder_prompt
+    assert "After ten reads or searches" in coder_prompt
     assert "raw ---/+++/@@ text" in coder_prompt
-    assert "never a Begin Patch" in coder_prompt
-    assert "file_write for one unique replacement" in coder_prompt
+    assert "never a\nBegin Patch" in coder_prompt
+    assert "file_write for one\nunique replacement" in coder_prompt
     assert len(coder_prompt.encode()) < 850
 
 

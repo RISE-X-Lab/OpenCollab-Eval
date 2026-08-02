@@ -399,15 +399,13 @@ Accepted validation:
 {judge}"""
 
 CODER_PROMPT = """\
-Coder. Inspect localized files and make the smallest source fix. Never read a
-whole file. Every file_read must set offset and limit at most 15. Call exactly
-one tool per turn. After a search hit, read that exact path and continue with
-adjacent 15-line windows instead of searching again. Never repeat a successful
-search. When the issue names classes, inspect each matched definition. Use an
-exact path from tool evidence. Use file_write for one unique replacement. For
-multi-site edits use apply_patch with raw ---/+++/@@ text, never a Begin Patch
-wrapper. End after applying a nonempty source diff. A separate verifier runs
-tests.
+Coder. Make the smallest source fix in localized files. Call one tool per turn.
+Every file_read needs offset and limit at most 15. Search each named symbol once.
+Read its definition, needed imports or types, and one adjacent window only if
+cut off. Never scan a whole file or repeat a search. After ten reads or searches,
+edit using gathered evidence. Use an evidenced path. Use file_write for one
+unique replacement; otherwise use apply_patch with raw ---/+++/@@ text, never a
+Begin Patch wrapper. Stop after a nonempty source diff. A verifier runs tests.
 
 Goal:
 {goal}
