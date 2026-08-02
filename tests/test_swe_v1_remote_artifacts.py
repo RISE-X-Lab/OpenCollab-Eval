@@ -2,6 +2,18 @@ from __future__ import annotations
 
 from swe_v1_prolite_runner_test_support import Path, _remote_namespace
 
+from opencollab_eval.engine.swe_v1_remote_test_plan import _plan_log_skip_proof_matches
+
+
+def test_pytest_skip_proof_dispatch_is_importable():
+    proof = {
+        "kind": "pytest_structured_reports",
+        "targets": ["tests/test_widget.py::test_widget"],
+        "command_sha256": "a" * 64,
+    }
+
+    assert _plan_log_skip_proof_matches(proof, "") is False
+
 
 def test_eval_output_publisher_rejects_oversize_and_write_failure(monkeypatch, tmp_path):
     namespace = _remote_namespace(tmp_path)
