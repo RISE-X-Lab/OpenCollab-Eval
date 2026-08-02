@@ -496,9 +496,7 @@ def _read_tools() -> list[Any]:
 
 
 def _coder_tools() -> list[Any]:
-    return toolset(
-        "bash", "file_read", "file_write", "apply_patch", "run_tests", "grep"
-    )
+    return toolset("file_read", "file_write", "apply_patch", "grep")
 
 
 def _tester_tools() -> list[Any]:

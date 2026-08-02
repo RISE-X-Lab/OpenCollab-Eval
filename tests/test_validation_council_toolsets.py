@@ -45,14 +45,7 @@ def test_validation_council_risk_tools_can_read_the_diff():
 def test_validation_council_coder_tools_keep_edit_path():
     names = _names(_workflow_globals()["_coder_tools"]())
 
-    assert names == [
-        "bash",
-        "file_read",
-        "file_write",
-        "apply_patch",
-        "run_tests",
-        "grep",
-    ]
+    assert names == ["file_read", "file_write", "apply_patch", "grep"]
 
 
 def test_validation_council_shared_rules_are_compact_and_keep_integrity_guards():
