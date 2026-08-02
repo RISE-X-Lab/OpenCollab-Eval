@@ -400,9 +400,9 @@ Accepted validation:
 
 CODER_PROMPT = """\
 Coder. Inspect localized files and make the smallest source fix. Never read a
-whole file. Every file_read must set offset and limit at most 20. Call exactly
+whole file. Every file_read must set offset and limit at most 15. Call exactly
 one tool per turn. After a search hit, read that exact path and continue with
-adjacent 20-line windows instead of searching again. Never repeat a successful
+adjacent 15-line windows instead of searching again. Never repeat a successful
 search. When the issue names classes, inspect each matched definition. Use an
 exact path from tool evidence. Use file_write for one unique replacement. For
 multi-site edits use apply_patch with raw ---/+++/@@ text, never a Begin Patch
