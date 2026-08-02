@@ -42,6 +42,16 @@ class ScriptedCtx:
         self.logs.append(message)
 
 
+class NoSourceDiffCtx(ScriptedCtx):
+    def __init__(self, replies: list[Any]) -> None:
+        super().__init__(replies)
+        self.source_diff_checks: list[list[str]] = []
+
+    async def source_changed(self, exclude_paths: list[str]) -> bool:
+        self.source_diff_checks.append(list(exclude_paths))
+        return False
+
+
 LOCALIZATION = {
     "summary": "empty widget crashes",
     "root_cause_hypothesis": "parse misses empty input",
@@ -392,6 +402,31 @@ async def test_failed_final_verifier_allows_three_coder_rounds(validation_counci
     assert any("attempt 1 failed" in message for message in ctx.logs)
     assert any("attempt 2 failed" in message for message in ctx.logs)
     assert len(result["attempts"]) == 3
+
+
+async def test_empty_coder_diff_skips_model_validators_and_retries_coder(
+    validation_council_solve,
+):
+    ctx = NoSourceDiffCtx(
+        [LOCALIZATION, CONTRACTS, CARTOGRAPHY, CANDIDATES, JUDGE, TRIAGE]
+        + ["coder produced no source changes"] * 3
+    )
+
+    result = await validation_council_solve(
+        ctx,
+        {"goal": "fix empty widget", "injected_test_paths": ["tests/injected.py"]},
+    )
+
+    labels = [call["label"] for call in ctx.agent_calls]
+    assert result["status"] == "incomplete"
+    assert result["rounds"] == 3
+    assert labels[-3:] == ["coder:r1", "coder:r2", "coder:r3"]
+    assert not any(label.startswith("patch-validator:") for label in labels)
+    assert ctx.source_diff_checks == [["tests/injected.py"]] * 3
+    assert all(
+        "no tracked source changes" in attempt["final_verdict"]["findings"]
+        for attempt in result["attempts"]
+    )
 
 
 async def test_blocked_patch_validator_short_circuits_retry(validation_council_solve):

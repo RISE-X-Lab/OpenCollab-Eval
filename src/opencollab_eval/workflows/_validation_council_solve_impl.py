@@ -145,6 +145,28 @@ async def _run_attempt(
         tools=_coder_tools(),
         timeout=coder_role_timeout_seconds(),
     )
+    source_changed = await _source_diff_present(ctx, injected_test_paths)
+    if source_changed is False:
+        no_diff_verdict = {
+            "verdict": "FAIL",
+            "findings": (
+                "Executable diff guard failed immediately after the coder: "
+                "git status reports no tracked source changes after excluding "
+                "injected validation files."
+            ),
+            "allowed_patch_paths": [],
+            "disallowed_patch_paths": [],
+        }
+        return {
+            "attempt": attempt,
+            "coder_report": coder_report or "",
+            "patch_verdict": no_diff_verdict,
+            "diff_risks": EMPTY_DIFF_RISKS,
+            "post_candidates": EMPTY_POST_CANDIDATES,
+            "post_judge": EMPTY_POST_JUDGE,
+            "post_triage": EMPTY_POST_TRIAGE,
+            "final_verdict": no_diff_verdict,
+        }
     patch_verdict = await _required_agent(
         ctx,
         PATCH_VALIDATOR_PROMPT.format(
