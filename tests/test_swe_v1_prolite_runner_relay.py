@@ -155,6 +155,7 @@ def test_remote_runner_accepts_bounded_repository_map_setting():
             "workflow": "validation-council-solve",
             "workflow_env": {
                 "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES": "0",
+                "OPENCOLLAB_EAGER_TOOL_KEEP_RECENT": "1",
                 "OPENCOLLAB_LLM_USER_AGENT": "compatible-client/1.0",
                 "OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS": "1200",
             },
@@ -180,6 +181,7 @@ def test_remote_runner_accepts_bounded_repository_map_setting():
 
     assert remote_state.workflow_env == {
         "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES": "0",
+        "OPENCOLLAB_EAGER_TOOL_KEEP_RECENT": "1",
         "OPENCOLLAB_LLM_USER_AGENT": "compatible-client/1.0",
         "OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS": "1200",
     }

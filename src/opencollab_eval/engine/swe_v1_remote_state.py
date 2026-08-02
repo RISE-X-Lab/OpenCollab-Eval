@@ -260,6 +260,7 @@ def configure(config: dict[str, Any]) -> None:
     allowed_workflow_env = {
         "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES",
         "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY",
+        "OPENCOLLAB_EAGER_TOOL_KEEP_RECENT",
         "OPENCOLLAB_MAX_OUTPUT_TOKENS",
         "OPENCOLLAB_TEMPERATURE",
         "OPENCOLLAB_THINKING",
