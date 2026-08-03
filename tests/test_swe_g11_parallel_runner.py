@@ -141,7 +141,7 @@ def _production_row(index: int, task: str, *, openhands: bool = False) -> dict:
         "test_patch_isolation_failed": False,
         "worktree_integrity_proven": True,
         "patch_produced": True,
-        **proof_support.trusted_patch_proof_fields(patch),
+        **proof_support.llm_call_proof_fields(), **proof_support.trusted_patch_proof_fields(patch),
     }
     prediction = {
         "instance_id": task,

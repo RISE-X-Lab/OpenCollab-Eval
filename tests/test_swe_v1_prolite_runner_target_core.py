@@ -558,6 +558,49 @@ def test_eval_only_identity_recomputes_full_patch_sha():
     ) is False
 
 
+def test_current_generation_identity_requires_verified_llm_calls():
+    task = "instance_owner__repo-2"
+    patch = "diff --git a/a.py b/a.py\n+fixed = True\n"
+    patch_sha = hashlib.sha256(patch.encode()).hexdigest()
+    prediction = {
+        "instance_id": task,
+        "record_id": "record-current",
+        "model_patch": patch,
+        "patch_sha256": patch_sha,
+    }
+    metric = {
+        "instance_id": task,
+        "record_id": "record-current",
+        "patch_sha256": patch_sha,
+        "workflow_status": "done",
+        "runner_returncode": 0,
+        "llm_model": "model",
+        "wire_protocol": "chat_completions",
+        **_proven_submission_integrity(patch),
+    }
+
+    for field in (
+        "trajectory_models",
+        "provider_models",
+        "trajectory_sha256",
+        "trajectory_llm_call_count",
+    ):
+        metric.pop(field)
+    assert remote_records.completed_generation_identity(prediction, metric, task) is False
+    assert remote_records.completed_generation_identity(
+        prediction, metric, task, require_submission_integrity=False
+    ) is False
+    metric.update(
+        trajectory_models=["model"],
+        provider_models=["model"],
+        trajectory_sha256="7" * 64,
+        trajectory_llm_call_count=1,
+    )
+    assert remote_records.completed_generation_identity(prediction, metric, task) is True
+    metric["provider_models"] = ["other-model"]
+    assert remote_records.completed_generation_identity(prediction, metric, task) is False
+
+
 def test_patch_fallback_ignores_crlf_context_for_benchmark_test_patch(tmp_path):
     function = _patch_fallback_function()
     (tmp_path / "file.txt").write_bytes(b"left\r\n")

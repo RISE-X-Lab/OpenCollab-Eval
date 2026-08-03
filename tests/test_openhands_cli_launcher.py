@@ -6,6 +6,8 @@ from pathlib import Path
 
 from package_test_support import resource_path
 
+from opencollab_eval.generation import gen_prediction_openhands as gpo
+
 SCRIPT = resource_path("run_openhands_cli.sh")
 CONFIGURATION_KEYS = (
     "OPENCOLLAB_REMOTE_REPO",
@@ -17,6 +19,22 @@ def _clean_environment() -> dict[str, str]:
     for key in CONFIGURATION_KEYS:
         environment.pop(key, None)
     return environment
+
+
+def test_prompt_requires_all_repository_work_to_use_the_existing_container() -> None:
+    prompt = gpo._prompt(
+        {
+            "repo": "acme/widget",
+            "problem_statement": "Fix the widget.",
+            "hints_text": "Inspect parser.py.",
+        },
+        container_id="container-123",
+    )
+
+    assert "docker exec" not in prompt
+    assert gpo.gp.DOCKER_WORKDIR in prompt
+    assert "isolated, offline workspace" in prompt
+    assert "git status --short" in prompt
 
 
 def test_openhands_launcher_fails_fast_without_runtime_configuration() -> None:

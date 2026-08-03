@@ -52,6 +52,10 @@ def test_generate_defers_container_patch_extraction(monkeypatch, tmp_path):
             duration=1.0,
             workflow_result={"allowed_patch_paths": ["pkg/a.py"]},
             patch_extraction_succeeded=False,
+            injected_path_cleanup_proven=True,
+            harness_artifact_exclusion_proven=False,
+            checkpoint_restore_integrity_proven=False,
+            task_stage_integrity_proven=False,
             submission_eligible=False,
         )
 
@@ -120,6 +124,12 @@ def test_generate_defers_container_patch_extraction(monkeypatch, tmp_path):
     ).hexdigest()
     assert metrics["context_window"] == 35_500
     assert metrics["submission_eligible"] is True
+    assert metrics["patch_extraction_succeeded"] is True
+    assert metrics["injected_path_cleanup_proven"] is True
+    assert metrics["harness_artifact_exclusion_proven"] is True
+    assert metrics["checkpoint_restore_integrity_proven"] is True
+    assert metrics["task_stage_integrity_proven"] is True
+    assert metrics["worktree_integrity_proven"] is True
     assert current_generation_proof_valid(metrics, patch)
     assert metrics["solver_task_specification"] == {
         "schema": "opencollab.solver_task_specification.v1",

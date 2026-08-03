@@ -2,8 +2,8 @@
 
 # ruff: noqa: F403, F405
 
+from opencollab_eval.engine import swe_generation_proof as generation_proof
 from opencollab_eval.engine.swe_eval_records import SUBMISSION_INTEGRITY_PROVEN
-from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid, generation_llm_calls_proven
 from opencollab_eval.engine.swe_v1_remote_core import *
 from opencollab_eval.engine.swe_v1_remote_state import *
 from opencollab_eval.patch_diff import *
@@ -210,9 +210,7 @@ def eval_candidate_source_paths(prediction):
 
 
 def eval_python_source_paths(prediction):
-    return [
-        path for path in eval_candidate_source_paths(prediction) if path.endswith(".py")
-    ]
+    return [path for path in eval_candidate_source_paths(prediction) if path.endswith(".py")]
 
 
 def model_patch_filter_evidence(prediction):
@@ -329,7 +327,8 @@ def generation_identity_matches(prediction, metric, require_patch=True):
     expected_runtime = stable_runtime_identity(generation_runtime_identity())
     if not all(metric.get(key) == value for key, value in expected_runtime.items()):
         return False
-    return not require_patch or current_generation_proof_valid(metric, prediction_patch(prediction))
+    source_patch = prediction_patch(prediction)
+    return not require_patch or generation_proof.generation_identity_proven(metric, source_patch)
 
 
 def empty_patch_retry_count(run_dir, task):
@@ -388,7 +387,7 @@ def historical_generation_identity_status(prediction, metric, task):
         status == "incomplete"
         and submission_integrity == SUBMISSION_INTEGRITY_PROVEN
         and metric.get("submission_eligible") is True
-        and current_generation_proof_valid(metric, original_patch)
+        and generation_proof.generation_identity_proven(metric, original_patch)
     ):
         return "interrupted_verified"
     return "invalid"
@@ -416,10 +415,9 @@ def completed_generation_identity(prediction, metric, task, *, require_submissio
         and submission_integrity != SUBMISSION_INTEGRITY_PROVEN
     ):
         return False
-    if require_submission_integrity and not current_generation_proof_valid(
-        metric,
-        original_patch,
-    ):
+    current_patch_proof = generation_proof.current_generation_proof_valid(metric, original_patch)
+    current_identity_proof = generation_proof.generation_identity_proven(metric, original_patch)
+    if not current_identity_proof and (current_patch_proof or require_submission_integrity):
         return False
     returncode = metric.get("runner_returncode")
     if isinstance(returncode, bool) or not isinstance(returncode, int):
@@ -438,12 +436,14 @@ def completed_generation_identity(prediction, metric, task, *, require_submissio
             and isinstance(metric.get("agent_failures"), list)
             and "provider_failure" not in metric
             and metric.get("submission_eligible") is True
-            and current_generation_proof_valid(metric, original_patch)
+            and generation_proof.generation_identity_proven(metric, original_patch)
         )
     return False
+
 GENERATION_INTEGRITY_FIELDS = (
     "generation_proof_schema",
     "generation_image_id",
+    "generator",
     "submission_eligible",
     "execution_quiesced",
     "patch_extraction_succeeded",
@@ -465,9 +465,9 @@ GENERATION_INTEGRITY_FIELDS = (
     "trajectory_sha256",
     "trajectory_llm_call_count",
     "wire_protocol",
+    "external_solver_identity",
+    "openhands_execution_identity",
 )
-
-
 def generation_integrity_evidence(metric):
     if not isinstance(metric, dict):
         return {}
@@ -510,8 +510,7 @@ def empty_patch_result(task, prediction, metric, pairing, **extra):
         and metric.get("test_patch_isolation_failed") is False
         and metric.get("worktree_integrity_proven") is True
         and metric.get("patch_produced") is False
-        and generation_llm_calls_proven(metric)
-        and current_generation_proof_valid(metric, "")
+        and generation_proof.generation_identity_proven(metric, "")
     )
     result = {
         "status": "empty_patch" if empty_patch_integrity_proven else "generation_failed",

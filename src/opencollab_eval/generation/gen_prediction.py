@@ -54,6 +54,7 @@ from opencollab_eval.engine.swe_eval_records import (
     open_regular_binary,
     read_bounded_json,
 )
+from opencollab_eval.engine.swe_generation_proof import generation_llm_calls_proven
 from opencollab_eval.runtime_config import resolve_runtime_config as get_config
 from opencollab_eval.usage import DEFAULT_MAX_OUTPUT_TOKENS, model_context_window
 
@@ -187,6 +188,7 @@ from .gen_prediction_snapshot import (
     anonymous_solver_task_id,
     prepare_solver_git_snapshot,
 )
+from .gen_prediction_task_delivery import inline_task_specification
 
 _CONFIG_ROOT = Path(os.environ.get("OPENCOLLAB_EVAL_WORKSPACE", Path.cwd())).resolve()
 
@@ -305,7 +307,12 @@ def main() -> None:
         bind_llm_transport(metrics)
         metrics["generation_image_id"] = generation_image_id
         metrics["solver_git_snapshot"] = snapshot.as_dict()
-        if metrics.get("candidate_probe_eligible") is True:
+        metrics["generation_proof_schema"] = "opencollab.generation_proof.v2"
+        metrics["solver_task_specification"] = inline_task_specification(task)
+        if (
+            metrics.get("candidate_probe_eligible") is True
+            and generation_llm_calls_proven(metrics)
+        ):
             require_container_quiescence(cid)
             metrics["container_execution_quiesced"] = True
             metrics["execution_quiesced"] = (
@@ -325,6 +332,10 @@ def main() -> None:
             metrics["container_execution_quiesced"] = False
             metrics["execution_quiesced"] = False
             metrics["submission_eligible"] = False
+            if metrics.get("candidate_probe_eligible") is True:
+                metrics["workflow_status"] = "error"
+                metrics["error_type"] = "TrajectoryIdentityError"
+                metrics["error"] = "candidate has no verified LLM call identity"
         complete_single_agent_integrity(
             metrics,
             patch=patch,

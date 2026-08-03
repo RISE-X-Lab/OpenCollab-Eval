@@ -13,7 +13,10 @@ import uuid
 from pathlib import Path
 
 from opencollab_eval.engine.async_runtime import add_exception_note
-from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid
+from opencollab_eval.engine.swe_generation_proof import (
+    current_generation_proof_valid,
+    generation_identity_proven,
+)
 from opencollab_eval.safe_files import (
     create_regular_bytes_atomic,
     open_directory_no_symlinks,
@@ -292,7 +295,7 @@ def metrics_have_completed_identity(metrics: dict, patch: str) -> bool:
         return False
     if metrics.get("submission_eligible") is not True:
         return False
-    if not current_generation_proof_valid(metrics, patch):
+    if not generation_identity_proven(metrics, patch):
         return False
     try:
         returncode = runner_returncode_for_metrics(metrics)

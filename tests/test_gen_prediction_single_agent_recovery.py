@@ -10,6 +10,7 @@ import sys
 import pytest
 
 from opencollab_eval.engine.swe_eval_records import read_jsonl
+from opencollab_eval.engine.swe_generation_proof import generation_llm_calls_proven
 
 gp = pytest.importorskip("opencollab_eval.generation.gen_prediction")
 
@@ -217,6 +218,11 @@ def test_single_main_cleanup_failure_stages_candidate_before_publish(
             "execution_quiesced": False,
             "candidate_probe_eligible": True,
             "submission_eligible": False,
+            "trajectory_models": ["model"],
+            "provider_models": ["model"],
+            "trajectory_sha256": "9" * 64,
+            "trajectory_llm_call_count": 1,
+            "wire_protocol": "chat_completions",
         }
 
     monkeypatch.setattr(gp, "run_agent", fake_run_agent)
@@ -249,8 +255,92 @@ def test_single_main_cleanup_failure_stages_candidate_before_publish(
         gp.main()
 
     assert not output.exists()
-    assert list((tmp_path / ".opencollab" / "pending_outputs").glob("*.json"))
+    pending = list((tmp_path / ".opencollab" / "pending_outputs").glob("*.json"))
+    assert pending
+    staged = json.loads(pending[0].read_text(encoding="utf-8"))
+    metric = staged["metric"]
+    assert metric["generation_proof_schema"] == "opencollab.generation_proof.v2"
+    assert metric["solver_task_specification"]["delivery"] == "inline"
+    assert metric["patch_extraction_succeeded"] is True
+    assert metric["submission_eligible"] is True
+    assert generation_llm_calls_proven(metric)
     assert list((tmp_path / ".opencollab" / "container_owners").glob("*.json"))
+
+
+def test_single_main_zero_call_identity_skips_candidate_extraction(
+    monkeypatch,
+    tmp_path,
+):
+    instance_path = tmp_path / "instance.json"
+    instance_path.write_text(
+        json.dumps(
+            {
+                "instance_id": "task-1",
+                "base_commit": "c" * 40,
+                "repo": "acme/repo",
+                "problem_statement": "fix it",
+                "FAIL_TO_PASS": "[]",
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "predictions.jsonl"
+    monkeypatch.setattr(
+        gp,
+        "get_config",
+        lambda root: {
+            "model": "model",
+            "provider": "provider",
+            "api_key": "key",
+            "base_url": "http://local",
+        },
+    )
+    monkeypatch.setattr(gp, "start_container", lambda *args: "cid")
+
+    async def fake_run_agent(*args, **kwargs):
+        return {
+            "workflow_status": "done",
+            "session_quiesced": True,
+            "candidate_probe_eligible": True,
+            "submission_eligible": False,
+            "trajectory_models": [],
+            "provider_models": [],
+            "trajectory_sha256": None,
+            "trajectory_llm_call_count": 0,
+            "wire_protocol": "chat_completions",
+        }
+
+    monkeypatch.setattr(gp, "run_agent", fake_run_agent)
+    monkeypatch.setattr(
+        gp, "run_with_bounded_shutdown", lambda awaitable: asyncio.run(awaitable)
+    )
+    monkeypatch.setattr(
+        gp,
+        "extract_patch_guarded",
+        lambda *args: pytest.fail("zero-call run must not extract a candidate"),
+    )
+    monkeypatch.setattr(
+        gp, "remove_container_and_clear_marker", lambda run_dir, cid: True
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "gen_prediction.py",
+            "--instance-file",
+            str(instance_path),
+            "--output",
+            str(output),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        gp.main()
+
+    assert exc_info.value.code == 1
+    row = json.loads(output.read_text(encoding="utf-8"))
+    assert row["model_patch"] == ""
+    assert row["workflow_metric"]["error_type"] == "TrajectoryIdentityError"
 
 
 def test_single_main_output_symlink_race_cleans_active_container(
@@ -294,6 +384,11 @@ def test_single_main_output_symlink_race_cleans_active_container(
             "execution_quiesced": False,
             "candidate_probe_eligible": True,
             "submission_eligible": False,
+            "trajectory_models": ["model"],
+            "provider_models": ["model"],
+            "trajectory_sha256": "9" * 64,
+            "trajectory_llm_call_count": 1,
+            "wire_protocol": "chat_completions",
         }
 
     monkeypatch.setattr(gp, "run_agent", fake_run_agent)

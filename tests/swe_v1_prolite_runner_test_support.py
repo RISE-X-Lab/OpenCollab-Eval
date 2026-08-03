@@ -19,7 +19,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from generation_proof_test_support import eval_snapshot_proof_fields, trusted_patch_proof_fields
+from generation_proof_test_support import (
+    eval_snapshot_proof_fields,
+    llm_call_proof_fields,
+    trusted_patch_proof_fields,
+)
 
 import opencollab_eval
 
@@ -288,6 +292,8 @@ def _test_only_patch() -> str:
 
 def _proven_submission_integrity(
     patch: str = "diff --git a/src/a.py b/src/a.py\n+current\n",
+    *,
+    model: str = "model",
 ) -> dict:
     return {
         "submission_eligible": True,
@@ -300,6 +306,7 @@ def _proven_submission_integrity(
         "test_patch_isolation_failed": False,
         "worktree_integrity_proven": True,
         "patch_produced": True,
+        **llm_call_proof_fields(model),
         **trusted_patch_proof_fields(patch),
     }
 

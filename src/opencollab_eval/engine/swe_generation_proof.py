@@ -11,6 +11,8 @@ from opencollab_eval.engine.task_delivery_gate import MAX_WORK_BRIEF_BYTES
 
 TRUSTED_PATCH_EXTRACTION_SCHEMA = "opencollab.trusted_patch_extraction.v1"
 GENERATION_PROOF_V2_SCHEMA = "opencollab.generation_proof.v2"
+EXTERNAL_SOLVER_IDENTITY_SCHEMA = "opencollab.external_solver_identity.v1"
+OPENHANDS_EXECUTION_IDENTITY_SCHEMA = "opencollab.openhands_execution_identity.v1"
 TASK_SPECIFICATION_SCHEMA = "opencollab.solver_task_specification.v1"
 MAX_WORKSPACE_ARCHIVE_BYTES = 4 * 1024 * 1024 * 1024
 MAX_WORKSPACE_EXTRACTED_BYTES = 8 * 1024 * 1024 * 1024
@@ -498,6 +500,142 @@ def generation_llm_calls_proven(metric: Any) -> bool:
     )
 
 
+def generation_external_solver_proven(metric: Any) -> bool:
+    """Validate controller-owned external solver execution and candidate binding."""
+    if not isinstance(metric, dict):
+        return False
+    proof = metric.get("external_solver_identity")
+    extraction = metric.get("trusted_patch_extraction")
+    snapshot = metric.get("solver_git_snapshot")
+    if not all(isinstance(value, dict) for value in (proof, extraction, snapshot)):
+        return False
+    expected_keys = {
+        "schema",
+        "solver",
+        "model",
+        "stream_sha256",
+        "settings_sha256",
+        "executable_sha256",
+        "runtime_image_id",
+        "solver_task_id",
+        "prompt_sha256",
+        "anonymous_head",
+        "base_tree",
+        "raw_patch_sha256",
+        "raw_candidate_tree",
+        "candidate_tree",
+        "task_image_id",
+        "public_instance_id",
+        "trusted_final_patch_sha256",
+    }
+    if set(proof) != expected_keys:
+        return False
+    hashes = (
+        proof.get("stream_sha256"),
+        proof.get("settings_sha256"),
+        proof.get("executable_sha256"),
+        proof.get("prompt_sha256"),
+        proof.get("raw_patch_sha256"),
+        proof.get("trusted_final_patch_sha256"),
+    )
+    object_ids = (
+        proof.get("anonymous_head"),
+        proof.get("base_tree"),
+        proof.get("raw_candidate_tree"),
+        proof.get("candidate_tree"),
+    )
+    solver = proof.get("solver")
+    model = proof.get("model")
+    return bool(
+        proof.get("schema") == EXTERNAL_SOLVER_IDENTITY_SCHEMA
+        and isinstance(solver, str)
+        and solver
+        and metric.get("generator") == solver
+        and isinstance(model, str)
+        and model
+        and metric.get("llm_model") == model
+        and all(isinstance(value, str) and _SHA256_RE.fullmatch(value) for value in hashes)
+        and all(isinstance(value, str) and _OBJECT_ID_RE.fullmatch(value) for value in object_ids)
+        and isinstance(proof.get("solver_task_id"), str)
+        and re.fullmatch(r"solver-[0-9a-f]{32}", proof["solver_task_id"])
+        and isinstance(proof.get("runtime_image_id"), str)
+        and _IMAGE_ID_RE.fullmatch(proof["runtime_image_id"])
+        and proof.get("task_image_id") == metric.get("generation_image_id")
+        and proof.get("public_instance_id")
+        == (metric.get("instance_id") or metric.get("task"))
+        and proof.get("anonymous_head") == snapshot.get("anonymous_head")
+        and proof.get("base_tree") == snapshot.get("base_tree")
+        and proof.get("candidate_tree") == extraction.get("candidate_tree")
+        and proof.get("trusted_final_patch_sha256") == extraction.get("patch_sha256")
+    )
+
+
+def generation_openhands_execution_proven(metric: Any) -> bool:
+    """Validate native OpenHands persisted call evidence and candidate binding."""
+    if not isinstance(metric, dict):
+        return False
+    proof = metric.get("openhands_execution_identity")
+    extraction = metric.get("trusted_patch_extraction")
+    snapshot = metric.get("solver_git_snapshot")
+    if not all(isinstance(value, dict) for value in (proof, extraction, snapshot)):
+        return False
+    expected_keys = {
+        "schema",
+        "model",
+        "state_sha256",
+        "state_file_count",
+        "llm_call_count",
+        "solver",
+        "solver_task_id",
+        "prompt_sha256",
+        "anonymous_head",
+        "base_tree",
+        "candidate_tree",
+        "task_image_id",
+        "public_instance_id",
+        "trusted_final_patch_sha256",
+    }
+    return bool(
+        set(proof) == expected_keys
+        and proof.get("schema") == OPENHANDS_EXECUTION_IDENTITY_SCHEMA
+        and proof.get("solver") == "openhands"
+        and metric.get("generator") == "openhands"
+        and isinstance(proof.get("model"), str)
+        and proof.get("model") == metric.get("llm_model")
+        and isinstance(proof.get("state_sha256"), str)
+        and _SHA256_RE.fullmatch(proof["state_sha256"])
+        and isinstance(proof.get("prompt_sha256"), str)
+        and _SHA256_RE.fullmatch(proof["prompt_sha256"])
+        and _nonnegative_int(proof.get("state_file_count"))
+        and proof["state_file_count"] > 0
+        and _nonnegative_int(proof.get("llm_call_count"))
+        and proof["llm_call_count"] > 0
+        and isinstance(proof.get("solver_task_id"), str)
+        and re.fullmatch(r"solver-[0-9a-f]{32}", proof["solver_task_id"])
+        and proof.get("task_image_id") == metric.get("generation_image_id")
+        and proof.get("public_instance_id")
+        == (metric.get("instance_id") or metric.get("task"))
+        and proof.get("anonymous_head") == snapshot.get("anonymous_head")
+        and proof.get("base_tree") == snapshot.get("base_tree")
+        and proof.get("candidate_tree") == extraction.get("candidate_tree")
+        and proof.get("trusted_final_patch_sha256") == extraction.get("patch_sha256")
+    )
+
+
+def generation_model_execution_proven(metric: Any) -> bool:
+    """Accept a verified native trajectory or bound external solver execution."""
+    return bool(
+        generation_llm_calls_proven(metric)
+        or generation_external_solver_proven(metric)
+        or generation_openhands_execution_proven(metric)
+    )
+
+
+def generation_identity_proven(metric: Any, patch: str) -> bool:
+    """Bind a current candidate proof to at least one verified model call."""
+    return current_generation_proof_valid(metric, patch) and generation_model_execution_proven(metric)
+
+
 def current_generation_summary_proof_valid(metric: Any) -> bool:
     """Validate proof shape and patch identity in a report row without patch text."""
     if not isinstance(metric, dict):
@@ -532,6 +670,10 @@ __all__ = [
     "current_generation_proof_valid",
     "current_generation_summary_proof_valid",
     "generation_llm_calls_proven",
+    "generation_external_solver_proven",
+    "generation_openhands_execution_proven",
+    "generation_model_execution_proven",
+    "generation_identity_proven",
     "solver_task_specification_valid",
     "solver_task_delivery_gate_valid",
     "preparation_input_valid",

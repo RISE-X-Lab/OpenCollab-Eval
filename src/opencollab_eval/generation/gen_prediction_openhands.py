@@ -17,9 +17,6 @@ from pathlib import Path
 
 from opencollab_eval.benchmarks.task_specification import compose_task_specification  # noqa: E402
 from opencollab_eval.benchmarks.task_specification import solver_task_instance as _solver_instance  # noqa: E402
-from opencollab_eval.engine.swe_generation_proof import (  # noqa: E402
-    current_generation_proof_valid,
-)
 from opencollab_eval.engine.swe_v1_remote_records import read_tail_text  # noqa: E402
 
 from . import claude_code_sidecar as ccs  # noqa: E402
@@ -30,9 +27,12 @@ from .external_solver_containers import cleanup_external_solver_containers  # no
 from .external_solver_usage import (  # noqa: E402
     _append_usage_record,
     _bind_external_solver_evidence,
+    _bind_openhands_execution_evidence,
     _external_solver_evidence,
+    _external_solver_identity,
     _external_solver_usage,
     _external_solver_usage_evidence,
+    _openhands_execution_evidence,
     _openhands_usage,
 )
 from .gen_prediction_patch import extract_patch_guarded, prepare_trusted_patch_baseline  # noqa: E402
@@ -41,6 +41,9 @@ from .gen_prediction_task_delivery import inline_task_specification  # noqa: E40
 from .gen_prediction_workflow import (  # noqa: E402
     _patch_path_audit,
     build_output_records,
+)
+from .openhands_generation_integrity import (  # noqa: E402
+    complete_openhands_integrity as _complete_openhands_integrity,
 )
 
 DEFAULT_PROMPT = """\
@@ -110,52 +113,6 @@ def _stop_hook_command() -> str:
 
 def _read_log_tail(path: Path, *, max_bytes: int = 1024 * 1024) -> str:
     return read_tail_text(path, max_bytes)
-
-
-def _complete_openhands_integrity(
-    metrics: dict,
-    *,
-    patch: str,
-    snapshot_prepared: bool,
-    process_quiesced: bool,
-    patch_extraction_succeeded: bool,
-    harness_artifact_exclusion_proven: bool,
-) -> None:
-    patch_produced = bool(patch.strip())
-    trusted_extraction_proven = (
-        snapshot_prepared
-        and patch_extraction_succeeded
-        and current_generation_proof_valid(metrics, patch)
-    )
-    task_stage_integrity_proven = trusted_extraction_proven
-    worktree_integrity_proven = (
-        trusted_extraction_proven
-        and harness_artifact_exclusion_proven
-    )
-    submission_eligible = (
-        metrics.get("workflow_status") == "done"
-        and patch_produced
-        and process_quiesced
-        and worktree_integrity_proven
-    )
-    metrics.update(
-        {
-            "submission_eligible": submission_eligible,
-            "execution_quiesced": process_quiesced,
-            "patch_extraction_succeeded": trusted_extraction_proven,
-            # OpenHands receives no benchmark test patch, so there are no
-            # injected paths or checkpoint mutations to restore.
-            "injected_path_cleanup_proven": trusted_extraction_proven,
-            "harness_artifact_exclusion_proven": (
-                harness_artifact_exclusion_proven
-            ),
-            "checkpoint_restore_integrity_proven": trusted_extraction_proven,
-            "task_stage_integrity_proven": task_stage_integrity_proven,
-            "test_patch_isolation_failed": False,
-            "worktree_integrity_proven": worktree_integrity_proven,
-            "patch_produced": patch_produced,
-        }
-    )
 
 
 def _supervisor_proved_quiescence(returncode: int) -> bool:
@@ -439,6 +396,7 @@ def main() -> None:
     pending_required = False
     generation_error: BaseException | None = None
     trusted_baseline = None
+    openhands_execution_evidence = None
 
     name = gp.unique_container_name("oc-oh-", solver_task_id)
     cid = gp.start_container_with_marker(image, name, run_dir)
@@ -533,6 +491,14 @@ def main() -> None:
             if isinstance(external_solver, str) and external_solver:
                 metrics["generator"] = external_solver
             process_quiesced = _openhands_patch_extraction_allowed(metrics)
+            if not isinstance(metrics.get("external_solver_evidence"), dict):
+                try:
+                    openhands_execution_evidence = _openhands_execution_evidence(
+                        openhands_dir,
+                        args.llm_model,
+                    )
+                except ValueError as exc:
+                    metrics["openhands_execution_evidence_error"] = str(exc)
             if process_quiesced:
                 try:
                     (
@@ -559,7 +525,7 @@ def main() -> None:
                     external_evidence = metrics.get("external_solver_evidence")
                     if isinstance(external_evidence, dict):
                         try:
-                            _bind_external_solver_evidence(
+                            bound_evidence = _bind_external_solver_evidence(
                                 external_evidence,
                                 output_dir=openhands_dir,
                                 prompt_file=openhands_dir / "claude.prompt.md",
@@ -580,6 +546,9 @@ def main() -> None:
                                     if key in os.environ
                                 },
                             )
+                            metrics["external_solver_identity"] = (
+                                _external_solver_identity(bound_evidence)
+                            )
                         except (OSError, ValueError) as exc:
                             generation_error = RuntimeError(
                                 "external solver candidate binding failed"
@@ -589,6 +558,21 @@ def main() -> None:
                         else:
                             patch_extraction_succeeded = True
                             harness_artifact_exclusion_proven = True
+                    elif openhands_execution_evidence is not None:
+                        metrics["openhands_execution_identity"] = (
+                            _bind_openhands_execution_evidence(
+                                openhands_execution_evidence,
+                                solver_task_id=solver_task_id,
+                                public_instance_id=instance_id,
+                                prompt_file=prompt_file,
+                                generation_image_id=generation_image_id,
+                                anonymous_head=snapshot_evidence.anonymous_head,
+                                base_tree=snapshot_evidence.base_tree,
+                                trusted_extraction=extraction_proof,
+                            )
+                        )
+                        patch_extraction_succeeded = True
+                        harness_artifact_exclusion_proven = True
                     else:
                         patch_extraction_succeeded = True
                         harness_artifact_exclusion_proven = True
@@ -622,6 +606,7 @@ def main() -> None:
                     status=(
                         "success"
                         if metrics.get("external_solver_evidence") is not None
+                        or metrics.get("openhands_execution_identity") is not None
                         else "technical_failure"
                     ),
                 )
@@ -630,6 +615,7 @@ def main() -> None:
         metrics.update(
             {
                 "generation_proof_schema": "opencollab.generation_proof.v2",
+                "instance_id": instance_id,
                 "solver_task_specification": inline_task_specification(
                     compose_task_specification(instance)
                 ),
@@ -672,6 +658,7 @@ def main() -> None:
                         "kind": (
                             "observed_stream_identity"
                             if isinstance(metrics.get("external_solver_evidence"), dict)
+                            or isinstance(metrics.get("openhands_execution_identity"), dict)
                             else "configured"
                         ),
                     },

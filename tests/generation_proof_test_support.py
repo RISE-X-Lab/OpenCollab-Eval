@@ -101,6 +101,17 @@ def trusted_patch_proof_fields(patch: str) -> dict:
     )
 
 
+def llm_call_proof_fields(model: str = "model") -> dict:
+    return {
+        "llm_model": model,
+        "trajectory_models": [model],
+        "provider_models": [model],
+        "trajectory_sha256": "7" * 64,
+        "trajectory_llm_call_count": 1,
+        "wire_protocol": "chat_completions",
+    }
+
+
 def eval_snapshot_proof_fields(expected_base_commit: str = "e" * 40) -> dict:
     integrity = {
         "schema": "opencollab.workspace_integrity.v1",

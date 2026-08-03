@@ -14,6 +14,7 @@ from opencollab_eval.engine.swe_eval_discovery import (
 )
 from opencollab_eval.engine.swe_generation_proof import (
     current_generation_summary_proof_valid,
+    generation_model_execution_proven,
 )
 
 _SHA256_RE = re.compile(r"[0-9a-fA-F]{64}\Z")
@@ -74,16 +75,7 @@ def _empty_patch_integrity(row: dict[str, Any], task: str) -> AttemptIntegrity:
         reasons.append("empty_patch_workflow_status_invalid")
     if generation.get("submission_integrity") != "empty_patch_proven":
         reasons.append("empty_patch_integrity_unproven")
-    expected_model = str(generation.get("llm_model") or "")
-    if (
-        not expected_model
-        or generation.get("trajectory_models") != [expected_model]
-        or isinstance(generation.get("trajectory_llm_call_count"), bool)
-        or not isinstance(generation.get("trajectory_llm_call_count"), int)
-        or generation["trajectory_llm_call_count"] < 1
-        or not _full_sha(generation.get("trajectory_sha256"))
-        or generation.get("wire_protocol") not in {"chat_completions", "responses"}
-    ):
+    if not generation_model_execution_proven(generation):
         reasons.append("empty_patch_llm_execution_unproven")
     expected_integrity_fields = {
         "submission_eligible": False,
@@ -175,6 +167,8 @@ def attempt_integrity(row: dict[str, Any], task: str) -> AttemptIntegrity:
         _append_once(reasons, "undeclared_empty_patch")
     if not current_generation_summary_proof_valid(generation):
         _append_once(reasons, "missing_trusted_generation_proof")
+    if not generation_model_execution_proven(generation):
+        _append_once(reasons, "missing_generation_execution_proof")
     generation_eval_sha = _full_sha(generation.get("eval_patch_sha256"))
     generation_filtered_paths = _filtered_paths(generation.get("filtered_patch_paths"))
 

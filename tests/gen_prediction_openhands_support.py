@@ -2,11 +2,45 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
+from pathlib import Path
 
 import pytest
 
 from opencollab_eval.generation import gen_prediction_openhands as gpo
+
+
+def write_openhands_state(output_dir: Path, model: str = "provider/model") -> None:
+    state_dir = output_dir / "persistence" / "conversations" / "conversation-1"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "base_state.json").write_text(
+        json.dumps(
+            {
+                "stats": {
+                    "usage_to_metrics": {
+                        "agent": {
+                            "accumulated_token_usage": {
+                                "prompt_tokens": 20,
+                                "completion_tokens": 5,
+                                "cache_read_tokens": 0,
+                                "cache_write_tokens": 0,
+                            },
+                            "token_usages": [
+                                {
+                                    "model": model,
+                                    "prompt_tokens": 20,
+                                    "completion_tokens": 5,
+                                    "response_id": "response-1",
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 def install_fake_openhands_process(

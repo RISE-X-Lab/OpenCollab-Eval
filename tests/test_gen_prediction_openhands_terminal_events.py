@@ -7,7 +7,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from gen_prediction_openhands_support import install_fake_openhands_process
+from gen_prediction_openhands_support import (
+    install_fake_openhands_process,
+    write_openhands_state,
+)
 
 from opencollab_eval.engine.swe_eval_decision import TaskSnapshot, TaskState, decide_task
 from opencollab_eval.generation import gen_prediction_openhands as gpo
@@ -92,10 +95,9 @@ def _install_main_doubles(
         "extract_patch_guarded",
         lambda cid, trusted_baseline, **kwargs: (patch, [], proof),
     )
-    monkeypatch.setattr(
-        gpo,
-        "_run_openhands",
-        lambda **kwargs: {
+    def run_openhands(**kwargs):
+        write_openhands_state(kwargs["output_dir"])
+        return {
             "status": "done",
             "returncode": 0,
             "duration_s": 1.0,
@@ -103,8 +105,9 @@ def _install_main_doubles(
             "host_execution_quiesced": True,
             "container_execution_quiesced": True,
             "openhands_terminal_error": _terminal_event(),
-        },
-    )
+        }
+
+    monkeypatch.setattr(gpo, "_run_openhands", run_openhands)
     pending: dict[str, object] = {}
 
     def persist_pending_output(**kwargs):
@@ -136,6 +139,8 @@ def _install_main_doubles(
             str(metrics),
             "--command",
             "openhands --headless --json --file {prompt_file}",
+            "--llm-model",
+            "provider/model",
         ],
     )
     return output, metrics

@@ -12,6 +12,9 @@ import pytest
 from gen_prediction_openhands_support import (
     install_fake_openhands_process as _install_fake_openhands_process,
 )
+from gen_prediction_openhands_support import (
+    write_openhands_state,
+)
 
 from opencollab_eval.engine.swe_eval_decision import (
     TaskSnapshot,
@@ -21,22 +24,6 @@ from opencollab_eval.engine.swe_eval_decision import (
 from opencollab_eval.generation import gen_prediction_openhands as gpo
 from opencollab_eval.generation import openhands_runtime
 from opencollab_eval.generation.gen_prediction_snapshot import SolverGitSnapshot
-
-
-def test_prompt_requires_all_repository_work_to_use_the_existing_container() -> None:
-    prompt = gpo._prompt(
-        {
-            "repo": "acme/widget",
-            "problem_statement": "Fix the widget.",
-            "hints_text": "Inspect parser.py.",
-        },
-        container_id="container-123",
-    )
-
-    assert "docker exec" not in prompt
-    assert gpo.gp.DOCKER_WORKDIR in prompt
-    assert "isolated, offline workspace" in prompt
-    assert "git status --short" in prompt
 
 
 def test_run_openhands_records_timeout_logs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -656,7 +643,11 @@ def test_main_writes_generation_contract_for_nonempty_patch(
         "prepare_solver_git_snapshot",
         lambda cid, base: snapshot,
     )
-    baseline = SimpleNamespace(snapshot=snapshot, cleanup=lambda: None)
+    baseline = SimpleNamespace(
+        snapshot=snapshot,
+        git_dir=tmp_path / "trusted.git",
+        cleanup=lambda: None,
+    )
     monkeypatch.setattr(
         gpo,
         "prepare_trusted_patch_baseline",
@@ -691,6 +682,7 @@ def test_main_writes_generation_contract_for_nonempty_patch(
 
     def fake_run_openhands(**kwargs):
         openhands_call.update(kwargs)
+        write_openhands_state(kwargs["output_dir"], "anthropic/glm-5.2")
         return {
             "status": "done",
             "returncode": 0,
@@ -736,6 +728,9 @@ def test_main_writes_generation_contract_for_nonempty_patch(
     assert metric["workflow"] == "openhands-external"
     assert metric["workflow_status"] == "done"
     assert metric["llm_model"] == "anthropic/glm-5.2"
+    assert metric["openhands_execution_identity"]["model"] == "anthropic/glm-5.2"
+    usage_record = json.loads((tmp_path / "api_usage.jsonl").read_text())
+    assert usage_record["status"] == "success"
     assert metric["context_window"] == 400000
     assert metric["budget"] == 16000000
     assert metric["max_steps"] == 60

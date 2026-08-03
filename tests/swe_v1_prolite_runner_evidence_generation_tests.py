@@ -102,7 +102,7 @@ def test_kimi_direct_transport_is_bound_into_generation_identity(tmp_path, monke
     metric = {
         "model_name": namespace["model_name"],
         "workflow": namespace["workflow"],
-        **_proven_submission_integrity(patch),
+        **_proven_submission_integrity(patch, model=namespace["llm_model"]),
         **{key: value for key, value in runtime_identity.items() if key != "llm_transport"},
     }
     monkeypatch.setenv("OPENCOLLAB_LLM_TRANSPORT", "direct")

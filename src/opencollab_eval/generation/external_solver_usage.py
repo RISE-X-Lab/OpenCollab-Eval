@@ -20,7 +20,11 @@ from .candidate_patch_files import CandidateConstructionError
 from .candidate_patch_git import canonicalize_candidate_patch
 
 EXTERNAL_SIDECAR_SCHEMA = "opencollab.external_solver.v1"
+EXTERNAL_SOLVER_IDENTITY_SCHEMA = "opencollab.external_solver_identity.v1"
+OPENHANDS_EXECUTION_IDENTITY_SCHEMA = "opencollab.openhands_execution_identity.v1"
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
+_MAX_OPENHANDS_STATE_BYTES = 256 * 1024 * 1024
+_MAX_OPENHANDS_STATE_FILES = 1024
 
 
 def _canonical_candidate_from_patch(
@@ -99,6 +103,98 @@ def _openhands_usage(output_dir: Path) -> dict[str, int | float] | None:
         return None
     totals["total_tokens"] = int(totals["input_tokens"]) + int(totals["output_tokens"])
     return totals
+
+
+def _openhands_execution_evidence(output_dir: Path, expected_model: str) -> dict[str, Any]:
+    """Prove native OpenHands model calls from controller-owned persisted state."""
+    if not expected_model:
+        raise ValueError("OpenHands expected model identity is missing")
+    paths = sorted(output_dir.rglob("base_state.json"))
+    if not paths or len(paths) > _MAX_OPENHANDS_STATE_FILES:
+        raise ValueError("OpenHands persisted state count is invalid")
+    digest = hashlib.sha256()
+    observed_models: set[str] = set()
+    call_count = 0
+    total_bytes = 0
+    for path in paths:
+        try:
+            info = path.lstat()
+            payload = path.read_bytes()
+            state = json.loads(payload)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError("OpenHands persisted state is unreadable") from exc
+        total_bytes += len(payload)
+        if path.is_symlink() or not path.is_file() or info.st_size != len(payload):
+            raise ValueError("OpenHands persisted state is unsafe")
+        if total_bytes > _MAX_OPENHANDS_STATE_BYTES or not isinstance(state, dict):
+            raise ValueError("OpenHands persisted state is invalid")
+        relative = path.relative_to(output_dir).as_posix().encode()
+        digest.update(relative + b"\0" + hashlib.sha256(payload).digest())
+        stats = state.get("stats")
+        usage_map = stats.get("usage_to_metrics") if isinstance(stats, dict) else None
+        if not isinstance(usage_map, dict):
+            continue
+        for usage in usage_map.values():
+            token_usages = usage.get("token_usages") if isinstance(usage, dict) else None
+            if not isinstance(token_usages, list):
+                continue
+            for row in token_usages:
+                if not isinstance(row, dict):
+                    continue
+                model = row.get("model")
+                prompt = row.get("prompt_tokens")
+                completion = row.get("completion_tokens")
+                response_id = row.get("response_id")
+                if (
+                    not isinstance(model, str)
+                    or isinstance(prompt, bool)
+                    or not isinstance(prompt, int)
+                    or isinstance(completion, bool)
+                    or not isinstance(completion, int)
+                    or prompt < 0
+                    or completion < 0
+                    or prompt + completion == 0
+                    or not isinstance(response_id, str)
+                    or not response_id
+                ):
+                    raise ValueError("OpenHands model call evidence is invalid")
+                observed_models.add(model)
+                call_count += 1
+    if observed_models != {expected_model} or call_count < 1:
+        raise ValueError("OpenHands observed model identity does not match configuration")
+    return {
+        "schema": OPENHANDS_EXECUTION_IDENTITY_SCHEMA,
+        "model": expected_model,
+        "state_sha256": digest.hexdigest(),
+        "state_file_count": len(paths),
+        "llm_call_count": call_count,
+    }
+
+
+def _bind_openhands_execution_evidence(
+    evidence: dict[str, Any],
+    *,
+    solver_task_id: str,
+    public_instance_id: str,
+    prompt_file: Path,
+    generation_image_id: str,
+    anonymous_head: str,
+    base_tree: str,
+    trusted_extraction: dict[str, Any],
+) -> dict[str, Any]:
+    """Bind native OpenHands execution evidence to one trusted candidate."""
+    return {
+        **evidence,
+        "solver": "openhands",
+        "solver_task_id": solver_task_id,
+        "prompt_sha256": hashlib.sha256(prompt_file.read_bytes()).hexdigest(),
+        "anonymous_head": anonymous_head,
+        "base_tree": base_tree,
+        "candidate_tree": trusted_extraction.get("candidate_tree"),
+        "task_image_id": generation_image_id,
+        "public_instance_id": public_instance_id,
+        "trusted_final_patch_sha256": trusted_extraction.get("patch_sha256"),
+    }
 
 
 def _external_solver_evidence(output_dir: Path) -> dict[str, Any] | None:
@@ -257,6 +353,34 @@ def _bind_external_solver_evidence(
     return evidence
 
 
+def _external_solver_identity(evidence: dict[str, Any]) -> dict[str, Any]:
+    """Project bound controller evidence into the generation identity contract."""
+    invocation = evidence.get("invocation_binding")
+    evaluation = evidence.get("evaluation_binding")
+    executable = evidence.get("executable")
+    if not all(isinstance(value, dict) for value in (invocation, evaluation, executable)):
+        raise ValueError("external solver evidence is not bound to a candidate")
+    return {
+        "schema": EXTERNAL_SOLVER_IDENTITY_SCHEMA,
+        "solver": evidence.get("solver"),
+        "model": evidence.get("expected_model"),
+        "stream_sha256": evidence.get("stream_sha256"),
+        "settings_sha256": evidence.get("settings_sha256"),
+        "executable_sha256": executable.get("sha256"),
+        "runtime_image_id": evidence.get("runtime_image_id"),
+        "solver_task_id": invocation.get("solver_task_id"),
+        "prompt_sha256": invocation.get("prompt_sha256"),
+        "anonymous_head": invocation.get("anonymous_head"),
+        "base_tree": invocation.get("base_tree"),
+        "raw_patch_sha256": invocation.get("raw_patch_sha256"),
+        "raw_candidate_tree": evaluation.get("raw_candidate_tree"),
+        "candidate_tree": evaluation.get("candidate_tree"),
+        "task_image_id": evaluation.get("task_image_id"),
+        "public_instance_id": evaluation.get("public_instance_id"),
+        "trusted_final_patch_sha256": evaluation.get("trusted_final_patch_sha256"),
+    }
+
+
 def _external_solver_usage(evidence: dict[str, Any] | None) -> dict[str, int | float] | None:
     if not evidence:
         return None
@@ -337,9 +461,12 @@ def _append_usage_record(
 __all__ = [
     "_append_usage_record",
     "_bind_external_solver_evidence",
+    "_bind_openhands_execution_evidence",
     "_candidate_tree_from_patch",
     "_external_solver_evidence",
+    "_external_solver_identity",
     "_external_solver_usage_evidence",
     "_external_solver_usage",
     "_openhands_usage",
+    "_openhands_execution_evidence",
 ]

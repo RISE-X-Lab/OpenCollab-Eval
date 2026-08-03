@@ -130,9 +130,20 @@ def test_single_agent_cli_accepts_metrics_argument():
 
 
 class RecordingRuntime:
-    def __init__(self, result=None, error: Exception | None = None):
+    def __init__(
+        self,
+        result=None,
+        error: Exception | None = None,
+        *,
+        trajectory_payload: dict | None = None,
+        trajectory_type: str = "llm_call",
+        write_trajectory: bool = True,
+    ):
         self.result = result
         self.error = error
+        self.trajectory_payload = trajectory_payload
+        self.trajectory_type = trajectory_type
+        self.write_trajectory = write_trajectory
         self.requests = []
 
     async def agent(self, prompt, **kwargs):
@@ -142,6 +153,17 @@ class RecordingRuntime:
         assert list(request.artifacts.iterdir()) == []
         if self.error is not None:
             raise self.error
+        if self.write_trajectory:
+            payload = self.trajectory_payload or {
+                "model": "model",
+                "provider_model": "model",
+                "wire_protocol": "chat_completions",
+                "reasoning_effort": None,
+            }
+            (request.artifacts / "trajectory.jsonl").write_text(
+                json.dumps({"type": self.trajectory_type, "payload": payload}) + "\n",
+                encoding="utf-8",
+            )
         return self.result
 
 
@@ -154,6 +176,7 @@ def _runtime_result(
     tokens_spent=10,
     step_count=1,
     cleanup_quiesced=True,
+    agent_failures=(),
 ):
     status = {
         "completed": "completed",
@@ -181,6 +204,7 @@ def _runtime_result(
             "session_quiesced": cleanup_quiesced,
             "execution_quiesced": None,
         },
+        agent_failures=agent_failures,
     )
 
 
@@ -295,6 +319,10 @@ def test_single_agent_builds_stable_runtime_request(monkeypatch, tmp_path):
         "GrepTool",
     ]
     assert metrics["workflow_status"] == "done"
+    assert metrics["trajectory_models"] == ["model"]
+    assert metrics["provider_models"] == ["model"]
+    assert metrics["trajectory_llm_call_count"] == 1
+    assert len(metrics["trajectory_sha256"]) == 64
 
 
 def test_single_agent_reports_real_terminal_phase(monkeypatch, tmp_path):

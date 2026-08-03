@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 import uuid
 from pathlib import Path
 from typing import Any
@@ -13,7 +16,10 @@ from opencollab.tools import builtin_tools
 from opencollab_eval.benchmarks.task_specification import (
     compose_task_specification,
 )
-from opencollab_eval.engine.swe_eval_records import read_bounded_json
+from opencollab_eval.engine.provider_failures import (
+    summarize_terminal_provider_failures,
+)
+from opencollab_eval.engine.swe_eval_records import open_regular_binary, read_bounded_json
 from opencollab_eval.usage import DEFAULT_MAX_OUTPUT_TOKENS
 
 from .gen_prediction_config import validate_instance_id
@@ -107,6 +113,7 @@ def _result_metrics(result: RunResult[str]) -> dict[str, Any]:
         "execution_quiesced": False,
         "candidate_probe_eligible": candidate_probe_eligible,
         "submission_eligible": False,
+        "agent_failures": [dict(item) for item in result.agent_failures],
     }
     error = result.error
     if not session_quiesced:
@@ -116,6 +123,81 @@ def _result_metrics(result: RunResult[str]) -> dict[str, Any]:
         metrics["error_type"] = type(error).__name__ if error else "AgentRunError"
         metrics["error"] = str(error or result.reason or "agent execution failed")
     return metrics
+
+
+def verified_llm_calls(
+    trajectory_path: str | Path | None,
+    *,
+    artifact_root: Path,
+    expected_model: str,
+    expected_reasoning_effort: str | None,
+    wire_protocol: str,
+) -> tuple[list[str], list[str], str, int]:
+    """Bind a generated candidate to calls in its controller-owned trace."""
+    if wire_protocol not in {"chat_completions", "responses"}:
+        raise RuntimeError(f"Unsupported trajectory wire protocol {wire_protocol!r}")
+    if not trajectory_path:
+        raise RuntimeError("LLM execution did not produce a trajectory")
+    path = Path(trajectory_path)
+    try:
+        resolved = path.resolve(strict=True)
+        if not resolved.is_relative_to(artifact_root.resolve(strict=True)):
+            raise RuntimeError("LLM trajectory is outside the current artifact root")
+        with open_regular_binary(path) as handle:
+            before = os.fstat(handle.fileno())
+            raw = handle.read(16 * 1024 * 1024 + 1)
+            after = os.fstat(handle.fileno())
+        if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        ):
+            raise RuntimeError("LLM trajectory changed while reading")
+        if len(raw) > 16 * 1024 * 1024:
+            raise RuntimeError("LLM trajectory exceeds 16 MiB")
+        lines = raw.decode("utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise RuntimeError("LLM trajectory cannot be read") from exc
+    requested_models: list[str] = []
+    provider_models: list[str] = []
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("LLM trajectory contains invalid JSON") from exc
+        if not isinstance(record, dict) or record.get("type") != "llm_call":
+            continue
+        payload = record.get("payload")
+        if not isinstance(payload, dict):
+            raise RuntimeError("LLM call is missing its payload")
+        if payload.get("wire_protocol") != wire_protocol:
+            raise RuntimeError("LLM trajectory contains a mixed wire protocol")
+        requested = payload.get("model")
+        if requested != expected_model:
+            raise RuntimeError(
+                f"LLM requested model mismatch expected {expected_model!r} got {requested!r}"
+            )
+        observed = payload.get("provider_model")
+        if observed != expected_model:
+            raise RuntimeError(
+                f"LLM provider model mismatch expected {expected_model!r} got {observed!r}"
+            )
+        observed_effort = payload.get("reasoning_effort")
+        if wire_protocol == "responses" and observed_effort != expected_reasoning_effort:
+            raise RuntimeError(
+                "LLM reasoning effort mismatch "
+                f"expected {expected_reasoning_effort!r} got {observed_effort!r}"
+            )
+        requested_models.append(requested)
+        provider_models.append(observed)
+    if not requested_models:
+        raise RuntimeError("LLM trajectory contains no verified LLM call")
+    return (
+        sorted(set(requested_models)),
+        sorted(set(provider_models)),
+        hashlib.sha256(raw).hexdigest(),
+        len(requested_models),
+    )
 
 
 async def run_agent(
@@ -186,6 +268,48 @@ async def run_agent(
         return _runtime_failure_metrics(exc)
 
     metrics = _result_metrics(result)
+    provider_failure = summarize_terminal_provider_failures(result.agent_failures)
+    if provider_failure is not None:
+        metrics["provider_failure"] = provider_failure
+    wire_protocol = cfg.get("wire_protocol", "chat_completions")
+    try:
+        (
+            trajectory_models,
+            provider_models,
+            trajectory_sha256,
+            trajectory_llm_call_count,
+        ) = verified_llm_calls(
+            artifact_dir / "trajectory.jsonl",
+            artifact_root=artifact_dir,
+            expected_model=cfg["model"],
+            expected_reasoning_effort=cfg.get("reasoning_effort"),
+            wire_protocol=wire_protocol,
+        )
+    except RuntimeError as exc:
+        trajectory_models = []
+        provider_models = []
+        trajectory_sha256 = None
+        trajectory_llm_call_count = 0
+        if metrics["candidate_probe_eligible"]:
+            metrics.update(
+                workflow_status="error",
+                candidate_probe_eligible=False,
+                error_type="TrajectoryIdentityError",
+                error=str(exc),
+            )
+    metrics.update(
+        trajectory_models=trajectory_models,
+        provider_models=provider_models,
+        trajectory_sha256=trajectory_sha256,
+        trajectory_llm_call_count=trajectory_llm_call_count,
+        wire_protocol=wire_protocol,
+    )
+    if provider_failure is not None:
+        metrics.update(
+            workflow_status="provider_request_rejected",
+            candidate_probe_eligible=False,
+            submission_eligible=False,
+        )
     print(
         f"  agent: steps={metrics['step_count']} "
         f"tokens={metrics['used_tokens']}"

@@ -10,6 +10,7 @@ from pathlib import Path
 from generation_proof_test_support import (
     candidate_eval_proof_fields,
     candidate_source_projection_fields,
+    llm_call_proof_fields,
     trusted_summary_proof_fields,
 )
 
@@ -113,6 +114,7 @@ def _row(index: int, task: str, log: str, tokens: int, eval_status: str, resolve
             "patch_sha256": _sha(task),
             "eval_patch_sha256": _sha(task),
             "filtered_patch_paths": [],
+            **llm_call_proof_fields("deepseek-v4-pro"),
             **trusted_summary_proof_fields(_sha(task)),
         },
         "eval": {
@@ -393,6 +395,18 @@ def test_eval_layer_report_requires_projection_identity(tmp_path):
     report = module.build_report([report_path])
 
     _assert_technical(report, "invalid_generation_eval_patch_sha256")
+
+
+def test_eval_layer_report_requires_generation_execution_proof(tmp_path):
+    module = _load_module()
+    row = _row(1, "task-a", "/run/task-a.outer.log", 100, "eval_done", True)
+    for field in llm_call_proof_fields("deepseek-v4-pro"):
+        row["generation"].pop(field)
+    report_path = _write_json(tmp_path / "round.json", {"rows": [row]})
+
+    report = module.build_report([report_path])
+
+    _assert_technical(report, "missing_generation_execution_proof")
 
 
 def test_eval_layer_report_rejects_cross_run_third_eval_attempt(tmp_path):

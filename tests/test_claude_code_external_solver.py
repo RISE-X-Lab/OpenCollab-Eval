@@ -207,6 +207,12 @@ def test_external_sidecar_is_required_and_usage_is_attributed_to_claude_code(
         trusted_extraction=trusted_extraction,
         **binding_args,
     )
+    identity = esu._external_solver_identity(evidence)
+    assert identity["schema"] == "opencollab.external_solver_identity.v1"
+    assert identity["model"] == "glm-5.2"
+    assert identity["public_instance_id"] == "public-instance-7"
+    assert identity["trusted_final_patch_sha256"] == patch_sha256
+    assert identity["candidate_tree"] == candidate_tree
     assert evidence["evaluation_binding"]["public_instance_id"] == "public-instance-7"
     assert evidence["evaluation_binding"]["trusted_baseline_sha256"] == "6" * 64
     assert evidence["evaluation_binding"]["raw_patch_sha256"] == hashlib.sha256(raw_patch.encode()).hexdigest()

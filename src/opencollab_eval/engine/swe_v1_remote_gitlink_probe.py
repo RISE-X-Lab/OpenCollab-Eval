@@ -8,7 +8,10 @@ import hashlib
 import json
 import pathlib
 
-from opencollab_eval.engine.swe_generation_proof import solver_git_snapshot_valid
+from opencollab_eval.engine.swe_generation_proof import (
+    current_generation_proof_valid,
+    solver_git_snapshot_valid,
+)
 from opencollab_eval.engine.swe_v1_remote_records import *
 from opencollab_eval.patch_gitlinks import *
 
