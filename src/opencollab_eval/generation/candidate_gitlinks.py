@@ -52,7 +52,7 @@ def _gitlinks(git: str, git_dir: Path, worktree: Path, base: str, env: dict[str,
         [f"--git-dir={git_dir}", f"--work-tree={worktree}", "ls-tree", "-rz", "--full-tree", base],
         env=env,
         timeout=120,
-        max_bytes=MAX_GITLINK_MANIFEST_BYTES,
+        max_bytes=MAX_GITLINK_CENSUS_BYTES,
         label="Gitlink baseline census",
     )
     items: list[tuple[str, str]] = []

@@ -270,6 +270,60 @@ def test_unmaterialized_gitlink_preserves_only_ignored_residue(tmp_path: Path) -
     assert replay_gitlink_paths(projected) == ()
 
 
+def test_gitlink_capture_accepts_large_trusted_tree(tmp_path: Path) -> None:
+    git_dir = tmp_path / "large.git"
+    _git(tmp_path, "init", "--bare", "--quiet", str(git_dir))
+    blob = subprocess.run(
+        ["git", f"--git-dir={git_dir}", "hash-object", "-w", "--stdin"],
+        input=b"content\n",
+        capture_output=True,
+        check=True,
+    ).stdout.decode().strip()
+    gitlink_oid = "1" * 40
+    vendor_tree = subprocess.run(
+        ["git", f"--git-dir={git_dir}", "mktree", "-z", "--missing"],
+        input=f"160000 commit {gitlink_oid}\tmodule\0".encode(),
+        capture_output=True,
+        check=True,
+    ).stdout.decode().strip()
+    entries = b"".join(
+        f"100644 blob {blob}\tfile-{index:05d}-{'x' * 48}\0".encode()
+        for index in range(10_000)
+    ) + f"040000 tree {vendor_tree}\tvendor\0".encode()
+    tree = subprocess.run(
+        ["git", f"--git-dir={git_dir}", "mktree", "-z", "--missing"],
+        input=entries,
+        capture_output=True,
+        check=True,
+    ).stdout.decode().strip()
+    census = subprocess.run(
+        ["git", f"--git-dir={git_dir}", "ls-tree", "-rz", "--full-tree", tree],
+        capture_output=True,
+        check=True,
+    ).stdout
+    assert len(census) > 1024 * 1024
+    worktree = tmp_path / "large-worktree"
+    worktree.mkdir()
+
+    manifest = capture_gitlink_manifest(
+        git_dir=git_dir,
+        worktree=worktree,
+        base=tree,
+        base_tree=tree,
+        baseline_sha256="a" * 64,
+        repository_directory=tmp_path / "large-repositories",
+    )
+
+    assert manifest["gitlinks"] == [
+        {
+            "path": "vendor/module",
+            "oid": gitlink_oid,
+            "baseline_digest": None,
+            "baseline_repository": None,
+        }
+    ]
+
+
 def test_unmaterialized_gitlink_uses_baseline_ignore_rules(tmp_path: Path) -> None:
     worktree, trusted, _base, _oid, repositories, manifest = _materialized_gitlink(tmp_path)
     module = worktree / "vendor" / "module"
