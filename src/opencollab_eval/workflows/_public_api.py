@@ -15,22 +15,42 @@ _LIMIT_FIELDS = {
     "run_tests": ("max_traceback_chars",),
 }
 
+_RESULT_LIMIT_ENV = "OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS"
 
-def _tool_output_limits(names: tuple[BuiltinToolName, ...]) -> dict[str, dict[str, int]]:
-    raw = os.environ.get("OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS", "").strip()
-    if not raw:
-        return {}
+
+def _parse_tool_output_limits(raw: str) -> tuple[int | None, dict[str, int]]:
+    if "=" not in raw:
+        return _validated_limit(raw), {}
+    overrides: dict[str, int] = {}
+    for item in raw.split(","):
+        name, separator, value = item.strip().partition("=")
+        if not separator or name not in {"default", *_LIMIT_FIELDS} or name in overrides:
+            raise ValueError(f"{_RESULT_LIMIT_ENV} has an invalid tool limit mapping")
+        overrides[name] = _validated_limit(value)
+    return overrides.pop("default", None), overrides
+
+
+def _validated_limit(raw: str) -> int:
     try:
         limit = int(raw)
     except ValueError as exc:
-        raise ValueError("OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS must be an integer") from exc
+        raise ValueError(f"{_RESULT_LIMIT_ENV} limits must be integers") from exc
     if not 256 <= limit <= 1_000_000:
-        raise ValueError("OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS must be in 256..1000000")
-    return {
-        name: {field: limit for field in _LIMIT_FIELDS[name]}
-        for name in names
-        if name in _LIMIT_FIELDS
-    }
+        raise ValueError(f"{_RESULT_LIMIT_ENV} limits must be in 256..1000000")
+    return limit
+
+
+def _tool_output_limits(names: tuple[BuiltinToolName, ...]) -> dict[str, dict[str, int]]:
+    raw = os.environ.get(_RESULT_LIMIT_ENV, "").strip()
+    if not raw:
+        return {}
+    default, overrides = _parse_tool_output_limits(raw)
+    limits = {}
+    for name in names:
+        limit = overrides.get(name, default)
+        if name in _LIMIT_FIELDS and limit is not None:
+            limits[name] = {field: limit for field in _LIMIT_FIELDS[name]}
+    return limits
 
 
 def toolset(
