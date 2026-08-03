@@ -23,14 +23,12 @@ from opencollab_eval.engine.solver_backend import (
     is_kimi_direct_model,
     workflow_solver_spec,
 )
-from opencollab_eval.generation.claude_code_sidecar import (
-    relay_socket_path,
-    validate_runtime_workflow_settings,
-)
+from opencollab_eval.generation.claude_code_sidecar import relay_socket_path, validate_runtime_workflow_settings
 from opencollab_eval.usage import model_context_window
 
 from ._launchd import bootstrap_launch_agent
 from ._launchd import launchctl as _launchctl
+from ._swe_eval_relay_health import add_relay_arguments as _add_relay_arguments
 from ._swe_eval_relay_health import (
     local_relay_healthy as _local_relay_healthy,
 )
@@ -732,40 +730,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("OPENCOLLAB_PROXY_UPSTREAM_BASE_URL", ""),
         help="Upstream provider URL used by the managed authenticated relay",
     )
-    parser.add_argument(
-        "--proxy-mode",
-        choices=(
-            "aggregate-chat-stream",
-            "responses-pass-through",
-        ),
-        default="aggregate-chat-stream",
-        help="Compatibility mode required from the managed model relay",
-    )
-    parser.add_argument(
-        "--proxy-compact-tool-schemas",
-        action="store_true",
-        help="Remove non-semantic tool schema annotations before relay calls",
-    )
-    parser.add_argument("--proxy-compact-tool-call-ids", action="store_true", help="Shorten historical tool-call IDs")
-    parser.add_argument(
-        "--proxy-gzip-upstream-request", action="store_true", help="Use deterministic gzip for provider requests"
-    )
-    parser.add_argument(
-        "--proxy-max-upstream-request-bytes",
-        type=int,
-        default=0,
-        help="Bound compatibility-relay requests after deterministic compaction",
-    )
-    parser.add_argument(
-        "--proxy-allow-insecure-upstream",
-        action="store_true",
-        help="Explicitly allow an HTTP provider URL for the managed relay",
-    )
-    parser.add_argument(
-        "--proxy-direct-upstream",
-        action="store_true",
-        help="Bypass host proxy settings for the managed relay upstream",
-    )
+    _add_relay_arguments(parser)
     return parser
 
 

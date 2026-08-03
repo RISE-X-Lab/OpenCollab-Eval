@@ -15,6 +15,26 @@ from .swe_v1_prolite_config import url_with_healthz
 RELAY_COMPACT_IDS_ENV = "OPENCOLLAB_RELAY_COMPACT_TOOL_CALL_IDS"
 
 
+def add_relay_arguments(parser: Any) -> None:
+    parser.add_argument(
+        "--proxy-mode",
+        choices=("aggregate-chat-stream", "responses-pass-through"),
+        default="aggregate-chat-stream",
+        help="Compatibility mode required from the managed model relay",
+    )
+    parser.add_argument("--proxy-compact-tool-schemas", action="store_true",
+                        help="Remove non-semantic tool schema annotations")
+    parser.add_argument("--proxy-compact-tool-call-ids", action="store_true", help="Shorten historical tool-call IDs")
+    parser.add_argument("--proxy-gzip-upstream-request", action="store_true",
+                        help="Use deterministic gzip for provider requests")
+    parser.add_argument("--proxy-max-upstream-request-bytes", type=int, default=0,
+                        help="Bound compatibility-relay requests after deterministic compaction")
+    parser.add_argument("--proxy-allow-insecure-upstream", action="store_true",
+                        help="Explicitly allow an HTTP provider URL for the managed relay")
+    parser.add_argument("--proxy-direct-upstream", action="store_true",
+                        help="Bypass host proxy settings for the managed relay upstream")
+
+
 def relay_identity_arguments(enabled: bool, workflow_env: list[str]) -> list[str]:
     if any(value.partition("=")[0] == RELAY_COMPACT_IDS_ENV for value in workflow_env):
         raise SystemExit(
@@ -266,6 +286,7 @@ def local_relay_healthy(
 
 
 __all__ = [
+    "add_relay_arguments",
     "local_relay_healthy",
     "relay_identity_arguments",
     "relay_mode_flags",

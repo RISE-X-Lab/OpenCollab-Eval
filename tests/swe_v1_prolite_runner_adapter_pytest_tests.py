@@ -50,14 +50,7 @@ def _session(nodeids, *, command_sha256: str, exitstatus: int = 0, outcome: str 
     return _proof_text(events, returncode=exitstatus, command_sha256=command_sha256)
 
 
-def _mixed_parameter_session(
-    target,
-    *,
-    command_sha256,
-    exitstatus,
-    sibling="",
-    sibling_outcome="failed",
-):
+def _mixed_parameter_session(target, *, command_sha256, exitstatus, sibling="", sibling_outcome="failed"):
     nodeids = [target, *([sibling] if sibling else [])]
     events = [
         {"event": "session_start"},
