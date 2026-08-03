@@ -2,11 +2,10 @@
 
 **English** | [简体中文](MIGRATION.zh-CN.md)
 
-OpenCollab-Eval owns benchmark contracts, evaluator orchestration, Solver
-workflows, candidate construction, SWE-bench generation, process isolation,
-execution evidence, reporting, and remote evaluation. OpenCollab owns the agent
-framework, domain and application services, adapters, composition, compact
-public Python API, and framework tests.
+OpenCollab-Eval owns the benchmark and evaluation code. This covers Solver
+workflows and remote evaluation. Candidate construction runs under process
+isolation, and its outputs retain execution evidence.
+OpenCollab owns the agent framework, its public Python API, and framework tests.
 
 ## Package ownership
 

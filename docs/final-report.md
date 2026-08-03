@@ -2,10 +2,10 @@
 
 **English** | [简体中文](zh-CN/final-report.md)
 
-`oc-eval final-report` publishes one comparison from two completed 100-task
-SWE-bench Pro-Lite runs. Every output format is rendered from one validated JSON
-model. The command exits successfully only after the PDF and all source files
-have been atomically published and the publication manifest has status `final`.
+`oc-eval final-report` publishes a comparison of two completed 100-task
+SWE-bench Pro-Lite runs. One validated JSON model supplies every output format.
+The command succeeds after the PDF and source files are atomically published
+and the publication manifest reaches `final`.
 
 ## Command
 
@@ -25,15 +25,15 @@ oc-eval final-report \
   --output-dir /sealed/publication
 ```
 
-The output directory receives files with a common date-derived prefix: the
+All output files share a prefix derived from the date. The set contains the
 validated comparison model as JSON, Markdown, TeX, the compiled PDF, and a
-publication manifest. A first failed validation or LaTeX build records manifest
-status `failed` and returns a nonzero exit code. Once a complete `final`
-publication exists, a later failed attempt leaves all five published files and
-their hashes unchanged. Publication serializes writers for one prefix,
-preflights every target, backs up the previous output set, rechecks every
-published hash, and restores the complete previous set if any replacement or
-manifest write fails.
+publication manifest. When the prefix has no manifest, a failed validation or
+LaTeX build writes status `failed`. The command returns a nonzero exit code.
+Once a complete `final` publication exists, a later failed attempt leaves the
+five published files and their hashes unchanged. The publisher allows one
+writer per prefix, checks each target before replacement, and backs up the
+previous set. It verifies the new hashes and restores the backup if a
+replacement or manifest write fails.
 
 ## Fact report contract
 
@@ -71,11 +71,10 @@ publication.
 
 Each audit manifest uses schema `opencollab.swe_clean_run_manifest.v1` and binds
 to the exact fact report through `source_report_sha256`. It records the method
-name; the full task census for clean trajectory, candidate identity, network
-isolation, and direct execution; the exact resolved-task set with executable
-proof; OpenCollab and OpenCollab-Eval commits; the dataset SHA-256; and one or
-more structured evidence files. Both compared methods must use the same runtime
-and dataset identities.
+name and the full task census covered by the audit. It also identifies the
+resolved tasks with executable proof, the two repository commits, and the
+dataset SHA-256. One or more structured evidence files supply the task records.
+Both compared methods must use the same runtime and dataset identities.
 
 ```json
 {
@@ -131,7 +130,7 @@ from the target-test plans, command evidence, exit statuses, cleanup evidence,
 and container result. A matching audit Boolean cannot substitute for a missing,
 changed, or internally incomplete official report. The evaluator-owned audit
 document supplies the interpretation of the trajectory, identity, and network
-artifacts; the final-report command pins that interpretation to the exact raw
+artifacts. The final-report command pins that interpretation to the exact raw
 artifact bytes that were reviewed.
 
 ```json
@@ -190,7 +189,7 @@ The labels document uses schema
 Resolved counts, comparison counts, terminal coverage, and evidence claims are
 generated directly from the validated model and cannot be supplied by labels.
 The narrative document uses schema
-`opencollab.swe_final_report_narrative.v1`; it may add overview paragraphs and
+`opencollab.swe_final_report_narrative.v1`. It may add overview paragraphs and
 task notes with task indices and evidence references. Narrative text cannot
 change any verdict, count, comparison set, runtime identity, or evidence hash.
 Narrative evidence references must name a file already verified by one of the

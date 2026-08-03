@@ -2,7 +2,7 @@
 
 [English](../evaluation-runtime.md) | **简体中文**
 
-OpenCollab-Eval 提供多个执行层级。请选择能够满足所需结果的最高层入口。
+OpenCollab-Eval 提供多个执行层级。下表给出不同结果对应的入口。
 
 | 入口 | 输入 | 输出 | 官方判定 |
 | --- | --- | --- | --- |
