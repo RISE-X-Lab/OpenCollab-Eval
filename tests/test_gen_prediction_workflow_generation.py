@@ -117,6 +117,14 @@ def test_generate_defers_container_patch_extraction(monkeypatch, tmp_path):
     assert metrics["context_window"] == 35_500
     assert metrics["submission_eligible"] is True
     assert current_generation_proof_valid(metrics, patch)
+    assert metrics["solver_task_specification"] == {
+        "schema": "opencollab.solver_task_specification.v1",
+        "delivery": "inline",
+        "source_bytes": len(gpw.build_task(FIXTURE, include_fail_to_pass=False).encode()),
+        "source_sha256": gpw.hashlib.sha256(
+            gpw.build_task(FIXTURE, include_fail_to_pass=False).encode()
+        ).hexdigest(),
+    }
     assert "path_audit" not in metrics["trusted_patch_extraction"]
     assert metrics["patch_path_audit"] == {
         "actual_paths": ["pkg/a.py"],

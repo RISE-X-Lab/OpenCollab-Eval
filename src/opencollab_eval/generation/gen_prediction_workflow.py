@@ -55,6 +55,15 @@ from opencollab_eval.usage import DEFAULT_MAX_OUTPUT_TOKENS, model_context_windo
 from . import gen_prediction as gp  # noqa: E402 — shared container plumbing
 from .container_quiescence import require_container_quiescence  # noqa: E402
 from .gen_prediction_patch import extract_patch_guarded  # noqa: E402
+from .gen_prediction_task_delivery import (  # noqa: E402
+    _readable_task_specification as _readable_task_specification,
+)
+from .gen_prediction_task_delivery import (  # noqa: E402
+    stage_task_description as _stage_task_description,
+)
+from .gen_prediction_task_delivery import (  # noqa: E402
+    verify_staged_task_description as _verify_staged_task_description,
+)
 from .gen_prediction_workflow_inputs import (  # noqa: E402
     _blind_validation_default as _blind_validation_default,
 )
@@ -349,9 +358,13 @@ async def generate(
                 "trusted host extraction does not accept container Git checkpoints"
             )
         include_hidden_tests = not blind_validation
+        task_description, task_specification_delivery = await _stage_task_description(
+            env,
+            build_task(instance, include_fail_to_pass=include_hidden_tests),
+        )
         task = EvalTask(
             task_id=gp.anonymous_solver_task_id(),
-            description=build_task(instance, include_fail_to_pass=include_hidden_tests),
+            description=task_description,
             timeout=args.timeout,
             max_tokens=args.budget,
             extras=build_extras(instance, include_hidden_tests=include_hidden_tests),
@@ -389,6 +402,8 @@ async def generate(
             defer_patch_extraction=True,
         )
         require_container_quiescence(cid)
+        if not await _verify_staged_task_description(env, task_specification_delivery):
+            result.error = "public task specification changed during solver execution"
         print(
             f"  workflow: tokens={result.tokens_used} steps={result.steps} "
             f"duration={result.duration:.0f}s error={result.error}"
@@ -486,6 +501,8 @@ async def generate(
         )
         gp.bind_llm_transport(metrics)
         metrics["generation_image_id"] = generation_image_id
+        metrics["generation_proof_schema"] = "opencollab.generation_proof.v2"
+        metrics["solver_task_specification"] = task_specification_delivery
         metrics["solver_git_snapshot"] = snapshot.as_dict()
         if extraction_proof is not None:
             metrics["trusted_patch_extraction"] = extraction_proof

@@ -8,6 +8,8 @@ from pathlib import PurePosixPath
 from typing import Any
 
 TRUSTED_PATCH_EXTRACTION_SCHEMA = "opencollab.trusted_patch_extraction.v1"
+GENERATION_PROOF_V2_SCHEMA = "opencollab.generation_proof.v2"
+TASK_SPECIFICATION_SCHEMA = "opencollab.solver_task_specification.v1"
 MAX_WORKSPACE_ARCHIVE_BYTES = 4 * 1024 * 1024 * 1024
 MAX_WORKSPACE_EXTRACTED_BYTES = 8 * 1024 * 1024 * 1024
 MAX_WORKSPACE_FILE_BYTES = 2 * 1024 * 1024 * 1024
@@ -17,6 +19,9 @@ MAX_TRUSTED_PATCH_BYTES = 8 * 1024 * 1024
 _OBJECT_ID_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 _IMAGE_ID_RE = re.compile(r"sha256:[0-9a-f]{64}\Z")
+_TASK_SPECIFICATION_PATH_RE = re.compile(
+    r"\.git/opencollab-public-task-[0-9a-f]{32}\.jsonl\Z"
+)
 _PREPARATION_INPUT_KEYS = {
     "schema",
     "expected_base_commit",
@@ -373,9 +378,58 @@ def trusted_patch_extraction_valid(
     )
 
 
+def solver_task_specification_valid(value: Any) -> bool:
+    """Validate the complete public task delivery proof for v2 records."""
+    if not isinstance(value, dict) or value.get("schema") != TASK_SPECIFICATION_SCHEMA:
+        return False
+    delivery = value.get("delivery")
+    common = {"schema", "delivery", "source_bytes", "source_sha256"}
+    if (
+        not _nonnegative_int(value.get("source_bytes"))
+        or value["source_bytes"] == 0
+        or value["source_bytes"] > MAX_TRUSTED_PATCH_BYTES
+        or not isinstance(value.get("source_sha256"), str)
+        or not _SHA256_RE.fullmatch(value["source_sha256"])
+    ):
+        return False
+    if delivery == "inline":
+        return set(value) == common
+    file_keys = common | {
+        "delivered_bytes",
+        "delivered_sha256",
+        "delivered_lines",
+        "path",
+    }
+    return bool(
+        delivery == "git_metadata_file"
+        and set(value) == file_keys
+        and _nonnegative_int(value.get("delivered_bytes"))
+        and value["delivered_bytes"] > 0
+        and value["delivered_bytes"] <= MAX_TRUSTED_PATCH_BYTES
+        and _nonnegative_int(value.get("delivered_lines"))
+        and value["delivered_lines"] > 0
+        and isinstance(value.get("delivered_sha256"), str)
+        and _SHA256_RE.fullmatch(value["delivered_sha256"])
+        and isinstance(value.get("path"), str)
+        and _TASK_SPECIFICATION_PATH_RE.fullmatch(value["path"])
+    )
+
+
+def _generation_schema_valid(metric: dict[str, Any]) -> bool:
+    schema = metric.get("generation_proof_schema")
+    if schema is None:
+        return True
+    return bool(
+        schema == GENERATION_PROOF_V2_SCHEMA
+        and solver_task_specification_valid(metric.get("solver_task_specification"))
+    )
+
+
 def current_generation_proof_valid(metric: Any, patch: str) -> bool:
     """Validate the two proofs required by every current generation record."""
     if not isinstance(metric, dict):
+        return False
+    if not _generation_schema_valid(metric):
         return False
     if not isinstance(metric.get("generation_image_id"), str) or not _IMAGE_ID_RE.fullmatch(
         metric["generation_image_id"]
@@ -412,6 +466,8 @@ def current_generation_summary_proof_valid(metric: Any) -> bool:
     """Validate proof shape and patch identity in a report row without patch text."""
     if not isinstance(metric, dict):
         return False
+    if not _generation_schema_valid(metric):
+        return False
     if not isinstance(metric.get("generation_image_id"), str) or not _IMAGE_ID_RE.fullmatch(
         metric["generation_image_id"]
     ):
@@ -430,6 +486,8 @@ def current_generation_summary_proof_valid(metric: Any) -> bool:
 
 __all__ = [
     "TRUSTED_PATCH_EXTRACTION_SCHEMA",
+    "GENERATION_PROOF_V2_SCHEMA",
+    "TASK_SPECIFICATION_SCHEMA",
     "MAX_TRUSTED_PATCH_BYTES",
     "MAX_WORKSPACE_ARCHIVE_BYTES",
     "MAX_WORKSPACE_ARCHIVE_ENTRIES",
@@ -438,6 +496,7 @@ __all__ = [
     "current_generation_proof_valid",
     "current_generation_summary_proof_valid",
     "generation_llm_calls_proven",
+    "solver_task_specification_valid",
     "preparation_input_valid",
     "solver_git_snapshot_valid",
     "trusted_patch_extraction_valid",
