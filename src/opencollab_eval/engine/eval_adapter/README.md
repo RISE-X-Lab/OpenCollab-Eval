@@ -2,11 +2,11 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-`eval_adapter` is the benchmark boundary for the evaluation harness. It converts
-dataset rows into evaluation records, then classifies official-evaluation
-infrastructure failures into stable fields.
+`eval_adapter` translates benchmark rows into the records used by the
+evaluation harness. It also maps infrastructure failures from official
+evaluation to stable fields.
 
-The adapter uses these models:
+The adapter uses the following models.
 
 | Model | Responsibility |
 | --- | --- |

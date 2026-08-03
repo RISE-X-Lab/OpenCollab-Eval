@@ -2,9 +2,9 @@
 
 **English** | [简体中文](zh-CN/evaluation-integrity.md)
 
-OpenCollab-Eval treats an evaluation result as a chain of executable evidence.
-A task becomes resolved when the declared target tests execute against the
-same candidate produced by the solver and every required target passes.
+OpenCollab-Eval accepts an evaluation result after its executable evidence is
+complete. A task becomes resolved when the declared target tests run against
+the candidate produced by the Solver and every required target passes.
 
 The central integrity rule is
 
@@ -31,7 +31,7 @@ The evaluation controller owns runtime synchronization, the trusted baseline,
 candidate construction, official workspace preparation, test-plan generation,
 evidence parsing, and terminal reports.
 
-The solver owns only the modifications made in its disposable workspace. Its
+The Solver contributes the modifications made in its disposable workspace. Its
 Git metadata, self-reported diff, prose, and self-test output are advisory
 inputs.
 
@@ -174,7 +174,7 @@ and a verified coverage mode.
 The flattened target batches must equal the declared target list. Commands and
 proof batches must have the same length as target batches. Empty commands,
 `true`, `:`, and other no-op forms are rejected. Unsupported target syntax
-produces a technical failure instead of a passing command.
+produces a technical failure.
 
 `FAIL_TO_PASS` is required. `PASS_TO_PASS` can be empty. When present, both
 groups use the same parser-backed execution rules.

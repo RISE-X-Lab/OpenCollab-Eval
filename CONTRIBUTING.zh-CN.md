@@ -2,7 +2,7 @@
 
 [English](CONTRIBUTING.md) | **简体中文**
 
-感谢你帮助改进 OpenCollab-Eval。该仓库负责基准适配、Solver 隔离、候选构建、官方评测、证据、远程执行和报告。
+OpenCollab-Eval 的贡献范围包括基准适配器和评测代码。后者把 Solver 的改动转换为带有证据的官方结果。
 
 ## 开发环境配置
 
@@ -29,7 +29,7 @@ scripts/verify_wheel_contract.sh \
   "$wheel_root"/eval/opencollab_eval-0.1.0*.whl
 ```
 
-确定性 SWE E2E 要求安装 Docker、`sshd`、`ssh`、`ssh-keygen` 和 `rsync`。它使用本地伪模型服务，无需提供方凭据。
+确定性 SWE E2E 要求安装 Docker、`sshd`、`ssh`、`ssh-keygen` 和 `rsync`。其中的模型请求发往本地伪服务，因此无需提供方凭据。
 
 ```bash
 scripts/run_deterministic_swe_e2e.sh --output /tmp/oce-e2e --runs 1

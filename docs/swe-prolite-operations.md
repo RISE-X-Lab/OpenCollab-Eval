@@ -2,8 +2,9 @@
 
 **English** | [简体中文](zh-CN/swe-prolite-operations.md)
 
-This guide covers the remote production path that combines candidate generation
-with official evaluation. All examples use neutral host and storage names.
+This guide runs candidate generation and official evaluation on a remote
+worker. Example commands use `evaluator@example-worker` and `/srv` or `/results`
+paths as placeholders.
 
 ## Runtime topology
 

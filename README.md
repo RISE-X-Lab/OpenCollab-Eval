@@ -13,17 +13,16 @@
   <a href="#documentation">Documentation</a>
 </p>
 
-OpenCollab-Eval is the independent evaluation layer for
-[OpenCollab](https://github.com/RISE-X-Lab/OpenCollab), a platform for
-multi-agent collaboration and programmable agent workflows. It runs those
-agents on software-engineering benchmarks, gives each Solver an isolated
-checkout, records the resulting patch, and runs the official tests.
+OpenCollab-Eval evaluates agents built with
+[OpenCollab](https://github.com/RISE-X-Lab/OpenCollab) on software-engineering
+benchmarks. It gives each Solver an isolated checkout, records the resulting
+patch after the Solver exits, and passes that patch to the official tests.
 
-A task failure and an evaluation failure mean different things. `resolved`
-means that the named target tests ran and passed on the patch extracted from
-this run. If no tests were collected, the evidence is incomplete, the patch
-identity changed, or the workspace was still being modified, the run ends as a
-technical failure.
+Solver outcomes and evaluation failures have separate result states.
+`resolved` means that the named target tests ran and passed on the patch
+extracted from this run. The run ends as a technical failure when no tests were
+collected, the evidence is incomplete, the patch identity changed, or the
+workspace was still being modified.
 
 ## Evaluation flow
 
@@ -54,8 +53,9 @@ it starts.
 
 ## Supported environment
 
-Use Python 3.10 or later with OpenCollab 0.4.1 or newer in the 0.4 series. SWE-bench evaluation also needs
-Docker and the optional `swebench` dependencies. OpenHands needs Python 3.12.
+Use Python 3.10 or later with OpenCollab 0.4.1 or newer in the 0.4 series.
+SWE-bench evaluation also needs Docker and the optional `swebench`
+dependencies. OpenHands needs Python 3.12.
 For a remote Pro-Lite run, provide a Linux machine reachable through SSH. It
 must have Python, the task images, and a writable directory for each run.
 
@@ -92,9 +92,9 @@ predictions, trajectories, patches, reports, PDFs, and runtime logs.
 | `oc-eval final-report` | Validate and publish a comparison from two completed fact reports | Consumes existing verdicts |
 | `python -m opencollab_eval.commands.swe_eval_run` | Select a Solver and run a chosen Pro-Lite batch | Yes |
 
-Use `oc-eval run` when you only need candidate-generation records. It never
-reports a SWE-bench task as resolved. Use `oc-eval swe-v1-prolite` or the
-multi-Solver coordinator when the run must include official tests.
+`oc-eval run` produces candidate-generation records. An official SWE-bench
+verdict requires `oc-eval swe-v1-prolite` or the multi-Solver coordinator,
+which include the official tests.
 
 Use `oc-eval --help` and the subcommand help for all available options.
 
@@ -113,7 +113,7 @@ oc-eval inspect /data/swe-batch-pro.jsonl \
 ```
 
 The command checks the JSONL input and prints a task list with anonymized IDs.
-It does not start a Solver or print private judge fields.
+Private judge fields stay sealed. Solver execution begins with a run command.
 
 ## Generic candidate generation
 
@@ -136,9 +136,8 @@ oc-eval run /data/tasks.jsonl \
 ```
 
 OpenCollab loads the provider configuration through its public API. Put API
-keys in a secret store or a protected environment file instead of the command
-line. The command writes `results.jsonl` and reports how many candidates are
-eligible for evaluation.
+keys in a secret store or a protected environment file. The command writes
+`results.jsonl` and reports how many candidates are eligible for evaluation.
 
 ## Official SWE Pro-Lite evaluation
 
@@ -290,7 +289,8 @@ the Eval tests against the packaged files. The deterministic E2E starts a local
 fake model service and a temporary SSH server, copies the code with real
 `rsync`, and runs the task in Docker. It then extracts the patch, runs the
 official SWE-bench harness, checks the final report, and verifies cleanup of
-the resources it created. It does not call an external model.
+the resources it created. All model responses come from the local fake
+service.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) before changing evaluation behavior.
 
@@ -311,9 +311,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before changing evaluation behavior.
   <a href="#文档">文档</a>
 </p>
 
-OpenCollab-Eval 是 [OpenCollab](https://github.com/RISE-X-Lab/OpenCollab) 的独立评测层。OpenCollab 提供多智能体协作和可编程工作流，OpenCollab-Eval 负责把这些智能体放进软件工程基准测试。运行完整 SWE-bench 评测时，它会为每个 Solver 准备隔离的工作副本，记录最终补丁，再运行官方测试。
+OpenCollab-Eval 在软件工程基准上评测使用 [OpenCollab](https://github.com/RISE-X-Lab/OpenCollab) 构建的智能体。它会为每个 Solver 准备隔离的工作副本。Solver 退出后，评测器记录最终补丁并交给官方测试。
 
-题目没有做对和评测没有跑成是两回事。只有本次运行提取出的补丁通过指定目标测试，系统才会写入 `resolved`。没有收集到测试、证据不完整、补丁身份发生变化或工作区仍在被修改时，本次运行会被记为技术失败。
+Solver 的解题结果和评测运行故障分别记录。`resolved` 表示本次运行提取出的补丁已经通过指定目标测试。没有收集到测试、证据不完整、补丁身份发生变化或工作区仍在被修改时，本次运行会被记为技术失败。
 
 ## 评测流程
 
@@ -374,7 +374,7 @@ python -m pip install -e '.[dev,swebench]'
 | `oc-eval final-report` | 验证并发布由两份已完成事实报告构成的比较结果 | 使用现有判定 |
 | `python -m opencollab_eval.commands.swe_eval_run` | 选择 Solver 并运行一组指定的 Pro-Lite 题目 | 有 |
 
-只需要生成候选记录时，使用 `oc-eval run`。这个命令不会把 SWE-bench 任务判为 resolved。需要运行官方测试时，使用 `oc-eval swe-v1-prolite` 或多 Solver 协调器。
+`oc-eval run` 用于生成候选记录。官方 SWE-bench 判定由 `oc-eval swe-v1-prolite` 或多 Solver 协调器给出，这两个入口都会运行官方测试。
 
 使用 `oc-eval --help` 和各子命令的帮助信息查看当前完整选项集。
 
@@ -391,7 +391,7 @@ oc-eval inspect /data/swe-batch-pro.jsonl \
   --image-repository registry.example/swe
 ```
 
-这个命令检查 JSONL 输入，并输出使用匿名 ID 的任务清单。它不会启动 Solver，也不会打印私有评测字段。
+这个命令检查 JSONL 输入，并输出使用匿名 ID 的任务清单。私有评测字段保持密封，Solver 执行从运行命令开始。
 
 ## 通用候选生成
 
@@ -520,6 +520,6 @@ scripts/verify_wheel_contract.sh \
 scripts/run_deterministic_swe_e2e.sh --output /tmp/oce-e2e --runs 1
 ```
 
-wheel 检查会在干净环境中安装两个发行包，并针对打包后的文件运行 Eval 测试。确定性 E2E 会启动本地伪模型服务和临时 SSH 服务，用真实 `rsync` 复制代码，并在 Docker 中运行任务。随后，它会提取补丁，运行官方 SWE-bench harness，检查最终报告，并确认自己创建的资源已经清理。整个过程不会调用外部模型。
+wheel 检查会在干净环境中安装两个发行包，并针对打包后的文件运行 Eval 测试。确定性 E2E 会启动本地伪模型服务和临时 SSH 服务，用真实 `rsync` 复制代码，并在 Docker 中运行任务。随后，它会提取补丁，运行官方 SWE-bench harness，检查最终报告，并确认自己创建的资源已经清理。模型响应全部来自本地伪服务。
 
 更改评测行为前，请阅读 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)。

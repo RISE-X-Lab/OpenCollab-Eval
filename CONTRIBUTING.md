@@ -2,9 +2,8 @@
 
 **English** | [简体中文](CONTRIBUTING.zh-CN.md)
 
-Thank you for improving OpenCollab-Eval. The repository owns benchmark
-adaptation, solver isolation, candidate construction, official evaluation,
-evidence, remote execution, and reporting.
+Contributions to OpenCollab-Eval cover benchmark adapters and the evaluation
+code that turns Solver changes into evidence-backed official results.
 
 ## Development setup
 
@@ -34,7 +33,8 @@ scripts/verify_wheel_contract.sh \
 ```
 
 The deterministic SWE E2E requires Docker, `sshd`, `ssh`, `ssh-keygen`, and
-`rsync`. It uses a local fake model service and no provider credential.
+`rsync`. Its model requests go to a local fake service, so provider credentials
+are unnecessary.
 
 ```bash
 scripts/run_deterministic_swe_e2e.sh --output /tmp/oce-e2e --runs 1
@@ -59,7 +59,8 @@ runtime paths.
 Update the operator guide, CLI reference, architecture description, and
 integrity documentation whenever a change affects commands, defaults, runtime
 topology, evidence, or result semantics. Documentation examples must use
-external output paths and placeholders rather than local infrastructure.
+external output paths and placeholders, keeping local infrastructure details
+out of the repository.
 
 Public code, comments, tests, and canonical documentation use English.
 The root `README.md` places its synchronized Simplified Chinese translation

@@ -5,7 +5,7 @@
 OpenCollab-Eval accepts two JSONL contracts at different trust boundaries.
 `oc-eval inspect` reads a benchmark dataset with public and sealed judge fields.
 `oc-eval run` reads generic evaluator tasks that are already prepared for
-Solver execution. The formats are not interchangeable.
+Solver execution. Each command expects its own schema.
 
 ## SWE-Batch Pro dataset
 
@@ -83,7 +83,8 @@ not load the sealed SWE judge contract or create an official resolved verdict.
 
 ## Generated records
 
-Generated records are output contracts rather than input task formats.
+Generated records describe evaluation output and carry their own identity
+requirements.
 
 | Record | Identity requirement |
 | --- | --- |
@@ -94,6 +95,6 @@ Generated records are output contracts rather than input task formats.
 | Clean-run manifest | Fact report SHA, runtime identities, evidence-file hashes |
 | Final publication manifest | Dataset identity and hashes of every published output |
 
-Do not edit generated records to repair a failed run. Correct the source
-environment or repeat an explicitly authorized stage so new evidence is
-produced and bound to the same permitted identity.
+Repair a failed run by correcting the source environment or repeating an
+explicitly authorized stage. This produces new evidence bound to the same
+permitted identity while preserving the original records.
