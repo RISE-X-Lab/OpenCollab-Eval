@@ -26,7 +26,7 @@ domain module、harness code 和已退役的 `opencollab.sdk` submodule。
 | `scout-solve` | 并行只读侦察，随后执行一轮 repair loop |
 | `analyst-solve` | Analyst 主导的侦察、分阶段修复和最终 verification |
 | `team-pro` | `analyst-solve` 的稳定调优 alias |
-| `validation-council-solve` | 面向 SWE 任务的 blind contract 和 validation council |
+| `validation-council-solve` | Blind evidence council，随后由一个 coder 生成候选并交给 official evaluation |
 | `swe-committee-v2` | 带显式 evidence 和 test gate 的 committee workflow |
 
 生产 Solver coordinator 将 `g11` 和 `g1.1` 映射到
@@ -37,8 +37,11 @@ function 是 library-level building block，可以由 single-instance workflow
 generator 选择。
 
 Blind SWE workflow 接收 issue text、repository content、public test 和
-public documentation。它们不会收到隐藏的 grader assertion。最终 task
-resolution 由外部 official evaluation 决定。
+public documentation。它们不会收到隐藏的 grader assertion。在
+`validation-council-solve` 中，advisory role 负责准备 evidence package，
+clean-source probe 用来隔离前置 role 与唯一 coder 的影响。首个能够归属于
+coder 的非空源码修改会直接交给可信候选提取，再由外部 official evaluation
+判定。
 
 ## 编写契约
 

@@ -1,9 +1,9 @@
 """validation-council-solve - contract-led validation council for SWE tasks.
 
-This workflow turns a SWE-style issue into a sequence of auditable artifacts:
-localization, behavior contracts, repository test cartography, candidate
-validation probes, judge decisions, baseline triage, coding, diff risk audit,
-post-patch probes, and final verification.
+This workflow turns a SWE-style issue into a compact evidence package with
+localization, behavior contracts, repository test cartography, approved public
+probes, baseline triage, and one authoritative coding role. The first nonempty
+source candidate is frozen for external official evaluation.
 
 It is designed for blind SWE-bench use. Roles may inspect only the issue text,
 repository code, public tests, and public documentation. They must not rely on

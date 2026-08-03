@@ -28,7 +28,7 @@ submodules.
 | `scout-solve` | Parallel read-only reconnaissance followed by one repair loop |
 | `analyst-solve` | Analyst-led reconnaissance, phased repair, and final verification |
 | `team-pro` | Stable tuned alias for `analyst-solve` |
-| `validation-council-solve` | Blind contract and validation council for SWE tasks |
+| `validation-council-solve` | Blind evidence council followed by one coding role and official evaluation |
 | `swe-committee-v2` | Committee workflow with explicit evidence and test gates |
 
 The production Solver coordinator maps `g11` and `g1.1` to
@@ -39,8 +39,11 @@ workflow functions are library-level building blocks and can be selected by
 the single-instance workflow generator.
 
 Blind SWE workflows receive issue text, repository contents, public tests, and
-public documentation. They do not receive hidden grader assertions. Final task
-resolution remains the responsibility of the external official evaluation.
+public documentation. They do not receive hidden grader assertions. In
+`validation-council-solve`, advisory roles prepare the evidence package, one
+coding role creates the candidate, and a clean-source probe separates their
+effects. The first detected nonempty coder change goes directly to trusted
+candidate extraction and then to the external official evaluation.
 
 ## Authoring contract
 

@@ -10,37 +10,23 @@ from ._validation_council_solve_defs import (
     CODER_PROMPT,
     CONTRACT_MINER_PROMPT,
     CONTRACT_SCHEMA,
-    DIFF_RISK_PROMPT,
-    DIFF_RISK_SCHEMA,
-    EMPTY_DIFF_RISKS,
-    EMPTY_POST_CANDIDATES,
-    EMPTY_POST_JUDGE,
-    EMPTY_POST_TRIAGE,
     EVIDENCE_BUDGET,
     FEEDBACK_BLOCK,
-    FINAL_VERIFIER_PROMPT,
     JUDGE_BUDGET,
     JUDGE_PROMPT,
     JUDGE_SCHEMA,
     LOCALIZATION_SCHEMA,
     LOCALIZER_BUDGET,
     LOCALIZER_PROMPT,
-    MAX_APPROVED_POST_TESTS,
     MAX_APPROVED_PRE_TESTS,
     MAX_CODER_ROUNDS,
-    PATCH_VALIDATOR_PROMPT,
-    POST_TRIAGE_PROMPT,
-    POST_VALIDATION_FACTORY_PROMPT,
     PRE_VALIDATION_FACTORY_PROMPT,
-    RISK_BUDGET,
     SHARED_RULES,
     TEST_CARTOGRAPHER_PROMPT,
     TEST_CARTOGRAPHY_SCHEMA,
     TRIAGE_BUDGET,
     TRIAGE_SCHEMA,
     VALIDATION_FACTORY_BUDGET,
-    VERDICT_SCHEMA,
-    VERIFIER_BUDGET,
     Any,
     _accepted_count,
     _candidates_brief,
@@ -50,20 +36,14 @@ from ._validation_council_solve_defs import (
     _complete_goal,
     _contracts_brief,
     _dict_or,
-    _feedback,
-    _is_blocked,
-    _is_pass,
     _judge_brief,
     _localization_brief,
     _read_tools,
     _report_brief,
-    _risk_tools,
-    _risks_brief,
     _source_diff_present,
     _tester_tools,
     _triage_brief,
     _trim_judge,
-    _verdict_brief,
     coder_role_timeout_seconds,
     structured_role_timeout_seconds,
 )
@@ -139,7 +119,10 @@ async def _run_attempt(
             rules=SHARED_RULES,
             goal=_complete_goal(goal),
             localization=_localization_brief(localization, 180),
+            contracts=_contracts_brief(contracts, 180),
             cartography=_cartography_brief(cartography),
+            pre_judge=_judge_brief(pre_judge, 140),
+            baseline_triage=_triage_brief(baseline_triage, 140),
             feedback_block=feedback_block,
         ),
         label=f"coder:r{attempt}",
@@ -147,6 +130,8 @@ async def _run_attempt(
         timeout=coder_role_timeout_seconds(),
     )
     source_changed = await _source_diff_present(ctx, injected_test_paths)
+    if source_changed is None:
+        raise RuntimeError("source diff probe did not return an authoritative result")
     if source_changed is False:
         failures = getattr(ctx, "agent_failures", ())
         if len(failures) > failures_before:
@@ -156,184 +141,27 @@ async def _run_attempt(
                 f"({failure.get('exception_type', 'unknown provider error')}, "
                 f"status={failure.get('status_code')})"
             )
-        no_diff_verdict = {
-            "verdict": "FAIL",
-            "findings": (
-                "Executable diff guard failed immediately after the coder: "
-                "git status reports no tracked source changes after excluding "
-                "injected validation files."
-            ),
-            "allowed_patch_paths": [],
-            "disallowed_patch_paths": [],
-        }
         return {
             "attempt": attempt,
             "coder_report": coder_report or "",
-            "patch_verdict": no_diff_verdict,
-            "diff_risks": EMPTY_DIFF_RISKS,
-            "post_candidates": EMPTY_POST_CANDIDATES,
-            "post_judge": EMPTY_POST_JUDGE,
-            "post_triage": EMPTY_POST_TRIAGE,
-            "final_verdict": no_diff_verdict,
-        }
-    patch_verdict = await _required_agent(
-        ctx,
-        PATCH_VALIDATOR_PROMPT.format(
-            rules=SHARED_RULES,
-            goal=_complete_goal(goal),
-            coder_report=_report_brief(coder_report or "(coder returned no report)", 220),
-            pre_judge=_judge_brief(pre_judge, 140),
-            baseline_triage=_triage_brief(baseline_triage, 140),
-        ),
-        schema=VERDICT_SCHEMA,
-        label=f"patch-validator:r{attempt}",
-        tools=_tester_tools(),
-        budget=VERIFIER_BUDGET,
-        timeout=structured_role_timeout_seconds(),
-    )
-    patch_verdict = _dict_or(
-        patch_verdict,
-        {
-            "verdict": "FAIL",
-            "findings": "Patch validator returned no structured verdict.",
-            "allowed_patch_paths": [],
-            "disallowed_patch_paths": [],
-        },
-    )
-    if _is_blocked(patch_verdict):
-        return {
-            "attempt": attempt,
-            "coder_report": coder_report or "",
-            "patch_verdict": patch_verdict,
-            "diff_risks": EMPTY_DIFF_RISKS,
-            "post_candidates": EMPTY_POST_CANDIDATES,
-            "post_judge": EMPTY_POST_JUDGE,
-            "post_triage": EMPTY_POST_TRIAGE,
-            "final_verdict": patch_verdict,
-        }
-
-    await ctx.phase(f"diff-risk:r{attempt}")
-    risks = await _required_agent(
-        ctx,
-        DIFF_RISK_PROMPT.format(
-            rules=SHARED_RULES,
-            goal=_complete_goal(goal),
-            contracts=_contracts_brief(contracts, 220),
-            patch_verdict=_verdict_brief(patch_verdict),
-        ),
-        schema=DIFF_RISK_SCHEMA,
-        label=f"diff-risk-auditor:r{attempt}",
-        tools=_risk_tools(),
-        budget=RISK_BUDGET,
-        timeout=structured_role_timeout_seconds(),
-    )
-    risks = _dict_or(risks, {"risks": [], "summary": "Diff risk auditor returned no structured report."})
-
-    post_candidates = await _required_agent(
-        ctx,
-        POST_VALIDATION_FACTORY_PROMPT.format(
-            rules=SHARED_RULES,
-            goal=_complete_goal(goal),
-            contracts=_contracts_brief(contracts, 180),
-            risks=_risks_brief(risks, 200),
-        ),
-        schema=CANDIDATE_TESTS_SCHEMA,
-        label=f"post-validation-factory:r{attempt}",
-        tools=_read_tools(),
-        budget=VALIDATION_FACTORY_BUDGET,
-        timeout=structured_role_timeout_seconds(),
-    )
-    post_candidates = _dict_or(
-        post_candidates,
-        {"tests": [], "abstained": True, "rationale": "No structured post-patch candidates."},
-    )
-
-    post_judge = await _judge_candidates(
-        ctx,
-        goal=goal,
-        contracts=contracts,
-        candidates=post_candidates,
-        stage=f"post-r{attempt}",
-        cap=MAX_APPROVED_POST_TESTS,
-    )
-
-    post_triage = await _required_agent(
-        ctx,
-        POST_TRIAGE_PROMPT.format(
-            rules=SHARED_RULES,
-            goal=_complete_goal(goal),
-            judge=_judge_brief(post_judge, 200),
-        ),
-        schema=TRIAGE_SCHEMA,
-        label=f"post-validation-triage:r{attempt}",
-        tools=_tester_tools(),
-        budget=TRIAGE_BUDGET,
-        timeout=structured_role_timeout_seconds(),
-    )
-    post_triage = _dict_or(
-        post_triage,
-        {"classifications": [], "approved_brief": "No post-patch triage.", "abstained": True},
-    )
-
-    await ctx.phase(f"final-verify:r{attempt}")
-    final_verdict = await _required_agent(
-        ctx,
-        FINAL_VERIFIER_PROMPT.format(
-            rules=SHARED_RULES,
-            goal=_complete_goal(goal),
-            localization=_localization_brief(localization),
-            contracts=_contracts_brief(contracts),
-            pre_judge=_judge_brief(pre_judge),
-            baseline_triage=_triage_brief(baseline_triage),
-            coder_report=_report_brief(coder_report or "(coder returned no report)"),
-            patch_verdict=_verdict_brief(patch_verdict),
-            risks=_risks_brief(risks),
-            post_judge=_judge_brief(post_judge),
-            post_triage=_triage_brief(post_triage, 200),
-        ),
-        schema=VERDICT_SCHEMA,
-        label=f"final-verifier:r{attempt}",
-        tools=_tester_tools(),
-        budget=VERIFIER_BUDGET,
-        timeout=structured_role_timeout_seconds(),
-    )
-    final_verdict = _dict_or(
-        final_verdict,
-        {
-            "verdict": "FAIL",
-            "findings": "Final verifier returned no structured verdict.",
-            "allowed_patch_paths": [],
-            "disallowed_patch_paths": [],
-        },
-    )
-    source_changed = await _source_diff_present(ctx, injected_test_paths)
-    if source_changed is False:
-        final_verdict = {
-            **final_verdict,
-            "verdict": "FAIL",
-            "findings": (
-                "Executable diff guard failed: git status reports no tracked "
-                "source changes after excluding injected validation files. " + str(final_verdict.get("findings") or "")
+            "candidate_ready": False,
+            "finding": (
+                "The coder completed without a source change after injected "
+                "validation paths were excluded."
             ),
-            "allowed_patch_paths": [],
         }
-
     return {
         "attempt": attempt,
         "coder_report": coder_report or "",
-        "patch_verdict": patch_verdict,
-        "diff_risks": risks,
-        "post_candidates": post_candidates,
-        "post_judge": post_judge,
-        "post_triage": post_triage,
-        "final_verdict": final_verdict,
+        "candidate_ready": True,
+        "finding": "A source candidate is ready for official evaluation.",
     }
 
 
 @workflow(
     name="validation-council-solve",
-    description="Blind contract-led SWE workflow with validation judges, diff risk audit, and capped retry",
-    phases=["localize", "evidence", "pre-validate", "solve", "diff-risk", "final-verify"],
+    description="Blind contract-led SWE workflow with one solver and official evaluation",
+    phases=["localize", "evidence", "pre-validate", "solve"],
 )
 async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     goal = str(args.get("goal") or args.get("description") or "").strip()
@@ -461,6 +289,12 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
             "abstained": True,
         }
 
+    baseline_changed = await _source_diff_present(ctx, injected_test_paths)
+    if baseline_changed is None:
+        raise RuntimeError("source diff probe did not establish a clean pre-coder baseline")
+    if baseline_changed:
+        raise RuntimeError("pre-coder roles changed the source worktree")
+
     attempts: list[dict[str, Any]] = []
     feedback = ""
     for attempt in range(1, MAX_CODER_ROUNDS + 1):
@@ -478,49 +312,26 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
             injected_test_paths=injected_test_paths,
         )
         attempts.append(report)
-        if _is_pass(report["final_verdict"]):
+        if report["candidate_ready"]:
             return {
                 "status": "done",
+                "candidate_ready": True,
+                "verification": "official_eval_pending",
                 "rounds": attempt,
                 "contracts": len(contracts.get("contracts", [])),
                 "pre_validation_accepted": _accepted_count(pre_judge),
-                "post_validation_accepted": _accepted_count(report["post_judge"]),
-                "allowed_patch_paths": report["final_verdict"].get("allowed_patch_paths", []),
-                "disallowed_patch_paths": report["final_verdict"].get("disallowed_patch_paths", []),
                 "attempts": attempts,
                 "tokens_spent": ctx.tokens_spent(),
             }
-        if _is_blocked(report["final_verdict"]):
-            blocker = report["final_verdict"].get("findings", "")
-            await ctx.log(f"attempt {attempt} blocked: {blocker[:200]}")
-            return {
-                "status": "blocked",
-                "rounds": attempt,
-                "blocker": blocker,
-                "contracts": len(contracts.get("contracts", [])),
-                "pre_validation_accepted": _accepted_count(pre_judge),
-                "post_validation_accepted": _accepted_count(report["post_judge"]),
-                "allowed_patch_paths": report["final_verdict"].get("allowed_patch_paths", []),
-                "disallowed_patch_paths": report["final_verdict"].get("disallowed_patch_paths", []),
-                "attempts": attempts,
-                "tokens_spent": ctx.tokens_spent(),
-            }
-        feedback = _feedback(
-            report["final_verdict"],
-            report["patch_verdict"],
-            report["post_triage"],
-            report["diff_risks"],
-        )
+        feedback = report["finding"]
         await ctx.log(f"attempt {attempt} failed: {feedback[:200]}")
 
     return {
         "status": "incomplete",
+        "candidate_ready": False,
         "rounds": MAX_CODER_ROUNDS,
         "contracts": len(contracts.get("contracts", [])),
         "pre_validation_accepted": _accepted_count(pre_judge),
-        "post_validation_accepted": _accepted_count(attempts[-1]["post_judge"]) if attempts else 0,
-        "allowed_patch_paths": attempts[-1]["final_verdict"].get("allowed_patch_paths", []) if attempts else [],
-        "disallowed_patch_paths": attempts[-1]["final_verdict"].get("disallowed_patch_paths", []) if attempts else [],
         "attempts": attempts,
         "tokens_spent": ctx.tokens_spent(),
     }

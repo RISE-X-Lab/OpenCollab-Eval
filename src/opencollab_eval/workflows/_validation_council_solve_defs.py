@@ -1,9 +1,9 @@
 """validation-council-solve - contract-led validation council for SWE tasks.
 
-This workflow turns a SWE-style issue into a sequence of auditable artifacts:
-localization, behavior contracts, repository test cartography, candidate
-validation probes, judge decisions, baseline triage, coding, diff risk audit,
-post-patch probes, and final verification.
+This workflow turns a SWE-style issue into a compact evidence package with
+localization, behavior contracts, repository test cartography, approved public
+probes, baseline triage, and one authoritative coding role. The first nonempty
+source candidate is frozen for external official evaluation.
 
 It is designed for blind SWE-bench use. Roles may inspect only the issue text,
 repository code, public tests, and public documentation. They must not rely on
@@ -20,16 +20,12 @@ from typing import Any
 from ._public_api import toolset
 
 MAX_APPROVED_PRE_TESTS = 5
-MAX_APPROVED_POST_TESTS = 4
-WORKFLOW_VARIANT = "G1.1"
 MAX_CODER_ROUNDS = 3
 LOCALIZER_BUDGET = 220_000
 EVIDENCE_BUDGET = 180_000
 VALIDATION_FACTORY_BUDGET = 160_000
 JUDGE_BUDGET = 100_000
 TRIAGE_BUDGET = 180_000
-RISK_BUDGET = 60_000
-VERIFIER_BUDGET = 220_000
 STRUCTURED_ROLE_TIMEOUT_SECONDS = 900
 CODER_ROLE_TIMEOUT_SECONDS = 1800
 
@@ -56,27 +52,6 @@ def coder_role_timeout_seconds() -> float:
     """Keep the coding role alive through its model client's retry window."""
     return _llm_aware_role_timeout(CODER_ROLE_TIMEOUT_SECONDS)
 
-
-EMPTY_POST_CANDIDATES = {
-    "tests": [],
-    "abstained": True,
-    "rationale": "Post-patch validation skipped.",
-}
-EMPTY_POST_JUDGE = {
-    "accepted": [],
-    "rejected": [],
-    "diagnostic": [],
-    "validation_brief": "Post-patch validation skipped.",
-}
-EMPTY_POST_TRIAGE = {
-    "classifications": [],
-    "approved_brief": "Post-patch triage skipped.",
-    "abstained": True,
-}
-EMPTY_DIFF_RISKS = {
-    "risks": [],
-    "summary": "Diff risk audit skipped.",
-}
 
 SHARED_RULES = """\
 Rules:
@@ -285,51 +260,6 @@ TRIAGE_SCHEMA: dict[str, Any] = {
     },
 }
 
-DIFF_RISK_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "required": ["risks", "summary"],
-    "properties": {
-        "risks": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "required": ["id", "changed_area", "risk", "contract_ids", "suggested_probe", "priority"],
-                "properties": {
-                    "id": {"type": "string"},
-                    "changed_area": {"type": "string"},
-                    "risk": {"type": "string"},
-                    "contract_ids": {"type": "array", "items": {"type": "string"}},
-                    "suggested_probe": {"type": "string"},
-                    "priority": {"type": "integer"},
-                },
-            },
-        },
-        "summary": {"type": "string"},
-    },
-}
-
-VERDICT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "required": ["verdict", "findings", "allowed_patch_paths", "disallowed_patch_paths"],
-    "properties": {
-        "verdict": {"type": "string", "enum": ["PASS", "FAIL", "BLOCKED"]},
-        "findings": {
-            "type": "string",
-            "description": "Commands run, evidence observed, and remaining defect or blocker.",
-        },
-        "allowed_patch_paths": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Paths from git diff --name-only that are legitimate source changes.",
-        },
-        "disallowed_patch_paths": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Temporary validation files, tests, logs, caches, or other non-submission paths.",
-        },
-    },
-}
-
 LOCALIZER_PROMPT = """\
 You are the read-only Analyst. Locate the likely source, public API, root cause,
 unknowns, and definition of done using public repository evidence.
@@ -403,114 +333,45 @@ Coder. Make the smallest source fix in localized files. Call one tool per turn.
 Every file_read needs offset and limit at most 10. Search each named symbol once.
 Read its definition, needed imports or types, continuing adjacent windows only
 until that definition ends. Never scan unrelated code or repeat a search.
-After ten reads or searches,
-edit using gathered evidence. Use an evidenced path. Use file_write for one
-unique replacement; otherwise use apply_patch with raw ---/+++/@@ text, never a
-Begin Patch wrapper. Stop after a nonempty source diff. A verifier runs tests.
+After ten reads or searches, edit using gathered evidence. Use an evidenced
+path. Use file_write for one unique replacement; otherwise use apply_patch with
+raw ---/+++/@@ text, never a Begin Patch wrapper. Inspect the resulting diff and
+run focused public tests when available. Finish with the best source candidate.
 
 Goal:
 {goal}
 
 Localization:
 {localization}
+
+Contracts:
+{contracts}
+
+Test cartography:
+{cartography}
+
+Accepted public validation:
+{pre_judge}
+
+Baseline evidence:
+{baseline_triage}
 {feedback_block}"""
 
 FEEDBACK_BLOCK = """
 Previous attempt feedback:
 {feedback}"""
 
-PATCH_VALIDATOR_PROMPT = """\
-You are the read-only Patch Validator. Inspect the diff and run relevant public
-tests. PASS requires a minimal source change and executable evidence. Run
-`git diff --name-only`. Put source paths in allowed_patch_paths and tests,
-caches, logs, or generated files in disallowed_patch_paths. Empty diff is FAIL.
-
-Goal:
-{goal}
-
-Coder report:
-{coder_report}
-
-Accepted validation:
-{pre_judge}
-
-Baseline triage:
-{baseline_triage}"""
-
-DIFF_RISK_PROMPT = """\
-You are the read-only Diff Risk Auditor. From the supplied contracts and
-verdict, identify at most three semantic risks and focused probes. Return no
-risks when the evidence is sufficient.
-
-Goal:
-{goal}
-
-Contracts:
-{contracts}
-
-Patch validator verdict:
-{patch_verdict}"""
-
-POST_VALIDATION_FACTORY_PROMPT = """\
-You are the read-only Post-Patch Validation Factory. Propose public
-evidence-backed probes for remaining risks. Do not edit or run them. Abstain
-when risks are empty or evidence is insufficient.
-
-Goal:
-{goal}
-
-Contracts:
-{contracts}
-
-Diff risks:
-{risks}"""
-
-POST_TRIAGE_PROMPT = """\
-You are the Post-Patch Executor. Run accepted cheap probes, keep temporary
-files outside the patch, and classify each as patch_pass, patch_fail, invalid,
-weak, or not_run. Record exact commands.
-
-Goal:
-{goal}
-
-Accepted post-patch validation:
-{judge}"""
-
-FINAL_VERIFIER_PROMPT = """\
-You are the read-only Final Verifier. Inspect the diff and run relevant public
-tests. PASS requires a source change, clean executable evidence, and no
-temporary artifact in the diff. Run `git diff --name-only`. Empty diff is FAIL.
-
-Goal:
-{goal}
-
-Patch validator verdict:
-{patch_verdict}
-
-Post-patch triage:
-{post_triage}"""
-
-
 def _read_tools() -> list[Any]:
     return toolset("file_read", "grep")
 
 
 def _coder_tools() -> list[Any]:
-    return toolset("file_read", "file_write", "apply_patch", "grep")
+    return toolset("bash", "file_read", "file_write", "apply_patch", "run_tests", "grep", "git_diff")
 
 
 def _tester_tools() -> list[Any]:
-    # Gate roles (patch-validator, post-triage, final-verifier) need an executable
-    # probe so a PASS is backed by a real run, not prose alone. Blindness holds
-    # because the hidden FAIL_TO_PASS tests are absent from the container, not
-    # because bash is. No file_write/apply_patch: these roles verify, not author.
-    return toolset("bash", "file_read", "run_tests", "grep", "git_diff")
-
-
-def _risk_tools() -> list[Any]:
-    # The diff-risk auditor must at least read the diff and the sources it judges;
-    # an empty toolset let it "audit" blind. Read-only — no execution or authoring.
-    return toolset("file_read", "grep", "git_diff")
+    # Baseline triage runs public probes without changing the candidate.
+    return toolset("file_read", "run_tests", "grep", "git_diff")
 
 
 def _dump(value: Any) -> str:
@@ -640,33 +501,6 @@ def _triage_brief(value: dict[str, Any], limit: int = 350) -> str:
     )
 
 
-def _risks_brief(value: dict[str, Any], limit: int = 350) -> str:
-    risks = []
-    for item in _items(value.get("risks"), 3):
-        if isinstance(item, dict):
-            risks.append(
-                {
-                    "id": _clip(item.get("id"), 80),
-                    "area": _clip(item.get("changed_area"), 100),
-                    "risk": _clip(item.get("risk"), 140),
-                    "probe": _clip(item.get("suggested_probe"), 120),
-                }
-            )
-    return _bounded_dump({"risks": risks, "summary": _clip(value.get("summary"), 140)}, limit)
-
-
-def _verdict_brief(value: dict[str, Any]) -> str:
-    return _bounded_dump(
-        {
-            "verdict": _clip(value.get("verdict"), 40),
-            "findings": _clip(value.get("findings"), 200),
-            "allowed": [_clip(item, 100) for item in _items(value.get("allowed_patch_paths"))],
-            "disallowed": [_clip(item, 100) for item in _items(value.get("disallowed_patch_paths"))],
-        },
-        350,
-    )
-
-
 def _report_brief(value: Any, limit: int = REPORT_BRIEF_BYTES) -> str:
     return _clip(value, limit)
 
@@ -688,28 +522,8 @@ def _accepted_count(judge: Any) -> int:
     return 0
 
 
-def _is_pass(verdict: Any) -> bool:
-    return isinstance(verdict, dict) and verdict.get("verdict") == "PASS"
-
-
-def _is_blocked(verdict: Any) -> bool:
-    return isinstance(verdict, dict) and verdict.get("verdict") == "BLOCKED"
-
-
 async def _source_diff_present(ctx: Any, exclude_paths: list[str]) -> bool | None:
     source_changed = getattr(ctx, "source_changed", None)
     if source_changed is None:
         return None
     return await source_changed(exclude_paths)
-
-
-def _feedback(*reports: Any) -> str:
-    parts: list[str] = []
-    for report in reports:
-        if isinstance(report, dict):
-            text = report.get("findings") or report.get("approved_brief") or report.get("summary")
-            if text:
-                parts.append(str(text))
-        elif isinstance(report, str) and report.strip():
-            parts.append(report.strip())
-    return "\n\n".join(parts) or "No structured feedback was returned; re-verify from the evidence package."
