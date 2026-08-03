@@ -13,6 +13,7 @@ from typing import Any
 from opencollab_eval.engine.task_delivery_gate import (
     MAX_WORK_BRIEF_BYTES,
     activate_task_delivery,
+    contains_tool_markup,
     current_task_delivery,
     reset_task_delivery,
 )
@@ -22,6 +23,22 @@ TASK_SPECIFICATION_JSONL_BYTES = 384
 TASK_WORKFLOW_TOOL_RESULT_CHARS = 640
 TASK_SPECIFICATION_SCHEMA = "opencollab.solver_task_specification.v1"
 TASK_INTAKE_BUDGET = 8_000
+TASK_INTAKE_FIELDS = ("objective", "requirements", "interfaces", "acceptance")
+TASK_INTAKE_FIELD_BYTES = {
+    "objective": 80,
+    "requirements": 144,
+    "interfaces": 168,
+    "acceptance": 64,
+}
+TASK_INTAKE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        field: {"type": "string"}
+        for field in TASK_INTAKE_FIELDS
+    },
+    "required": list(TASK_INTAKE_FIELDS),
+    "additionalProperties": False,
+}
 _RUNTIME_ENV_KEYS = (
     "OPENCOLLAB_EAGER_TOOL_KEEP_RECENT",
     "OPENCOLLAB_HISTORY_KEEP_RECENT_GROUPS",
@@ -125,20 +142,25 @@ async def run_task_delivered_workflow(
     ):
         raise RuntimeError("task intake source does not match the staged task identity")
     await ctx.phase("task-intake")
-    brief = await ctx.agent(
+    intake = await ctx.agent(
         (
-            f"Read all. In under {MAX_WORK_BRIEF_BYTES} UTF-8 bytes preserve each "
-            "requirement, interface, "
-            "value and acceptance rule.\n"
+            f"Read the complete public task below. Return the requested structured "
+            f"intake in at most {MAX_WORK_BRIEF_BYTES} UTF-8 bytes total. Keep objective "
+            "within 80 bytes, requirements within 144, interfaces within 168 and "
+            "acceptance within 64. Preserve the "
+            "objective, every requirement, public interfaces and acceptance rules. "
+            "Use an empty interfaces string only when the task introduces none.\n"
             + source_description
         ),
         label="task-intake",
         tools=[],
+        schema=TASK_INTAKE_SCHEMA,
         budget=TASK_INTAKE_BUDGET,
         thinking=False,
     )
     try:
-        work_brief = delivery.accept_full_source(source_description, brief)
+        work_brief = _structured_work_brief(intake, delivery.interfaces_required)
+        work_brief = delivery.accept_full_source(source_description, work_brief)
     except ValueError as exc:
         raise RuntimeError("complete task intake is invalid") from exc
     anchor = delivery.complete_intake(work_brief)
@@ -146,6 +168,46 @@ async def run_task_delivered_workflow(
     anchored_args["description"] = anchor
     anchored_args["goal"] = anchor
     return await workflow_fn(ctx, anchored_args)
+
+
+def _structured_work_brief(intake: object, interfaces_required: bool) -> str:
+    if not isinstance(intake, dict) or set(intake) != set(TASK_INTAKE_FIELDS):
+        raise ValueError("task intake returned no structured work brief")
+    if any(not isinstance(intake[field], str) for field in TASK_INTAKE_FIELDS):
+        raise ValueError("task intake returned non-text summary fields")
+    values = {field: intake[field].strip() for field in TASK_INTAKE_FIELDS}
+    if any(contains_tool_markup(value) for value in values.values()):
+        raise ValueError("task intake returned tool markup instead of summary fields")
+    if not values["objective"] or not values["requirements"] or not values["acceptance"]:
+        raise ValueError("task intake omitted required summary fields")
+    if interfaces_required and not values["interfaces"]:
+        raise ValueError("task intake omitted required public interfaces")
+    brief = "\n".join(
+        f"{label} {_clip_utf8(values[field], TASK_INTAKE_FIELD_BYTES[field])}"
+        for field, label in (
+            ("objective", "Objective"),
+            ("requirements", "Requirements"),
+            ("interfaces", "Interfaces"),
+            ("acceptance", "Acceptance"),
+        )
+        if values[field]
+    )
+    if len(brief.encode("utf-8")) > MAX_WORK_BRIEF_BYTES:
+        raise ValueError("task intake work brief exceeds its controller budget")
+    return brief
+
+
+def _clip_utf8(value: str, limit: int) -> str:
+    compact = " ".join(value.split())
+    encoded = compact.encode("utf-8")
+    if len(encoded) <= limit:
+        return compact
+    prefix = encoded[: limit - 3]
+    while True:
+        try:
+            return prefix.decode("utf-8") + "..."
+        except UnicodeDecodeError:
+            prefix = prefix[:-1]
 
 
 def _bounded_tool_output_limits(raw: str | None) -> str:

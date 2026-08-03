@@ -15,6 +15,8 @@ from opencollab_eval.commands.llm_api_stream import streaming_chat_request
 from opencollab_eval.engine.task_delivery_gate import TaskDeliveryGate
 from opencollab_eval.generation import gen_prediction_workflow as gpw
 from opencollab_eval.generation.gen_prediction_task_delivery import (
+    TASK_INTAKE_SCHEMA,
+    _structured_work_brief,
     run_task_delivered_workflow,
     stage_task_description,
     task_delivery_runtime,
@@ -110,8 +112,30 @@ class _SummaryContext:
     async def agent(self, prompt: str, **kwargs):
         assert kwargs["tools"] == []
         assert kwargs["thinking"] is False
+        assert kwargs["schema"] == TASK_INTAKE_SCHEMA
         self.prompts.append(prompt)
-        return self.work_brief
+        return self.structured_brief()
+
+    def structured_brief(self) -> dict[str, str]:
+        return {
+            "objective": self.work_brief,
+            "requirements": "Preserve every stated compatibility rule.",
+            "interfaces": "Keep the declared public interfaces.",
+            "acceptance": "Meet every acceptance rule.",
+        }
+
+
+class _RawIntakeContext(_SummaryContext):
+    def __init__(self, response: object):
+        super().__init__()
+        self.response = response
+
+    async def agent(self, prompt: str, **kwargs):
+        assert kwargs["tools"] == []
+        assert kwargs["thinking"] is False
+        assert kwargs["schema"] == TASK_INTAKE_SCHEMA
+        self.prompts.append(prompt)
+        return self.response
 
 
 def _wire_bytes(messages: list[dict], tools: list[dict]) -> int:
@@ -189,14 +213,124 @@ def test_controller_delivers_the_complete_public_task_in_one_intake(tmp_path: Pa
 
     assert len(context.prompts) == 1
     assert _REAL_LONG_PUBLIC_TASK in context.prompts[0]
+    expected_brief = _structured_work_brief(context.structured_brief(), True)
     assert proof == {
         "full_source_delivered": True,
         "source_sha256": delivery["source_sha256"],
-        "work_brief_bytes": len(context.work_brief.encode()),
+        "work_brief_bytes": len(expected_brief.encode()),
         "interfaces_required": True,
         "intake_complete": True,
     }
     assert "ServeHTTP" in result["goal"]
+
+
+@pytest.mark.parametrize(
+    "response,match",
+    [
+        ({}, "structured work brief"),
+        (
+            {
+                "objective": " ",
+                "requirements": " ",
+                "interfaces": " ",
+                "acceptance": " ",
+            },
+            "required summary fields",
+        ),
+        (
+            '<tool_calls><tool_call name="bash">find source</tool_call></tool_calls>',
+            "structured work brief",
+        ),
+        (
+            {
+                "objective": "Change selection behavior.",
+                "requirements": "Preserve selection order.",
+                "acceptance": "Tests pass.",
+            },
+            "structured work brief",
+        ),
+        (
+            {
+                "objective": "Change selection behavior.",
+                "requirements": "Preserve selection order.",
+                "interfaces": "",
+                "acceptance": "Tests pass.",
+            },
+            "public interfaces",
+        ),
+        (
+            {
+                "objective": "Change selection behavior.",
+                "requirements": "",
+                "interfaces": "Selection.setSelection.",
+                "acceptance": "Tests pass.",
+            },
+            "required summary fields",
+        ),
+        (
+            {
+                "objective": ["Change selection behavior."],
+                "requirements": "Preserve selection order.",
+                "interfaces": "Selection.setSelection.",
+                "acceptance": "Tests pass.",
+            },
+            "non-text summary fields",
+        ),
+        (
+            {
+                "objective": "Change selection behavior before <tool_calls>hidden</tool_calls>",
+                "requirements": "Preserve selection order.",
+                "interfaces": "Selection.setSelection.",
+                "acceptance": "Tests pass.",
+            },
+            "tool markup",
+        ),
+    ],
+)
+def test_invalid_task_intake_fails_before_workflow(tmp_path: Path, response: object, match: str):
+    (tmp_path / ".git").mkdir()
+    env = local_environment(tmp_path)
+    _prompt, delivery = asyncio.run(stage_task_description(env, _REAL_LONG_PUBLIC_TASK))
+    context = _RawIntakeContext(response)
+    workflow_called = False
+
+    async def workflow(_ctx, args):
+        nonlocal workflow_called
+        workflow_called = True
+        return args
+
+    with task_delivery_runtime(delivery, _REAL_LONG_PUBLIC_TASK) as gate:
+        with pytest.raises(RuntimeError, match="complete task intake is invalid") as exc_info:
+            asyncio.run(run_task_delivered_workflow(
+                context,
+                {"description": "task pointer"},
+                workflow,
+                _REAL_LONG_PUBLIC_TASK,
+            ))
+        proof = gate.proof()
+
+    assert match in str(exc_info.value.__cause__)
+    assert workflow_called is False
+    assert proof["intake_complete"] is False
+    assert proof["full_source_delivered"] is False
+
+
+def test_structured_task_intake_compacts_overlong_fields_within_controller_budget():
+    intake = {
+        "objective": "objective-é " * 80,
+        "requirements": "requirement " * 80,
+        "interfaces": "src/components/example/interface.ts " * 40,
+        "acceptance": "acceptance " * 60,
+    }
+
+    brief = _structured_work_brief(intake, True)
+
+    assert len(brief.encode("utf-8")) <= 512
+    assert brief.startswith("Objective objective-é")
+    assert "\nRequirements requirement" in brief
+    assert "\nInterfaces src/components/example/interface.ts" in brief
+    assert "\nAcceptance acceptance" in brief
+    assert brief.count("...") == 4
 
 
 def test_controller_binds_complete_source_instead_of_claiming_summary_completeness():
@@ -222,6 +356,11 @@ def test_controller_binds_complete_source_instead_of_claiming_summary_completene
         gate.accept_full_source(source.replace("auth", "session"), brief)
     with pytest.raises(ValueError, match="512 UTF-8 bytes"):
         gate.accept_full_source(source, "é" * 257)
+    with pytest.raises(ValueError, match="tool markup"):
+        gate.accept_full_source(
+            source,
+            '<tool_calls><invoke name="bash">search source</invoke></tool_calls>',
+        )
 
 
 def test_real_long_task_requests_fit_proxy_limit(tmp_path: Path):

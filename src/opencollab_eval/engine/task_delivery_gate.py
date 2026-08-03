@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import contextvars
 import hashlib
+import re
 from dataclasses import dataclass
 
 _ACTIVE_DELIVERY: contextvars.ContextVar[TaskDeliveryGate | None] = (
     contextvars.ContextVar("opencollab_eval_task_delivery", default=None)
 )
 MAX_WORK_BRIEF_BYTES = 512
+_TOOL_MARKUP = re.compile(r"</?(?:tool_calls?|invoke)\b", re.IGNORECASE)
+
+
+def contains_tool_markup(value: str) -> bool:
+    return _TOOL_MARKUP.search(value) is not None
 
 
 @dataclass
@@ -31,6 +37,8 @@ class TaskDeliveryGate:
         if not isinstance(work_brief, str) or not work_brief.strip():
             raise ValueError("task intake returned no work brief")
         brief = work_brief.strip()
+        if contains_tool_markup(brief):
+            raise ValueError("task intake returned tool markup instead of a work brief")
         brief_bytes = len(brief.encode("utf-8"))
         if brief_bytes > MAX_WORK_BRIEF_BYTES:
             raise ValueError(
@@ -99,6 +107,7 @@ __all__ = [
     "MAX_WORK_BRIEF_BYTES",
     "TaskDeliveryGate",
     "activate_task_delivery",
+    "contains_tool_markup",
     "current_task_delivery",
     "reset_task_delivery",
 ]
