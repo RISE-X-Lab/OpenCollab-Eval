@@ -17,6 +17,8 @@ def write_stream(
     success: bool = True,
     synthetic_api_error: bool = False,
     total_cost_usd: float = 1.25,
+    stop_reason: str | None = None,
+    tool_use_without_result: bool = False,
 ) -> None:
     rows = [
         {
@@ -28,6 +30,18 @@ def write_stream(
         },
         {"type": "assistant", "message": {"model": model}},
     ]
+    if tool_use_without_result:
+        rows.append(
+            {
+                "type": "assistant",
+                "message": {
+                    "model": model,
+                    "content": [
+                        {"type": "tool_use", "id": "tool-1", "name": "Read"}
+                    ],
+                },
+            }
+        )
     if include_result:
         if synthetic_api_error:
             rows.append(
@@ -50,9 +64,13 @@ def write_stream(
                 "subtype": "success" if success else "error",
                 "is_error": not success or synthetic_api_error,
                 "stop_reason": (
-                    "stop_sequence"
-                    if synthetic_api_error
-                    else ("end_turn" if success else None)
+                    stop_reason
+                    if stop_reason is not None
+                    else (
+                        "stop_sequence"
+                        if synthetic_api_error
+                        else ("end_turn" if success else None)
+                    )
                 ),
                 "result": (
                     "API Error: Unable to connect to API (ECONNRESET)"
@@ -78,8 +96,8 @@ def write_stream(
 def build_sidecar_fixture(
     tmp_path: Path, *, process_returncode: int = 0, **stream_options: object
 ) -> dict:
-    stream = tmp_path / "stream.jsonl"
-    settings = tmp_path / "settings.json"
+    stream = tmp_path / "claude.stream.jsonl"
+    settings = tmp_path / "claude.settings.json"
     executable = tmp_path / "claude"
     write_stream(stream, **stream_options)
     ccs.write_settings(settings, "http://127.0.0.1:18788")
@@ -89,8 +107,8 @@ def build_sidecar_fixture(
 
 def build_existing_sidecar(tmp_path: Path, *, process_returncode: int = 0) -> dict:
     return ccs.build_sidecar(
-        stream_path=tmp_path / "stream.jsonl",
-        settings_path=tmp_path / "settings.json",
+        stream_path=tmp_path / "claude.stream.jsonl",
+        settings_path=tmp_path / "claude.settings.json",
         executable_path=tmp_path / "claude",
         cli_version_output="2.1.175 (Claude Code)",
         process_returncode=process_returncode,

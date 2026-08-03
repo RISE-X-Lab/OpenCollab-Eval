@@ -17,7 +17,7 @@ from opencollab_eval.generation import external_solver_usage as esu
 
 def test_claude_sidecar_normalizes_cached_input_and_binds_runtime(tmp_path: Path) -> None:
     sidecar = build_sidecar_fixture(tmp_path)
-    settings = json.loads((tmp_path / "settings.json").read_text())
+    settings = json.loads((tmp_path / "claude.settings.json").read_text())
 
     assert sidecar["success"] is True
     assert sidecar["observed_models"] == ["glm-5.2"]
@@ -88,13 +88,59 @@ def test_claude_sidecar_classifies_synthetic_api_failure_without_model_drift(
     assert sidecar["model_usage_models"] == ["glm-5.2"]
     assert sidecar["synthetic_events"] == 1
     assert sidecar["transport_failure"] is True
+    assert sidecar["evidence_valid"] is True
+    assert sidecar["candidate_binding_complete"] is True
+    assert sidecar["candidate_ready"] is False
+    assert sidecar["solver_outcome"] == "transport_failure"
     assert "Claude stream reports an API transport failure" in sidecar["errors"]
     assert not any("model identity" in error for error in sidecar["errors"])
     assert "Claude Code exited with 1" in sidecar["errors"]
 
 
-def test_claude_sidecar_rejects_an_unclassified_synthetic_message(tmp_path: Path) -> None:
-    stream = tmp_path / "stream.jsonl"
+def test_incomplete_turn_preserves_a_bound_candidate(tmp_path: Path) -> None:
+    sidecar = build_sidecar_fixture(tmp_path, stop_reason="tool_use")
+
+    assert sidecar["success"] is False
+    assert sidecar["evidence_valid"] is True
+    assert sidecar["candidate_binding_complete"] is True
+    assert sidecar["candidate_ready"] is False
+    assert sidecar["solver_outcome"] == "incomplete_turn"
+    assert sidecar["tool_calls"] == {
+        "tool_use_count": 0,
+        "tool_result_count": 0,
+        "balanced": True,
+    }
+
+
+def test_unmatched_tool_call_marks_incomplete_outcome_without_blocking_candidate(
+    tmp_path: Path,
+) -> None:
+    sidecar = build_sidecar_fixture(
+        tmp_path,
+        stop_reason="tool_use",
+        tool_use_without_result=True,
+    )
+
+    assert sidecar["evidence_valid"] is True
+    assert sidecar["candidate_binding_complete"] is True
+    assert sidecar["solver_outcome"] == "incomplete_turn"
+    assert sidecar["tool_calls"]["balanced"] is False
+    assert "Claude tool calls are incomplete" in sidecar["outcome_errors"]
+
+
+def test_missing_result_preserves_identity_bound_candidate(tmp_path: Path) -> None:
+    sidecar = build_sidecar_fixture(tmp_path, include_result=False)
+
+    assert sidecar["success"] is False
+    assert sidecar["evidence_valid"] is True
+    assert sidecar["candidate_binding_complete"] is True
+    assert sidecar["solver_outcome"] == "incomplete_turn"
+    assert "Claude stream must contain exactly one result record" in sidecar["outcome_errors"]
+    assert "Claude modelUsage is missing" in sidecar["usage_errors"]
+
+
+def test_unclassified_synthetic_message_preserves_candidate_identity(tmp_path: Path) -> None:
+    stream = tmp_path / "claude.stream.jsonl"
     build_sidecar_fixture(tmp_path)
     rows = [json.loads(line) for line in stream.read_text(encoding="utf-8").splitlines()]
     rows.insert(
@@ -112,9 +158,62 @@ def test_claude_sidecar_rejects_an_unclassified_synthetic_message(tmp_path: Path
     sidecar = build_existing_sidecar(tmp_path)
 
     assert sidecar["success"] is False
+    assert sidecar["evidence_valid"] is True
+    assert sidecar["candidate_binding_complete"] is True
     assert sidecar["synthetic_events"] == 1
     assert sidecar["transport_failure"] is False
-    assert any("model identity" in error for error in sidecar["errors"])
+    assert "Claude stream contains an unclassified synthetic event" in sidecar["outcome_errors"]
+
+
+def test_trailing_partial_json_preserves_candidate_identity(tmp_path: Path) -> None:
+    stream = tmp_path / "claude.stream.jsonl"
+    build_sidecar_fixture(tmp_path, include_result=False)
+    with stream.open("a", encoding="utf-8") as handle:
+        handle.write('{"type":"assistant","message":')
+
+    sidecar = build_existing_sidecar(tmp_path)
+
+    assert sidecar["success"] is False
+    assert sidecar["evidence_valid"] is True
+    assert sidecar["candidate_binding_complete"] is True
+    assert sidecar["solver_outcome"] == "incomplete_turn"
+    assert sidecar["parse_warnings"] == [
+        "Claude stream ends with partial JSON at line 3"
+    ]
+
+
+def test_malformed_json_between_valid_records_blocks_candidate_identity(
+    tmp_path: Path,
+) -> None:
+    stream = tmp_path / "claude.stream.jsonl"
+    build_sidecar_fixture(tmp_path)
+    rows = stream.read_text(encoding="utf-8").splitlines()
+    rows.insert(1, '{"type":"assistant","message":')
+    stream.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+    sidecar = build_existing_sidecar(tmp_path)
+
+    assert sidecar["evidence_valid"] is False
+    assert sidecar["candidate_binding_complete"] is False
+    assert sidecar["candidate_ready"] is False
+    assert "Claude stream line 2 is not JSON" in sidecar["evidence_errors"]
+
+
+def test_real_assistant_model_drift_blocks_candidate_identity(tmp_path: Path) -> None:
+    stream = tmp_path / "claude.stream.jsonl"
+    build_sidecar_fixture(tmp_path)
+    rows = [json.loads(line) for line in stream.read_text(encoding="utf-8").splitlines()]
+    rows[1]["message"]["model"] = "unexpected-model"
+    stream.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+
+    sidecar = build_existing_sidecar(tmp_path)
+
+    assert sidecar["observed_models"] == ["glm-5.2", "unexpected-model"]
+    assert sidecar["model_usage_models"] == ["glm-5.2"]
+    assert sidecar["evidence_valid"] is False
+    assert sidecar["candidate_binding_complete"] is False
+    assert sidecar["candidate_ready"] is False
+    assert "Claude stream model identity does not equal glm-5.2" in sidecar["evidence_errors"]
 
 
 @pytest.mark.parametrize("total_cost_usd", [float("nan"), float("inf"), float("-inf")])

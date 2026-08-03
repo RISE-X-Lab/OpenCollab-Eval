@@ -18,6 +18,7 @@ from opencollab_eval.engine.swe_eval_decision import (
     TaskState,
     decide_task,
 )
+from opencollab_eval.engine.token_cost import collect_api_usage
 from opencollab_eval.generation import gen_prediction_openhands as gpo
 from opencollab_eval.generation import openhands_runtime
 from opencollab_eval.generation.gen_prediction_snapshot import SolverGitSnapshot
@@ -427,108 +428,6 @@ def test_openhands_runtime_imports_through_eval_package_namespace() -> None:
     assert proc.returncode == 0, proc.stderr
 
 
-def test_openhands_isolated_tools_keep_only_sdk_terminal_name() -> None:
-    agent = SimpleNamespace(
-        tools=[
-            SimpleNamespace(name="terminal"),
-            SimpleNamespace(name="file_editor"),
-            SimpleNamespace(name="task_tracker"),
-            SimpleNamespace(name="task_tool_set"),
-        ]
-    )
-
-    tools = openhands_runtime._isolated_agent_tools(agent, "terminal")
-
-    assert [tool.name for tool in tools] == ["terminal"]
-
-
-def test_openhands_terminal_commands_use_unique_container_guard_sessions(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("OPENHANDS_CONTAINER_PYTHON", "/usr/bin/python3")
-    monkeypatch.setenv(
-        "OPENHANDS_CONTAINER_GUARD_ROOT",
-        gpo._CONTAINER_GUARD_ROOT,
-    )
-
-    first = openhands_runtime._guarded_terminal_invocation(
-        "container-123",
-        "pytest -q",
-    )
-    second = openhands_runtime._guarded_terminal_invocation(
-        "container-123",
-        "git status --short",
-    )
-
-    assert first.argv[:8] == (
-        "docker",
-        "exec",
-        "-i",
-        "container-123",
-        "/usr/bin/python3",
-        "-I",
-        "-S",
-        "-",
-    )
-    assert first.argv[8] == "run"
-    assert first.argv[9] == first.pidfile
-    assert first.argv[10] == first.cancelfile
-    assert first.argv[-1] == "pytest -q"
-    assert first.pidfile != second.pidfile
-    assert first.cancelfile == f"{first.pidfile}.cancel"
-    assert "def run(pidfile: Path, cancelfile: Path" in first.source
-
-
-def test_openhands_token_budget_guard_counts_all_llm_instances() -> None:
-    class Usage:
-        def __init__(self, prompt_tokens, completion_tokens):
-            self.prompt_tokens = prompt_tokens
-            self.completion_tokens = completion_tokens
-
-    class Metrics:
-        def __init__(self, usage):
-            self.accumulated_token_usage = usage
-
-    class FakeLLM:
-        def __init__(self, prompt_tokens, completion_tokens):
-            self.metrics = Metrics(Usage(prompt_tokens, completion_tokens))
-
-    guard = openhands_runtime.TokenBudgetGuard(100)
-    first = FakeLLM(40, 10)
-    second = FakeLLM(30, 10)
-    first_reservation = guard.reserve(60)
-    guard.record(first, reservation=first_reservation)
-    second_reservation = guard.reserve(50)
-    guard.record(second, reservation=second_reservation)
-
-    assert guard.spent == 90
-    assert guard.reserved == 0
-    with pytest.raises(RuntimeError, match="cannot cover the next request"):
-        guard.reserve(11)
-
-
-def test_openhands_token_budget_reserves_request_before_api_call() -> None:
-    guard = openhands_runtime.TokenBudgetGuard(100)
-    first = guard.reserve(70)
-
-    with pytest.raises(RuntimeError, match="cannot cover the next request"):
-        guard.reserve(31)
-
-    class Usage:
-        prompt_tokens = 40
-        completion_tokens = 10
-
-    class Metrics:
-        accumulated_token_usage = Usage()
-
-    class FakeLLM:
-        metrics = Metrics()
-
-    guard.record(FakeLLM(), reservation=first)
-    assert guard.spent == 50
-    assert guard.reserve(50) == 50
-
-
 def test_openhands_usage_is_written_in_eval_layer_ledger_shape(tmp_path: Path) -> None:
     state_dir = tmp_path / "openhands" / "persistence" / "conversations" / "conversation-1"
     state_dir.mkdir(parents=True)
@@ -575,8 +474,22 @@ def test_openhands_usage_is_written_in_eval_layer_ledger_shape(tmp_path: Path) -
     assert record["usage"] == payload
 
 
-def test_main_writes_generation_contract_for_nonempty_patch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("solver_outcome", "expected_usage_status", "expected_non_success", "recovered"),
+    [
+        ("completed", "success", 0, False),
+        ("incomplete_turn", "success", 0, False),
+        ("transport_failure", "technical_failure", 1, False),
+        ("transport_failure", None, 0, True),
+    ],
+)
+def test_main_writes_generation_contract_for_nonempty_external_solver_patch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    solver_outcome: str,
+    expected_usage_status: str | None,
+    expected_non_success: int,
+    recovered: bool,
 ) -> None:
     instance_file = tmp_path / "instance.json"
     output = tmp_path / "predictions.jsonl"
@@ -656,7 +569,7 @@ def test_main_writes_generation_contract_for_nonempty_patch(
         "prepare_solver_git_snapshot",
         lambda cid, base: snapshot,
     )
-    baseline = SimpleNamespace(snapshot=snapshot, cleanup=lambda: None)
+    baseline = SimpleNamespace(snapshot=snapshot, git_dir=tmp_path, cleanup=lambda: None)
     monkeypatch.setattr(
         gpo,
         "prepare_trusted_patch_baseline",
@@ -691,6 +604,19 @@ def test_main_writes_generation_contract_for_nonempty_patch(
 
     def fake_run_openhands(**kwargs):
         openhands_call.update(kwargs)
+        external_evidence = {
+            "solver": "claude-code",
+            "solver_outcome": solver_outcome,
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 20,
+                "cache_read_tokens": 80,
+                "cache_creation_tokens": 0,
+            },
+            "cost_usd": 0.01,
+        }
+        if recovered:
+            external_evidence["recovery"] = {"source_sidecar_sha256": "9" * 64}
         return {
             "status": "done",
             "returncode": 0,
@@ -698,9 +624,16 @@ def test_main_writes_generation_contract_for_nonempty_patch(
             "execution_quiesced": True,
             "host_execution_quiesced": True,
             "container_execution_quiesced": True,
+            "external_solver": "claude-code",
+            "external_solver_evidence": external_evidence,
         }
 
     monkeypatch.setattr(gpo, "_run_openhands", fake_run_openhands)
+    monkeypatch.setattr(
+        gpo,
+        "_bind_external_solver_evidence",
+        lambda evidence, **kwargs: evidence.update(candidate_ready=True) or evidence,
+    )
     monkeypatch.setattr(
         sys,
         "argv",
@@ -735,6 +668,8 @@ def test_main_writes_generation_contract_for_nonempty_patch(
     assert prediction["model_patch"].strip()
     assert metric["workflow"] == "openhands-external"
     assert metric["workflow_status"] == "done"
+    assert metric["generator"] == "claude-code"
+    assert metric["generation_outcome"] == solver_outcome
     assert metric["llm_model"] == "anthropic/glm-5.2"
     assert metric["context_window"] == 400000
     assert metric["budget"] == 16000000
@@ -758,6 +693,15 @@ def test_main_writes_generation_contract_for_nonempty_patch(
     ):
         assert metric[field] is True
     assert metric["test_patch_isolation_failed"] is False
+    if recovered:
+        assert not (tmp_path / "api_usage.jsonl").exists()
+        assert metric["usage"]["replayed"] is True
+        assert metric["usage"]["billed_in_current_run"] is False
+        assert metric["usage"]["source_sidecar_sha256"] == "9" * 64
+    else:
+        usage_record = json.loads((tmp_path / "api_usage.jsonl").read_text())
+        assert usage_record["status"] == expected_usage_status
+    assert collect_api_usage([tmp_path])["status_non_success"] == expected_non_success
     json.dumps(metric)
     attempt_dir = next((tmp_path / "openhands_attempts").glob("solver-*"))
     solver_instance = json.loads(

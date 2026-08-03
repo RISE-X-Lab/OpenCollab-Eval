@@ -21,6 +21,35 @@ from .candidate_patch_git import canonicalize_candidate_patch
 
 EXTERNAL_SIDECAR_SCHEMA = "opencollab.external_solver.v1"
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
+OID_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _solver_outcome(sidecar: dict[str, Any]) -> str:
+    configured = sidecar.get("solver_outcome")
+    if configured in {
+        "completed",
+        "incomplete_turn",
+        "transport_failure",
+        "process_failure",
+        "result_failure",
+    }:
+        return str(configured)
+    result = sidecar.get("result") if isinstance(sidecar.get("result"), dict) else {}
+    if sidecar.get("transport_failure") is True:
+        return "transport_failure"
+    if sidecar.get("process_returncode") != 0:
+        return "process_failure"
+    if result.get("subtype") == "success" and result.get("is_error") is False:
+        return "completed" if result.get("stop_reason") == "end_turn" else "incomplete_turn"
+    return "result_failure"
 
 
 def _canonical_candidate_from_patch(
@@ -117,8 +146,6 @@ def _external_solver_evidence(output_dir: Path) -> dict[str, Any] | None:
     expected_model = required.get("expected_model")
     if sidecar.get("schema") != EXTERNAL_SIDECAR_SCHEMA or sidecar.get("solver") != solver:
         raise ValueError("external solver sidecar identity mismatch")
-    if sidecar.get("success") is not True:
-        raise ValueError("external solver sidecar reports failure")
     if sidecar.get("expected_model") != expected_model:
         raise ValueError("external solver expected model mismatch")
     if sidecar.get("runtime_image_id") != required.get("expected_runtime_image_id"):
@@ -132,24 +159,53 @@ def _external_solver_evidence(output_dir: Path) -> dict[str, Any] | None:
         "task_image_id"
     ):
         raise ValueError("external solver task image binding mismatch")
+    binding_patterns = {
+        "prompt_sha256": SHA256_RE,
+        "raw_patch_sha256": SHA256_RE,
+        "anonymous_head": OID_RE,
+        "base_tree": OID_RE,
+        "candidate_tree": OID_RE,
+    }
+    if not isinstance(binding.get("solver_task_id"), str) or not binding["solver_task_id"]:
+        raise ValueError("external solver task binding is missing")
+    if binding["solver_task_id"] != required.get("solver_task_id"):
+        raise ValueError("external solver controller task binding mismatch")
+    for field, pattern in binding_patterns.items():
+        if pattern.fullmatch(str(binding.get(field) or "")) is None:
+            raise ValueError(f"external solver has invalid {field} binding")
     if sidecar.get("cli_version") != sidecar.get("expected_cli_version"):
         raise ValueError("external solver CLI version mismatch")
     if sidecar.get("stream_cli_version") != sidecar.get("expected_cli_version"):
         raise ValueError("external solver stream CLI version mismatch")
     if sidecar.get("observed_models") != [expected_model]:
         raise ValueError("external solver stream model mismatch")
-    if sidecar.get("model_usage_models") != [expected_model]:
+    model_usage_models = sidecar.get("model_usage_models")
+    if model_usage_models and model_usage_models != [expected_model]:
         raise ValueError("external solver usage model mismatch")
-    for field in ("stream_sha256", "settings_sha256"):
+    artifact_paths = {
+        "stream_sha256": output_dir / "claude.stream.jsonl",
+        "settings_sha256": output_dir / "claude.settings.json",
+    }
+    for field, path in artifact_paths.items():
         value = sidecar.get(field)
         if not isinstance(value, str) or SHA256_RE.fullmatch(value) is None:
             raise ValueError(f"external solver sidecar has invalid {field}")
+        try:
+            actual = _file_sha256(path)
+        except OSError as exc:
+            raise ValueError(f"external solver {field} artifact is missing") from exc
+        if actual != value:
+            raise ValueError(f"external solver {field} artifact mismatch")
     executable = sidecar.get("executable")
     if (
         not isinstance(executable, dict)
         or SHA256_RE.fullmatch(str(executable.get("sha256") or "")) is None
     ):
         raise ValueError("external solver executable identity is missing")
+    sidecar["evidence_valid"] = True
+    sidecar["candidate_binding_complete"] = True
+    sidecar["candidate_ready"] = False
+    sidecar["solver_outcome"] = _solver_outcome(sidecar)
     return sidecar
 
 
@@ -251,6 +307,7 @@ def _bind_external_solver_evidence(
         "task_image_id": task_image_id,
         **run_identity,
     }
+    evidence["candidate_ready"] = True
     (output_dir / "external_solver.sidecar.json").write_text(
         json.dumps(evidence, sort_keys=True) + "\n", encoding="utf-8"
     )

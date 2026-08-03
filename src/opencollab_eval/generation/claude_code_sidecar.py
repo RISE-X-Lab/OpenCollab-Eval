@@ -9,6 +9,7 @@ import math
 import os
 import re
 import urllib.parse
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -120,10 +121,11 @@ def write_prompt(source: Path, output: Path, workspace: Path, wrapper: Path) -> 
     output.write_text(prompt, encoding="utf-8")
 
 
-def _stream_rows(path: Path) -> list[dict[str, Any]]:
+def _stream_rows(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
     if not path.is_file() or path.stat().st_size > MAX_STREAM_BYTES:
         raise ValueError("Claude stream is missing or exceeds the evidence limit")
     rows: list[dict[str, Any]] = []
+    warnings: list[str] = []
     with path.open(encoding="utf-8") as handle:
         for line_number, line in enumerate(handle, 1):
             if not line.strip():
@@ -131,11 +133,17 @@ def _stream_rows(path: Path) -> list[dict[str, Any]]:
             try:
                 row = json.loads(line)
             except json.JSONDecodeError as exc:
+                has_later_content = any(remainder.strip() for remainder in handle)
+                if not line.endswith(("\n", "\r")) and not has_later_content:
+                    warnings.append(
+                        f"Claude stream ends with partial JSON at line {line_number}"
+                    )
+                    break
                 raise ValueError(f"Claude stream line {line_number} is not JSON") from exc
             if not isinstance(row, dict):
                 raise ValueError(f"Claude stream line {line_number} is not an object")
             rows.append(row)
-    return rows
+    return rows, warnings
 
 
 def _nonnegative_int(value: Any, field: str, errors: list[str]) -> int:
@@ -143,6 +151,36 @@ def _nonnegative_int(value: Any, field: str, errors: list[str]) -> int:
         errors.append(f"invalid {field}")
         return 0
     return value
+
+
+def _tool_call_evidence(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    tool_uses: list[str] = []
+    tool_results: list[str] = []
+    malformed = False
+    for row in rows:
+        message = row.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            continue
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") == "tool_use":
+                tool_id = item.get("id")
+                malformed = malformed or not isinstance(tool_id, str) or not tool_id
+                if isinstance(tool_id, str) and tool_id:
+                    tool_uses.append(tool_id)
+            elif item.get("type") == "tool_result":
+                tool_id = item.get("tool_use_id")
+                malformed = malformed or not isinstance(tool_id, str) or not tool_id
+                if isinstance(tool_id, str) and tool_id:
+                    tool_results.append(tool_id)
+    balanced = not malformed and Counter(tool_uses) == Counter(tool_results)
+    return {
+        "tool_use_count": len(tool_uses),
+        "tool_result_count": len(tool_results),
+        "balanced": balanced,
+    }
 
 
 def build_sidecar(
@@ -164,19 +202,22 @@ def build_sidecar(
     raw_patch_sha256: str = "",
     candidate_tree: str = "",
 ) -> dict[str, Any]:
-    errors: list[str] = []
+    evidence_errors: list[str] = []
+    candidate_errors: list[str] = []
+    outcome_errors: list[str] = []
+    usage_errors: list[str] = []
     version_match = re.search(r"(?<![0-9.])(\d+\.\d+\.\d+)(?![0-9.])", cli_version_output)
     cli_version = version_match.group(1) if version_match else ""
     if cli_version != EXPECTED_CLI_VERSION:
-        errors.append(f"unexpected Claude Code version {cli_version or 'unknown'}")
+        evidence_errors.append(f"unexpected Claude Code version {cli_version or 'unknown'}")
     if process_returncode != 0:
-        errors.append(f"Claude Code exited with {process_returncode}")
+        outcome_errors.append(f"Claude Code exited with {process_returncode}")
     if runtime_image_id != expected_runtime_image_id or not re.fullmatch(
         r"sha256:[0-9a-f]{64}", runtime_image_id
     ):
-        errors.append("Claude runtime image identity mismatch")
+        evidence_errors.append("Claude runtime image identity mismatch")
     if re.fullmatch(r"sha256:[0-9a-f]{64}", task_image_id) is None:
-        errors.append("task image identity is invalid")
+        evidence_errors.append("task image identity is invalid")
     binding = {
         "solver_task_id": solver_task_id,
         "prompt_sha256": prompt_sha256,
@@ -195,26 +236,30 @@ def build_sidecar(
         "anonymous_head": re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", anonymous_head),
         "base_tree": re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", base_tree),
     }
-    if not solver_task_id or not all(hash_valid.values()):
-        errors.append("Claude invocation binding is incomplete")
+    binding_complete = bool(solver_task_id) and all(hash_valid.values())
+    if not binding_complete:
+        candidate_errors.append("Claude invocation binding is incomplete")
     try:
-        rows = _stream_rows(stream_path)
+        rows, parse_warnings = _stream_rows(stream_path)
     except (OSError, ValueError) as exc:
         rows = []
-        errors.append(str(exc))
+        parse_warnings = []
+        evidence_errors.append(str(exc))
+    outcome_errors.extend(parse_warnings)
 
     init_rows = [row for row in rows if row.get("type") == "system" and row.get("subtype") == "init"]
     result_rows = [row for row in rows if row.get("type") == "result"]
     if len(init_rows) != 1:
-        errors.append("Claude stream must contain exactly one init record")
+        evidence_errors.append("Claude stream must contain exactly one init record")
     if len(result_rows) != 1:
-        errors.append("Claude stream must contain exactly one result record")
+        outcome_errors.append("Claude stream must contain exactly one result record")
     stream_cli_version = init_rows[0].get("claude_code_version") if len(init_rows) == 1 else None
     if stream_cli_version != EXPECTED_CLI_VERSION:
-        errors.append("Claude stream reports an unexpected CLI version")
+        evidence_errors.append("Claude stream reports an unexpected CLI version")
 
     observed_models: set[str] = set()
     synthetic_events = 0
+    unclassified_synthetic_events = 0
     transport_failure = False
     if init_rows and isinstance(init_rows[0].get("model"), str):
         observed_models.add(init_rows[0]["model"])
@@ -234,9 +279,11 @@ def build_sidecar(
                     api_error = any(text.startswith("API Error:") for text in texts)
                     transport_failure = transport_failure or api_error
                 if not api_error:
-                    observed_models.add(message["model"])
+                    unclassified_synthetic_events += 1
             else:
                 observed_models.add(message["model"])
+    if unclassified_synthetic_events:
+        outcome_errors.append("Claude stream contains an unclassified synthetic event")
     result = result_rows[0] if len(result_rows) == 1 else {}
     transport_failure = transport_failure or str(result.get("result", "")).startswith(
         "API Error:"
@@ -244,25 +291,31 @@ def build_sidecar(
     model_usage = result.get("modelUsage") if isinstance(result.get("modelUsage"), dict) else {}
     model_usage_models = {str(model) for model in model_usage}
     if observed_models != {EXPECTED_MODEL}:
-        errors.append("Claude stream model identity does not equal glm-5.2")
-    if model_usage_models != {EXPECTED_MODEL}:
-        errors.append("Claude modelUsage identity does not equal glm-5.2")
+        evidence_errors.append("Claude stream model identity does not equal glm-5.2")
+    if model_usage_models and model_usage_models != {EXPECTED_MODEL}:
+        evidence_errors.append("Claude modelUsage identity does not equal glm-5.2")
+    elif not model_usage_models:
+        usage_errors.append("Claude modelUsage is missing")
     if transport_failure:
-        errors.append("Claude stream reports an API transport failure")
+        outcome_errors.append("Claude stream reports an API transport failure")
     if result.get("subtype") != "success" or result.get("is_error") is not False:
-        errors.append("Claude result is not successful")
+        outcome_errors.append("Claude result is not successful")
     if result.get("stop_reason") != "end_turn":
-        errors.append("Claude result did not end with end_turn")
+        outcome_errors.append("Claude result did not end with end_turn")
+
+    tool_calls = _tool_call_evidence(rows)
+    if tool_calls["balanced"] is not True:
+        outcome_errors.append("Claude tool calls are incomplete")
 
     raw_usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
-    raw_input = _nonnegative_int(raw_usage.get("input_tokens"), "input_tokens", errors)
+    raw_input = _nonnegative_int(raw_usage.get("input_tokens"), "input_tokens", usage_errors)
     cache_read = _nonnegative_int(
-        raw_usage.get("cache_read_input_tokens"), "cache_read_input_tokens", errors
+        raw_usage.get("cache_read_input_tokens"), "cache_read_input_tokens", usage_errors
     )
     cache_creation = _nonnegative_int(
-        raw_usage.get("cache_creation_input_tokens"), "cache_creation_input_tokens", errors
+        raw_usage.get("cache_creation_input_tokens"), "cache_creation_input_tokens", usage_errors
     )
-    output = _nonnegative_int(raw_usage.get("output_tokens"), "output_tokens", errors)
+    output = _nonnegative_int(raw_usage.get("output_tokens"), "output_tokens", usage_errors)
     total_cost = result.get("total_cost_usd")
     if (
         isinstance(total_cost, bool)
@@ -270,19 +323,49 @@ def build_sidecar(
         or not math.isfinite(total_cost)
         or total_cost < 0
     ):
-        errors.append("invalid total_cost_usd")
+        usage_errors.append("invalid total_cost_usd")
         total_cost = 0.0
     normalized_input = raw_input + cache_read + cache_creation
     executable = Path(executable_path)
     binary_sha256 = executable_sha256 or (_sha256(executable) if executable.is_file() else "")
     if re.fullmatch(r"[0-9a-f]{64}", binary_sha256) is None:
-        errors.append("Claude executable identity is invalid")
-    success = not errors
+        evidence_errors.append("Claude executable identity is invalid")
+    evidence_valid = not evidence_errors
+    candidate_binding_complete = evidence_valid and binding_complete
+    if transport_failure:
+        solver_outcome = "transport_failure"
+    elif process_returncode != 0:
+        solver_outcome = "process_failure"
+    elif parse_warnings or tool_calls["balanced"] is not True or len(result_rows) != 1:
+        solver_outcome = "incomplete_turn"
+    elif result.get("subtype") == "success" and result.get("is_error") is False:
+        solver_outcome = (
+            "completed" if result.get("stop_reason") == "end_turn" else "incomplete_turn"
+        )
+    else:
+        solver_outcome = "result_failure"
+    errors = evidence_errors + candidate_errors + outcome_errors + usage_errors
+    success = (
+        candidate_binding_complete
+        and solver_outcome == "completed"
+        and not outcome_errors
+        and not usage_errors
+    )
     return {
         "schema": SCHEMA,
         "solver": SOLVER,
         "success": success,
         "errors": errors,
+        "evidence_valid": evidence_valid,
+        "candidate_binding_complete": candidate_binding_complete,
+        "candidate_ready": False,
+        "solver_outcome": solver_outcome,
+        "evidence_errors": evidence_errors,
+        "candidate_errors": candidate_errors,
+        "outcome_errors": outcome_errors,
+        "usage_errors": usage_errors,
+        "parse_warnings": parse_warnings,
+        "tool_calls": tool_calls,
         "cli_version": cli_version,
         "stream_cli_version": stream_cli_version,
         "expected_cli_version": EXPECTED_CLI_VERSION,
@@ -395,7 +478,7 @@ def main(argv: list[str] | None = None) -> int:
         candidate_tree=args.candidate_tree,
     )
     _write_json(args.output, payload)
-    return 0 if payload["success"] else 1
+    return 0 if payload["evidence_valid"] and payload["candidate_binding_complete"] else 1
 
 
 if __name__ == "__main__":

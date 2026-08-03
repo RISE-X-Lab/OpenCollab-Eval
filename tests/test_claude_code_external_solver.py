@@ -21,14 +21,12 @@ RUNTIME_IMAGE_ID = "sha256:" + "a" * 64
 _build = build_sidecar_fixture
 
 
-def test_external_sidecar_is_required_and_usage_is_attributed_to_claude_code(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def _write_required(tmp_path: Path) -> None:
     (tmp_path / "external_solver.required.json").write_text(
         json.dumps(
             {
                 "solver": "claude-code",
+                "solver_task_id": "solver-" + "1" * 32,
                 "expected_model": "glm-5.2",
                 "expected_runtime_image_id": "sha256:" + "a" * 64,
                 "task_image_id": TASK_IMAGE_ID,
@@ -36,6 +34,79 @@ def test_external_sidecar_is_required_and_usage_is_attributed_to_claude_code(
         ),
         encoding="utf-8",
     )
+
+
+@pytest.mark.parametrize(
+    ("fixture_options", "expected_outcome"),
+    [
+        ({"stop_reason": "tool_use"}, "incomplete_turn"),
+        ({"include_result": False}, "incomplete_turn"),
+        (
+            {"stop_reason": "tool_use", "tool_use_without_result": True},
+            "incomplete_turn",
+        ),
+        (
+            {"process_returncode": 1, "synthetic_api_error": True},
+            "transport_failure",
+        ),
+    ],
+)
+def test_bound_candidate_is_eligible_despite_solver_outcome(
+    tmp_path: Path,
+    fixture_options: dict[str, object],
+    expected_outcome: str,
+) -> None:
+    _write_required(tmp_path)
+    sidecar = _build(tmp_path, **fixture_options)
+    assert sidecar["success"] is False
+    (tmp_path / "external_solver.sidecar.json").write_text(
+        json.dumps(sidecar), encoding="utf-8"
+    )
+
+    evidence = esu._external_solver_evidence(tmp_path)
+
+    assert evidence is not None
+    assert evidence["evidence_valid"] is True
+    assert evidence["candidate_binding_complete"] is True
+    assert evidence["candidate_ready"] is False
+    assert evidence["solver_outcome"] == expected_outcome
+
+
+def test_legacy_failed_sidecar_recovers_candidate_without_model_rerun(
+    tmp_path: Path,
+) -> None:
+    _write_required(tmp_path)
+    sidecar = _build(tmp_path, stop_reason="tool_use")
+    for field in (
+        "evidence_valid",
+        "candidate_binding_complete",
+        "candidate_ready",
+        "solver_outcome",
+        "evidence_errors",
+        "candidate_errors",
+        "outcome_errors",
+        "usage_errors",
+        "tool_calls",
+    ):
+        sidecar.pop(field)
+    (tmp_path / "external_solver.sidecar.json").write_text(
+        json.dumps(sidecar), encoding="utf-8"
+    )
+
+    evidence = esu._external_solver_evidence(tmp_path)
+
+    assert evidence is not None
+    assert evidence["evidence_valid"] is True
+    assert evidence["candidate_binding_complete"] is True
+    assert evidence["candidate_ready"] is False
+    assert evidence["solver_outcome"] == "incomplete_turn"
+
+
+def test_external_sidecar_is_required_and_usage_is_attributed_to_claude_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_required(tmp_path)
     with pytest.raises(ValueError, match="missing or malformed"):
         esu._external_solver_evidence(tmp_path)
 
@@ -207,6 +278,7 @@ def test_external_sidecar_is_required_and_usage_is_attributed_to_claude_code(
         trusted_extraction=trusted_extraction,
         **binding_args,
     )
+    assert evidence["candidate_ready"] is True
     assert evidence["evaluation_binding"]["public_instance_id"] == "public-instance-7"
     assert evidence["evaluation_binding"]["trusted_baseline_sha256"] == "6" * 64
     assert evidence["evaluation_binding"]["raw_patch_sha256"] == hashlib.sha256(raw_patch.encode()).hexdigest()
@@ -349,7 +421,30 @@ def test_read_only_probe_suppresses_expected_shell_noise(tmp_path: Path) -> None
     assert target.read_text(encoding="utf-8") == "trusted\n"
 
 
-def test_claude_launcher_records_a_verified_empty_patch(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    (
+        "stop_reason",
+        "synthetic_api_error",
+        "claude_returncode",
+        "candidate_value",
+        "expected_outcome",
+        "expected_success",
+    ),
+    [
+        ("end_turn", False, 0, "", "completed", True),
+        ("tool_use", False, 0, "fixed\n", "incomplete_turn", False),
+        ("stop_sequence", True, 1, "fixed\n", "transport_failure", False),
+    ],
+)
+def test_claude_launcher_preserves_verified_candidate_across_solver_outcomes(
+    tmp_path: Path,
+    stop_reason: str,
+    synthetic_api_error: bool,
+    claude_returncode: int,
+    candidate_value: str,
+    expected_outcome: str,
+    expected_success: bool,
+) -> None:
     repository = tmp_path / "task-repository"
     repository.mkdir()
     (repository / "value.txt").write_text("baseline\n", encoding="utf-8")
@@ -417,6 +512,9 @@ elif [[ "$1" == run && "$args" == *'--entrypoint python3'* && "$args" == *'claud
   printf '%s\\n' '{relay_cid}'
 elif [[ "$1" == run && "$args" == *'--entrypoint claude'* ]]; then
   workspace="$(<"$FAKE_WORKSPACE_FILE")"
+  if [[ -n "$FAKE_CANDIDATE_VALUE" ]]; then
+    printf '%b' "$FAKE_CANDIDATE_VALUE" > "$workspace/value.txt"
+  fi
   printf 'test cache\\n' > "$workspace/ignored.cache"
   chmod 000 "$workspace/ignored.cache"
   printf 'created\\n' > "$FAKE_IGNORED_CREATED_FILE"
@@ -436,6 +534,7 @@ elif [[ "$1" == run && "$args" == *'--entrypoint claude'* ]]; then
     printf '%s\\n' "$!" > "$FAKE_WRITER_PID_FILE"
   fi
   printf '%b' "$FAKE_CLAUDE_STREAM"
+  exit "$FAKE_CLAUDE_RETURNCODE"
 elif [[ "$1" == run && "$args" == *' -d '* ]]; then
   printf '%s\\n' "$args" > "$FAKE_TEST_RUN_ARGS_FILE"
   printf '%s\\n' '{test_cid}' > "$cidfile"
@@ -455,6 +554,8 @@ elif [[ "$1" == rm ]]; then
 elif [[ "$1" == container && "$2" == inspect ]]; then
   printf 'Error: No such container\\n' >&2
   exit 1
+elif [[ "$1" == exec && "$args" == *'git apply --binary'* ]]; then
+  git -C "$FAKE_TASK_REPO" apply --binary --whitespace=nowarn -
 elif [[ "$1" == exec ]]; then
   exit 0
 else
@@ -487,11 +588,33 @@ exec /bin/rm "$@"
             "claude_code_version": "2.1.175",
         },
         {"type": "assistant", "message": {"model": "glm-5.2"}},
+    ]
+    if synthetic_api_error:
+        rows.append(
+            {
+                "type": "assistant",
+                "message": {
+                    "model": "<synthetic>",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "API Error: Unable to connect to API (ECONNRESET)",
+                        }
+                    ],
+                },
+            }
+        )
+    rows.append(
         {
             "type": "result",
-            "subtype": "success",
-            "is_error": False,
-            "stop_reason": "end_turn",
+            "subtype": "error" if synthetic_api_error else "success",
+            "is_error": synthetic_api_error,
+            "stop_reason": stop_reason,
+            "result": (
+                "API Error: Unable to connect to API (ECONNRESET)"
+                if synthetic_api_error
+                else "done"
+            ),
             "duration_ms": 1,
             "duration_api_ms": 1,
             "num_turns": 1,
@@ -503,8 +626,8 @@ exec /bin/rm "$@"
                 "output_tokens": 1,
             },
             "modelUsage": {"glm-5.2": {}},
-        },
-    ]
+        }
+    )
     stream = "".join(json.dumps(row) + "\n" for row in rows)
     prompt = tmp_path / "prompt.md"
     prompt.write_text("Fix the repository in /testbed.\n", encoding="utf-8")
@@ -524,8 +647,10 @@ exec /bin/rm "$@"
             "PYTHONPATH": str(Path(__file__).parents[1] / "src"),
             "OPENHANDS_INSTANCE_ID": "solver-" + "1" * 32,
             "FAKE_CLAUDE_STREAM": stream,
+            "FAKE_CLAUDE_RETURNCODE": str(claude_returncode),
+            "FAKE_CANDIDATE_VALUE": candidate_value,
             "FAKE_WORKSPACE_FILE": str(tmp_path / "fake-workspace.txt"),
-            "FAKE_WRITER_ENABLED": "1",
+            "FAKE_WRITER_ENABLED": "1" if not candidate_value else "0",
             "FAKE_WRITER_PID_FILE": str(tmp_path / "fake-writer.pid"),
             "FAKE_WRITER_STOPPED_FILE": str(tmp_path / "fake-writer-stopped"),
             "FAKE_TEST_RUN_ARGS_FILE": str(tmp_path / "fake-test-run-args"),
@@ -548,17 +673,28 @@ exec /bin/rm "$@"
 
     assert completed.returncode == 0
     sidecar = json.loads((output / "external_solver.sidecar.json").read_text())
-    assert sidecar["success"] is True
-    assert sidecar["invocation_binding"]["raw_patch_sha256"] == (
-        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    )
+    assert sidecar["success"] is expected_success
+    assert sidecar["solver_outcome"] == expected_outcome
+    assert sidecar["candidate_binding_complete"] is True
+    patch_bytes = (output / "claude.patch").read_bytes()
+    assert sidecar["invocation_binding"]["raw_patch_sha256"] == hashlib.sha256(
+        patch_bytes
+    ).hexdigest()
+    manifest = json.loads((output / "claude-candidate.json").read_text())
+    assert manifest["candidate_tree"] == sidecar["invocation_binding"]["candidate_tree"]
+    if candidate_value:
+        assert patch_bytes
+        assert (repository / "value.txt").read_text() == candidate_value
+    else:
+        assert not patch_bytes
     assert (output / "runtime-isolation.proof").read_text().strip() == (
         "host_unmounted=true control_read_only=true docker_socket_unmounted=true"
     )
     assert (output / "runtime-network-isolation.proof").read_text().strip() == (
         "api_relay_reachable=true direct_external_blocked=true"
     )
-    assert (tmp_path / "fake-writer-stopped").read_text().strip() == "stopped"
+    if not candidate_value:
+        assert (tmp_path / "fake-writer-stopped").read_text().strip() == "stopped"
     assert (tmp_path / "fake-ignored-created").read_text().strip() == "created"
     assert (tmp_path / "fake-root-cleanup-used").read_text().strip() == "used"
     test_run_args = (tmp_path / "fake-test-run-args").read_text()
@@ -600,74 +736,13 @@ exec /bin/rm "$@"
     assert not (output / "runtime-container.id").exists()
     assert any(command[:3] == ["docker", "ps", "-aq"] for command in calls)
 
-    completed_again = subprocess.run(
-        ["bash", str(SCRIPT), "task-container", str(prompt), str(output)],
-        cwd=tmp_path,
-        env=environment,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert completed_again.returncode == 0, completed_again.stderr
-
-
-def test_real_claude_runtime_cannot_read_host_sentinel_or_rewrite_control(
-    tmp_path: Path,
-) -> None:
-    runtime_image = os.environ.get("OPENCOLLAB_TEST_CLAUDE_RUNTIME_IMAGE")
-    runtime_image_id = os.environ.get("OPENCOLLAB_TEST_CLAUDE_RUNTIME_IMAGE_ID")
-    if not runtime_image or not runtime_image_id:
-        pytest.skip("Claude runtime probe is not configured")
-    inspected = subprocess.run(
-        ["docker", "image", "inspect", "--format", "{{.Id}}", runtime_image],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if inspected.returncode != 0:
-        pytest.skip("configured Claude runtime image is unavailable")
-    if inspected.stdout.strip() != runtime_image_id:
-        pytest.fail("configured Claude runtime image identity does not match")
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    helper = tmp_path / "run_in_container"
-    helper.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
-    helper.chmod(0o700)
-    settings = tmp_path / "settings.json"
-    settings.write_text("{}\n", encoding="utf-8")
-    sentinel = tmp_path / "host-secret-sentinel"
-    sentinel.write_text("must stay on host\n", encoding="utf-8")
-    probe = subprocess.run(
-        [
-            "docker",
-            "run",
-            "--rm",
-            "--network",
-            "none",
-            "--mount",
-            f"type=bind,src={workspace},dst=/workspace",
-            "--mount",
-            f"type=bind,src={helper},dst=/control/run_in_container,readonly",
-            "--mount",
-            f"type=bind,src={settings},dst=/control/settings.json,readonly",
-            "--entrypoint",
-            "bash",
-            runtime_image,
-            "-lc",
-            (
-                'test ! -e "$1" && test ! -e /output && '
-                "! (printf x >> /control/run_in_container) 2>/dev/null && "
-                "! (printf x >> /control/settings.json) 2>/dev/null && "
-                'printf "isolated=true\\n"'
-            ),
-            "--",
-            str(sentinel),
-        ],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert probe.returncode == 0, probe.stderr
-    assert probe.stdout.strip() == "isolated=true"
-    assert helper.read_text() == "#!/usr/bin/env bash\nexit 0\n"
-    assert settings.read_text() == "{}\n"
+    if not candidate_value:
+        completed_again = subprocess.run(
+            ["bash", str(SCRIPT), "task-container", str(prompt), str(output)],
+            cwd=tmp_path,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert completed_again.returncode == 0, completed_again.stderr

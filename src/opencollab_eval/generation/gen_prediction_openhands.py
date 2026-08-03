@@ -65,7 +65,6 @@ not run git commit, and leave all source changes in the working tree.
 """
 _CONTAINER_GUARD_ROOT = container_guard.CONTAINER_GUARD_ROOT
 
-
 def _prompt(instance: dict, *, container_id: str) -> str:
     hints = str(instance.get("hints_text") or "").strip()
     hints_block = f"\n## Hints\n{hints}\n" if hints else "\n"
@@ -535,9 +534,10 @@ def main() -> None:
                     removed_gitlinks=snapshot_evidence.removed_gitlinks,
                 ),
             }
-            external_solver = metrics.get("external_solver")
-            if isinstance(external_solver, str) and external_solver:
+            if isinstance(external_solver := metrics.get("external_solver"), str) and external_solver:
                 metrics["generator"] = external_solver
+            if isinstance(external_evidence := metrics.get("external_solver_evidence"), dict):
+                metrics["generation_outcome"] = external_evidence.get("solver_outcome", "unknown")
             process_quiesced = _openhands_patch_extraction_allowed(metrics)
             if process_quiesced:
                 try:
@@ -607,9 +607,7 @@ def main() -> None:
             metrics["submitted_patch_chars"] = len(patch)
             generation_error = generation_error or openhands_events.apply_empty_patch_failure(metrics, patch)
             if "workflow_status" not in metrics and metrics.get("status") == "done":
-                metrics["workflow_status"] = (
-                    "done" if patch.strip() else "empty_patch_after_done"
-                )
+                metrics["workflow_status"] = "done" if patch.strip() else "empty_patch_after_done"
             elif "workflow_status" not in metrics:
                 metrics["workflow_status"] = "error"
             usage_values = _external_solver_usage(
@@ -618,19 +616,21 @@ def main() -> None:
             ) or _openhands_usage(openhands_dir)
             if usage_values is not None:
                 provider = str(metrics.get("external_solver") or "openhands")
-                metrics["usage"] = _append_usage_record(
-                    run_dir=run_dir,
-                    instance_id=instance_id,
-                    model=args.llm_model or args.model_name,
-                    usage_values=usage_values,
-                    provider=provider,
-                    label=f"{provider}-aggregate",
-                    status=(
-                        "success"
-                        if metrics.get("external_solver_evidence") is not None
-                        else "technical_failure"
-                    ),
-                )
+                evidence = metrics.get("external_solver_evidence")
+                recovery = evidence.get("recovery") if isinstance(evidence, dict) else None
+                if isinstance(recovery, dict):
+                    metrics["usage"] = {
+                        **usage_values, "replayed": True, "billed_in_current_run": False,
+                        "source_sidecar_sha256": recovery.get("source_sidecar_sha256"),
+                    }
+                else:
+                    usage_ok = metrics.get("generation_outcome") in (None, "completed", "incomplete_turn")
+                    metrics["usage"] = _append_usage_record(
+                        run_dir=run_dir, instance_id=instance_id,
+                        model=args.llm_model or args.model_name, usage_values=usage_values,
+                        provider=provider, label=f"{provider}-aggregate",
+                        status="success" if usage_ok else "technical_failure",
+                    )
             if removed_validation_artifacts:
                 metrics["validation_artifacts_removed"] = removed_validation_artifacts
         metrics.update(

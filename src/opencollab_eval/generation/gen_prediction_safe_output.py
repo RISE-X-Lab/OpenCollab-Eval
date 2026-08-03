@@ -253,6 +253,7 @@ def raise_generation_failure_metrics(
         "container_quiescence_error",
         "external_container_cleanup",
         "external_solver_error",
+        "generation_outcome",
         "openhands_terminal_error",
         "submitted_patch_chars",
     )
