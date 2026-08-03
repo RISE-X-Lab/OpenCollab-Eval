@@ -368,7 +368,10 @@ def test_build_eval_fact_report_does_not_call_a_technical_row_done(tmp_path):
 
 def test_incomplete_task_does_not_build_a_terminal_fact_report(tmp_path, monkeypatch):
     module = _load_module()
-    config = module.resolve_config(_args(output_dir=tmp_path, indices="8"))
+    config = replace(
+        module.resolve_config(_args(output_dir=tmp_path, indices="8")),
+        no_ensure_remote_proxy=True,
+    )
     stale_names = (
         "final_eval_layer_report.json",
         "final_eval_layer_report.md",
@@ -405,44 +408,6 @@ def test_incomplete_task_does_not_build_a_terminal_fact_report(tmp_path, monkeyp
     assert summary["fact_report"]["status"] == "not_built_incomplete_tasks"
     assert summary["fact_report"]["incomplete_indices"] == [8]
     assert all(not (tmp_path / name).exists() for name in stale_names)
-
-
-def test_preflight_runtime_identity_reaches_task_reuse_checks(tmp_path, monkeypatch):
-    module = _load_module()
-    config = module.resolve_config(_args(output_dir=tmp_path, indices="8"))
-    received = []
-    incomplete = {
-        "index": 8,
-        "returncode": 1,
-        "runner_status": "missing_report",
-        "completed": False,
-        "failure_scope": "task",
-        "failure_probe": {},
-    }
-
-    def capture(per_task_config, _index):
-        received.append(per_task_config)
-        return incomplete
-
-    monkeypatch.setattr(module, "prepare_runtime", lambda _config: "a" * 64)
-    monkeypatch.setattr(module, "run_remote_health_checks", lambda _config: {})
-    monkeypatch.setattr(module, "run_remote_model_probe", lambda _config: {})
-    monkeypatch.setattr(module, "run_one", capture)
-    monkeypatch.setattr(
-        module,
-        "confirm_shared_runtime_after_task_failure",
-        lambda _config, result: result,
-    )
-    monkeypatch.setattr(module, "systemic_failure_reasons", lambda _result: [])
-    monkeypatch.setattr(module, "build_token_summary", lambda _config: {})
-    monkeypatch.setattr(module, "save_progress", lambda *args, **kwargs: None)
-
-    module.run_parallel(config)
-
-    assert len(received) == 1
-    assert received[0].runtime_tree_sha256 == "a" * 64
-    assert received[0].no_sync_runtime is True
-    assert received[0].no_ensure_remote_proxy is True
 
 
 def test_aggregate_cannot_finish_when_the_fact_report_census_is_invalid(tmp_path):

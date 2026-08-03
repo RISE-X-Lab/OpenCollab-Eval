@@ -4,12 +4,29 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Any
+
+from opencollab_eval.engine.task_delivery_gate import (
+    MAX_WORK_BRIEF_BYTES,
+    activate_task_delivery,
+    current_task_delivery,
+    reset_task_delivery,
+)
 
 INLINE_TASK_SPECIFICATION_BYTES = 1_500
-TASK_SPECIFICATION_JSONL_BYTES = 180
-TASK_SPECIFICATION_READ_LINES = 4
+TASK_SPECIFICATION_JSONL_BYTES = 384
+TASK_WORKFLOW_TOOL_RESULT_CHARS = 640
 TASK_SPECIFICATION_SCHEMA = "opencollab.solver_task_specification.v1"
+TASK_INTAKE_BUDGET = 8_000
+_RUNTIME_ENV_KEYS = (
+    "OPENCOLLAB_EAGER_TOOL_KEEP_RECENT",
+    "OPENCOLLAB_HISTORY_KEEP_RECENT_GROUPS",
+    "OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS",
+)
 
 
 def _task_specification_line(index: int, text: str) -> str:
@@ -18,6 +35,17 @@ def _task_specification_line(index: int, text: str) -> str:
         ensure_ascii=False,
         separators=(",", ":"),
     )
+
+
+def inline_task_specification(description: str) -> dict[str, object]:
+    source = description.encode("utf-8")
+    return {
+        "schema": TASK_SPECIFICATION_SCHEMA,
+        "delivery": "inline",
+        "source_bytes": len(source),
+        "source_sha256": hashlib.sha256(source).hexdigest(),
+        "interfaces_required": "New interfaces introduced:\n" in description,
+    }
 
 
 def _readable_task_specification(description: str) -> str:
@@ -43,27 +71,21 @@ async def stage_task_description(
 ) -> tuple[str, dict[str, object]]:
     """Keep short tasks inline and stage long tasks in Solver Git metadata."""
     source = description.encode("utf-8")
-    source_sha256 = hashlib.sha256(source).hexdigest()
+    identity = inline_task_specification(description)
+    source_sha256 = str(identity["source_sha256"])
+    interfaces_required = bool(identity["interfaces_required"])
     if len(source) <= INLINE_TASK_SPECIFICATION_BYTES:
-        return description, {
-            "schema": TASK_SPECIFICATION_SCHEMA,
-            "delivery": "inline",
-            "source_bytes": len(source),
-            "source_sha256": source_sha256,
-        }
+        return description, identity
 
     readable = _readable_task_specification(description)
-    path = f".git/opencollab-public-task-{uuid.uuid4().hex}.jsonl"
+    path = f".git/oc-task-{uuid.uuid4().hex}.jsonl"
     await env.write_file(path, readable)
     line_count = len(readable.splitlines())
     prompt = (
         f"The complete public task specification is stored in `{path}`. "
-        f"Before any repository action, read all {line_count} lines with file_read "
-        f"in consecutive chunks of at most {TASK_SPECIFICATION_READ_LINES} lines, "
-        "using one file_read call per turn. Each line is JSON with ordered `i` and "
-        "`text` fields. Concatenate every `text` value in order without skipping a "
-        "chunk. Treat the reconstructed text as the Goal, including every requirement "
-        "and interface. "
+        f"The controller will deliver all {line_count} ordered content chunks before "
+        "repository work and will carry their cumulative task summary into every working "
+        "role. Read the staged file whenever exact wording or interface details are needed. "
         f"Its source SHA-256 is {source_sha256}."
     )
     delivered = readable.encode("utf-8")
@@ -72,11 +94,123 @@ async def stage_task_description(
         "delivery": "git_metadata_file",
         "source_bytes": len(source),
         "source_sha256": source_sha256,
+        "interfaces_required": interfaces_required,
         "delivered_bytes": len(delivered),
         "delivered_sha256": hashlib.sha256(delivered).hexdigest(),
         "delivered_lines": line_count,
         "path": path,
     }
+
+
+async def run_task_delivered_workflow(
+    ctx: Any,
+    args: dict[str, Any],
+    workflow_fn: Any,
+    source_description: str | None = None,
+) -> Any:
+    """Deliver the complete task once, then run the workflow with its work brief."""
+    delivery = current_task_delivery()
+    if delivery is None:
+        return await workflow_fn(ctx, args)
+    if not isinstance(source_description, str):
+        raise RuntimeError("task intake is missing its controller-owned source")
+    chunks = [
+        json.loads(line)["text"]
+        for line in _readable_task_specification(source_description).splitlines()
+    ]
+    if (
+        len(chunks) != delivery.line_count
+        or hashlib.sha256("".join(chunks).encode("utf-8")).hexdigest()
+        != delivery.source_sha256
+    ):
+        raise RuntimeError("task intake source does not match the staged task identity")
+    await ctx.phase("task-intake")
+    brief = await ctx.agent(
+        (
+            f"Read all. In under {MAX_WORK_BRIEF_BYTES} UTF-8 bytes preserve each "
+            "requirement, interface, "
+            "value and acceptance rule.\n"
+            + source_description
+        ),
+        label="task-intake",
+        tools=[],
+        budget=TASK_INTAKE_BUDGET,
+        thinking=False,
+    )
+    try:
+        work_brief = delivery.accept_full_source(source_description, brief)
+    except ValueError as exc:
+        raise RuntimeError("complete task intake is invalid") from exc
+    anchor = delivery.complete_intake(work_brief)
+    anchored_args = dict(args)
+    anchored_args["description"] = anchor
+    anchored_args["goal"] = anchor
+    return await workflow_fn(ctx, anchored_args)
+
+
+def _bounded_tool_output_limits(raw: str | None) -> str:
+    if raw is None or not raw.strip():
+        return (
+            f"default={TASK_WORKFLOW_TOOL_RESULT_CHARS},"
+            f"file_read={TASK_WORKFLOW_TOOL_RESULT_CHARS}"
+        )
+    if "=" not in raw:
+        try:
+            default = min(int(raw.strip()), TASK_WORKFLOW_TOOL_RESULT_CHARS)
+        except ValueError as exc:
+            raise ValueError("tool result limit must be an integer") from exc
+        return f"default={default},file_read={TASK_WORKFLOW_TOOL_RESULT_CHARS}"
+    entries: list[tuple[str, str]] = []
+    seen_default = False
+    seen_file_read = False
+    for item in raw.split(","):
+        name, separator, value = item.strip().partition("=")
+        if not separator:
+            raise ValueError("tool result limits must use name=value entries")
+        try:
+            value = str(min(int(value), TASK_WORKFLOW_TOOL_RESULT_CHARS))
+        except ValueError as exc:
+            raise ValueError("tool result limits must be integers") from exc
+        if name == "default":
+            seen_default = True
+        elif name == "file_read":
+            seen_file_read = True
+        entries.append((name, value))
+    if not seen_default:
+        entries.append(("default", str(TASK_WORKFLOW_TOOL_RESULT_CHARS)))
+    if not seen_file_read:
+        entries.append(("file_read", str(TASK_WORKFLOW_TOOL_RESULT_CHARS)))
+    return ",".join(f"{name}={value}" for name, value in entries)
+
+
+@contextmanager
+def task_delivery_runtime(
+    delivery: dict[str, object],
+    source_description: str,
+) -> Iterator[object | None]:
+    """Keep only the current raw chunk while the role builds a bounded checklist."""
+    if delivery.get("delivery") != "git_metadata_file":
+        yield None
+        return
+    line_count = delivery.get("delivered_lines")
+    if not isinstance(line_count, int) or isinstance(line_count, bool) or line_count <= 0:
+        raise ValueError("staged task delivery is missing a positive line count")
+    previous = {key: os.environ.get(key) for key in _RUNTIME_ENV_KEYS}
+    token = activate_task_delivery(delivery, source_description)
+    os.environ["OPENCOLLAB_EAGER_TOOL_KEEP_RECENT"] = "1"
+    os.environ["OPENCOLLAB_HISTORY_KEEP_RECENT_GROUPS"] = "1"
+    os.environ["OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS"] = _bounded_tool_output_limits(
+        previous["OPENCOLLAB_WORKFLOW_TOOL_RESULT_CHARS"]
+    )
+    try:
+        yield current_task_delivery()
+    finally:
+        reset_task_delivery(token)
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 async def verify_staged_task_description(
@@ -97,4 +231,10 @@ async def verify_staged_task_description(
     return hashlib.sha256(observed).hexdigest() == expected
 
 
-__all__ = ["stage_task_description", "verify_staged_task_description"]
+__all__ = [
+    "inline_task_specification",
+    "run_task_delivered_workflow",
+    "stage_task_description",
+    "task_delivery_runtime",
+    "verify_staged_task_description",
+]

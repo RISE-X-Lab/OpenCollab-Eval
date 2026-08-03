@@ -7,6 +7,8 @@ import re
 from pathlib import PurePosixPath
 from typing import Any
 
+from opencollab_eval.engine.task_delivery_gate import MAX_WORK_BRIEF_BYTES
+
 TRUSTED_PATCH_EXTRACTION_SCHEMA = "opencollab.trusted_patch_extraction.v1"
 GENERATION_PROOF_V2_SCHEMA = "opencollab.generation_proof.v2"
 TASK_SPECIFICATION_SCHEMA = "opencollab.solver_task_specification.v1"
@@ -20,7 +22,7 @@ _OBJECT_ID_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 _IMAGE_ID_RE = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _TASK_SPECIFICATION_PATH_RE = re.compile(
-    r"\.git/opencollab-public-task-[0-9a-f]{32}\.jsonl\Z"
+    r"\.git/oc-task-[0-9a-f]{32}\.jsonl\Z"
 )
 _PREPARATION_INPUT_KEYS = {
     "schema",
@@ -383,13 +385,20 @@ def solver_task_specification_valid(value: Any) -> bool:
     if not isinstance(value, dict) or value.get("schema") != TASK_SPECIFICATION_SCHEMA:
         return False
     delivery = value.get("delivery")
-    common = {"schema", "delivery", "source_bytes", "source_sha256"}
+    common = {
+        "schema",
+        "delivery",
+        "source_bytes",
+        "source_sha256",
+        "interfaces_required",
+    }
     if (
         not _nonnegative_int(value.get("source_bytes"))
         or value["source_bytes"] == 0
         or value["source_bytes"] > MAX_TRUSTED_PATCH_BYTES
         or not isinstance(value.get("source_sha256"), str)
         or not _SHA256_RE.fullmatch(value["source_sha256"])
+        or not isinstance(value.get("interfaces_required"), bool)
     ):
         return False
     if delivery == "inline":
@@ -415,13 +424,40 @@ def solver_task_specification_valid(value: Any) -> bool:
     )
 
 
+def solver_task_delivery_gate_valid(value: Any, specification: Any) -> bool:
+    """Bind staged-task model delivery to the exact public source identity."""
+    if not isinstance(specification, dict):
+        return False
+    if specification.get("delivery") == "inline":
+        return value is None
+    expected_keys = {
+        "full_source_delivered",
+        "source_sha256",
+        "work_brief_bytes",
+        "interfaces_required",
+        "intake_complete",
+    }
+    return bool(
+        isinstance(value, dict)
+        and set(value) == expected_keys
+        and value.get("full_source_delivered") is True
+        and value.get("intake_complete") is True
+        and value.get("source_sha256") == specification.get("source_sha256")
+        and value.get("interfaces_required") == specification.get("interfaces_required")
+        and _nonnegative_int(value.get("work_brief_bytes"))
+        and 0 < value["work_brief_bytes"] <= MAX_WORK_BRIEF_BYTES
+    )
+
+
 def _generation_schema_valid(metric: dict[str, Any]) -> bool:
     schema = metric.get("generation_proof_schema")
-    if schema is None:
-        return True
+    specification = metric.get("solver_task_specification")
     return bool(
         schema == GENERATION_PROOF_V2_SCHEMA
-        and solver_task_specification_valid(metric.get("solver_task_specification"))
+        and solver_task_specification_valid(specification)
+        and solver_task_delivery_gate_valid(
+            metric.get("solver_task_delivery_gate"), specification
+        )
     )
 
 
@@ -497,6 +533,7 @@ __all__ = [
     "current_generation_summary_proof_valid",
     "generation_llm_calls_proven",
     "solver_task_specification_valid",
+    "solver_task_delivery_gate_valid",
     "preparation_input_valid",
     "solver_git_snapshot_valid",
     "trusted_patch_extraction_valid",

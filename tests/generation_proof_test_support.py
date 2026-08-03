@@ -14,6 +14,19 @@ from opencollab_eval.engine.swe_generation_proof import (
 from opencollab_eval.generation.gen_prediction_snapshot_support import anonymous_commit_oid
 
 
+def current_inline_generation_schema_fields() -> dict:
+    return {
+        "generation_proof_schema": "opencollab.generation_proof.v2",
+        "solver_task_specification": {
+            "schema": "opencollab.solver_task_specification.v1",
+            "delivery": "inline",
+            "source_bytes": 1,
+            "source_sha256": "9" * 64,
+            "interfaces_required": False,
+        },
+    }
+
+
 def trusted_summary_proof_fields(
     patch_sha256: str,
     *,
@@ -73,6 +86,7 @@ def trusted_summary_proof_fields(
         },
     }
     return {
+        **current_inline_generation_schema_fields(),
         "generation_image_id": "sha256:" + "8" * 64,
         "solver_git_snapshot": snapshot,
         "trusted_patch_extraction": extraction,

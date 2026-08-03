@@ -1,0 +1,45 @@
+**Title: kubectl exec interactive sessions fail due to missing session uploader initialization**
+
+**Expected behavior**
+Using the Kubernetes integration, kubectl exec should open an interactive shell without manual log-directory setup.
+
+**Current behavior**
+The request fails because /var/lib/teleport/log/upload/streaming/default does not exist. Session recordings fail and interactive sessions never start.
+
+**Bug details**
+The Kubernetes service omitted session-uploader initialization, so the asynchronous upload directory was never created. The clusterSession object also retained request and cluster state that should expire with each connection, which becomes unsafe when remote clusters or tunnels disappear. Audit events used the request context and could be canceled when the client disconnected. Response-error logging from the exec handler was incomplete, while several forwarder configuration fields had ambiguous names or combined unrelated responsibilities.
+
+**Recreation steps**
+1. Deploy teleport-kube-agent with the example Helm chart.
+2. Run kubectl exec against a live pod.
+3. Observe that no interactive shell appears.
+4. Inspect the server log for the missing streaming upload directory warning.
+5. Observe that manually creating the directory allows the request to proceed, which demonstrates that startup initialization is missing.
+
+**Debug log**
+WARN Executor failed while streaming because /var/lib/teleport/log/upload/streaming/default does not exist or is not a directory.
+
+Requirements
+- Forwarder must record audit events from exec, portForward, and catchAll even when the client disconnects.
+- Authorization must use ForwarderConfig.Authz.Authorize. Cluster configuration and Kubernetes services come from CachingAuthClient. An empty RouteToCluster defaults to ClusterName. Remote clusters use ReverseTunnelSrv and local clusters use their local Site with serverID.
+- Credentials come from AuthClient.ProcessKubeCSR and use a TTL cache keyed by authenticated context. A certificate is valid only when NotAfter is at least one minute away. Concurrent requests for one key share a single CSR. Request-scoped clusterSession state must never be cached.
+- Interactive keepalive uses ConnPingPeriod. Forwarder exposes ServeHTTP and delegates to its internal httprouter.Router, including the NotFound handler.
+- Kubernetes service startup initializes the session uploader. The Kubernetes TLS server uses AuthClient as heartbeat announcer.
+- ForwarderConfig exposes Authz, AuthClient, CachingAuthClient, ReverseTunnelSrv, ConnPingPeriod, ClusterName, Namespace, ServerID, Clock, StreamEmitter, Keygen, DataDir, StaticLabels, and DynamicLabels with distinct responsibilities.
+
+New interfaces introduced:
+func (f *Forwarder) ServeHTTP(rw http.ResponseWriter, r *http.Request)
+The method implements http.Handler and delegates the incoming request and response writer to the forwarder's internal router.
+The rw argument is the http.ResponseWriter used for the response. The r argument points to the incoming request. The method has no direct return value because it writes through rw. Its purpose is to make Forwarder satisfy http.Handler while preserving the router configuration and unmatched-request behavior.
+
+Compatibility and acceptance details
+The existing exec, port-forwarding, catch-all, local-cluster, remote-cluster, credential cache, heartbeat, and audit behavior must continue to work. Tests should cover client cancellation, credential expiry, concurrent CSR requests, local and remote dialing, router fallback, uploader initialization, config validation, and the ServeHTTP interface.
+
+Implementation notes
+Keep request cancellation separate from audit emission. Preserve server selection by serverID. Avoid retaining connection-specific objects in shared caches. Keep certificate validation based on the configured clock. Ensure startup failures from session uploader initialization are returned rather than hidden. Keep renamed fields consistent across constructors, tests, mocks, and callers. Existing public behavior outside these requirements remains compatible.
+
+The credential cache must keep only reusable credentials. It must not retain cluster sessions, request contexts, network connections, tunnel sites, or other objects whose lifetime belongs to one request. Certificate expiry checks use the configured Clock and reserve at least one minute. Requests racing on the same authenticated cache key share the credential creation result. Requests for different keys remain independent.
+
+Local cluster traffic uses the local reversetunnel Site and selects a target through ServerID. Remote cluster traffic resolves its Site through ReverseTunnelSrv. When RouteToCluster is empty, ClusterName supplies the default target. The implementation must keep local and remote routing distinct while preserving authorization and Kubernetes-service discovery.
+
+Audit emission for exec, portForward, and catchAll must survive cancellation of the client request. The response handler still observes and reports execution errors. Session recording startup creates and validates the upload directories before interactive traffic is accepted. The TLS server announces heartbeats through AuthClient. Configuration validation reports missing collaborators using their new names.

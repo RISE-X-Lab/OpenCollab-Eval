@@ -15,12 +15,8 @@ import tempfile
 import time
 from pathlib import Path
 
-from opencollab_eval.benchmarks.task_specification import (  # noqa: E402
-    compose_task_specification,
-)
-from opencollab_eval.benchmarks.task_specification import (  # noqa: E402
-    solver_task_instance as _solver_instance,
-)
+from opencollab_eval.benchmarks.task_specification import compose_task_specification  # noqa: E402
+from opencollab_eval.benchmarks.task_specification import solver_task_instance as _solver_instance  # noqa: E402
 from opencollab_eval.engine.swe_generation_proof import (  # noqa: E402
     current_generation_proof_valid,
 )
@@ -40,10 +36,8 @@ from .external_solver_usage import (  # noqa: E402
     _openhands_usage,
 )
 from .gen_prediction_patch import extract_patch_guarded, prepare_trusted_patch_baseline  # noqa: E402
-from .gen_prediction_snapshot import (  # noqa: E402
-    anonymous_solver_task_id,
-    prepare_solver_git_snapshot,
-)
+from .gen_prediction_snapshot import anonymous_solver_task_id, prepare_solver_git_snapshot  # noqa: E402
+from .gen_prediction_task_delivery import inline_task_specification  # noqa: E402
 from .gen_prediction_workflow import (  # noqa: E402
     _patch_path_audit,
     build_output_records,
@@ -635,6 +629,10 @@ def main() -> None:
                 metrics["validation_artifacts_removed"] = removed_validation_artifacts
         metrics.update(
             {
+                "generation_proof_schema": "opencollab.generation_proof.v2",
+                "solver_task_specification": inline_task_specification(
+                    compose_task_specification(instance)
+                ),
                 "llm_model": args.llm_model or None,
                 "llm_provider": os.environ.get(
                     "OPENCOLLAB_PROVIDER", "anthropic"
@@ -680,12 +678,8 @@ def main() -> None:
                 },
                 "budget": args.budget,
                 "max_steps": args.max_steps,
-                "empty_patch_rejections": max(
-                    0, args.empty_patch_rejections
-                ),
-                "openhands_empty_patch_rejections": max(
-                    0, args.empty_patch_rejections
-                ),
+                "empty_patch_rejections": max(0, args.empty_patch_rejections),
+                "openhands_empty_patch_rejections": max(0, args.empty_patch_rejections),
                 "openhands_command_sha256": hashlib.sha256(
                     args.command.encode("utf-8")
                 ).hexdigest(),
@@ -794,7 +788,5 @@ def main() -> None:
         print(f"Patch ({len(patch)} chars) written to {out_path}")
     else:
         print("WARNING: empty patch")
-
-
 if __name__ == "__main__":
     main()

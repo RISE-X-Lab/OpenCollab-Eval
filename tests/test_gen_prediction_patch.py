@@ -8,6 +8,7 @@ from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
+from generation_proof_test_support import current_inline_generation_schema_fields
 
 from opencollab_eval.engine.swe_generation_proof import (
     current_generation_proof_valid,
@@ -599,6 +600,7 @@ def test_current_proof_binds_snapshot_patch_and_summary() -> None:
     snapshot = SolverGitSnapshot("a" * 40, "b" * 40, 1, 0, 0, 1)
     patch = "diff --git a/a b/a\n"
     metric = {
+        **current_inline_generation_schema_fields(),
         "generation_image_id": "sha256:" + "8" * 64,
         "solver_git_snapshot": snapshot.as_dict(),
         "trusted_patch_extraction": _proof(snapshot, patch),
@@ -618,6 +620,7 @@ def test_current_proof_binds_snapshot_patch_and_summary() -> None:
 def test_empty_patch_requires_exact_zero_byte_proof() -> None:
     snapshot = SolverGitSnapshot("a" * 40, "b" * 40, 1, 0, 0, 0)
     metric = {
+        **current_inline_generation_schema_fields(),
         "generation_image_id": "sha256:" + "8" * 64,
         "solver_git_snapshot": snapshot.as_dict(),
         "trusted_patch_extraction": _proof(snapshot, ""),

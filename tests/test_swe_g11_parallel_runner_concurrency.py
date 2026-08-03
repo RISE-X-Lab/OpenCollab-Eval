@@ -9,7 +9,14 @@ from test_swe_g11_parallel_runner import _args, _load_module
 
 def test_run_parallel_stops_before_generation_when_health_check_fails(tmp_path):
     module = _load_module()
-    config = module.resolve_config(_args(start_index=51, end_index=52, output_dir=tmp_path))
+    config = module.resolve_config(
+        _args(
+            start_index=51,
+            end_index=52,
+            output_dir=tmp_path,
+            no_ensure_remote_proxy=True,
+        )
+    )
     called = {"run_one": 0}
 
     def fake_run_one(*args, **kwargs):

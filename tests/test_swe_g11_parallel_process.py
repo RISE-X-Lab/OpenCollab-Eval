@@ -104,7 +104,8 @@ def test_parallel_sigterm_cleans_children_before_executor_shutdown(tmp_path):
                 "runner.run_one = lambda cfg, index: process.run_task_process(",
                 "    [sys.executable, '-c', code, str(marker)], cwd=marker.parent)",
                 "cfg = SimpleNamespace(output_dir=marker.parent, indices=(1,),",
-                "    max_workers=1, no_sync_runtime=True, no_ensure_remote_proxy=True)",
+                "    max_workers=1, no_sync_runtime=True, no_ensure_remote_proxy=True,",
+                "    remote_api_env_file='/secret')",
                 "runner.run_parallel(cfg)",
             ]
         )

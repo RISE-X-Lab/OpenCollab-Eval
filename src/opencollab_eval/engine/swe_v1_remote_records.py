@@ -441,9 +441,8 @@ def completed_generation_identity(prediction, metric, task, *, require_submissio
             and current_generation_proof_valid(metric, original_patch)
         )
     return False
-
-
 GENERATION_INTEGRITY_FIELDS = (
+    "generation_proof_schema",
     "generation_image_id",
     "submission_eligible",
     "execution_quiesced",
@@ -457,6 +456,8 @@ GENERATION_INTEGRITY_FIELDS = (
     "patch_produced",
     "checkpoint_result",
     "solver_git_snapshot",
+    "solver_task_specification",
+    "solver_task_delivery_gate",
     "trusted_patch_extraction",
     "llm_model",
     "trajectory_models",

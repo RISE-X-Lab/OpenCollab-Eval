@@ -8,6 +8,7 @@ import concurrent.futures
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -22,7 +23,14 @@ from opencollab_eval.commands import swe_g11_shared_health as _shared_health
 from opencollab_eval.commands.swe_v1_prolite_common import (
     ALLOWED_WORKFLOW_ENV_KEYS as _ALLOWED_WORKFLOW_ENV_KEYS,
 )
-from opencollab_eval.commands.swe_v1_prolite_config import get_proxy_token
+from opencollab_eval.commands.swe_v1_prolite_config import (
+    cleanup_remote_proxy_tunnels,
+    ensure_remote_proxy,
+    get_proxy_token,
+)
+from opencollab_eval.commands.swe_v1_prolite_controller import (
+    _ssh_with_liveness_options,
+)
 
 # Preserve the original import surface while keeping implementation modules focused.
 REPO = _config.REPO
@@ -491,20 +499,50 @@ def clear_stale_fact_report(config: ParallelConfig) -> None:
         (config.output_dir / name).unlink(missing_ok=True)
 
 
+def prepare_run_proxy(config: ParallelConfig) -> tuple[ParallelConfig, dict[str, Any], bool]:
+    """Let the parent process own one proxy tunnel for preflight and every task."""
+    if config.remote_api_env_file:
+        return config, {"status": "direct_remote_api"}, False
+    if config.no_ensure_remote_proxy:
+        return config, {"status": "disabled"}, False
+    summary = ensure_remote_proxy(
+        ssh_command=_ssh_with_liveness_options(shlex.split(config.ssh_command)),
+        host=config.host,
+        local_proxy_base_url=config.local_proxy_base_url,
+        remote_proxy_base_url=config.remote_proxy_base_url,
+        remote_python=config.remote_python,
+        enabled=True,
+    )
+    selected = summary.get("remote_proxy_base_url")
+    if not isinstance(selected, str) or not selected:
+        raise RuntimeError("run-level proxy preparation did not select a remote URL")
+    owned = str(summary.get("status") or "").startswith("started")
+    return replace(config, remote_proxy_base_url=selected, no_ensure_remote_proxy=True), summary, owned
+
+
 def run_parallel(config: ParallelConfig) -> dict[str, Any]:
     _parallel_process.clear_interrupted()
     signal_handlers = _parallel_process.install_signal_handlers()
+    proxy_owned = False
     try:
-        return _run_parallel(config)
+        effective_config, proxy_summary, proxy_owned = prepare_run_proxy(config)
+        return _run_parallel(effective_config, proxy_summary=proxy_summary)
     except BaseException:
         _parallel_process.set_interrupted()
         raise
     finally:
         _parallel_process.terminate_active_task_groups()
+        if proxy_owned:
+            cleanup_remote_proxy_tunnels()
         _parallel_process.restore_signal_handlers(signal_handlers)
+        _parallel_process.clear_interrupted()
 
 
-def _run_parallel(config: ParallelConfig) -> dict[str, Any]:
+def _run_parallel(
+    config: ParallelConfig,
+    *,
+    proxy_summary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     ensure_directory(config.output_dir)
     runtime_prepared = False
     runtime_tree_sha256 = ""
@@ -515,6 +553,7 @@ def _run_parallel(config: ParallelConfig) -> dict[str, Any]:
     except Exception as exc:
         preflight_error = {"type": type(exc).__name__, "message": str(exc)}
     remote_health = run_remote_health_checks(config)
+    remote_health["run_proxy"] = proxy_summary or {"status": "not_prepared"}
     remote_health["model_probe"] = wait_for_remote_model_probe(config)
     if preflight_error:
         remote_health["task_preflight"] = {

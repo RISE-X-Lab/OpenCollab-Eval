@@ -15,6 +15,7 @@ from gen_prediction_workflow_support import (
     isolated_solver_snapshot as _isolated_solver_snapshot,  # noqa: F401
 )
 from gen_prediction_workflow_support import trusted_proof as _trusted_proof
+from generation_proof_test_support import current_inline_generation_schema_fields
 
 from opencollab_eval.engine.evaluator import EvalResult, EvalTask
 from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid
@@ -251,6 +252,7 @@ def test_guarded_extraction_removes_generated_runtime_artifacts(
     }
     assert proof["workspace_integrity"]["outcome"] == "sanitize_then_continue"
     metric = {
+        **current_inline_generation_schema_fields(),
         "generation_image_id": "sha256:" + "8" * 64,
         "solver_git_snapshot": gpw.gp.prepare_solver_git_snapshot("cid", "base").as_dict(),
         "trusted_patch_extraction": proof,
@@ -333,6 +335,7 @@ def test_guarded_extraction_keeps_strict_proof_schema_and_separate_audit(monkeyp
         object(),
     )
     metric = {
+        **current_inline_generation_schema_fields(),
         "generation_image_id": "sha256:" + "8" * 64,
         "solver_git_snapshot": gpw.gp.prepare_solver_git_snapshot("cid", "base").as_dict(),
         "trusted_patch_extraction": proof,

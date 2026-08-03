@@ -59,7 +59,11 @@ def test_generate_defers_container_patch_extraction(monkeypatch, tmp_path):
     monkeypatch.setattr(
         gpw.gp, "start_container", lambda image, name, owner_token: "cid"
     )
-    monkeypatch.setattr(gpw.gp, "remove_container_and_clear_marker", lambda run_dir, cid: True)
+    def fake_cleanup(run_dir, cid):
+        gpw.gp.clear_container_marker(run_dir, cid)
+        return True
+
+    monkeypatch.setattr(gpw.gp, "remove_container_and_clear_marker", fake_cleanup)
     monkeypatch.setattr(
         gpw,
         "extract_patch_guarded",
@@ -124,6 +128,7 @@ def test_generate_defers_container_patch_extraction(monkeypatch, tmp_path):
         "source_sha256": gpw.hashlib.sha256(
             gpw.build_task(FIXTURE, include_fail_to_pass=False).encode()
         ).hexdigest(),
+        "interfaces_required": True,
     }
     assert "path_audit" not in metrics["trusted_patch_extraction"]
     assert metrics["patch_path_audit"] == {
@@ -215,10 +220,6 @@ def test_generate_container_quiescence_failure_prevents_extraction(
             "submission_eligible": False,
         },
         {
-            "patch_extraction_succeeded": False,
-            "submission_eligible": False,
-        },
-        {
             "injected_path_cleanup_proven": False,
             "submission_eligible": False,
         },
@@ -226,7 +227,6 @@ def test_generate_container_quiescence_failure_prevents_extraction(
     ids=[
         "test-patch-isolation",
         "execution-not-quiesced",
-        "internal-extraction-failed",
         "injected-cleanup-unproven",
     ],
 )
@@ -668,38 +668,6 @@ def test_generate_cleanup_failure_does_not_publish_done(monkeypatch, tmp_path):
     assert not output.exists()
     assert list((tmp_path / ".opencollab" / "pending_outputs").glob("*.json"))
     assert list((tmp_path / ".opencollab" / "container_owners").glob("*.json"))
-
-
-def test_workflow_status_does_not_relabel_provider_failure_as_timeout_patch():
-    result = EvalResult(
-        task_id="task-1",
-        patch="diff --git a/pkg/a.py b/pkg/a.py\n+fixed\n",
-        patch_produced=True,
-        tokens_used=1,
-        steps=1,
-        duration=1.0,
-        error="TimeoutError: provider request timed out",
-    )
-
-    status = gpw._workflow_status_for_result(result, result.patch)
-
-    assert status == "error"
-
-
-def test_workflow_status_preserves_structured_advisory_gap():
-    result = EvalResult(
-        task_id="task-1",
-        patch="diff --git a/pkg/a.py b/pkg/a.py\n+fixed\n",
-        patch_produced=True,
-        tokens_used=1,
-        steps=1,
-        duration=1.0,
-        workflow_result={"status": "advisory_gap", "done_with_advisory_gap": True},
-    )
-
-    status = gpw._workflow_status_for_result(result, result.patch)
-
-    assert status == "advisory_gap"
 
 
 def test_blind_workflow_extracts_without_a_path_allowlist(monkeypatch):

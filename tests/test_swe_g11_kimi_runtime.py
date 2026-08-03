@@ -714,6 +714,7 @@ def test_parallel_runner_continues_after_task_technical_failure(monkeypatch, tmp
             end_index=None,
             output_dir=tmp_path,
             max_workers=1,
+            no_ensure_remote_proxy=True,
         )
     )
     started = []

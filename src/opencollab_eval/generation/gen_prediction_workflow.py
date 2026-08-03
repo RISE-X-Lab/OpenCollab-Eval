@@ -59,7 +59,13 @@ from .gen_prediction_task_delivery import (  # noqa: E402
     _readable_task_specification as _readable_task_specification,
 )
 from .gen_prediction_task_delivery import (  # noqa: E402
+    run_task_delivered_workflow as _run_task_delivered_workflow,
+)
+from .gen_prediction_task_delivery import (  # noqa: E402
     stage_task_description as _stage_task_description,
+)
+from .gen_prediction_task_delivery import (  # noqa: E402
+    task_delivery_runtime as _task_delivery_runtime,
 )
 from .gen_prediction_task_delivery import (  # noqa: E402
     verify_staged_task_description as _verify_staged_task_description,
@@ -358,9 +364,13 @@ async def generate(
                 "trusted host extraction does not accept container Git checkpoints"
             )
         include_hidden_tests = not blind_validation
+        public_task_description = build_task(
+            instance,
+            include_fail_to_pass=include_hidden_tests,
+        )
         task_description, task_specification_delivery = await _stage_task_description(
             env,
-            build_task(instance, include_fail_to_pass=include_hidden_tests),
+            public_task_description,
         )
         task = EvalTask(
             task_id=gp.anonymous_solver_task_id(),
@@ -369,40 +379,58 @@ async def generate(
             max_tokens=args.budget,
             extras=build_extras(instance, include_hidden_tests=include_hidden_tests),
         )
+
+        async def delivered_workflow(ctx, workflow_args):
+            return await _run_task_delivered_workflow(
+                ctx,
+                workflow_args,
+                workflow_fn,
+                public_task_description,
+            )
+
         workflow_log_dir = Path(
             os.environ.get(
                 "OPENCOLLAB_EVAL_WORKFLOW_LOG_DIR",
                 str(_REPO_ROOT / "logs" / "eval_workflow"),
             )
         ).resolve()
-        result = await run_eval_task(
-            task,
-            model=cfg["model"],
-            provider=cfg["provider"],
-            output_dir=str(workflow_log_dir),
-            prompt=gp.WORKFLOW_AGENT_PROMPT,
-            env_factory=env_factory,
-            max_steps=args.max_steps,
-            workflow=workflow_fn,
-            temperature=cfg["temperature"],
-            top_p=cfg.get("top_p"),
-            max_output_tokens=cfg.get(
-                "max_output_tokens", DEFAULT_MAX_OUTPUT_TOKENS
-            ),
-            context_window=cfg.get("context_window"),
-            thinking=cfg.get("thinking", False),
-            thinking_params=cfg.get("thinking_params") or None,
-            wire_protocol=cfg.get("wire_protocol", "chat_completions"),
-            reasoning_effort=cfg.get("reasoning_effort"),
-            llm_connect_timeout=cfg.get("llm_connect_timeout", 30.0),
-            llm_first_event_timeout=cfg.get("llm_first_event_timeout", 180.0),
-            llm_stream_idle_timeout=cfg.get("llm_stream_idle_timeout", 180.0),
-            checkpoint_interval_seconds=None,
-            resume_from_checkpoint=False,
-            defer_patch_extraction=True,
-        )
+        with _task_delivery_runtime(
+            task_specification_delivery,
+            public_task_description,
+        ) as delivery_gate:
+            result = await run_eval_task(
+                task,
+                model=cfg["model"],
+                provider=cfg["provider"],
+                output_dir=str(workflow_log_dir),
+                prompt=gp.WORKFLOW_AGENT_PROMPT,
+                env_factory=env_factory,
+                max_steps=args.max_steps,
+                workflow=delivered_workflow,
+                temperature=cfg["temperature"],
+                top_p=cfg.get("top_p"),
+                max_output_tokens=cfg.get(
+                    "max_output_tokens", DEFAULT_MAX_OUTPUT_TOKENS
+                ),
+                context_window=cfg.get("context_window"),
+                thinking=cfg.get("thinking", False),
+                thinking_params=cfg.get("thinking_params") or None,
+                wire_protocol=cfg.get("wire_protocol", "chat_completions"),
+                reasoning_effort=cfg.get("reasoning_effort"),
+                llm_connect_timeout=cfg.get("llm_connect_timeout", 30.0),
+                llm_first_event_timeout=cfg.get("llm_first_event_timeout", 180.0),
+                llm_stream_idle_timeout=cfg.get("llm_stream_idle_timeout", 180.0),
+                checkpoint_interval_seconds=None,
+                resume_from_checkpoint=False,
+                defer_patch_extraction=True,
+            )
+        delivery_gate_proof = None if delivery_gate is None else delivery_gate.proof()
         require_container_quiescence(cid)
-        if not await _verify_staged_task_description(env, task_specification_delivery):
+        task_specification_integrity_valid = await _verify_staged_task_description(
+            env,
+            task_specification_delivery,
+        )
+        if not task_specification_integrity_valid:
             result.error = "public task specification changed during solver execution"
         print(
             f"  workflow: tokens={result.tokens_used} steps={result.steps} "
@@ -411,6 +439,7 @@ async def generate(
         provider_failure = summarize_terminal_provider_failures(
             result.agent_failures
         )
+        trajectory_identity_valid = True
         try:
             (
                 trajectory_models,
@@ -425,6 +454,7 @@ async def generate(
                 wire_protocol=cfg.get("wire_protocol", "chat_completions"),
             )
         except RuntimeError as exc:
+            trajectory_identity_valid = False
             result.error = str(exc)
             trajectory_models = []
             provider_models = []
@@ -437,7 +467,8 @@ async def generate(
             and result.checkpoint_restore_integrity_proven
             and result.task_stage_integrity_proven
             and not result.test_patch_isolation_failed
-            and not result.error
+            and task_specification_integrity_valid
+            and trajectory_identity_valid
             and provider_failure is None
         )
         if outer_extraction_allowed:
@@ -503,6 +534,8 @@ async def generate(
         metrics["generation_image_id"] = generation_image_id
         metrics["generation_proof_schema"] = "opencollab.generation_proof.v2"
         metrics["solver_task_specification"] = task_specification_delivery
+        if delivery_gate_proof is not None:
+            metrics["solver_task_delivery_gate"] = delivery_gate_proof
         metrics["solver_git_snapshot"] = snapshot.as_dict()
         if extraction_proof is not None:
             metrics["trusted_patch_extraction"] = extraction_proof
@@ -518,8 +551,16 @@ async def generate(
         metrics["submitted_patch_chars"] = len(patch)
         if provider_failure is not None:
             metrics["workflow_status"] = "provider_request_rejected"
-        elif not metrics.get("workflow_status"):
-            metrics["workflow_status"] = _workflow_status_for_result(result, patch)
+        else:
+            workflow_status = _workflow_status_for_result(result, patch)
+            if patch.strip() and workflow_status not in {
+                "done",
+                "done_with_timeout_patch",
+            }:
+                metrics["workflow_advisory_status"] = workflow_status
+                metrics["workflow_status"] = "done"
+            elif not metrics.get("workflow_status"):
+                metrics["workflow_status"] = workflow_status
         gp.normalize_trusted_extraction_status(metrics, patch)
         if removed_validation_artifacts:
             metrics["validation_artifacts_removed"] = removed_validation_artifacts
