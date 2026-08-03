@@ -9,6 +9,8 @@ import pytest
 
 from opencollab_eval.safe_files import (
     create_regular_bytes_atomic,
+    ensure_directory_no_symlinks,
+    open_directory_no_symlinks,
     read_regular_bytes,
     write_regular_bytes_atomic,
 )
@@ -44,3 +46,32 @@ def test_create_only_never_replaces_existing_evidence(tmp_path) -> None:
     with pytest.raises(FileExistsError):
         create_regular_bytes_atomic(path, b"second")
     assert path.read_bytes() == b"first"
+
+
+def test_directory_helpers_do_not_require_component_dirfd_access(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original_open = os.open
+
+    def reject_relative_open(path, flags, mode=0o777, *, dir_fd=None):
+        if dir_fd is not None:
+            raise PermissionError("component dirfd access denied")
+        return original_open(path, flags, mode)
+
+    monkeypatch.setattr(os, "open", reject_relative_open)
+    target = tmp_path / "parent" / "child"
+    ensure_directory_no_symlinks(target)
+    fd = open_directory_no_symlinks(target)
+    os.close(fd)
+    assert target.is_dir()
+
+
+def test_directory_helpers_reject_symlink_component(tmp_path) -> None:
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    with pytest.raises(OSError, match="not a real directory"):
+        open_directory_no_symlinks(link)
+    with pytest.raises(OSError, match="not a real directory"):
+        ensure_directory_no_symlinks(link / "child")

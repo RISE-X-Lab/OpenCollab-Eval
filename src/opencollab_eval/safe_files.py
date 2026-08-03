@@ -43,47 +43,41 @@ def _directory_flags() -> int:
 def open_directory_no_symlinks(path: str | os.PathLike[str]) -> int:
     """Open a directory after rejecting symlink path components."""
     absolute = _absolute(path)
-    fd = os.open(absolute.anchor or os.sep, _directory_flags())
+    current = Path(absolute.anchor or os.sep)
+    for component in absolute.parts[1:]:
+        current /= component
+        try:
+            mode = os.lstat(current).st_mode
+        except OSError as exc:
+            raise OSError(f"directory parent is not a real directory: {absolute}") from exc
+        if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+            raise OSError(f"directory parent is not a real directory: {absolute}")
     try:
-        for component in absolute.parts[1:]:
-            try:
-                next_fd = os.open(component, _directory_flags(), dir_fd=fd)
-            except OSError as exc:
-                raise OSError(f"directory parent is not a real directory: {absolute}") from exc
-            if not stat.S_ISDIR(os.fstat(next_fd).st_mode):
-                os.close(next_fd)
-                raise NotADirectoryError(absolute)
-            os.close(fd)
-            fd = next_fd
-        result = fd
-        fd = -1
-        return result
-    finally:
-        if fd >= 0:
-            os.close(fd)
+        fd = os.open(absolute, _directory_flags())
+    except OSError as exc:
+        raise OSError(f"directory parent is not a real directory: {absolute}") from exc
+    if stat.S_ISDIR(os.fstat(fd).st_mode):
+        return fd
+    os.close(fd)
+    raise OSError(f"directory parent is not a real directory: {absolute}")
 
 
 def ensure_directory_no_symlinks(path: str | os.PathLike[str]) -> None:
     """Create a directory tree while rejecting symlink components."""
     absolute = _absolute(path)
-    fd = os.open(absolute.anchor or os.sep, _directory_flags())
-    try:
-        for component in absolute.parts[1:]:
-            try:
-                os.mkdir(component, 0o700, dir_fd=fd)
-            except FileExistsError:
-                pass
-            try:
-                next_fd = os.open(component, _directory_flags(), dir_fd=fd)
-            except OSError as exc:
-                raise OSError(f"directory parent is not a real directory: {absolute}") from exc
-            if not stat.S_ISDIR(os.fstat(next_fd).st_mode):
-                os.close(next_fd)
-                raise NotADirectoryError(absolute)
-            os.close(fd)
-            fd = next_fd
-    finally:
-        os.close(fd)
+    current = Path(absolute.anchor or os.sep)
+    for component in absolute.parts[1:]:
+        current /= component
+        try:
+            os.mkdir(current, 0o700)
+        except FileExistsError:
+            pass
+        try:
+            mode = os.lstat(current).st_mode
+        except OSError as exc:
+            raise OSError(f"directory parent is not a real directory: {absolute}") from exc
+        if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+            raise OSError(f"directory parent is not a real directory: {absolute}")
 
 
 def directory_path_matches_fd(path: str | os.PathLike[str], fd: int) -> bool:
