@@ -134,3 +134,33 @@ def test_proxy_compacts_tool_schemas_without_enabling_streaming() -> None:
         assert "description" not in path_schema
     finally:
         _stop_relay(proxy, upstream)
+
+
+def test_proxy_compacts_historical_tool_call_ids_without_enabling_streaming() -> None:
+    upstream, proxy = _start_relay(compact_tool_call_ids=True)
+    payload = {
+        "model": "deepseek-v4-pro",
+        "messages": [
+            {
+                "role": "assistant",
+                "tool_calls": [{
+                    "id": "call_1234567890abcdef",
+                    "type": "function",
+                    "function": {"name": "file_read", "arguments": "{}"},
+                }],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_1234567890abcdef",
+                "content": "result",
+            },
+        ],
+    }
+    try:
+        _post_json(proxy, payload)
+        observed = json.loads(RecordingUpstreamHandler.requests[0]["body"])
+        assert "stream" not in observed
+        assert observed["messages"][0]["tool_calls"][0]["id"] == "c0"
+        assert observed["messages"][1]["tool_call_id"] == "c0"
+    finally:
+        _stop_relay(proxy, upstream)

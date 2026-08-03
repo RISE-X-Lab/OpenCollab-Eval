@@ -161,6 +161,41 @@ def test_tool_schema_compaction_does_not_require_streaming() -> None:
     assert "description" not in path_schema
 
 
+def test_streaming_request_compacts_historical_tool_call_ids() -> None:
+    first = "call_1234567890abcdef"
+    second = "call_fedcba0987654321"
+    request = {
+        "model": "deepseek-v4-pro",
+        "messages": [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {"id": first, "type": "function", "function": {"name": "read", "arguments": "{}"}},
+                    {"id": second, "type": "function", "function": {"name": "grep", "arguments": "{}"}},
+                ],
+            },
+            {"role": "tool", "tool_call_id": second, "content": "grep result"},
+            {"role": "tool", "tool_call_id": first, "content": "read result"},
+            {"role": "tool", "tool_call_id": "unknown", "content": "kept"},
+        ],
+    }
+
+    encoded, aggregate, model = streaming_chat_request(
+        json.dumps(request).encode(),
+        compact_tool_call_ids=True,
+        enable_stream=False,
+    )
+    actual = json.loads(encoded)
+
+    assert aggregate is False
+    assert model == "deepseek-v4-pro"
+    calls = actual["messages"][0]["tool_calls"]
+    assert [call["id"] for call in calls] == ["c0", "c1"]
+    assert [message["tool_call_id"] for message in actual["messages"][1:]] == ["c1", "c0", "unknown"]
+    assert json.loads(json.dumps(request))["messages"][0]["tool_calls"][0]["id"] == first
+
+
 @pytest.mark.parametrize(
     "body",
     [b"not-json", b"[]", b'{"stream_options":1}', b'{"messages":[]}'],

@@ -8,14 +8,38 @@ import shlex
 import subprocess
 import urllib.error
 import urllib.request
+from typing import Any
 
 from .swe_v1_prolite_config import url_with_healthz
+
+RELAY_COMPACT_IDS_ENV = "OPENCOLLAB_RELAY_COMPACT_TOOL_CALL_IDS"
+
+
+def relay_identity_arguments(enabled: bool, workflow_env: list[str]) -> list[str]:
+    if any(value.partition("=")[0] == RELAY_COMPACT_IDS_ENV for value in workflow_env):
+        raise SystemExit(
+            f"{RELAY_COMPACT_IDS_ENV} is managed by --proxy-compact-tool-call-ids"
+        )
+    return ["--workflow-env", f"{RELAY_COMPACT_IDS_ENV}=true"] if enabled else []
+
+
+def relay_runtime_options(args: Any) -> dict[str, Any]:
+    return {
+        "relay_mode": args.proxy_mode,
+        "compact_tool_schemas": args.proxy_compact_tool_schemas,
+        "compact_tool_call_ids": args.proxy_compact_tool_call_ids,
+        "gzip_upstream_request": args.proxy_gzip_upstream_request,
+        "max_upstream_request_bytes": args.proxy_max_upstream_request_bytes,
+        "allow_insecure_upstream": args.proxy_allow_insecure_upstream,
+        "direct_upstream": args.proxy_direct_upstream,
+    }
 
 
 def relay_mode_flags(
     mode: str,
     *,
     compact_tool_schemas: bool,
+    compact_tool_call_ids: bool = False,
     gzip_upstream_request: bool = False,
     max_upstream_request_bytes: int,
     allow_insecure_upstream: bool = False,
@@ -33,6 +57,8 @@ def relay_mode_flags(
         flags.append("--aggregate-chat-stream")
     if compact_tool_schemas:
         flags.append("--compact-tool-schemas")
+    if compact_tool_call_ids:
+        flags.append("--compact-tool-call-ids")
     if gzip_upstream_request:
         flags.append("--gzip-upstream-request")
     if max_upstream_request_bytes:
@@ -52,6 +78,7 @@ def remote_proxy_healthy(
     upstream_base_url: str,
     relay_mode: str = "aggregate-chat-stream",
     compact_tool_schemas: bool = False,
+    compact_tool_call_ids: bool = False,
     gzip_upstream_request: bool = False,
     max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
@@ -68,6 +95,7 @@ def remote_proxy_healthy(
         "and v.get('allow_insecure_upstream') is (sys.argv[6]=='1') "
         "and v.get('direct_upstream') is (sys.argv[8]=='1') "
         "and v.get('compact_tool_schemas') is (sys.argv[4]=='1') "
+        "and v.get('compact_tool_call_ids') is (sys.argv[10]=='1') "
         "and v.get('gzip_upstream_request') is (sys.argv[9]=='1') "
         "and v.get('max_upstream_request_bytes')==int(sys.argv[5]) "
         "and (int(sys.argv[5])==0 or v.get('upstream_request_limit_basis')=='wire_bytes') "
@@ -95,6 +123,7 @@ def remote_proxy_healthy(
                 str(upstream_timeout),
                 str(int(direct_upstream)),
                 str(int(gzip_upstream_request)),
+                str(int(compact_tool_call_ids)),
             ]
         ),
     ]
@@ -118,6 +147,7 @@ def remote_proxy_socket_healthy(
     upstream_base_url: str,
     relay_mode: str = "aggregate-chat-stream",
     compact_tool_schemas: bool = False,
+    compact_tool_call_ids: bool = False,
     gzip_upstream_request: bool = False,
     max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
@@ -128,7 +158,7 @@ def remote_proxy_socket_healthy(
     probe = "\n".join(
         (
             "import http.client,json,os,socket,stat,sys",
-            "path,expected,relay_mode,compact,max_bytes,allow_insecure,timeout,direct,gzip_request=sys.argv[1:10]",
+            "path,expected,relay_mode,compact,max_bytes,allow_insecure,timeout,direct,gzip_request,compact_ids=sys.argv[1:11]",
             "mode=os.stat(path).st_mode",
             "assert stat.S_ISSOCK(mode) and stat.S_IMODE(mode) & 0o077 == 0",
             "client=socket.socket(socket.AF_UNIX)",
@@ -150,6 +180,7 @@ def remote_proxy_socket_healthy(
             "assert value.get('allow_insecure_upstream') is (allow_insecure == '1')",
             "assert value.get('direct_upstream') is (direct == '1')",
             "assert value.get('compact_tool_schemas') is (compact == '1')",
+            "assert value.get('compact_tool_call_ids') is (compact_ids == '1')",
             "assert value.get('gzip_upstream_request') is (gzip_request == '1')",
             "assert value.get('max_upstream_request_bytes') == int(max_bytes)",
             "assert int(max_bytes) == 0 or value.get('upstream_request_limit_basis') == 'wire_bytes'",
@@ -178,6 +209,7 @@ def remote_proxy_socket_healthy(
                 str(upstream_timeout),
                 str(int(direct_upstream)),
                 str(int(gzip_upstream_request)),
+                str(int(compact_tool_call_ids)),
             ]
         ),
     ]
@@ -199,6 +231,7 @@ def local_relay_healthy(
     *,
     relay_mode: str = "aggregate-chat-stream",
     compact_tool_schemas: bool = False,
+    compact_tool_call_ids: bool = False,
     gzip_upstream_request: bool = False,
     max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
@@ -217,6 +250,7 @@ def local_relay_healthy(
             and payload.get("allow_insecure_upstream") is allow_insecure_upstream
             and payload.get("direct_upstream") is direct_upstream
             and payload.get("compact_tool_schemas") is compact_tool_schemas
+            and payload.get("compact_tool_call_ids") is compact_tool_call_ids
             and payload.get("gzip_upstream_request") is gzip_upstream_request
             and payload.get("max_upstream_request_bytes")
             == max_upstream_request_bytes
@@ -233,7 +267,9 @@ def local_relay_healthy(
 
 __all__ = [
     "local_relay_healthy",
+    "relay_identity_arguments",
     "relay_mode_flags",
+    "relay_runtime_options",
     "remote_proxy_healthy",
     "remote_proxy_socket_healthy",
 ]

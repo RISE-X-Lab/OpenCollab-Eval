@@ -46,6 +46,7 @@ class ProxyConfig:
     timeout: float
     aggregate_chat_stream: bool = False
     compact_tool_schemas: bool = False
+    compact_tool_call_ids: bool = False
     gzip_upstream_request: bool = False
     max_upstream_request_bytes: int = 0
     allow_insecure_upstream: bool = False
@@ -350,6 +351,7 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                     "kind": "authenticated_model_relay",
                     "aggregate_chat_stream": config.aggregate_chat_stream,
                     "compact_tool_schemas": config.compact_tool_schemas,
+                    "compact_tool_call_ids": config.compact_tool_call_ids,
                     "gzip_upstream_request": config.gzip_upstream_request,
                     "responses_passthrough": True,
                     "allow_insecure_upstream": config.allow_insecure_upstream,
@@ -402,7 +404,9 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                     if first_observation:
                         _diagnostic("request_shape", **shape)
                 if (
-                    config.aggregate_chat_stream or config.compact_tool_schemas
+                    config.aggregate_chat_stream
+                    or config.compact_tool_schemas
+                    or config.compact_tool_call_ids
                 ) and request_path in {
                     "/chat/completions",
                     "/v1/chat/completions",
@@ -411,6 +415,7 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                         body, aggregate_stream, expected_model = streaming_chat_request(
                             body,
                             compact_tool_schemas=config.compact_tool_schemas,
+                            compact_tool_call_ids=config.compact_tool_call_ids,
                             enable_stream=config.aggregate_chat_stream,
                         )
                     except ChatStreamError:
@@ -583,6 +588,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=float, default=900.0)
     parser.add_argument("--aggregate-chat-stream", action="store_true")
     parser.add_argument("--compact-tool-schemas", action="store_true")
+    parser.add_argument("--compact-tool-call-ids", action="store_true")
     parser.add_argument("--gzip-upstream-request", action="store_true")
     parser.add_argument("--max-upstream-request-bytes", type=int, default=0)
     parser.add_argument("--allow-insecure-upstream", action="store_true")
@@ -604,6 +610,7 @@ def main() -> int:
         config,
         aggregate_chat_stream=args.aggregate_chat_stream,
         compact_tool_schemas=args.compact_tool_schemas,
+        compact_tool_call_ids=args.compact_tool_call_ids,
         gzip_upstream_request=args.gzip_upstream_request,
         max_upstream_request_bytes=max(0, args.max_upstream_request_bytes),
         direct_upstream=args.direct_upstream,

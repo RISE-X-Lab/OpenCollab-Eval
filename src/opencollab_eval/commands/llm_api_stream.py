@@ -29,10 +29,34 @@ def _without_schema_annotations(value: Any) -> Any:
     return value
 
 
+def _compact_tool_call_ids(messages: object) -> None:
+    """Shorten historical tool-call IDs without changing their linkage."""
+    if not isinstance(messages, list):
+        return
+    replacements: dict[str, str] = {}
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        for call in message.get("tool_calls") or ():
+            if not isinstance(call, dict):
+                continue
+            call_id = call.get("id")
+            if isinstance(call_id, str) and call_id:
+                replacement = replacements.setdefault(call_id, f"c{len(replacements)}")
+                call["id"] = replacement
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") != "tool":
+            continue
+        call_id = message.get("tool_call_id")
+        if call_id in replacements:
+            message["tool_call_id"] = replacements[call_id]
+
+
 def streaming_chat_request(
     body: bytes,
     *,
     compact_tool_schemas: bool = False,
+    compact_tool_call_ids: bool = False,
     enable_stream: bool = True,
 ) -> tuple[bytes, bool, str]:
     """Prepare a chat request while preserving every caller parameter."""
@@ -48,6 +72,9 @@ def streaming_chat_request(
     changed = False
     if compact_tool_schemas and "tools" in payload:
         payload["tools"] = _without_schema_annotations(payload["tools"])
+        changed = True
+    if compact_tool_call_ids:
+        _compact_tool_call_ids(payload.get("messages"))
         changed = True
     if not enable_stream or payload.get("stream") is True:
         encoded = (

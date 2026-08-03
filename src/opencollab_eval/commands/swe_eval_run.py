@@ -31,7 +31,9 @@ from ._launchd import launchctl as _launchctl
 from ._swe_eval_relay_health import (
     local_relay_healthy as _local_relay_healthy,
 )
+from ._swe_eval_relay_health import relay_identity_arguments as _relay_identity_arguments
 from ._swe_eval_relay_health import relay_mode_flags as _relay_mode_flags
+from ._swe_eval_relay_health import relay_runtime_options as _relay_runtime_options
 from ._swe_eval_relay_health import remote_proxy_healthy as _remote_proxy_healthy
 from ._swe_eval_relay_health import (
     remote_proxy_socket_healthy as _remote_proxy_socket_healthy,
@@ -319,7 +321,8 @@ def _ensure_local_proxy_agent(
     remaining: list[str],
     upstream_base_url: str,
     relay_mode: str = "aggregate-chat-stream",
-    compact_tool_schemas: bool = False, gzip_upstream_request: bool = False, max_upstream_request_bytes: int = 0,
+    compact_tool_schemas: bool = False, compact_tool_call_ids: bool = False,
+    gzip_upstream_request: bool = False, max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
     direct_upstream: bool = False,
     upstream_timeout: float | None = None,
@@ -336,7 +339,7 @@ def _ensure_local_proxy_agent(
         upstream_timeout = _relay_upstream_timeout(remaining)
     health_kwargs = {
         "relay_mode": relay_mode,
-        "compact_tool_schemas": compact_tool_schemas,
+        "compact_tool_schemas": compact_tool_schemas, "compact_tool_call_ids": compact_tool_call_ids,
         "gzip_upstream_request": gzip_upstream_request,
         "max_upstream_request_bytes": max_upstream_request_bytes,
         "allow_insecure_upstream": allow_insecure_upstream,
@@ -367,7 +370,7 @@ def _ensure_local_proxy_agent(
             str(upstream_timeout),
             *_relay_mode_flags(
                 relay_mode,
-                compact_tool_schemas=compact_tool_schemas,
+                compact_tool_schemas=compact_tool_schemas, compact_tool_call_ids=compact_tool_call_ids,
                 gzip_upstream_request=gzip_upstream_request,
                 max_upstream_request_bytes=max_upstream_request_bytes,
                 allow_insecure_upstream=allow_insecure_upstream,
@@ -403,7 +406,8 @@ def _ensure_proxy_agent(
     remaining: list[str],
     upstream_base_url: str = "",
     relay_mode: str = "aggregate-chat-stream",
-    compact_tool_schemas: bool = False, gzip_upstream_request: bool = False, max_upstream_request_bytes: int = 0,
+    compact_tool_schemas: bool = False, compact_tool_call_ids: bool = False,
+    gzip_upstream_request: bool = False, max_upstream_request_bytes: int = 0,
     allow_insecure_upstream: bool = False,
     direct_upstream: bool = False,
 ) -> dict:
@@ -433,7 +437,7 @@ def _ensure_proxy_agent(
         remaining=remaining,
         upstream_base_url=upstream_base_url,
         relay_mode=relay_mode,
-        compact_tool_schemas=compact_tool_schemas,
+        compact_tool_schemas=compact_tool_schemas, compact_tool_call_ids=compact_tool_call_ids,
         gzip_upstream_request=gzip_upstream_request,
         max_upstream_request_bytes=max_upstream_request_bytes,
         allow_insecure_upstream=allow_insecure_upstream,
@@ -442,7 +446,7 @@ def _ensure_proxy_agent(
     )
     health_kwargs = {
         "relay_mode": relay_mode,
-        "compact_tool_schemas": compact_tool_schemas,
+        "compact_tool_schemas": compact_tool_schemas, "compact_tool_call_ids": compact_tool_call_ids,
         "gzip_upstream_request": gzip_upstream_request,
         "max_upstream_request_bytes": max_upstream_request_bytes,
         "allow_insecure_upstream": allow_insecure_upstream,
@@ -553,12 +557,7 @@ def _launch_detached(args: argparse.Namespace, raw_arguments: list[str], remaini
             output_dir=output_dir,
             remaining=remaining,
             upstream_base_url=args.proxy_upstream_base_url,
-            relay_mode=args.proxy_mode,
-            compact_tool_schemas=args.proxy_compact_tool_schemas,
-            gzip_upstream_request=args.proxy_gzip_upstream_request,
-            max_upstream_request_bytes=args.proxy_max_upstream_request_bytes,
-            allow_insecure_upstream=args.proxy_allow_insecure_upstream,
-            direct_upstream=args.proxy_direct_upstream,
+            **_relay_runtime_options(args),
         )
     )
     label = args.launchd_label or f"com.opencollab.eval.{_safe_label(run_id)}"
@@ -646,6 +645,9 @@ def _run_parallel_runner(args: argparse.Namespace, remaining: list[str]) -> int:
         if not 1 <= workers <= 4:
             raise SystemExit("claude-code requires --workers between 1 and 4")
     delegated += ["--max-workers", str(workers), "--workflow", spec.workflow_name]
+    delegated += _relay_identity_arguments(
+        args.proxy_compact_tool_call_ids, _option_values(remaining, "--workflow-env")
+    )
     if not _has_option(remaining, "--max-task-starts"):
         delegated += ["--max-task-starts", str(spec.max_attempts)]
     if spec.default_budget_tokens is not None and not _has_option(remaining, "--budget"):
@@ -737,6 +739,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Remove non-semantic tool schema annotations before relay calls",
     )
+    parser.add_argument("--proxy-compact-tool-call-ids", action="store_true", help="Shorten historical tool-call IDs")
     parser.add_argument(
         "--proxy-gzip-upstream-request", action="store_true", help="Use deterministic gzip for provider requests"
     )
@@ -769,9 +772,11 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"unsupported dataset: {args.dataset}")
     _normalize_indices(args)
     _reject_historical_eval_options(remaining)
+    direct_remote_api = _uses_kimi_direct_api(remaining)
+    if args.proxy_compact_tool_call_ids and (args.no_persistent_proxy or direct_remote_api):
+        parser.error("--proxy-compact-tool-call-ids requires the managed proxy")
     if args.detach:
         return _launch_detached(args, raw_arguments, remaining)
-    direct_remote_api = _uses_kimi_direct_api(remaining)
     if not args.no_persistent_proxy and not direct_remote_api and not _has_option(remaining, "--dry-run"):
         run_id = args.run_id or (
             f"swe_{_safe_label(args.solver)}_{_safe_label(','.join(_normalize_indices(args)))}_"
@@ -786,12 +791,7 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.output_dir,
             remaining=remaining,
             upstream_base_url=args.proxy_upstream_base_url,
-            relay_mode=args.proxy_mode,
-            compact_tool_schemas=args.proxy_compact_tool_schemas,
-            gzip_upstream_request=args.proxy_gzip_upstream_request,
-            max_upstream_request_bytes=args.proxy_max_upstream_request_bytes,
-            allow_insecure_upstream=args.proxy_allow_insecure_upstream,
-            direct_upstream=args.proxy_direct_upstream,
+            **_relay_runtime_options(args),
         )
     return _run_parallel_runner(args, remaining)
 

@@ -28,6 +28,7 @@ def test_local_relay_health_accepts_v1_base(monkeypatch) -> None:
                     "allow_insecure_upstream": False,
                     "direct_upstream": False,
                     "compact_tool_schemas": False,
+                    "compact_tool_call_ids": False,
                     "gzip_upstream_request": False,
                     "max_upstream_request_bytes": 0,
                     "upstream_timeout": 900.0,
@@ -69,6 +70,7 @@ def test_local_relay_health_requires_wire_byte_limit_contract(
                 "allow_insecure_upstream": False,
                 "direct_upstream": False,
                 "compact_tool_schemas": False,
+                "compact_tool_call_ids": False,
                 "gzip_upstream_request": True,
                 "max_upstream_request_bytes": 8_500,
                 "upstream_timeout": 900.0,
@@ -90,6 +92,50 @@ def test_local_relay_health_requires_wire_byte_limit_contract(
         gzip_upstream_request=True,
         max_upstream_request_bytes=8_500,
     ) is expected
+
+
+def test_local_relay_health_requires_matching_tool_call_id_compaction(
+    monkeypatch,
+) -> None:
+    upstream = "https://api.example.invalid/v1"
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return json.dumps({
+                "kind": "authenticated_model_relay",
+                "aggregate_chat_stream": True,
+                "responses_passthrough": True,
+                "allow_insecure_upstream": False,
+                "direct_upstream": False,
+                "compact_tool_schemas": False,
+                "compact_tool_call_ids": True,
+                "gzip_upstream_request": False,
+                "max_upstream_request_bytes": 0,
+                "upstream_timeout": 900.0,
+                "upstream_base_url_sha256": hashlib.sha256(upstream.encode()).hexdigest(),
+            }).encode()
+
+    monkeypatch.setattr(
+        swe_eval_run.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: Response(),
+    )
+
+    assert not swe_eval_run._local_relay_healthy(
+        "http://127.0.0.1:8879/v1",
+        upstream,
+    )
+    assert swe_eval_run._local_relay_healthy(
+        "http://127.0.0.1:8879/v1",
+        upstream,
+        compact_tool_call_ids=True,
+    )
 
 
 def test_relay_timeout_uses_the_single_runner_value() -> None:

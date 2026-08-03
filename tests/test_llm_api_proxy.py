@@ -93,6 +93,7 @@ def test_proxy_health_and_authenticated_forwarding(relay: str) -> None:
         health = json.load(response)
     assert health["status"] == "ok"
     assert health["compact_tool_schemas"] is False
+    assert health["compact_tool_call_ids"] is False
     assert health["gzip_upstream_request"] is False
     assert health["responses_passthrough"] is True
     assert health["allow_insecure_upstream"] is False

@@ -169,6 +169,7 @@ def test_foreground_entry_binds_responses_relay_configuration(
             "upstream_base_url": "https://api.example.invalid/v1",
             "relay_mode": "responses-pass-through",
             "compact_tool_schemas": False,
+            "compact_tool_call_ids": False,
             "gzip_upstream_request": False,
             "max_upstream_request_bytes": 0,
             "allow_insecure_upstream": False,
@@ -241,3 +242,102 @@ def test_detach_propagates_explicit_insecure_upstream(
     assert proxy_calls[0]["allow_insecure_upstream"] is True
     assert proxy_calls[0]["direct_upstream"] is True
     assert proxy_calls[0]["gzip_upstream_request"] is True
+
+
+def test_tool_call_id_compaction_reaches_proxy_launch_and_task_identity(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    module = _entry()
+    written: list[dict[str, Any]] = []
+    health = iter([False, True])
+    monkeypatch.setattr(
+        module,
+        "_local_relay_healthy",
+        lambda _url, _upstream, **_kwargs: next(health),
+    )
+    monkeypatch.setattr(module.Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr(
+        module,
+        "_launchctl",
+        lambda *args, **kwargs: SimpleNamespace(returncode=1 if args[0] == "print" else 0),
+    )
+    monkeypatch.setattr(module, "_write_plist", lambda _path, payload: written.append(payload))
+    monkeypatch.setattr(module.shutil, "copy2", lambda _source, _target: None)
+
+    module._ensure_local_proxy_agent(
+        output_dir=tmp_path,
+        remaining=[
+            "--local-proxy-base-url",
+            "http://127.0.0.1:8879",
+            "--proxy-env-file",
+            "/private/tmp/relay.env",
+        ],
+        upstream_base_url="https://api.example.invalid/v1",
+        compact_tool_call_ids=True,
+    )
+
+    assert "--compact-tool-call-ids" in written[0]["ProgramArguments"]
+
+
+def test_unified_entry_records_tool_call_id_compaction_in_workflow_env(
+    monkeypatch: Any,
+) -> None:
+    module = _entry()
+    captured: dict[str, Any] = {}
+    proxy_calls: list[dict[str, Any]] = []
+
+    class FakeRunner:
+        @staticmethod
+        def main() -> int:
+            captured["argv"] = list(__import__("sys").argv)
+            return 0
+
+    monkeypatch.setattr(module, "_load_module", lambda _name: FakeRunner)
+    monkeypatch.setattr(module, "_ensure_proxy_agent", lambda **kwargs: proxy_calls.append(kwargs))
+
+    assert module.main([
+        "--indices",
+        "1",
+        "--solver",
+        "g11",
+        "--proxy-compact-tool-call-ids",
+        "--proxy-upstream-base-url",
+        "https://api.example.invalid/v1",
+        "--host",
+        "host",
+        "--model-name",
+        "deepseek-v4-pro-g11",
+        "--llm-model",
+        "deepseek-v4-pro",
+    ]) == 0
+
+    argv = captured["argv"]
+    env_values = [
+        argv[index + 1]
+        for index, value in enumerate(argv)
+        if value == "--workflow-env"
+    ]
+    assert "OPENCOLLAB_RELAY_COMPACT_TOOL_CALL_IDS=true" in env_values
+    assert proxy_calls[0]["compact_tool_call_ids"] is True
+
+
+def test_unmanaged_proxy_cannot_claim_tool_call_id_compaction(capsys: Any) -> None:
+    module = _entry()
+
+    with pytest.raises(SystemExit) as caught:
+        module.main([
+            "--indices",
+            "1",
+            "--solver",
+            "g11",
+            "--no-persistent-proxy",
+            "--proxy-compact-tool-call-ids",
+            "--model-name",
+            "deepseek-v4-pro-g11",
+            "--llm-model",
+            "deepseek-v4-pro",
+            "--dry-run",
+        ])
+    assert caught.value.code == 2
+    assert "requires the managed proxy" in capsys.readouterr().err
