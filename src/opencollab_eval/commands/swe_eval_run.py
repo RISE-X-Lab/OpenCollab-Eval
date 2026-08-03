@@ -23,7 +23,10 @@ from opencollab_eval.engine.solver_backend import (
     is_kimi_direct_model,
     workflow_solver_spec,
 )
-from opencollab_eval.generation.claude_code_sidecar import relay_socket_path
+from opencollab_eval.generation.claude_code_sidecar import (
+    relay_socket_path,
+    validate_runtime_workflow_settings,
+)
 from opencollab_eval.usage import model_context_window
 
 from ._launchd import bootstrap_launch_agent
@@ -196,6 +199,10 @@ def _require_claude_code_configuration(
             continue
         if len(values) > 1 or option == "--openhands-command" or values[0] != expected:
             raise SystemExit(f"claude-code requires its fixed {option} configuration")
+    try:
+        validate_runtime_workflow_settings(_option_values(remaining, "--workflow-env"))
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def _without_launch_options(arguments: list[str]) -> list[str]:

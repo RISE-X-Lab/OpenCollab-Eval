@@ -26,6 +26,7 @@ from opencollab_eval.engine.swe_generation_proof import (  # noqa: E402
 )
 from opencollab_eval.engine.swe_v1_remote_records import read_tail_text  # noqa: E402
 
+from . import claude_code_sidecar as ccs  # noqa: E402
 from . import container_quiescence as container_guard  # noqa: E402
 from . import gen_prediction as gp  # noqa: E402
 from . import openhands_events  # noqa: E402
@@ -232,7 +233,7 @@ def _run_openhands(
         "TMPDIR",
         "USER",
         "OPENCOLLAB_OPENHANDS_PYTHON",
-        "OPENCOLLAB_REMOTE_REPO",
+        "OPENCOLLAB_REMOTE_REPO", *ccs.RUNTIME_ENV_KEYS,
     }
     env = {name: os.environ[name] for name in inherited_names if name in os.environ}
     env.update(

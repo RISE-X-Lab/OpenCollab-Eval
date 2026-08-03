@@ -185,13 +185,25 @@ def _pytest_structured_proof_matches(
     if execution is None:
         return False
     exitstatus, reports, target_nodes = execution
-    if exitstatus != 0:
-        return False
     complete_pass = {"setup": "passed", "call": "passed", "teardown": "passed"}
-    return all(
+    declared_nodes = {
+        node for matching in target_nodes.values() for node in matching
+    }
+    if not all(
         reports.get(node) == complete_pass
         for matching in target_nodes.values()
         for node in matching
+    ):
+        return False
+    if exitstatus == 0:
+        return True
+    if exitstatus != 1 or not fallback_parents:
+        return False
+    return any(
+        node not in declared_nodes
+        and any(node.startswith(parent + "[") for parent in fallback_parents)
+        and "failed" in phases.values()
+        for node, phases in reports.items()
     )
 
 

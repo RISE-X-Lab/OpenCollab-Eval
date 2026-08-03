@@ -50,6 +50,39 @@ def _session(nodeids, *, command_sha256: str, exitstatus: int = 0, outcome: str 
     return _proof_text(events, returncode=exitstatus, command_sha256=command_sha256)
 
 
+def _mixed_parameter_session(
+    target,
+    *,
+    command_sha256,
+    exitstatus,
+    sibling="",
+    sibling_outcome="failed",
+):
+    nodeids = [target, *([sibling] if sibling else [])]
+    events = [
+        {"event": "session_start"},
+        {"event": "collection_finish", "nodeids": nodeids},
+    ]
+    for nodeid, outcome in ((target, "passed"), (sibling, sibling_outcome)):
+        if not nodeid:
+            continue
+        for phase in ("setup", "call", "teardown"):
+            events.append(
+                {
+                    "event": "runtest_logreport",
+                    "nodeid": nodeid,
+                    "when": phase,
+                    "outcome": outcome if phase == "call" else "passed",
+                }
+            )
+    events.append({"event": "session_finish", "exitstatus": exitstatus})
+    return _proof_text(
+        events,
+        returncode=exitstatus,
+        command_sha256=command_sha256,
+    )
+
+
 def test_pytest_plan_is_exact_and_command_bound(tmp_path):
     namespace = _remote_namespace(tmp_path)
     target = "tests/test_widget.py::test_widget"
@@ -444,6 +477,88 @@ def test_parameter_parent_proof_rejects_unrelated_collection(tmp_path):
         _session(
             [*runtime_nodes, "tests/test_other.py::test_case[runtime]"],
             command_sha256=proof["command_sha256"],
+        ),
+    ) is False
+
+
+def test_pytest_declared_targets_pass_when_fallback_sibling_fails(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    parent = "tests/test_widget.py::test_widget"
+    target = parent + "[declared]"
+    sibling = parent + "[other]"
+    command_sha256 = "a" * 64
+    proof = {
+        "kind": "pytest_structured_reports",
+        "targets": [target],
+        "parameter_fallback_parents": [parent],
+        "command_sha256": command_sha256,
+    }
+
+    assert namespace["_plan_log_proof_matches"](
+        proof,
+        "1 passed, 1 failed",
+        _mixed_parameter_session(
+            target,
+            sibling=sibling,
+            command_sha256=command_sha256,
+            exitstatus=1,
+        ),
+    ) is True
+
+
+@pytest.mark.parametrize(
+    ("fallback_parents", "sibling", "sibling_outcome"),
+    [([], "", "failed"), (["tests/test_widget.py::test_widget"], "", "failed"),
+     (["tests/test_widget.py::test_widget"], "tests/test_widget.py::test_widget[other]", "skipped")],
+)
+def test_pytest_exit_one_requires_failed_fallback_sibling(
+    tmp_path, fallback_parents, sibling, sibling_outcome
+):
+    namespace = _remote_namespace(tmp_path)
+    target = "tests/test_widget.py::test_widget[declared]"
+    proof = {
+        "kind": "pytest_structured_reports",
+        "targets": [target],
+        "command_sha256": "a" * 64,
+    }
+    if fallback_parents:
+        proof["parameter_fallback_parents"] = fallback_parents
+
+    assert namespace["_plan_log_proof_matches"](
+        proof,
+        "",
+        _mixed_parameter_session(
+            target,
+            sibling=sibling,
+            sibling_outcome=sibling_outcome,
+            command_sha256=proof["command_sha256"],
+            exitstatus=1,
+        ),
+    ) is False
+
+
+@pytest.mark.parametrize("exitstatus", [2, 3, 4, 5])
+def test_pytest_fallback_sibling_failure_rejects_non_test_exit_status(
+    tmp_path, exitstatus
+):
+    namespace = _remote_namespace(tmp_path)
+    parent = "tests/test_widget.py::test_widget"
+    target = parent + "[declared]"
+    proof = {
+        "kind": "pytest_structured_reports",
+        "targets": [target],
+        "parameter_fallback_parents": [parent],
+        "command_sha256": "a" * 64,
+    }
+
+    assert namespace["_plan_log_proof_matches"](
+        proof,
+        "",
+        _mixed_parameter_session(
+            target,
+            sibling=parent + "[other]",
+            command_sha256=proof["command_sha256"],
+            exitstatus=exitstatus,
         ),
     ) is False
 
