@@ -142,6 +142,29 @@ def test_candidate_ignores_unwritable_pytest_cache_control_file(tmp_path: Path) 
     assert ".pytest_cache" not in result.patch
 
 
+def test_candidate_never_moves_unwritable_ruff_cache_control_file(tmp_path: Path) -> None:
+    worktree, trusted, base = _repository(tmp_path)
+    cache = worktree / ".ruff_cache"
+    cache.mkdir()
+    control = cache / ".gitignore"
+    control.write_text("*\n", encoding="utf-8")
+    (cache / "CACHEDIR.TAG").write_text(
+        "Signature: 8a477f597d28d172789f06886806bc55\n", encoding="utf-8"
+    )
+    (worktree / "repair.py").write_text("FIXED = True\n", encoding="utf-8")
+    before = control.stat()
+    cache.chmod(0o555)
+    try:
+        result = _candidate(worktree, trusted, base)
+        after = control.stat()
+    finally:
+        cache.chmod(0o755)
+
+    assert result.changed_paths == ("repair.py",)
+    assert ".ruff_cache" not in result.patch
+    assert (before.st_ino, before.st_mtime_ns) == (after.st_ino, after.st_mtime_ns)
+
+
 def test_candidate_does_not_descend_into_unreadable_pytest_cache(tmp_path: Path) -> None:
     worktree, trusted, base = _repository(tmp_path)
     cache = worktree / ".pytest_cache"
@@ -319,6 +342,66 @@ def test_untracked_gitignore_cannot_hide_itself_or_a_candidate(tmp_path: Path) -
     result = _candidate(worktree, trusted, base)
 
     assert result.changed_paths == ("new-package/.gitignore", "new-package/answer.py")
+
+
+def test_untracked_gitignore_in_unwritable_directory_is_never_moved(tmp_path: Path) -> None:
+    worktree, trusted, base = _repository(tmp_path)
+    nested = worktree / "new-package"
+    nested.mkdir()
+    control = nested / ".gitignore"
+    control.write_text("*\n", encoding="utf-8")
+    (nested / "answer.py").write_text("ANSWER = True\n", encoding="utf-8")
+    before = control.stat()
+    nested.chmod(0o555)
+    try:
+        result = _candidate(worktree, trusted, base)
+        after = control.stat()
+    finally:
+        nested.chmod(0o755)
+
+    assert result.changed_paths == ("new-package/.gitignore", "new-package/answer.py")
+    assert (before.st_ino, before.st_mtime_ns) == (after.st_ino, after.st_mtime_ns)
+
+
+def test_baseline_ignore_directory_can_be_replaced_by_symlink(tmp_path: Path) -> None:
+    worktree, _trusted, _base = _repository(tmp_path)
+    package = worktree / "package"
+    package.mkdir()
+    (package / ".gitignore").write_text("*.cache\n", encoding="utf-8")
+    (package / "tracked.py").write_text("VALUE = 1\n", encoding="utf-8")
+    _git(worktree, "add", ".")
+    _git(worktree, "commit", "--quiet", "-m", "package baseline")
+    base = _git(worktree, "rev-parse", "HEAD")
+    trusted = tmp_path / "package-symlink.git"
+    _git(tmp_path, "clone", "--quiet", "--bare", str(worktree), str(trusted))
+    shutil.rmtree(package)
+    package.symlink_to("source.py")
+
+    result = _candidate(worktree, trusted, base)
+
+    modes = {path: (old, new) for path, old, new in result.path_modes}
+    assert modes == {
+        "package": ("000000", "120000"),
+        "package/.gitignore": ("100644", "000000"),
+        "package/tracked.py": ("100644", "000000"),
+    }
+
+
+def test_baseline_root_gitignore_can_be_replaced_by_directory(tmp_path: Path) -> None:
+    worktree, trusted, base = _repository(tmp_path)
+    (worktree / ".gitignore").unlink()
+    (worktree / ".gitignore").mkdir()
+    (worktree / ".gitignore" / "answer.py").write_text(
+        "ANSWER = True\n", encoding="utf-8"
+    )
+
+    result = _candidate(worktree, trusted, base)
+
+    modes = {path: (old, new) for path, old, new in result.path_modes}
+    assert modes == {
+        ".gitignore": ("100644", "000000"),
+        ".gitignore/answer.py": ("000000", "100644"),
+    }
 
 
 def test_solver_attributes_cannot_rewrite_candidate_content(tmp_path: Path) -> None:

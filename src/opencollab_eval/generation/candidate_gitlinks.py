@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from .candidate_patch_files import CandidateConstructionError
-from .candidate_patch_ignore import trusted_ignore_entries, trusted_ignore_overlay
+from .candidate_patch_ignore import trusted_ignore_entries, trusted_ignore_view
 from .candidate_patch_models import GitlinkProjection
 from .gen_prediction_patch_git import (
     bounded_git_output,
@@ -100,11 +100,10 @@ def visible_unmaterialized_gitlinks(
         isolated = dict(env)
         isolated["GIT_INDEX_FILE"] = str(Path(temporary) / "index")
         isolated["GIT_LITERAL_PATHSPECS"] = "1"
-        common = [f"--git-dir={git_dir}", f"--work-tree={worktree}"]
-        def run(args: list[str]) -> bytes:
+        def run(args: list[str], *, selected_worktree: Path = worktree) -> bytes:
             return bounded_git_output(
                 git,
-                [*common, *args],
+                [f"--git-dir={git_dir}", f"--work-tree={selected_worktree}", *args],
                 env=isolated,
                 timeout=timeout,
                 max_bytes=MAX_GITLINK_CENSUS_BYTES,
@@ -114,7 +113,7 @@ def visible_unmaterialized_gitlinks(
         run(["read-tree", base])
         for path in paths:
             run(["update-index", "--force-remove", "--", path])
-        with trusted_ignore_overlay(
+        with trusted_ignore_view(
             git,
             git_dir,
             worktree,
@@ -124,11 +123,13 @@ def visible_unmaterialized_gitlinks(
             byte_limit=MAX_GITLINK_CENSUS_BYTES,
             entry_limit=1_000_000,
         ) as ignore_state:
-            output = run(["ls-files", "--others", "--exclude-standard", "-z"])
+            output = run(
+                ["ls-files", "--others", "-z"],
+                selected_worktree=ignore_state.worktree,
+            )
     visible: set[str] = set()
     expected = set(paths)
     records = [raw for raw in output.split(b"\0") if raw]
-    records.extend(os.fsencode(path) for path in ignore_state.added_paths)
     for raw in records:
         if not raw:
             continue
@@ -139,21 +140,6 @@ def visible_unmaterialized_gitlinks(
             if prefix in expected:
                 visible.add(prefix)
     return frozenset(visible)
-
-
-def _safe_ignored_paths(output: bytes) -> tuple[str, ...]:
-    paths: list[str] = []
-    for raw in output.split(b"\0"):
-        if not raw:
-            continue
-        path = os.fsdecode(raw)
-        pure = PurePosixPath(path.rstrip("/"))
-        if pure.is_absolute() or not pure.parts or ".." in pure.parts or "\x00" in path:
-            raise CandidateConstructionError("materialized Gitlink ignore path is invalid")
-        paths.append(pure.as_posix() + ("/" if path.endswith("/") else ""))
-    if len(paths) > 1_000_000:
-        raise CandidateConstructionError("materialized Gitlink ignore census exceeded its entry limit")
-    return tuple(sorted(set(paths)))
 
 
 def _materialized_state(
@@ -180,7 +166,22 @@ def _materialized_state(
         timeout=timeout,
         byte_limit=MAX_GITLINK_CENSUS_BYTES,
     )
-    with trusted_ignore_overlay(
+    status = bounded_git_output(
+        git,
+        [
+            f"--git-dir={git_dir}",
+            f"--work-tree={worktree}",
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=no",
+        ],
+        env=env,
+        timeout=timeout,
+        max_bytes=MAX_GITLINK_CENSUS_BYTES,
+        label="materialized Gitlink tracked status",
+    )
+    with trusted_ignore_view(
         git,
         git_dir,
         worktree,
@@ -190,39 +191,21 @@ def _materialized_state(
         byte_limit=MAX_GITLINK_CENSUS_BYTES,
         entry_limit=1_000_000,
     ) as ignore_state:
-        status = bounded_git_output(
+        untracked = bounded_git_output(
             git,
             [
                 f"--git-dir={git_dir}",
-                f"--work-tree={worktree}",
-                "status",
-                "--porcelain=v1",
-                "-z",
-                "--untracked-files=all",
-            ],
-            env=env,
-            timeout=timeout,
-            max_bytes=MAX_GITLINK_CENSUS_BYTES,
-            label="materialized Gitlink status",
-        )
-        ignored = bounded_git_output(
-            git,
-            [
-                f"--git-dir={git_dir}",
-                f"--work-tree={worktree}",
+                f"--work-tree={ignore_state.worktree}",
                 "ls-files",
                 "--others",
-                "--ignored",
-                "--exclude-standard",
-                "--directory",
                 "-z",
             ],
             env=env,
             timeout=timeout,
             max_bytes=MAX_GITLINK_CENSUS_BYTES,
-            label="materialized Gitlink ignore census",
+            label="materialized Gitlink untracked census",
         )
-    return bool(ignore_state.changed_paths or status.rstrip(b"\0")), _safe_ignored_paths(ignored)
+    return bool(status.rstrip(b"\0") or untracked.rstrip(b"\0")), ignore_state.ignored_paths
 
 
 def projection_ignored_roots(projections: tuple[GitlinkProjection, ...]) -> tuple[str, ...]:

@@ -33,7 +33,7 @@ from .candidate_patch_git import (
 from .candidate_patch_git import (
     run_git as _run,
 )
-from .candidate_patch_ignore import trusted_ignore_overlay
+from .candidate_patch_ignore import trusted_ignore_view
 from .candidate_patch_models import CandidatePatch, GitlinkProjection
 
 _OID_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
@@ -121,36 +121,6 @@ def _stage_exact_paths(
         )
 
 
-def _stage_control_changes(
-    git: str,
-    common: list[str],
-    worktree: Path,
-    paths: tuple[str, ...],
-    preserved_roots: tuple[str, ...],
-    *,
-    env: dict[str, str],
-    timeout: float,
-    byte_limit: int,
-) -> tuple[str, ...]:
-    selected = tuple(
-        path
-        for path in paths
-        if not _is_harness_path(path) and not _under_roots(path, preserved_roots)
-    )
-    for path in selected:
-        if os.path.lexists(worktree / path):
-            _stage_exact_paths(
-                git, common, worktree, (path,), env=env, timeout=timeout, byte_limit=byte_limit
-            )
-        else:
-            _run(
-                [*common, "update-index", "--force-remove", "--", path],
-                env=env,
-                timeout=timeout,
-            )
-    return selected
-
-
 def _tree_entries(output: bytes, entry_limit: int) -> tuple[tuple[str, str, str], ...]:
     entries: list[tuple[str, str, str]] = []
     for record in _records(output, entry_limit):
@@ -170,8 +140,11 @@ def _tree_entries(output: bytes, entry_limit: int) -> tuple[tuple[str, str, str]
 
 def _untracked(
     git: str,
+    git_dir: Path,
     common: list[str],
     worktree: Path,
+    namespace_worktree: Path,
+    ignore_worktree: Path,
     *,
     env: dict[str, str],
     timeout: float,
@@ -180,7 +153,8 @@ def _untracked(
     file_byte_limit: int,
     preserved_roots: tuple[str, ...],
     ignored_roots: tuple[str, ...],
-    added_control_paths: tuple[str, ...],
+    trusted_ignored_paths: tuple[str, ...],
+    nested_roots: tuple[str, ...],
 ) -> tuple[
     tuple[str, ...],
     tuple[str, ...],
@@ -190,25 +164,24 @@ def _untracked(
     int,
 ]:
     flattened: list[tuple[str, str]] = []
+    if nested_roots:
+        _changed, nested = flatten_nested(
+            tuple(root.rstrip("/") + "/" for root in nested_roots), worktree
+        )
+        flattened.extend(nested)
+    namespace_common = _command(git, git_dir, namespace_worktree)
+    ignore_common = _command(git, git_dir, ignore_worktree)
     for _attempt in range(32):
         output = _output(
-            git, [*common, "ls-files", "--others", "--exclude-standard", "-z"],
+            git, [*namespace_common, "ls-files", "--others", "-z"],
             env=env, timeout=timeout, limit=byte_limit, label="untracked census",
         )
-        paths = tuple(sorted({
-            *(_safe_path(record) for record in _records(output, entry_limit)),
-            *added_control_paths,
-        }))
-        ignored_output = _output(
-            git,
-            [*common, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"],
-            env=env, timeout=timeout, limit=byte_limit, label="ignored directory census",
-        )
+        paths = tuple(sorted(_safe_path(record) for record in _records(output, entry_limit)))
         changed, current = flatten_nested(paths, worktree)
         flattened.extend(current)
         if changed:
             continue
-        ignored_paths = tuple(_safe_path(record) for record in _records(ignored_output, entry_limit))
+        ignored_paths = trusted_ignored_paths
         excluded = tuple(
             path
             for path in paths
@@ -218,13 +191,13 @@ def _untracked(
             or is_generated_runtime_artifact_path(path)
         )
         selected = tuple(path for path in paths if path not in excluded)
-        immediate = tuple(path for path in selected if path not in added_control_paths)
+        immediate = selected
         for path in immediate:
             if path.endswith("/"):
                 raise CandidateConstructionError(f"untracked directory {path} could not be projected")
             validate_file(worktree, path, file_byte_limit)
         _reject_unignored_special_files(
-            git, common, worktree,
+            git, ignore_common, worktree,
             (
                 *ignored_paths,
                 *(root.rstrip("/") + "/" for root in preserved_roots),
@@ -234,14 +207,18 @@ def _untracked(
         )
         flattened_hardlinks = flatten_hardlinks(worktree, immediate, file_byte_limit)
         if immediate:
-            payload = b"\0".join(os.fsencode(path) for path in immediate) + b"\0"
-            _run(
-                [*common, "add", "--pathspec-from-file=-", "--pathspec-file-nul"],
-                env=env, timeout=timeout, payload=payload,
+            _stage_exact_paths(
+                git,
+                common,
+                worktree,
+                immediate,
+                env=env,
+                timeout=timeout,
+                byte_limit=file_byte_limit,
             )
         return (
             selected, excluded, tuple(flattened), ignored_paths, flattened_hardlinks,
-            len(output) + len(ignored_output),
+            len(output) + sum(len(os.fsencode(path)) + 1 for path in ignored_paths),
         )
     raise CandidateConstructionError("nested repository flattening did not converge")
 
@@ -400,11 +377,11 @@ def construct_candidate_patch(
         for path, projection in projections.items():
             if projection.action != "preserve":
                 _run([*common, "update-index", "--force-remove", "--", path], env=env, timeout=timeout)
-        with trusted_ignore_overlay(
+        with trusted_ignore_view(
             git, git_dir, worktree, entries, env=env, timeout=timeout,
             byte_limit=max_census_bytes, entry_limit=max_census_entries,
             control_names=(".gitignore",),
-        ) as control_state:
+        ) as ignore_state:
             _run([*common, "add", "-u"], env=env, timeout=timeout)
             tracked_raw = _output(
                 git,
@@ -421,23 +398,15 @@ def construct_candidate_patch(
                 selected, excluded, flattened_repositories, _ignored_paths,
                 untracked_hardlinks, untracked_bytes,
             ) = _untracked(
-                git, common, worktree, env=env, timeout=timeout,
+                git, git_dir, common, worktree, env=env, timeout=timeout,
                 byte_limit=max_census_bytes, entry_limit=max_census_entries,
                 file_byte_limit=max_file_bytes, preserved_roots=preserved_roots,
                 ignored_roots=gitlink_ignored_roots,
-                added_control_paths=control_state.added_paths,
+                namespace_worktree=ignore_state.worktree,
+                ignore_worktree=ignore_state.ignore_worktree,
+                trusted_ignored_paths=ignore_state.ignored_paths,
+                nested_roots=ignore_state.nested_roots,
             )
-            changed_controls = control_state.changed_paths
-        control_paths = tuple(
-            path
-            for path in changed_controls
-            if not _is_harness_path(path) and not _under_roots(path, preserved_roots)
-        )
-        flattened_hardlinks.extend(flatten_hardlinks(worktree, control_paths, max_file_bytes))
-        _stage_control_changes(
-            git, common, worktree, control_paths, preserved_roots,
-            env=env, timeout=timeout, byte_limit=max_file_bytes,
-        )
         for path in selected:
             validate_file(worktree, path, max_file_bytes)
         flattened_hardlinks.extend(untracked_hardlinks)
