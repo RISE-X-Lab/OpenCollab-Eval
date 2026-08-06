@@ -138,7 +138,7 @@ def _background_task(image: str, base_commit: str, run_id: str) -> dict[str, Any
         _exec(
             container,
             "i=0; until test -e /tmp/background-ready && grep -q '# background' "
-            f"{SOURCE_PATH!r}; do i=$((i+1)); [ \"$i\" -lt 500 ] || exit 1; "
+            f"{SOURCE_PATH!r}; do i=$((i+1)); [ \"$i\" -lt 3000 ] || exit 1; "
             "sleep .01; done",
         )
         try:
