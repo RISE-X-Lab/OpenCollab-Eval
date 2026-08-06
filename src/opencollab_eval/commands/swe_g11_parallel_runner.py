@@ -356,10 +356,24 @@ def prepare_runtime(config: ParallelConfig) -> str:
         str(config.openhands_empty_patch_rejections),
         "--max-empty-patch-retries",
         str(config.max_empty_patch_retries),
+        "--swe-timeout",
+        str(config.swe_timeout),
+        "--task-wall-timeout",
+        str(config.task_wall_timeout),
+        "--eval-timeout",
+        str(config.eval_timeout),
+        "--llm-timeout",
+        str(config.llm_timeout),
+        "--provider-error-time-budget",
+        str(config.provider_error_time_budget),
+        "--checkpoint-interval",
+        str(config.checkpoint_interval),
         "--max-task-starts",
         str(config.max_task_starts),
         "--max-eval-attempts",
         str(config.max_eval_attempts),
+        "--total-timeout",
+        str(config.total_timeout),
         "--json-output",
         str(preflight_json),
         "--markdown-output",
@@ -399,15 +413,10 @@ def prepare_runtime(config: ParallelConfig) -> str:
             f"shared runtime preflight failed rc={proc.returncode} "
             f"status={summary.get('status')}"
         )
-    expected_limits = {
-        "openhands_empty_patch_rejections": config.openhands_empty_patch_rejections,
-        "max_empty_patch_retries": config.max_empty_patch_retries,
-        "max_task_starts": config.max_task_starts,
-        "max_eval_attempts": config.max_eval_attempts,
-    }
-    mismatches = [key for key, value in expected_limits.items() if summary.get(key) != value]
+    expected_identity = _config.preflight_identity(config)
+    mismatches = [key for key, value in expected_identity.items() if summary.get(key) != value]
     if mismatches:
-        raise RuntimeError("shared runtime preflight limit mismatch: " + ", ".join(mismatches))
+        raise RuntimeError("shared runtime preflight identity mismatch: " + ", ".join(mismatches))
     runtime_tree_sha256 = str(summary.get("runtime_tree_sha256") or "")
     if re.fullmatch(r"[0-9a-f]{64}", runtime_tree_sha256) is None:
         raise RuntimeError("shared runtime preflight lacks a valid runtime tree identity")

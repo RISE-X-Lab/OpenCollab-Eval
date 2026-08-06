@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import generation_proof_test_support as proof_support
 import pytest
+from swe_g11_parallel_preflight_test_support import preflight_summary
 
 from opencollab_eval.engine import swe_v1_remote_records as remote_records
 from opencollab_eval.engine.swe_v1_remote_test_plan import prolite_test_plan
@@ -354,18 +355,7 @@ def test_preflight_forwards_budget_and_step_limit(tmp_path):
 
     def fake_run(command, **kwargs):
         captured["command"] = command
-        report = {
-            "status": "dry_run",
-            "runtime_tree_sha256": "a" * 64,
-            "workflow": config.workflow,
-            "workflow_env": {"OPENCOLLAB_MAX_OUTPUT_TOKENS": "32768"},
-            "budget": 4_000_000,
-            "max_steps": 60,
-            "openhands_empty_patch_rejections": config.openhands_empty_patch_rejections,
-            "max_empty_patch_retries": config.max_empty_patch_retries,
-            "max_task_starts": config.max_task_starts,
-            "max_eval_attempts": config.max_eval_attempts,
-        }
+        report = preflight_summary(config)
         (tmp_path / "shared_runtime_preflight.json").write_text(
             json.dumps(report), encoding="utf-8"
         )

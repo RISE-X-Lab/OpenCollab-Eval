@@ -5,6 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from swe_g11_parallel_preflight_test_support import preflight_summary
 from swe_v1_prolite_runner_test_support import runner
 from test_swe_g11_parallel_runner import _args, _reusable_summary
 
@@ -59,6 +60,61 @@ def test_parallel_budget_is_recorded_and_forwarded():
         "controller": 240120,
         "official_eval": 7200,
     }
+
+
+def test_parallel_preflight_forwards_provider_error_budget(monkeypatch, tmp_path):
+    module = _parallel_module()
+    config = module.resolve_config(
+        _args(
+            output_dir=tmp_path,
+            provider_error_time_budget=120,
+            workflow_env=["OPENCOLLAB_WIRE_PROTOCOL=responses"],
+        )
+    )
+    captured = {}
+
+    def fake_run(command):
+        captured["command"] = command
+        return module.subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(module, "_run_task_process", fake_run)
+    monkeypatch.setattr(
+        module,
+        "load_json",
+        lambda _path: preflight_summary(config),
+    )
+
+    assert module.prepare_runtime(config) == "a" * 64
+    command = captured["command"]
+    assert command[command.index("--provider-error-time-budget") + 1] == "120"
+    assert command[command.index("--llm-timeout") + 1] == str(config.llm_timeout)
+    assert command[command.index("--total-timeout") + 1] == str(config.total_timeout)
+
+
+@pytest.mark.parametrize("field", ["provider_time_budget", "workflow_env"])
+def test_parallel_preflight_rejects_provider_identity_drift(monkeypatch, tmp_path, field):
+    module = _parallel_module()
+    config = module.resolve_config(
+        _args(
+            output_dir=tmp_path,
+            provider_error_time_budget=120,
+            workflow_env=["OPENCOLLAB_WIRE_PROTOCOL=responses"],
+        )
+    )
+    summary = preflight_summary(config)
+    if field == "provider_time_budget":
+        summary[field]["error_seconds"] += 1
+    else:
+        summary[field].pop("OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET")
+    monkeypatch.setattr(
+        module,
+        "_run_task_process",
+        lambda command: module.subprocess.CompletedProcess(command, 0, stdout="", stderr=""),
+    )
+    monkeypatch.setattr(module, "load_json", lambda _path: summary)
+
+    with pytest.raises(RuntimeError, match=field):
+        module.prepare_runtime(config)
 
 
 def test_parallel_markdown_records_provider_budget(tmp_path: Path):

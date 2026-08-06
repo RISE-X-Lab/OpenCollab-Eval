@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 from generation_proof_test_support import trusted_patch_proof_fields
+from swe_g11_parallel_preflight_test_support import preflight_summary
 from test_swe_g11_parallel_runner import (
     _args,
     _load_module,
@@ -37,18 +38,7 @@ def test_preflight_forwards_no_sync_runtime_identity(tmp_path):
 
     def fake_run(command, **kwargs):
         captured["command"] = command
-        report = {
-            "status": "dry_run",
-            "runtime_tree_sha256": expected,
-            "workflow": config.workflow,
-            "workflow_env": {},
-            "budget": config.budget,
-            "max_steps": config.max_steps,
-            "openhands_empty_patch_rejections": config.openhands_empty_patch_rejections,
-            "max_empty_patch_retries": config.max_empty_patch_retries,
-            "max_task_starts": config.max_task_starts,
-            "max_eval_attempts": config.max_eval_attempts,
-        }
+        report = preflight_summary(config, expected)
         (tmp_path / "shared_runtime_preflight.json").write_text(
             json.dumps(report), encoding="utf-8"
         )
@@ -73,14 +63,8 @@ def test_preflight_rejects_child_limit_drift(tmp_path):
 
     def fake_run(command, **kwargs):
         captured["command"] = command
-        report = {
-            "status": "dry_run",
-            "runtime_tree_sha256": "a" * 64,
-            "openhands_empty_patch_rejections": config.openhands_empty_patch_rejections,
-            "max_empty_patch_retries": config.max_empty_patch_retries,
-            "max_task_starts": config.max_task_starts,
-            "max_eval_attempts": config.max_eval_attempts + 1,
-        }
+        report = preflight_summary(config)
+        report["max_eval_attempts"] += 1
         (tmp_path / "shared_runtime_preflight.json").write_text(
             json.dumps(report), encoding="utf-8"
         )
