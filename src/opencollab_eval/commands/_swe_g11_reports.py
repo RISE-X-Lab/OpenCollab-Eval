@@ -405,6 +405,15 @@ def aggregate(
         "max_empty_patch_retries": config.max_empty_patch_retries,
         "budget": config.budget,
         "max_steps": config.max_steps,
+        "provider_error_time_budget": config.provider_error_time_budget,
+        "effective_timeouts": {
+            "llm_normal": config.llm_timeout,
+            "llm_wall": config.llm_timeout + config.provider_error_time_budget,
+            "generation": config.swe_timeout + config.provider_error_time_budget,
+            "task_wall": config.task_wall_timeout + config.provider_error_time_budget,
+            "controller": config.total_timeout + config.provider_error_time_budget,
+            "official_eval": config.eval_timeout,
+        },
         "counts": counts,
         "running": running or [],
         "results": ordered,
@@ -483,6 +492,16 @@ def write_markdown(config: ParallelConfig, summary: dict[str, Any]) -> None:
         f"- workflow_env: `{summary['workflow_env']}`",
         f"- budget: `{summary['budget']}`",
         f"- max_steps: `{summary['max_steps']}`",
+        (
+            "- provider_error_time_budget: "
+            f"`{summary['provider_error_time_budget']}`"
+        ),
+        f"- llm_normal_timeout: `{summary['effective_timeouts']['llm_normal']}`",
+        f"- llm_wall_timeout: `{summary['effective_timeouts']['llm_wall']}`",
+        f"- generation_timeout: `{summary['effective_timeouts']['generation']}`",
+        f"- task_wall_timeout: `{summary['effective_timeouts']['task_wall']}`",
+        f"- controller_timeout: `{summary['effective_timeouts']['controller']}`",
+        f"- official_eval_timeout: `{summary['effective_timeouts']['official_eval']}`",
         (
             "- openhands_empty_patch_rejections: "
             f"`{summary['openhands_empty_patch_rejections']}`"

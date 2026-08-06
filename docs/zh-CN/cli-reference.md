@@ -44,11 +44,16 @@ oc-eval run TASKS_FILE --model MODEL --provider PROVIDER
 | Solver | `--workflow`、`--model-name`、`--llm-model`、`--llm-provider`、`--budget`、`--max-steps` |
 | 模型身份 | `--context-window`、`--temperature`、`--top-p`、`--max-output-tokens` |
 | 提供商传输 | `--remote-proxy-base-url`、`--local-proxy-base-url`、`--proxy-env-file`、`--remote-api-env-file` |
+| 时间限制 | `--llm-timeout`、`--provider-error-time-budget`、`--swe-timeout`、`--task-wall-timeout`、`--eval-timeout`、`--total-timeout` |
 | 证据限制 | `--max-task-starts`、`--max-eval-attempts`、`--checkpoint-interval` |
 | 输出 | `--json-output`、`--markdown-output`、`--parent-output-dir` |
 | 维护 | `--dry-run`、`--eval-only`、`--no-sync-runtime`、`--expected-runtime-tree-sha256` |
 
 构建自动化前，请先运行已安装命令的帮助。
+
+`--llm-timeout` 仍表示一次成功模型请求的最长时间。`--provider-error-time-budget`
+为可重试的提供商错误和重试等待提供额外时间。任务生成、整题运行和控制器各增加一次同一份预留，
+官方评测时限保持原值。
 
 ```bash
 oc-eval swe-v1-prolite --help

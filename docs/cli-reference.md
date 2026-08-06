@@ -51,11 +51,17 @@ official evaluation. The main option groups are shown below.
 | Solver | `--workflow`, `--model-name`, `--llm-model`, `--llm-provider`, `--budget`, `--max-steps` |
 | Model identity | `--context-window`, `--temperature`, `--top-p`, `--max-output-tokens` |
 | Provider transport | `--remote-proxy-base-url`, `--local-proxy-base-url`, `--proxy-env-file`, `--remote-api-env-file` |
+| Time limits | `--llm-timeout`, `--provider-error-time-budget`, `--swe-timeout`, `--task-wall-timeout`, `--eval-timeout`, `--total-timeout` |
 | Evidence limits | `--max-task-starts`, `--max-eval-attempts`, `--checkpoint-interval` |
 | Output | `--json-output`, `--markdown-output`, `--parent-output-dir` |
 | Maintenance | `--dry-run`, `--eval-only`, `--no-sync-runtime`, `--expected-runtime-tree-sha256` |
 
 Run the installed help before constructing automation.
+
+`--llm-timeout` remains the maximum duration of one successful model request.
+`--provider-error-time-budget` supplies additional wall time for retryable
+provider failures and retry backoff. The task, generation, and controller
+limits receive this reserve once. The official evaluation limit is unchanged.
 
 ```bash
 oc-eval swe-v1-prolite --help

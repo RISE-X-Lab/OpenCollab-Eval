@@ -115,7 +115,7 @@ def test_workflow_env_accepts_responses_runtime_settings():
         [
             "OPENCOLLAB_WIRE_PROTOCOL=responses",
             "OPENCOLLAB_REASONING_EFFORT=xhigh",
-            "OPENCOLLAB_LLM_MAX_RETRIES=10000",
+            "OPENCOLLAB_LLM_MAX_RETRIES=32",
             "OPENCOLLAB_LLM_CONNECT_TIMEOUT=30",
             "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT=300",
             "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT=300",
@@ -124,7 +124,7 @@ def test_workflow_env_accepts_responses_runtime_settings():
     ) == {
         "OPENCOLLAB_WIRE_PROTOCOL": "responses",
         "OPENCOLLAB_REASONING_EFFORT": "xhigh",
-        "OPENCOLLAB_LLM_MAX_RETRIES": "10000",
+        "OPENCOLLAB_LLM_MAX_RETRIES": "32",
         "OPENCOLLAB_LLM_CONNECT_TIMEOUT": "30",
         "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT": "300",
         "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT": "300",

@@ -205,14 +205,27 @@ def _responses_request_shape(body: bytes, user_agent: str) -> dict[str, object]:
     input_items = payload.get("input")
     tools = payload.get("tools")
     reasoning = payload.get("reasoning")
+
+    def encoded_size(value: object) -> int:
+        return len(json.dumps(value, separators=(",", ":")).encode())
+
     return {
         "body_sha256": hashlib.sha256(body).hexdigest(),
         "fields": ",".join(sorted(str(key) for key in payload)),
+        "input_bytes": encoded_size(input_items),
         "input_items": len(input_items) if isinstance(input_items, list) else 1,
+        "instructions_bytes": encoded_size(payload.get("instructions")),
+        "largest_tool_bytes": max(
+            (encoded_size(tool) for tool in tools),
+            default=0,
+        )
+        if isinstance(tools, list)
+        else 0,
         "reasoning_effort": (
             reasoning.get("effort", "") if isinstance(reasoning, dict) else ""
         ),
         "request_bytes": len(body),
+        "tools_bytes": encoded_size(tools),
         "tools": len(tools) if isinstance(tools, list) else 0,
         "user_agent_sha256": hashlib.sha256(user_agent.encode()).hexdigest(),
     }

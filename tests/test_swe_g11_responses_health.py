@@ -91,7 +91,7 @@ def test_remote_model_probe_uses_responses_wire_and_nested_reasoning(
     )
     assert expected_user_agent in remote_command
     assert f"OPENCOLLAB_LLM_USER_AGENT={expected_user_agent}" in config.workflow_env
-    assert "OPENCOLLAB_LLM_MAX_RETRIES=10000" in config.workflow_env
+    assert "OPENCOLLAB_LLM_MAX_RETRIES=3" in config.workflow_env
 
 
 def test_remote_model_probe_rejects_response_from_another_wire(

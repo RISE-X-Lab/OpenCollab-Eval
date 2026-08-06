@@ -13,7 +13,10 @@ from pathlib import Path
 from typing import Any
 
 from opencollab_eval.commands import _swe_eval_layer_integrity as _eval_integrity
-from opencollab_eval.commands.swe_v1_prolite_common import normalize_workflow_env_entries
+from opencollab_eval.commands.swe_v1_prolite_common import (
+    normalize_provider_retry_env,
+    normalize_workflow_env_entries,
+)
 from opencollab_eval.engine.solver_backend import (
     KIMI_CODING_BASE_URL,
     default_openai_user_agent,
@@ -79,6 +82,7 @@ class ParallelConfig:
     task_wall_timeout: int
     eval_timeout: int
     llm_timeout: int
+    provider_error_time_budget: int
     checkpoint_interval: int
     max_task_starts: int
     max_eval_attempts: int
@@ -270,12 +274,17 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
     workflow = str(args.workflow or "").strip()
     workflow_env = normalize_workflow_env(getattr(args, "workflow_env", ()))
     workflow_env_values = dict(item.split("=", 1) for item in workflow_env)
+    provider_error_time_budget = int(
+        getattr(args, "provider_error_time_budget", 0)
+    )
+    workflow_env_values = normalize_provider_retry_env(
+        workflow_env_values,
+        provider_error_time_budget,
+    )
     if llm_provider == "openai" and not workflow_env_values.get(
         "OPENCOLLAB_LLM_USER_AGENT"
     ):
         workflow_env_values["OPENCOLLAB_LLM_USER_AGENT"] = default_openai_user_agent()
-    if workflow_env_values.get("OPENCOLLAB_WIRE_PROTOCOL") == "responses":
-        workflow_env_values.setdefault("OPENCOLLAB_LLM_MAX_RETRIES", "10000")
     workflow_env = tuple(f"{key}={value}" for key, value in workflow_env_values.items())
     context_window, temperature, top_p, max_output_tokens, workflow_env = _kimi_runtime_defaults(
         llm_model,
@@ -372,6 +381,7 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
         task_wall_timeout=args.task_wall_timeout,
         eval_timeout=args.eval_timeout,
         llm_timeout=args.llm_timeout,
+        provider_error_time_budget=provider_error_time_budget,
         checkpoint_interval=args.checkpoint_interval,
         max_task_starts=max(1, min(3, args.max_task_starts)),
         max_eval_attempts=max(1, min(2, args.max_eval_attempts)),

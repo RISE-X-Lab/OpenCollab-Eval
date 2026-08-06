@@ -48,6 +48,7 @@ ALLOWED_WORKFLOW_ENV_KEYS = frozenset(
         "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT",
         "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT",
         "OPENCOLLAB_LLM_USER_AGENT",
+        "OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET",
         "OPENCOLLAB_CLAUDE_EXPECTED_MODEL",
         "OPENCOLLAB_CLAUDE_EXPECTED_VERSION",
         "OPENCOLLAB_CLAUDE_RUNTIME_IMAGE",
@@ -67,6 +68,46 @@ def normalize_workflow_env_entries(values: list[str] | tuple[str, ...]) -> dict[
             if key == "OPENCOLLAB_LLM_USER_AGENT"
             else value
         )
+    return normalized
+
+
+def normalize_provider_retry_env(
+    workflow_env: dict[str, str],
+    provider_error_time_budget: int,
+) -> dict[str, str]:
+    """Bind the Responses retry count and retry-only time budget together."""
+    if provider_error_time_budget < 0:
+        raise ValueError("--provider-error-time-budget must be non-negative")
+    normalized = dict(workflow_env)
+    recorded_budget = normalized.get("OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET")
+    if recorded_budget not in {None, str(provider_error_time_budget)}:
+        raise ValueError(
+            "OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET must match "
+            "--provider-error-time-budget"
+        )
+    if provider_error_time_budget:
+        normalized["OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET"] = str(
+            provider_error_time_budget
+        )
+    if normalized.get("OPENCOLLAB_WIRE_PROTOCOL") != "responses":
+        return normalized
+    configured_retries = normalized.get("OPENCOLLAB_LLM_MAX_RETRIES")
+    try:
+        retry_count = (
+            32
+            if provider_error_time_budget and configured_retries is None
+            else 3
+            if configured_retries is None
+            else int(configured_retries)
+        )
+    except ValueError as exc:
+        raise ValueError("OPENCOLLAB_LLM_MAX_RETRIES must be an integer") from exc
+    if provider_error_time_budget and not 0 <= retry_count <= 32:
+        raise ValueError(
+            "provider error time budget requires "
+            "OPENCOLLAB_LLM_MAX_RETRIES between 0 and 32"
+        )
+    normalized["OPENCOLLAB_LLM_MAX_RETRIES"] = str(retry_count)
     return normalized
 
 

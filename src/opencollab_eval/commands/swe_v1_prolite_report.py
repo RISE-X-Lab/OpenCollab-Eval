@@ -48,6 +48,39 @@ def write_local_report(summary: dict[str, Any], json_path: Path, md_path: Path) 
     write_regular_bytes_atomic(json_path, json_payload, **json_expectation)
 
 
+def record_provider_time_budget(
+    summary: dict[str, Any],
+    args: Any,
+    base_timeouts: dict[str, int],
+) -> None:
+    """Add the provider reserve identity to both machine and human reports."""
+    effective = {
+        "llm_normal": args.llm_timeout,
+        "llm_wall": args.llm_timeout + args.provider_error_time_budget,
+        "generation": args.swe_timeout,
+        "task_wall": args.task_wall_timeout,
+        "controller": args.total_timeout,
+        "official_eval": args.eval_timeout,
+    }
+    summary["provider_time_budget"] = {
+        "error_seconds": args.provider_error_time_budget,
+        "base": base_timeouts,
+        "effective": effective,
+    }
+    markdown = summary.get("markdown")
+    if isinstance(markdown, str):
+        summary["markdown"] = markdown.rstrip() + (
+            "\n\n## Provider time budget\n\n"
+            f"- Retryable provider failure reserve `{args.provider_error_time_budget}` seconds\n"
+            f"- Normal LLM timeout `{effective['llm_normal']}` seconds\n"
+            f"- Maximum LLM wall time `{effective['llm_wall']}` seconds\n"
+            f"- Generation timeout `{effective['generation']}` seconds\n"
+            f"- Task wall timeout `{effective['task_wall']}` seconds\n"
+            f"- Controller timeout `{effective['controller']}` seconds\n"
+            f"- Official evaluation timeout `{effective['official_eval']}` seconds\n"
+        )
+
+
 def eval_only_reconciliation_reports(
     parent_output_dir: Path,
     current_report: Path,

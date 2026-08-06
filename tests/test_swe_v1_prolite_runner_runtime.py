@@ -101,6 +101,7 @@ def test_remote_probe_imports_only_from_the_synced_runtime(monkeypatch, tmp_path
         ("--task-wall-timeout", "-2"),
         ("--eval-timeout", "0"),
         ("--llm-timeout", "0"),
+        ("--provider-error-time-budget", "-1"),
         ("--total-timeout", "-3"),
         ("--checkpoint-interval", "-1"),
         ("--limit", "1001"),

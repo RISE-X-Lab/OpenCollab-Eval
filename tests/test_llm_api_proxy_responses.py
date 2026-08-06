@@ -106,6 +106,7 @@ def test_responses_request_shape_contains_no_prompt_or_header_values() -> None:
     body = json.dumps(
         {
             "model": "gpt-5.6-sol",
+            "instructions": "private instructions",
             "input": [{"role": "user", "content": "private prompt"}],
             "tools": [{"type": "function", "name": "lookup"}],
             "reasoning": {"effort": "medium"},
@@ -116,12 +117,32 @@ def test_responses_request_shape_contains_no_prompt_or_header_values() -> None:
 
     assert shape == {
         "body_sha256": hashlib.sha256(body).hexdigest(),
-        "fields": "input,model,reasoning,tools",
+        "fields": "input,instructions,model,reasoning,tools",
+        "input_bytes": len(
+            json.dumps(
+                [{"role": "user", "content": "private prompt"}],
+                separators=(",", ":"),
+            ).encode()
+        ),
         "input_items": 1,
+        "instructions_bytes": len(json.dumps("private instructions").encode()),
+        "largest_tool_bytes": len(
+            json.dumps(
+                {"type": "function", "name": "lookup"},
+                separators=(",", ":"),
+            ).encode()
+        ),
         "reasoning_effort": "medium",
         "request_bytes": len(body),
+        "tools_bytes": len(
+            json.dumps(
+                [{"type": "function", "name": "lookup"}],
+                separators=(",", ":"),
+            ).encode()
+        ),
         "tools": 1,
         "user_agent_sha256": hashlib.sha256(b"secret-user-agent").hexdigest(),
     }
     assert "private prompt" not in json.dumps(shape)
+    assert "private instructions" not in json.dumps(shape)
     assert "secret-user-agent" not in json.dumps(shape)

@@ -120,6 +120,12 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--eval-timeout", type=int, default=7_200, help="Official evaluation timeout in seconds")
     parser.add_argument("--llm-timeout", type=int, default=900, help="Single model request timeout in seconds")
     parser.add_argument(
+        "--provider-error-time-budget",
+        type=int,
+        default=0,
+        help="Additional task time reserved for retryable provider failures",
+    )
+    parser.add_argument(
         "--checkpoint-interval",
         type=int,
         default=0,
@@ -244,6 +250,10 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
             parser.error(f"{option} must be > 0")
     if args.checkpoint_interval < 0:
         parser.error("--checkpoint-interval must be >= 0")
+    if args.provider_error_time_budget < 0:
+        parser.error("--provider-error-time-budget must be >= 0")
+    if args.eval_only and args.provider_error_time_budget:
+        parser.error("--provider-error-time-budget is unavailable with --eval-only")
     if args.remote_api_env_file and (
         args.llm_provider != "openai" or not is_kimi_direct_model(args.llm_model)
     ):
@@ -278,6 +288,29 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
             "--local-proxy-base-url or OPENCOLLAB_LOCAL_PROXY_BASE_URL is required when remote proxy setup is enabled"
         )
 
+    base_timeouts = {
+        "llm": args.llm_timeout,
+        "generation": args.swe_timeout,
+        "task_wall": args.task_wall_timeout,
+        "controller": args.total_timeout,
+        "official_eval": args.eval_timeout,
+    }
+    workflow_env = normalize_workflow_env_entries(args.workflow_env)  # noqa: F405
+    try:
+        workflow_env = normalize_provider_retry_env(  # noqa: F405
+            workflow_env,
+            args.provider_error_time_budget,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
+    args.workflow_env = [f"{key}={value}" for key, value in workflow_env.items()]
+    for name in ("swe_timeout", "task_wall_timeout", "total_timeout"):
+        setattr(
+            args,
+            name,
+            getattr(args, name) + args.provider_error_time_budget,
+        )
+
     configure_run_paths(args)  # noqa: F405
     if args.eval_only:
         with parent_eval_lock(args):  # noqa: F405
@@ -286,6 +319,7 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
                 summary = run_remote(args)  # noqa: F405
             except KeyboardInterrupt:
                 return 130
+            record_provider_time_budget(summary, args, base_timeouts)  # noqa: F405
             write_local_report(  # noqa: F405
                 summary,
                 args.json_output,
@@ -304,6 +338,7 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
             summary = run_remote(args)  # noqa: F405
         except KeyboardInterrupt:
             return 130
+        record_provider_time_budget(summary, args, base_timeouts)  # noqa: F405
         write_local_report(  # noqa: F405
             summary,
             args.json_output,
