@@ -130,13 +130,19 @@ def _background_task(image: str, base_commit: str, run_id: str) -> dict[str, Any
             f"{SOURCE_PATH!r}; do i=$((i+1)); [ \"$i\" -lt 1000 ] || exit 1; "
             "sleep .01; done",
         )
-        try:
-            extract_patch_trusted(container, baseline)
-        except WorkspaceIntegrityError as exc:
-            if exc.failure_scope.value != "task":
-                raise RuntimeError("background churn escaped local task scope") from exc
-            return {"scenario": "background_write", "status": "blocked", "failure_scope": "task"}
-        raise RuntimeError("background writer was accepted as a stable candidate")
+        patch, proof = extract_patch_trusted(container, baseline)
+        _exec(
+            container,
+            f"python3 -c \"import pathlib,time; p=pathlib.Path({SOURCE_PATH!r}); "
+            "before=p.read_bytes(); time.sleep(.2); assert p.read_bytes()==before\"",
+        )
+        if patch_paths(patch) != [SOURCE_PATH] or proof.patch_bytes <= 0:
+            raise RuntimeError("quiesced background write did not produce a bound candidate")
+        return {
+            "scenario": "background_write_quiesced",
+            "status": "passed",
+            "patch_sha256": proof.patch_sha256,
+        }
     finally:
         baseline.cleanup()
 
@@ -166,7 +172,7 @@ def run(output: Path) -> dict[str, Any]:
         results.append(_background_task(image, base_commit, run_id))
         passed = sum(item["status"] == "passed" for item in results)
         blocked = sum(item["status"] == "blocked" for item in results)
-        if passed != 2 or blocked != 2:
+        if passed != 3 or blocked != 1:
             raise RuntimeError("concurrent integrity smoke returned incomplete outcomes")
         report = {
             "schema": "opencollab.integrity_docker_smoke.v1",
