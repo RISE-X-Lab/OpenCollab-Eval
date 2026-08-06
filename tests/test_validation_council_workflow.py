@@ -308,6 +308,35 @@ async def test_role_timeouts_leave_room_for_provider_retry(
     assert timeouts["final-verifier:r1"] == 1860
 
 
+async def test_role_timeouts_exclude_provider_failure_budget_from_normal_time(
+    validation_council_solve,
+    monkeypatch,
+):
+    monkeypatch.setenv("OPENCOLLAB_LLM_TIMEOUT", "2400")
+    monkeypatch.setenv("OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET", "7200")
+    ctx = ScriptedCtx(_base_replies())
+
+    await validation_council_solve(ctx, {"goal": "fix empty widget"})
+
+    timeouts = {call["label"]: call.get("timeout") for call in ctx.agent_calls}
+    assert timeouts["coder:r1"] == 9660
+    assert timeouts["analyst-localizer"] == 9660
+    assert timeouts["final-verifier:r1"] == 9660
+
+
+async def test_role_timeouts_honor_provider_budget_with_default_llm_timeout(
+    validation_council_solve,
+    monkeypatch,
+):
+    monkeypatch.delenv("OPENCOLLAB_LLM_TIMEOUT", raising=False)
+    monkeypatch.setenv("OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET", "7200")
+    ctx = ScriptedCtx(_base_replies())
+
+    await validation_council_solve(ctx, {"goal": "fix empty widget"})
+
+    assert {call.get("timeout") for call in ctx.agent_calls} == {7860}
+
+
 @pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "bad"])
 async def test_role_timeouts_reject_invalid_provider_timeout(
     validation_council_solve,
@@ -318,6 +347,32 @@ async def test_role_timeouts_reject_invalid_provider_timeout(
     ctx = ScriptedCtx(_base_replies())
 
     with pytest.raises(ValueError, match="OPENCOLLAB_LLM_TIMEOUT"):
+        await validation_council_solve(ctx, {"goal": "fix empty widget"})
+
+
+@pytest.mark.parametrize("value", ["-1", "nan", "inf", "bad"])
+async def test_role_timeouts_reject_invalid_provider_failure_budget(
+    validation_council_solve,
+    monkeypatch,
+    value,
+):
+    monkeypatch.setenv("OPENCOLLAB_LLM_TIMEOUT", "1800")
+    monkeypatch.setenv("OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET", value)
+    ctx = ScriptedCtx(_base_replies())
+
+    with pytest.raises(ValueError, match="OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET"):
+        await validation_council_solve(ctx, {"goal": "fix empty widget"})
+
+
+async def test_role_timeouts_validate_provider_budget_with_default_llm_timeout(
+    validation_council_solve,
+    monkeypatch,
+):
+    monkeypatch.delenv("OPENCOLLAB_LLM_TIMEOUT", raising=False)
+    monkeypatch.setenv("OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET", "bad")
+    ctx = ScriptedCtx(_base_replies())
+
+    with pytest.raises(ValueError, match="OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET"):
         await validation_council_solve(ctx, {"goal": "fix empty widget"})
 
 

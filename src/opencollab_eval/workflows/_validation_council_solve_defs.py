@@ -35,16 +35,25 @@ CODER_ROLE_TIMEOUT_SECONDS = 1800
 
 
 def _llm_aware_role_timeout(default: float) -> float:
-    raw = os.environ.get("OPENCOLLAB_LLM_TIMEOUT")
-    if raw is None:
-        return default
+    raw = os.environ.get("OPENCOLLAB_LLM_TIMEOUT", "600")
     try:
         llm_timeout = float(raw)
     except ValueError as exc:
         raise ValueError("OPENCOLLAB_LLM_TIMEOUT must be a positive finite number") from exc
     if not math.isfinite(llm_timeout) or llm_timeout <= 0:
         raise ValueError("OPENCOLLAB_LLM_TIMEOUT must be a positive finite number")
-    return max(default, llm_timeout + 60)
+    budget_raw = os.environ.get("OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET", "0")
+    try:
+        provider_error_budget = float(budget_raw)
+    except ValueError as exc:
+        raise ValueError(
+            "OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET must be a finite non-negative number"
+        ) from exc
+    if not math.isfinite(provider_error_budget) or provider_error_budget < 0:
+        raise ValueError(
+            "OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET must be a finite non-negative number"
+        )
+    return max(default, llm_timeout + provider_error_budget + 60)
 
 
 def structured_role_timeout_seconds() -> float:
