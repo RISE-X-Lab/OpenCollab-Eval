@@ -116,29 +116,18 @@ def _background_task(image: str, base_commit: str, run_id: str) -> dict[str, Any
         "\nwhile True:\n f=open(p,'a'); f.write('# background\\n'); "
         "f.flush(); os.fsync(f.fileno()); f.close(); time.sleep(.001)"
     )
-    supervisor = (
-        "import os,pathlib,subprocess,time; children=[]; code=" + repr(writer) + "; "
-        "\nwhile True:\n"
-        " children=[p for p in children if p.poll() is None]\n"
-        " if os.path.exists('/tmp/start-background'):\n"
-        "  while len(children)<3: children.append(subprocess.Popen(['python3','-c',code]))\n"
-        "  pathlib.Path('/tmp/background-ready').touch()\n"
-        " time.sleep(.001)"
-    )
-    container = _start(
-        image,
-        f"oc-integrity-background-{run_id}",
-        run_id,
-        ["python3", "-c", supervisor],
-    )
+    container = _start(image, f"oc-integrity-background-{run_id}", run_id)
     snapshot = prepare_solver_git_snapshot(container, base_commit)
     baseline = prepare_trusted_patch_baseline(container, snapshot)
     try:
-        _exec(container, "touch /tmp/start-background")
+        _run(
+            ["docker", "exec", "-d", "-w", "/testbed", container, "python3", "-c", writer],
+            timeout=30,
+        )
         _exec(
             container,
-            "i=0; until test -e /tmp/background-ready && grep -q '# background' "
-            f"{SOURCE_PATH!r}; do i=$((i+1)); [ \"$i\" -lt 3000 ] || exit 1; "
+            "i=0; until grep -q '# background' "
+            f"{SOURCE_PATH!r}; do i=$((i+1)); [ \"$i\" -lt 1000 ] || exit 1; "
             "sleep .01; done",
         )
         try:
