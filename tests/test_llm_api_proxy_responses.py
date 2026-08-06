@@ -59,6 +59,49 @@ def test_codex_responses_request_preserves_explicit_fields() -> None:
     assert payload["text"] == {"verbosity": "high"}
 
 
+def test_codex_responses_request_compacts_only_schema_annotations() -> None:
+    source = json.dumps(
+        {
+            "model": "gpt-5.6-luna",
+            "input": [{"role": "user", "content": "task"}],
+            "tools": [
+                {
+                    "type": "function",
+                    "name": "file_read",
+                    "description": "Read a repository file.",
+                    "parameters": {
+                        "type": "object",
+                        "title": "Read arguments",
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "description": "Repository path.",
+                                "minLength": 1,
+                            }
+                        },
+                        "required": ["path"],
+                        "additionalProperties": False,
+                    },
+                }
+            ],
+        }
+    ).encode()
+
+    body, _headers = _codex_responses_request(source, compact_tool_schemas=True)
+
+    tool = json.loads(body)["tools"][0]
+    assert tool == {
+        "type": "function",
+        "name": "file_read",
+        "parameters": {
+            "type": "object",
+            "properties": {"path": {"type": "string", "minLength": 1}},
+            "required": ["path"],
+            "additionalProperties": False,
+        },
+    }
+
+
 def test_responses_request_shape_contains_no_prompt_or_header_values() -> None:
     body = json.dumps(
         {

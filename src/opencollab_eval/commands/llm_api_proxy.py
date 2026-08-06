@@ -25,6 +25,7 @@ from pathlib import Path
 
 from opencollab_eval.commands.llm_api_stream import (
     ChatStreamError,
+    _without_schema_annotations,
     aggregate_chat_stream,
     streaming_chat_request,
 )
@@ -123,13 +124,19 @@ def _upstream_url(base_url: str, request_path: str) -> str:
     return base_url + path
 
 
-def _codex_responses_request(body: bytes) -> tuple[bytes, dict[str, str]]:
+def _codex_responses_request(
+    body: bytes,
+    *,
+    compact_tool_schemas: bool = False,
+) -> tuple[bytes, dict[str, str]]:
     payload = json.loads(body)
     if not isinstance(payload, dict):
         raise ValueError("Responses request must be a JSON object")
     payload.setdefault("include", ["reasoning.encrypted_content"])
     payload.setdefault("parallel_tool_calls", False)
     payload.setdefault("text", {"verbosity": "low"})
+    if compact_tool_schemas and "tools" in payload:
+        payload["tools"] = _without_schema_annotations(payload["tools"])
     reasoning = payload.get("reasoning")
     if isinstance(reasoning, dict):
         reasoning.setdefault("context", "all_turns")
@@ -385,7 +392,10 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                 user_agent = self.headers.get("User-Agent", "opencollab-eval")
                 codex_compatible = user_agent.startswith("codex_cli_rs/")
                 if codex_compatible and request_path in {"/responses", "/v1/responses"}:
-                    body, codex_headers = _codex_responses_request(body)
+                    body, codex_headers = _codex_responses_request(
+                        body,
+                        compact_tool_schemas=config.compact_tool_schemas,
+                    )
                     shape = _responses_request_shape(body, user_agent)
                     body_sha256 = str(shape["body_sha256"])
                     with seen_request_shapes_lock:
@@ -553,8 +563,6 @@ def main() -> int:
     args = build_parser().parse_args()
     if args.host not in {"127.0.0.1", "::1", "localhost"}:
         raise SystemExit("proxy host must be loopback")
-    if args.compact_tool_schemas and not args.aggregate_chat_stream:
-        raise SystemExit("--compact-tool-schemas requires a chat compatibility mode")
     config = load_proxy_config(
         args.env_file,
         upstream_base_url=args.upstream_base_url,
