@@ -2,8 +2,8 @@
 
 **English** | [简体中文](zh-CN/evaluation-runtime.md)
 
-OpenCollab-Eval exposes several execution layers. Choose the highest-level
-entrypoint that matches the required result.
+OpenCollab-Eval has several execution layers. The table maps each result to its
+intended entrypoint.
 
 | Entry | Input | Output | Official verdict |
 | --- | --- | --- | --- |

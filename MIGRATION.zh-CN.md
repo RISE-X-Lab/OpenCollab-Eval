@@ -2,7 +2,7 @@
 
 [English](MIGRATION.md) | **简体中文**
 
-OpenCollab-Eval 负责基准契约、评测器编排、Solver 工作流、候选构建、SWE-bench 生成、进程隔离、执行证据、报告和远程评测。OpenCollab 负责智能体框架、领域与应用服务、适配器、组合机制、精简的公开 Python API 和框架测试。
+OpenCollab-Eval 负责基准与评测代码，其中包括 Solver 工作流和远程评测。候选构造在隔离的进程环境中运行，其输出保留执行证据。OpenCollab 负责智能体框架、公开 Python API 和框架测试。
 
 ## 软件包归属
 

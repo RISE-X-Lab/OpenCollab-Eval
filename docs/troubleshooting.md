@@ -2,9 +2,9 @@
 
 **English** | [简体中文](zh-CN/troubleshooting.md)
 
-Start with the generated JSON report. Console output is diagnostic context and
-does not replace the structured reason, candidate identity, target proof, or
-cleanup evidence.
+Start with the generated JSON report. It contains the structured reason,
+candidate identity, target proof, and cleanup evidence. Console output supplies
+additional diagnostic context.
 
 ## Configuration fails before a task starts
 
@@ -26,9 +26,8 @@ Model identity, endpoint identity, thinking configuration, context window,
 sampling values, and output limit are checked independently.
 
 Authentication failure and provider quota exhaustion are generation technical
-failures. They do not create an empty candidate, unresolved verdict, or
-official evaluation result. Retry only when the experiment protocol permits a
-new task start.
+failures. Candidate, unresolved, and official evaluation fields remain unset.
+Retry only when the experiment protocol permits a new task start.
 
 For reverse-proxy transport, verify the local authenticated relay, SSH tunnel,
 remote relay health endpoint, upstream URL hash, and protected token file.
@@ -46,9 +45,8 @@ runtime and all required provider dependencies. Then compare the local runtime
 tree record, remote preflight record, and the immediately pre-generation tree
 record.
 
-Do not bypass a mismatch with `--no-sync-runtime`. That option requires the
-exact previously verified SHA-256 through
-`--expected-runtime-tree-sha256`.
+When using `--no-sync-runtime`, supply the exact previously verified SHA-256
+through `--expected-runtime-tree-sha256`. A mismatch still stops the run.
 
 ## Docker or image preflight fails
 
@@ -70,10 +68,10 @@ that Git cannot represent, an outward symbolic link, an untrusted Gitlink
 replacement, an oversized patch, a background process that continues to write,
 or a candidate tree that cannot be reconstructed from the trusted base.
 
-Ignored caches and logs are classified before opening and do not enter the
-candidate. Solver modifications to Git configuration, index, references,
-replacement objects, ignore files, and attributes cannot change the
-controller-owned candidate identity.
+Ignored caches and logs are classified before opening and remain outside the
+candidate. The controller-owned candidate identity is unaffected by Solver
+changes to Git configuration, index, references, replacement objects, ignore
+files, or attributes.
 
 ## Official evaluation is technical failed
 

@@ -3,20 +3,21 @@
 **English** | [简体中文](README.zh-CN.md)
 
 This package contains deterministic multi-agent workflows for evaluation.
-Ordinary Python controls agent fan-out, repair rounds, verification gates, and
-stop conditions. The model handles repository reasoning and edits within those
-fixed control-flow boundaries.
+Python code defines the control flow, including agent fan-out and repair rounds.
+It also owns the verification gates and stop conditions. Models inspect and
+edit the repository within that control flow.
 
-The package depends only on the OpenCollab 0.4 workflow-authoring surface:
+The package depends on the OpenCollab 0.4 workflow-authoring surface shown
+below.
 
 ```python
 from opencollab.tools import Tool, builtin_tools
 from opencollab.workflows import WorkflowContext, workflow
 ```
 
-It does not import OpenCollab adapters, application services, bootstrap
-internals, domain modules, harness code, or the retired `opencollab.sdk`
-submodules.
+Its OpenCollab dependency ends at this public surface. Adapters, application
+services, bootstrap internals, domain modules, harness code, and the retired
+`opencollab.sdk` submodules stay outside the package boundary.
 
 ## Bundled workflows
 
@@ -39,8 +40,8 @@ workflow functions are library-level building blocks and can be selected by
 the single-instance workflow generator.
 
 Blind SWE workflows receive issue text, repository contents, public tests, and
-public documentation. They do not receive hidden grader assertions. Final task
-resolution remains the responsibility of the external official evaluation.
+public documentation. Hidden grader assertions remain with the evaluator, and
+the external official evaluation determines final task resolution.
 
 ## Authoring contract
 
@@ -97,8 +98,8 @@ use `git_diff`. Passing `allow_file_creation=False` to `builtin_tools` prevents
 Every `run_tests` instance created through the public helper rejects runner
 overrides and extra model-supplied arguments. A workflow may inspect the
 instance's parser-backed `verified_targets` after the call when a benchmark
-requires exact target execution evidence. A model-written `tests_run` field
-does not replace executable evidence.
+requires exact target execution evidence. Passing still requires that
+executable evidence, regardless of a model-written `tests_run` field.
 
 ## Conventions
 
@@ -122,5 +123,5 @@ python -m opencollab_eval.generation.gen_prediction_workflow \
 ```
 
 The generator owns selection and execution of bundled workflows. Installed
-consumers import workflow functions from `opencollab_eval.workflows`; they do
-not depend on OpenCollab's internal workflow discovery implementation.
+consumers import workflow functions from `opencollab_eval.workflows` and remain
+independent of OpenCollab's internal workflow discovery implementation.

@@ -2,14 +2,14 @@
 
 **English** | [简体中文](zh-CN/architecture.md)
 
-OpenCollab-Eval is the evaluation owner for solvers built with OpenCollab. It
-loads benchmark tasks, exposes only public task data to a solver, constructs a
-candidate patch from a trusted baseline, runs target tests in a fresh
-evaluation workspace, and publishes evidence-bound terminal results.
+OpenCollab-Eval evaluates solvers built with OpenCollab. It gives each Solver
+the public task data, builds its candidate patch from a trusted baseline, and
+runs the declared tests in a fresh workspace. The terminal report binds that
+result to the recorded evidence.
 
-OpenCollab supplies the agent runtime, environments, tools, and workflow
-decorators. OpenCollab-Eval owns benchmark adapters, solver configurations,
-candidate construction, test execution proof, evaluation state, and reports.
+OpenCollab supplies the agent runtime and workflow-authoring API.
+OpenCollab-Eval owns the benchmark-facing code, candidate construction,
+execution proof, evaluation state, and reports.
 
 ## Dependency boundary
 
@@ -33,9 +33,9 @@ OpenCollab-Eval currently imports the following public OpenCollab surfaces.
 
 The retired `opencollab.sdk` package and OpenCollab implementation layers such
 as `adapters`, `application`, `bootstrap`, `domain`, and `harness` stay outside
-this dependency boundary. `tests/test_boundaries.py` defines the narrow
-compatibility envelope available to production code and tests, scans imports,
-and verifies its public names against the installed OpenCollab package.
+this dependency boundary. `tests/test_boundaries.py` defines the imports
+accepted from production code and tests, then checks those public names against
+the installed OpenCollab package.
 
 This boundary gives OpenCollab-Eval a versioned runtime dependency through
 `opencollab>=0.4.1,<0.5`. A change to OpenCollab internals remains invisible here
@@ -60,7 +60,7 @@ accounting.
 
 ## Data ownership
 
-A normalized benchmark task has two halves.
+A normalized benchmark task contains two records.
 
 `PublicTask` contains the anonymous task identifier, repository name, problem
 statement, public hints, and explicitly public metadata. The anonymous
@@ -182,7 +182,7 @@ lifecycle management to OpenCollab. External solver adapters launch their
 tools in the disposable container and return sidecar usage and candidate
 evidence to the same generation path.
 
-Every adapter converges on shared candidate construction. Adapter-specific
+Every adapter uses the shared candidate constructor. Adapter-specific
 shell code may launch a process and collect its sidecar. Patch
 canonicalization, candidate tree calculation, patch SHA-256, and official
 projection remain common evaluation services.

@@ -2,7 +2,7 @@
 
 [English](../getting-started.md) | **简体中文**
 
-本指南介绍如何安装 OpenCollab-Eval、验证数据集并运行通用候选引擎。如果一次运行必须给出官方的 resolved 或 unresolved 判定，请继续阅读 [SWE Pro-Lite 操作指南](swe-prolite-operations.md)。
+本指南介绍安装和通用候选引擎的首次运行，其中包括数据集验证。官方的 resolved 或 unresolved 判定按照 [SWE Pro-Lite 操作指南](swe-prolite-operations.md)执行。
 
 ## 环境要求
 
@@ -69,7 +69,7 @@ oc-eval inspect /data/swe-batch-pro.jsonl \
   --image-repository registry.example/swe
 ```
 
-检查时必须提供实例身份、仓库和问题陈述。命令会规范化已有的基准提交、镜像、目标和测试补丁字段，并将其保持为密封状态，但无需提供生产环境官方评测所要求的完整裁判契约。生产运行器会验证完整任务规范、基线、镜像和测试计划。当某一行仅包含 `dockerhub_tag` 时，必须提供镜像仓库选项。命令会输出一个 JSON 对象，其中包含行数和匿名任务 ID。
+检查时必须提供实例身份、仓库和问题陈述。命令会规范化已有的基准提交、镜像、目标和测试补丁字段，并将其保持为密封状态。这里使用较小的检查契约即可。生产运行器还会验证完整任务规范、基线、镜像和测试计划。当某一行仅包含 `dockerhub_tag` 时，必须提供镜像仓库选项。命令会输出一个 JSON 对象，其中包含行数和匿名任务 ID。
 
 同一实验的重试应沿用同一把密钥。新实验可以使用新密钥。密钥、原始数据集和密封的裁判字段应留在 Solver 工作区与源代码管理之外。
 
@@ -112,4 +112,4 @@ oc-eval run /data/eval-tasks.jsonl \
 
 ## 后续步骤
 
-生产远程运行请使用 [SWE Pro-Lite 操作指南](swe-prolite-operations.md)。结果状态与必要证据的解释请参阅[评测完整性](evaluation-integrity.md)。运行以技术失败结束时，请参阅[故障排查](troubleshooting.md)。
+生产远程运行接着阅读 [SWE Pro-Lite 操作指南](swe-prolite-operations.md)。[评测完整性](evaluation-integrity.md)解释结果状态与必要证据，技术失败的处理方法见[故障排查](troubleshooting.md)。

@@ -2,10 +2,9 @@
 
 **English** | [简体中文](zh-CN/getting-started.md)
 
-This guide installs OpenCollab-Eval, validates a dataset, and runs the generic
-candidate engine. Continue with the
-[SWE Pro-Lite operations guide](swe-prolite-operations.md) when a run must
-produce an official resolved or unresolved verdict.
+This guide covers installation and the first run of the generic candidate
+engine, including dataset validation. Official resolved or unresolved verdicts
+use the [SWE Pro-Lite operations guide](swe-prolite-operations.md).
 
 ## Requirements
 
@@ -55,8 +54,8 @@ pytest -q
 ```
 
 An editable OpenCollab checkout is suitable for development. Release and CI
-verification should use built wheels so a repository path cannot mask missing
-package files.
+verification should use built wheels, which expose missing package files that
+an editable repository path could conceal.
 
 ## Inspect a SWE-Batch Pro dataset
 
@@ -82,11 +81,11 @@ oc-eval inspect /data/swe-batch-pro.jsonl \
 
 Inspection requires an instance identity, repository, and problem statement.
 It normalizes any supplied base commit, image, target, and test-patch fields
-and keeps them sealed, but it does not require the complete judge contract
-needed by production official evaluation. The production runner verifies the
-full task specification, baseline, image, and test plan. The image repository
-option is required when a row contains only `dockerhub_tag`. The command prints
-a JSON object with the row count and anonymous task IDs.
+and keeps them sealed. The smaller inspection contract is sufficient here.
+The production runner verifies the full task specification, baseline, image,
+and test plan. The image repository option is required when a row contains
+only `dockerhub_tag`. The command prints a JSON object with the row count and
+anonymous task IDs.
 
 Keep the same key for retries of one experiment. A new experiment may use a new
 key. The key, original dataset, and sealed judge fields stay outside Solver
@@ -137,7 +136,6 @@ evaluation before it can be called resolved or unresolved.
 
 ## Next steps
 
-Use [SWE Pro-Lite operations](swe-prolite-operations.md) for production remote
-runs. Use [Evaluation integrity](evaluation-integrity.md) to interpret result
-states and required proof. Use [Troubleshooting](troubleshooting.md) when a run
-ends with a technical failure.
+Production remote runs continue in [SWE Pro-Lite operations](swe-prolite-operations.md).
+[Evaluation integrity](evaluation-integrity.md) explains result states and
+required proof. For a technical failure, follow [Troubleshooting](troubleshooting.md).

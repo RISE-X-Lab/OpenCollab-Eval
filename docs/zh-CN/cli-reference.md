@@ -2,7 +2,7 @@
 
 [English](../cli-reference.md) | **简体中文**
 
-本文档将稳定的已安装命令与高级模块入口分别说明。完整选项列表请对已安装的修订运行 `--help`。
+常见操作使用已安装命令，仓库操作人员与测试还可以使用高级模块入口。对已安装的版本运行 `--help` 可以查看完整选项。
 
 ## 已安装命令
 
@@ -20,7 +20,7 @@ oc-eval inspect DATASET --identity-key-file KEY
                        [--image-repository REPOSITORY]
 ```
 
-此命令验证大小受限的 SWE-Batch Pro JSONL 文件，分离公开字段与密封字段，并输出匿名公开任务 ID。它不会执行生成或官方评测。
+此命令验证大小受限的 SWE-Batch Pro JSONL 文件，分离公开字段与密封字段，并输出匿名公开任务 ID。处理会在检查完成后结束，生成和官方评测尚未开始。
 
 ### `oc-eval run`
 
@@ -31,7 +31,7 @@ oc-eval run TASKS_FILE --model MODEL --provider PROVIDER
             [--temperature VALUE] [--top-p VALUE]
 ```
 
-此命令运行通用评测器并写入 `results.jsonl`。摘要包含任务数、具备资格的候选数和不具备资格的候选数。它不会发布官方的 SWE resolved 判定。
+此命令运行通用评测器并写入 `results.jsonl`。摘要包含任务数、具备资格的候选数和不具备资格的候选数。官方 SWE resolved 判定由 Pro-Lite 评测命令给出。
 
 ### `oc-eval swe-v1-prolite`
 
@@ -126,6 +126,6 @@ python -m opencollab_eval.generation.gen_prediction_workflow --help
 
 ## 退出状态与结果语义
 
-参数错误或验证错误使用非零退出状态。已完成的命令也可能写入任务级技术失败。请读取生成的 JSON，避免仅凭进程退出码推断全部任务结果。
+参数错误或验证错误使用非零退出状态。已完成的命令也可能写入任务级技术失败。生成的 JSON 记录每项任务的结果，进程退出码表示整条命令的状态。
 
 `resolved`、`unresolved` 与 `technical_failed` 是接受官方评测后相互排斥的终态分类。`oc-eval run` 给出的候选资格属于生成分类，不在这组终态分类中。

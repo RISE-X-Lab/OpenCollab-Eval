@@ -2,7 +2,7 @@
 
 [English](../task-formats.md) | **简体中文**
 
-OpenCollab-Eval 在不同信任边界上接受两种 JSONL 契约。`oc-eval inspect` 读取同时包含公开字段和密封裁判字段的基准数据集。`oc-eval run` 读取已经为 Solver 执行准备好的通用评测器任务。两种格式无法互换。
+OpenCollab-Eval 在不同信任边界上接受两种 JSONL 契约。`oc-eval inspect` 读取同时包含公开字段和密封裁判字段的基准数据集。`oc-eval run` 读取已经为 Solver 执行准备好的通用评测器任务。每条命令都有自己的数据结构。
 
 ## SWE-Batch Pro 数据集
 
@@ -62,11 +62,11 @@ oc-eval inspect /data/swe-batch-pro.jsonl \
 
 读取器最多接受 64 MiB 的文件、每行 8 MiB 和 10000 行任务。文件必须是普通文件。结果将写入所选输出目录下的 `results.jsonl`。
 
-此命令报告候选生成情况与提交资格。它不会加载密封的 SWE 裁判契约，也不会给出官方 resolved 判定。
+此命令报告候选生成情况与提交资格。密封的 SWE 裁判契约和官方 resolved 判定由后续评测命令处理。
 
 ## 生成的记录
 
-生成记录属于输出契约，并非输入任务格式。
+生成记录描述评测输出，并带有自己的身份要求。
 
 | 记录 | 身份要求 |
 | --- | --- |
@@ -77,4 +77,4 @@ oc-eval inspect /data/swe-batch-pro.jsonl \
 | Clean-run manifest | 事实报告 SHA、运行时身份、证据文件哈希 |
 | Final publication manifest | 数据集身份与每项已发布输出的哈希 |
 
-请勿编辑生成记录来修复失败的运行。应修正源环境，或重复某个获得明确授权的阶段，从而生成新证据，并将其绑定到同一获准身份。
+修复失败运行时，应修正源环境或重复某个获得明确授权的阶段。这样可以保留原始记录，同时生成绑定到同一获准身份的新证据。

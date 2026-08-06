@@ -2,9 +2,8 @@
 
 [English](../evaluation-integrity.md) | **简体中文**
 
-OpenCollab-Eval 将评测结果视为一条 executable evidence chain。当 declared
-target test 针对 Solver 生成的同一个候选真实执行，且所有必要目标都通过时，
-任务才会成为 resolved。
+OpenCollab-Eval 在可执行证据完整后接受评测结果。指定目标测试针对 Solver
+生成的候选运行且所有必要目标都通过后，任务会成为 resolved。
 
 核心完整性规则如下。
 
@@ -19,154 +18,132 @@ same task
 = eligible terminal verdict
 ```
 
-链条中缺少任何一环都会产生 technical failure。具有有效证据的完整测试运行
-可以在 declared target 失败时产生 unresolved result。
+缺少任何一项关联证据都会产生技术失败。完整测试已经留下有效证据，但指定目标
+失败时，结果为 unresolved。
 
 ## 权威来源与信任边界
 
-数据集声明 instance identity、base commit、image、target test 和 test patch。
+数据集声明实例身份、基准提交、镜像、目标测试和测试补丁。
 
-evaluation controller 持有 runtime synchronization、trusted baseline、
-candidate construction、official workspace preparation、test-plan
-generation、evidence parsing 和 terminal report。
+评测控制器负责运行时同步、可信基线、候选构造、官方工作区准备、测试计划
+生成、证据解析和终态报告。
 
-Solver 只持有它在一次性工作区中完成的修改。它的 Git metadata、
-self-reported diff、prose 和 self-test output 都属于辅助输入。
+Solver 提交自己在一次性工作区中完成的修改。它的 Git 元数据、自报差异、文字
+说明和自行运行的测试结果都属于辅助输入。
 
-official-evaluation process 执行 controller-generated plan，并写入 bounded
-evidence artifact。完成 container 和 process cleanup 后，host 只从自有
-output directory 中读取 allowlisted regular file。
+官方评测进程执行控制器生成的计划，并写入大小受限的证据产物。容器和进程清理
+完成后，主机从自有输出目录读取白名单中的普通文件。
 
 ## 公开基线准备
 
-Solver 启动前，task image 会按照数据集的 `base_commit` 接受检查。任务需要的
-runtime dependency 与 candidate view 分离。Repository history 被替换为由
-trusted base tree 构造的 deterministic anonymous commit。
+Solver 启动前，任务镜像会按照数据集的 `base_commit` 接受检查。任务需要的
+运行时依赖与候选视图分离。仓库历史会替换为从可信基准树构造的确定性匿名提交。
 
-准备后的 Solver repository 只有一个 commit，不含 remote、replace ref 和
-未来 object history。preparation record 绑定 declared commit、source tree、
-anonymous commit、image identity 和 workspace digest。
+准备后的 Solver 仓库只有一个提交，不含远端、替换引用和未来对象历史。准备
+记录会绑定声明提交、源码树、匿名提交、镜像身份和工作区摘要。
 
-一个由 controller 持有的 bare Git directory 会在 Solver-visible workspace
-之外被捕获。它包含 candidate construction 使用的 trusted baseline commit
-和 tree object。Solver 对 `.git`、alias、hook、config、ignore file、ref、
-reflog、replace ref 或 worktree index 的修改都无法改变这个
-controller-owned baseline。
+控制器在 Solver 可见工作区之外持有一个裸 Git 目录。其中保存候选构造所用的
+可信基准提交与树对象。该基线由控制器持有，不受 Solver 修改 `.git`、别名、
+钩子、配置、忽略文件、引用、引用日志、替换引用或工作树索引的影响。
 
 ## 工作区分类
 
-workspace finding 按 phase、origin、Solver visibility、model change、
-candidate effect、test effect、evidence effect、identity effect、
-repairability 和 patch representability 分类。
+工作区发现项按照阶段、来源、Solver 可见性、模型改动、候选影响、测试影响、
+证据影响、身份影响、可修复性与补丁可表示性分类。
 
 | Outcome | 含义 |
 | --- | --- |
 | `allow` | 状态具有可信来源，或已经证明与结果之间存在无害关系 |
-| `sanitize_then_continue` | 可从 task copy 删除一次性残留，且 task semantics 不变 |
-| `task_technical_failure` | 当前 task 或 image state 无法表示、修复或证明无害 |
-| `pause_batch` | 直接探测证明 shared infrastructure 已失败 |
+| `sanitize_then_continue` | 可从任务副本删除一次性残留，且任务语义不变 |
+| `task_technical_failure` | 当前任务或镜像状态无法表示、修复或证明无害 |
+| `pause_batch` | 直接探测证明共享基础设施已失败 |
 
-来自 declared commit、public task input 或 allowed runtime dependency 的
-baseline state 可以继续。cache、log 和 temporary residue 可以从 disposable
-copy 删除并重新检查。来源未知且 Solver-visible 的 baseline content 会让
-受影响的 image 失败。
+来自声明提交、公开任务输入或允许的运行时依赖的基线状态可以继续使用。缓存、
+日志和临时残留可以从一次性副本删除并重新检查。来源未知且 Solver 可见的基线
+内容会让受影响镜像失败。
 
-Solver 退出后，能够表示的 current-run change 会成为 candidate input。
-无法表示且影响结果的 change 会让 task 失败。来源未知的 cross-run state
-同样会让 task 失败。
+Solver 退出后，本次运行中能够表示的改动会成为候选输入。无法表示且影响结果
+的改动会让任务失败，来源未知的跨运行状态也按任务失败处理。
 
 ## 进程静止
 
-候选提取在 Solver 关闭和 container-wide process cleanup 之后开始。
-supervisor 检查自有 process group 和 container state。只有不存在能够继续
-写入的自有进程时，workspace 才会成为 candidate input。
+候选提取在 Solver 关闭和容器进程清理之后开始。监督器检查自有进程组和容器
+状态。自有进程全部停止写入后，工作区才会成为候选输入。
 
-不完整的 cleanup 会将 `execution_quiesced` 或 `cleanup_quiesced` 设为 false。
-此时候选不再 eligible，official evaluation 无法产生 resolved verdict。
+清理不完整时，`execution_quiesced` 或 `cleanup_quiesced` 会设为 false，
+候选随即失去评测资格，官方评测无法产生 resolved 判定。
 
 ## 控制器持有的候选构造
 
-候选构造使用外部 trusted Git directory、冻结后的 Solver worktree 和一个
-新的 temporary index。
+候选构造使用控制器在外部持有的可信 Git 目录、冻结后的 Solver 工作树和一个
+新的临时索引。
 
-Git environment 会清除继承的 `GIT_*` 权限，禁用 system 和 global
-configuration、replace object、hook 和 filesystem monitor，使用 literal
-pathspec，并安装 controller-owned attribute policy。文件内容在没有 clean
-filter 和 text transformation 的情况下计算 hash。
+Git 环境会清除继承的 `GIT_*` 权限，并禁用系统级与全局配置。替换对象、钩子
+和文件系统监视器也会停用。路径按照字面值解释，属性规则由控制器提供。文件
+内容计算哈希时不经过 clean filter 或文本转换。
 
-temporary index 从 trusted base tree 开始。tracked change 和 deletion 从
-最终文件系统加入索引。untracked path 通过 NUL delimiter 枚举，并按照
-baseline ignore view 分类。Solver 修改后的 `.gitignore` 和
-`.gitattributes` 可以作为普通文件变更进入候选，但无法隐藏另一个 candidate
-path，也无法改变其字节。
+临时索引从可信基准树开始。最终文件系统中的已跟踪改动与删除会加入索引，
+未跟踪路径则通过 NUL 分隔符枚举，并按照基线忽略规则分类。Solver 修改后的
+`.gitignore` 和 `.gitattributes` 可以作为普通文件变更进入候选，其内容不会
+影响其他候选路径的可见性或字节。
 
-被 ignore 的 cache、log、build 和 generated runtime path 保持在候选之外，
-candidate selection 期间不会打开这些路径。`.git`、`.opencollab` 和 retired
-artifact prefix 下的 harness control path 会被排除。
+忽略的缓存、日志、构建产物和运行时生成路径留在候选之外，候选选择期间也不会
+打开。`.git`、`.opencollab` 和旧版产物前缀下的评测控制路径会被排除。
 
-regular file、deletion、binary data、内部 symbolic link 和 executable mode
-change 使用 Git-native representation。hard-linked candidate file 转换为
-独立 regular file。nested repository 的 solver-owned `.git` marker 会在
-投影可见文件前删除。outward symbolic link、unreadable candidate file、
-FIFO、socket、device 和不受支持的 Gitlink change 会产生 task-scoped
-construction error。
+普通文件、删除、二进制数据、内部符号链接和可执行位变化使用 Git 原生表示。
+硬链接候选文件会展开成独立的普通文件。嵌套仓库中由 Solver 持有的 `.git`
+标记会在投影可见文件前删除。指向外部的符号链接、不可读候选文件、FIFO、
+套接字、设备和不受支持的 Gitlink 变化会产生任务级构造错误。
 
-每个 baseline Gitlink 都会获得显式 preserve、delete 或 replacement
-projection。replacement 携带在 official workspace 中重建所需的 evidence。
+每个基准 Gitlink 都会明确保留、删除或替换。替换记录带有在官方工作区重建时
+需要的证据。
 
 最终的 `CandidatePatch` 记录以下内容。
 
 | Field | 用途 |
 | --- | --- |
-| `anonymous_base` | Deterministic solver-visible baseline commit |
-| `base_tree` | Trusted baseline tree |
-| `baseline_sha256` | Trusted baseline representation digest |
-| `candidate_tree` | 由 temporary candidate index 创建的 tree |
-| `patch_sha256` | Binary full-index patch 的 SHA-256 |
-| `changed_paths` | Canonical candidate path set |
-| `path_modes` | 每个 changed path 的 old 和 new Git mode |
-| `untracked_paths` | 被选中的 visible addition |
-| census fields | 提取期间使用的 bounded file 和 byte count |
+| `anonymous_base` | Solver 可见的确定性基准提交 |
+| `base_tree` | 可信基准树 |
+| `baseline_sha256` | 可信基线表示的摘要 |
+| `candidate_tree` | 临时候选索引创建的树 |
+| `patch_sha256` | 二进制完整索引补丁的 SHA-256 |
+| `changed_paths` | 规范化的候选路径集合 |
+| `path_modes` | 每条变更路径的新旧 Git 模式 |
+| `untracked_paths` | 选中的可见新增路径 |
+| census fields | 提取期间使用的有界文件数与字节数 |
 
-序列化后的 proof 声明其 base 和 index 来自 controller，并且排除了 solver
-Git metadata 和 forced ignored file。
+序列化证据会声明基线和索引来自控制器，并记录 Solver Git 元数据与强制忽略
+文件已经排除。
 
-## 全新的 official workspace
+## 全新的官方工作区
 
-official evaluation 从 task image 启动一个全新的 container。同一 patch
-需要经过三次 projection check。
+官方评测从任务镜像启动一个全新容器，同一补丁需要经过三次投影检查。
 
-source projection 使用 clean temporary index 将 patch 应用到 declared
-dataset commit。它根据 generation expectation 验证 source base commit、
-source base tree、anonymous base、source candidate tree 和 patch SHA-256。
+源码投影使用干净的临时索引把补丁应用到数据集声明的提交。它根据生成阶段的
+预期值检查源码基准提交、源码基准树、匿名基线、源码候选树和补丁 SHA-256。
 
-随后，evaluation workspace 被缩减为 public single-commit baseline。
-repository setup command 可以准备 dependency，之后的检查要求 prepared Git
-head 保持 expected baseline identity。prepared projection 将同一 patch
-应用到该 baseline，并记录其 candidate tree。
+随后，评测工作区会缩减为公开的单提交基线。仓库初始化命令可以准备依赖，后续
+检查则要求准备后的 Git head 保持预期基线身份。准备投影把同一补丁应用到该
+基线，并记录候选树。
 
-patch 到达实际 official worktree 后，verification 将每个 changed file、
-symbolic link、mode、deletion 和 Gitlink 计算到另一个 temporary index 中。
-计算出的 worktree tree 必须等于 prepared candidate tree。只有
-`official_worktree_matches` 成为 true，target execution 才会开始。
+补丁进入实际官方工作树后，验证程序把每个变更文件、符号链接、模式、删除项与
+Gitlink 写入另一个临时索引。计算出的工作树必须等于准备阶段的候选树。
+`official_worktree_matches` 成为 true 后，目标测试开始执行。
 
-这一 two-base design 能够处理 public preparation 生成 deterministic
-anonymous commit 的 image，同时保留 generation 阶段的 source-tree
-identity。
+这种双基线设计可以处理公开准备阶段生成确定性匿名提交的镜像，同时保留生成
+阶段的源码树身份。
 
 ## 测试计划契约
 
-Pro-Lite test plan 包含 schema、adapter、declared target、ordered target
-batch、ordered command、proof description、runtime dependency 和 verified
-coverage mode。
+Pro-Lite 测试计划包含 schema、适配器、指定目标、有序目标批次、有序命令、
+证据说明、运行时依赖和经过验证的覆盖模式。
 
-flatten 后的 target batch 必须等于 declared target list。command 和 proof
-batch 数量必须与 target batch 相同。empty command、`true`、`:` 和其他
-no-op form 会被拒绝。不受支持的 target syntax 会产生 technical failure，
-不会得到 passing command。
+展平后的目标批次必须等于指定目标列表。命令和证据批次的数量必须与目标批次
+相同。空命令、`true`、`:` 和其他空操作形式会被拒绝。不受支持的目标语法会
+产生技术失败。
 
-`FAIL_TO_PASS` 是必需项。`PASS_TO_PASS` 可以为空。存在这两类目标时，它们
-使用相同的 parser-backed execution rule。
+`FAIL_TO_PASS` 是必需项，`PASS_TO_PASS` 可以为空。这两类目标使用相同的
+解析器执行规则。
 
 ## Python 证据
 

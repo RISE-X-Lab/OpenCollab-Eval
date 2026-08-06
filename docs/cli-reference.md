@@ -2,9 +2,9 @@
 
 **English** | [简体中文](zh-CN/cli-reference.md)
 
-This document separates stable installed commands from advanced module
-entrypoints. Run `--help` on the installed revision for the complete option
-list.
+The installed commands cover common operations. Advanced module entrypoints
+are available for repository operators and tests. Run `--help` on the installed
+revision for its complete option list.
 
 ## Installed command
 
@@ -23,8 +23,8 @@ oc-eval inspect DATASET --identity-key-file KEY
 ```
 
 This command validates a bounded SWE-Batch Pro JSONL file, separates public and
-sealed fields, and prints anonymous public task IDs. It performs no generation
-or official evaluation.
+sealed fields, and prints anonymous public task IDs. Processing stops after
+inspection, before generation and official evaluation.
 
 ### `oc-eval run`
 
@@ -36,8 +36,8 @@ oc-eval run TASKS_FILE --model MODEL --provider PROVIDER
 ```
 
 This command runs the generic evaluator and writes `results.jsonl`. Its summary
-contains task count, eligible candidate count, and ineligible count. It does
-not publish an official SWE resolved verdict.
+contains task count, eligible candidate count, and ineligible count. Official
+SWE resolved verdicts come from the Pro-Lite evaluation commands.
 
 ### `oc-eval swe-v1-prolite`
 
@@ -159,10 +159,9 @@ of composing private helpers.
 ## Exit and result semantics
 
 Argument or validation errors use a nonzero exit. A completed command can also
-write task-level technical failures. Read the generated JSON rather than
-inferring all task outcomes from the process exit code.
+write task-level technical failures. The generated JSON records each task
+outcome, while the process exit code describes the command as a whole.
 
 `resolved`, `unresolved`, and `technical_failed` are mutually exclusive
 terminal classifications for an officially evaluated task. Candidate
-eligibility from `oc-eval run` is a generation classification and does not
-belong to that terminal set.
+eligibility from `oc-eval run` is a separate generation classification.
