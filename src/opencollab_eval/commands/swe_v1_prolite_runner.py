@@ -242,8 +242,8 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
     for option, value in positive_values.items():
         if value <= 0:
             parser.error(f"{option} must be > 0")
-    if args.checkpoint_interval < 0:
-        parser.error("--checkpoint-interval must be >= 0")
+    if not args.eval_only and args.checkpoint_interval != 0:
+        parser.error("--checkpoint-interval must be 0 for trusted host extraction")
     if args.remote_api_env_file and (
         args.llm_provider != "openai" or not is_kimi_direct_model(args.llm_model)
     ):

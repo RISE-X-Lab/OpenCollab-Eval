@@ -286,7 +286,7 @@ def test_parallel_token_compact_keeps_missing_cost_markers():
             task_wall_timeout=301,
             eval_timeout=1,
             llm_timeout=1,
-            checkpoint_interval=1,
+            checkpoint_interval=0,
             max_task_starts=1,
             max_eval_attempts=2,
             total_timeout=1,

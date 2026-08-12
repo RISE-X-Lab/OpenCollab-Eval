@@ -325,6 +325,10 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
         raise ValueError("--no-sync-runtime requires --expected-runtime-tree-sha256")
     if args.llm_timeout <= 0:
         raise ValueError("--llm-timeout must be positive")
+    if args.checkpoint_interval != 0:
+        raise ValueError(
+            "--checkpoint-interval must be 0 for trusted host extraction"
+        )
     if args.task_wall_timeout < args.llm_timeout + MIN_TASK_CLEANUP_MARGIN_SECONDS:
         raise ValueError(
             "--task-wall-timeout must be at least --llm-timeout plus "

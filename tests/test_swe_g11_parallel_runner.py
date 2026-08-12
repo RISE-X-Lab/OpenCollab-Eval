@@ -59,7 +59,7 @@ def _args(**overrides):
         "task_wall_timeout": 15300,
         "eval_timeout": 7200,
         "llm_timeout": 900,
-        "checkpoint_interval": 300,
+        "checkpoint_interval": 0,
         "max_task_starts": 1,
         "max_eval_attempts": 9,
         "total_timeout": 240000,
