@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from opencollab_eval.commands import swe_v1_prolite_config as runtime_config
@@ -21,6 +23,37 @@ def test_runtime_sync_rejects_distribution_source_version_drift(monkeypatch):
 
     with pytest.raises(RuntimeError, match="source version does not match"):
         runtime_config._runtime_directory_sources()
+
+
+def test_runtime_sync_uses_explicit_opencollab_source_checkout(monkeypatch, tmp_path):
+    source_root = tmp_path / "OpenCollab"
+    package_root = source_root / "opencollab"
+    package_root.mkdir(parents=True)
+    (source_root / "pyproject.toml").write_text("[project]\nname='opencollab'\n")
+    (package_root / "__init__.py").write_text('__version__ = "0.5.0"\n')
+    monkeypatch.setenv("OPENCOLLAB_SOURCE_ROOT", str(source_root))
+    monkeypatch.setattr(runtime_config, "version", lambda _name: "0.5.0")
+    monkeypatch.setattr(runtime_config, "verify_runtime_import_contract", lambda: None)
+
+    sources, release = runtime_config._runtime_directory_sources()
+
+    assert sources["src/opencollab"] == package_root.resolve()
+    assert release == "0.5.0"
+
+
+def test_runtime_sync_rejects_invalid_explicit_source_checkout(monkeypatch, tmp_path):
+    monkeypatch.setenv("OPENCOLLAB_SOURCE_ROOT", str(tmp_path))
+
+    with pytest.raises(RuntimeError, match="OpenCollab source checkout"):
+        runtime_config._runtime_directory_sources()
+
+
+def test_declared_opencollab_version_requires_literal_assignment(tmp_path):
+    package_root = Path(tmp_path) / "opencollab"
+    package_root.mkdir()
+    (package_root / "__init__.py").write_text("__version__ = build_version()\n")
+
+    assert runtime_config._declared_opencollab_version(package_root) is None
 
 
 def test_runtime_sync_accepts_opencollab_k3_capability_release(monkeypatch):
