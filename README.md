@@ -53,7 +53,7 @@ it starts.
 
 ## Supported environment
 
-Use Python 3.10 or later with OpenCollab 0.4.1 or newer in the 0.4 series.
+Use Python 3.10 or later with OpenCollab 0.4.1 or newer in the 0.4 or 0.5 series.
 SWE-bench evaluation also needs Docker and the optional `swebench`
 dependencies. OpenHands needs Python 3.12.
 For a remote Pro-Lite run, provide a Linux machine reachable through SSH. It
@@ -340,7 +340,7 @@ Solver 只能看到公开题面和一次性工作副本。基准提交、测试�
 
 ## 支持的环境
 
-OpenCollab-Eval 支持 Python 3.10 及以上版本，并要求 OpenCollab 0.4.1 或同系列更新版本。运行 SWE-bench 还需要 Docker 和可选的 `swebench` 依赖。OpenHands 需要 Python 3.12。远程运行 Pro-Lite 时，还要准备一台可以通过 SSH 访问的 Linux 机器。机器上需要有 Python、任务镜像，以及每次运行独立使用的可写目录。
+OpenCollab-Eval 支持 Python 3.10 及以上版本，并要求 OpenCollab 0.4.1 或更新的 0.4 或 0.5 版本。运行 SWE-bench 还需要 Docker 和可选的 `swebench` 依赖。OpenHands 需要 Python 3.12。远程运行 Pro-Lite 时，还要准备一台可以通过 SSH 访问的 Linux 机器。机器上需要有 Python、任务镜像，以及每次运行独立使用的可写目录。
 
 安装两个 wheel 文件。
 

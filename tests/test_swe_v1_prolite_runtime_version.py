@@ -10,7 +10,7 @@ def test_runtime_sync_rejects_opencollab_before_k3_capability_fix(monkeypatch):
     package = runtime_config.importlib.import_module("opencollab")
     monkeypatch.setattr(package, "__version__", "0.4.0")
 
-    with pytest.raises(RuntimeError, match="0.4.1 or newer"):
+    with pytest.raises(RuntimeError, match="OpenCollab >=0.4.1,<0.6"):
         runtime_config._runtime_directory_sources()
 
 
@@ -32,6 +32,26 @@ def test_runtime_sync_accepts_opencollab_k3_capability_release(monkeypatch):
 
     assert release == "0.4.1"
     assert "src/opencollab" in sources
+
+
+def test_runtime_sync_accepts_opencollab_050(monkeypatch):
+    monkeypatch.setattr(runtime_config, "version", lambda _name: "0.5.0")
+    package = runtime_config.importlib.import_module("opencollab")
+    monkeypatch.setattr(package, "__version__", "0.5.0")
+
+    sources, release = runtime_config._runtime_directory_sources()
+
+    assert release == "0.5.0"
+    assert "src/opencollab" in sources
+
+
+def test_runtime_sync_rejects_unvalidated_opencollab_060(monkeypatch):
+    monkeypatch.setattr(runtime_config, "version", lambda _name: "0.6.0")
+    package = runtime_config.importlib.import_module("opencollab")
+    monkeypatch.setattr(package, "__version__", "0.6.0")
+
+    with pytest.raises(RuntimeError, match="OpenCollab >=0.4.1,<0.6"):
+        runtime_config._runtime_directory_sources()
 
 
 def test_remote_stage_binds_source_to_exact_distribution_version(monkeypatch):

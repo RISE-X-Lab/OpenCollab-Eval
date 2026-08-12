@@ -61,7 +61,7 @@ cp -R "$repo_root/tests" "$venv_dir/eval-tests"
 (
   cd "$venv_dir"
   "$venv_dir/bin/python" -I -c \
-    "import opencollab, opencollab.environments, opencollab.tools, opencollab.workflows, opencollab_eval; version = tuple(map(int, opencollab.__version__.split('.'))); assert (0, 4, 1) <= version < (0, 5)"
+    "import opencollab, opencollab.environments, opencollab.tools, opencollab.workflows, opencollab_eval; version = tuple(map(int, opencollab.__version__.split('.'))); assert (0, 4, 1) <= version < (0, 6)"
   "$venv_dir/bin/python" -I -m opencollab_eval --help >/dev/null
   "$venv_dir/bin/oc-eval" --help >/dev/null
 )

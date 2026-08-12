@@ -586,7 +586,9 @@ def test_default_worktree_maps_source_repo_artifact_into_isolated_workspace(
     repo.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
     (repo / "source.py").write_text("value = 1\n", encoding="utf-8")
-    subprocess.run(["git", "add", "source.py"], cwd=repo, check=True)
+    tasks_path = repo / "tasks.jsonl"
+    tasks_path.write_text('{"task_id": "mapped"}\n', encoding="utf-8")
+    subprocess.run(["git", "add", "source.py", "tasks.jsonl"], cwd=repo, check=True)
     subprocess.run(
         [
             "git",
@@ -601,8 +603,6 @@ def test_default_worktree_maps_source_repo_artifact_into_isolated_workspace(
         cwd=repo,
         check=True,
     )
-    tasks_path = repo / "tasks.jsonl"
-    tasks_path.write_text('{"task_id": "mapped"}\n', encoding="utf-8")
 
     async def rewrite_harness_artifact(env, _args):
         await env.write_file("tasks.jsonl", '{"agent": "rewrote"}\n')

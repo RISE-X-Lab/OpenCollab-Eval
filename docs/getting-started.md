@@ -9,7 +9,7 @@ use the [SWE Pro-Lite operations guide](swe-prolite-operations.md).
 ## Requirements
 
 The core package supports Python 3.10 through 3.12 and requires OpenCollab
-0.4.1 or newer within the 0.4 series. Docker is required for container-backed tasks and official SWE-bench
+0.4.1 or newer within the 0.4 or 0.5 series. Docker is required for container-backed tasks and official SWE-bench
 evaluation. The OpenHands extra is available only on Python 3.12.
 
 The evaluator and the framework should come from compatible releases or from

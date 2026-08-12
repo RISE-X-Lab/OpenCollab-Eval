@@ -109,8 +109,8 @@ def _runtime_directory_sources() -> tuple[dict[str, Path], str]:
         raise RuntimeError("the OpenCollab distribution metadata is missing") from exc
     release_match = re.match(r"^(\d+)\.(\d+)\.(\d+)", distribution_version)
     release = tuple(map(int, release_match.groups())) if release_match else ()
-    if release < MIN_OPENCOLLAB_RELEASE or release >= (0, 5, 0):
-        raise RuntimeError(f"OpenCollab 0.4.1 or newer within the 0.4 series is required, found {distribution_version}")
+    if release < MIN_OPENCOLLAB_RELEASE or release >= (0, 6, 0):
+        raise RuntimeError(f"OpenCollab >=0.4.1,<0.6 is required, found {distribution_version}")
     if getattr(package, "__version__", None) != distribution_version:
         raise RuntimeError("the imported OpenCollab source version does not match its distribution metadata")
     verify_runtime_import_contract()
