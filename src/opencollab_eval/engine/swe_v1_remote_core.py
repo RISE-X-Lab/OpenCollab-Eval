@@ -14,6 +14,16 @@ class RecordInputFormatError(ValueError):
     pass
 
 
+def proxy_health_url(base_url):
+    parsed = urllib.parse.urlsplit(base_url)
+    if parsed.path.rstrip("/") == "/v1":
+        root = urllib.parse.urlunsplit(
+            parsed._replace(path="", query="", fragment="")
+        ).rstrip("/")
+        return root + "/healthz"
+    return base_url.rstrip("/") + "/healthz"
+
+
 def block_spawn_signals():
     state = {"previous": {}, "pending": [], "restored": False}
 

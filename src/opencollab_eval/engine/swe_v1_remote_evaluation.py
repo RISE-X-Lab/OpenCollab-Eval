@@ -628,7 +628,7 @@ def main():
             {"ok": True, "status": "skipped_eval_only"}
             if eval_only
             else ({"ok": True, "status": "not_applicable_direct"} if llm_transport == "direct"
-                  else http_health(remote_proxy_base_url + "/healthz", timeout=45))
+                  else http_health(proxy_health_url(remote_proxy_base_url), timeout=45))
         ),
     }
     if not all(

@@ -15,6 +15,7 @@ from package_test_support import resource_path
 
 import opencollab_eval.commands.swe_v1_prolite_runner as runner
 from opencollab_eval.engine import swe_v1_remote_commands as remote_commands
+from opencollab_eval.engine import swe_v1_remote_core as remote_core
 from opencollab_eval.engine import swe_v1_remote_eval_retry as remote_eval_retry
 from opencollab_eval.engine import swe_v1_remote_eval_script as remote_eval_script
 from opencollab_eval.engine import swe_v1_remote_evaluation as remote_evaluation
@@ -224,6 +225,12 @@ def test_remote_http_ok_returns_false_on_outer_timeout():
 
 def test_proxy_health_url_accepts_openai_v1_base() -> None:
     assert runner.url_with_healthz("http://127.0.0.1:18788/v1") == (
+        "http://127.0.0.1:18788/healthz"
+    )
+
+
+def test_remote_proxy_health_url_accepts_openai_v1_base() -> None:
+    assert remote_core.proxy_health_url("http://127.0.0.1:18788/v1") == (
         "http://127.0.0.1:18788/healthz"
     )
 
