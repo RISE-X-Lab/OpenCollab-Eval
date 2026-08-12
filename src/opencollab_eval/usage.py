@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -26,6 +27,7 @@ MODEL_CONTEXT_WINDOWS: dict[str, int] = {
 }
 
 EXACT_MODEL_CONTEXT_WINDOWS: dict[str, int] = {
+    "deepseek-v4-flash": 1_048_576,
     "k3": 1_048_576,
     "kimi-for-coding": 262_144,
 }
@@ -67,10 +69,13 @@ def model_context_window(model: str | None) -> int | None:
     """Return the known context window for a model identifier."""
     if not model:
         return None
-    lowered = model.lower()
+    lowered = model.strip().lower().rsplit("/", 1)[-1]
     exact = EXACT_MODEL_CONTEXT_WINDOWS.get(lowered)
     if exact is not None:
         return exact
+    for key, window in EXACT_MODEL_CONTEXT_WINDOWS.items():
+        if re.fullmatch(rf"{re.escape(key)}-\d{{4}}(?:-\d{{2}}){{0,2}}", lowered):
+            return window
     for key, window in MODEL_CONTEXT_WINDOWS.items():
         if key in lowered:
             return window
