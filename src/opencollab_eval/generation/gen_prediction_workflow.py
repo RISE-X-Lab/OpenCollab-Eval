@@ -212,10 +212,16 @@ def _verified_provider_models(
                 f"Responses provider model mismatch expected {expected_model!r} got {observed!r}"
             )
         observed_effort = payload.get("reasoning_effort")
-        if observed_effort != expected_reasoning_effort:
+        effort_policy = payload.get("reasoning_effort_policy")
+        if effort_policy not in {"configured", "suppressed"}:
+            raise RuntimeError("Responses llm_call is missing its reasoning effort policy")
+        expected_effort = (
+            None if effort_policy == "suppressed" else expected_reasoning_effort
+        )
+        if observed_effort != expected_effort:
             raise RuntimeError(
                 "Responses reasoning effort mismatch "
-                f"expected {expected_reasoning_effort!r} got {observed_effort!r}"
+                f"expected {expected_effort!r} got {observed_effort!r}"
             )
         models.append(observed)
     if not models:

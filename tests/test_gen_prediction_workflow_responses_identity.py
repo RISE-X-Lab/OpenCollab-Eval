@@ -18,6 +18,7 @@ def test_responses_trajectory_binds_verified_provider_model(tmp_path):
                     "wire_protocol": "responses",
                     "model": "gpt-requested",
                     "provider_model": "gpt-requested",
+                    "reasoning_effort_policy": "configured",
                 },
             }
         )
@@ -52,16 +53,30 @@ def test_responses_trajectory_binds_verified_provider_model(tmp_path):
     "payload,match",
     [
         (
-            {"wire_protocol": "chat_completions", "provider_model": "gpt-requested"},
+            {
+                "wire_protocol": "chat_completions",
+                "provider_model": "gpt-requested",
+                "reasoning_effort_policy": "configured",
+            },
             "mixed wire protocol",
         ),
-        ({"provider_model": "gpt-requested"}, "mixed wire protocol"),
-        ({"wire_protocol": "responses"}, "provider model mismatch"),
+        (
+            {
+                "provider_model": "gpt-requested",
+                "reasoning_effort_policy": "configured",
+            },
+            "mixed wire protocol",
+        ),
+        (
+            {"wire_protocol": "responses", "reasoning_effort_policy": "configured"},
+            "provider model mismatch",
+        ),
         (
             {
                 "wire_protocol": "responses",
                 "provider_model": "gpt-requested",
                 "reasoning_effort": "high",
+                "reasoning_effort_policy": "configured",
             },
             "reasoning effort mismatch",
         ),
@@ -100,3 +115,65 @@ def test_responses_trajectory_rejects_external_and_symlinked_files(tmp_path):
                 expected_reasoning_effort=None,
                 wire_protocol="responses",
             )
+
+
+def test_responses_trajectory_accepts_role_level_reasoning_suppression(tmp_path):
+    trace = tmp_path / "trajectory.jsonl"
+    calls = [
+        {
+            "type": "llm_call",
+            "payload": {
+                "wire_protocol": "responses",
+                "provider_model": "deepseek-v4-flash",
+                "reasoning_effort": "max",
+                "reasoning_effort_policy": "configured",
+            },
+        },
+        {
+            "type": "llm_call",
+            "payload": {
+                "wire_protocol": "responses",
+                "provider_model": "deepseek-v4-flash",
+                "reasoning_effort_policy": "suppressed",
+            },
+        },
+    ]
+    trace.write_text("".join(json.dumps(call) + "\n" for call in calls), encoding="utf-8")
+
+    models, digest = gpw._verified_provider_models(
+        str(trace),
+        artifact_root=tmp_path,
+        expected_model="deepseek-v4-flash",
+        expected_reasoning_effort="max",
+        wire_protocol="responses",
+    )
+
+    assert models == ["deepseek-v4-flash"]
+    assert len(digest) == 64
+
+
+def test_responses_trajectory_rejects_missing_reasoning_policy(tmp_path):
+    trace = tmp_path / "trajectory.jsonl"
+    trace.write_text(
+        json.dumps(
+            {
+                "type": "llm_call",
+                "payload": {
+                    "wire_protocol": "responses",
+                    "provider_model": "deepseek-v4-flash",
+                    "reasoning_effort": "max",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="reasoning effort policy"):
+        gpw._verified_provider_models(
+            str(trace),
+            artifact_root=tmp_path,
+            expected_model="deepseek-v4-flash",
+            expected_reasoning_effort="max",
+            wire_protocol="responses",
+        )
