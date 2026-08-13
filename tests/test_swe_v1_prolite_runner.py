@@ -353,6 +353,16 @@ def _verified_runtime(monkeypatch):
         "verify_remote_runtime",
         lambda **kwargs: {"sha256": "a" * 64},
     )
+    monkeypatch.setattr(
+        runner._controller,
+        "recover_existing_remote_summary",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        runner._controller,
+        "probe_preexisting_remote_execution",
+        lambda **kwargs: None,
+    )
 
 
 def test_runtime_drift_stops_before_remote_runner_and_model_launch(monkeypatch):
@@ -440,7 +450,11 @@ def test_periodic_probe_rejects_terminal_summary_without_valid_owner(
         "probe_remote_execution_state",
         lambda **kwargs: {"runner_state": runner_state, "summary": {"status": "done"}},
     )
-    monkeypatch.setattr(runner, "remote_summary_matches_payload", lambda *args: True)
+    monkeypatch.setattr(
+        runner,
+        "matching_terminal_remote_summary",
+        lambda observed, payload: None,
+    )
     monkeypatch.setattr(runner, "terminate_local_process_group", lambda proc: True)
     cleanup_calls = []
     monkeypatch.setattr(
@@ -471,7 +485,11 @@ def test_periodic_probe_recovers_matching_terminal_summary(monkeypatch, runner_s
         "probe_remote_execution_state",
         lambda **kwargs: {"runner_state": runner_state, "summary": {"status": "done"}},
     )
-    monkeypatch.setattr(runner, "remote_summary_matches_payload", lambda *args: True)
+    monkeypatch.setattr(
+        runner,
+        "matching_terminal_remote_summary",
+        lambda observed, payload: observed["summary"],
+    )
     monkeypatch.setattr(runner, "terminate_local_process_group", lambda proc: True)
 
     summary = runner.run_remote(_eval_only_args())
@@ -504,67 +522,6 @@ def test_run_remote_sigterm_cleans_up_ssh_before_exiting(monkeypatch):
     assert len(cleanup_calls) == 1
 
 
-def test_remote_summary_matches_payload_rejects_stale_runtime_identity():
-    payload = {
-        "start_index": 31,
-        "limit": 1,
-        "base_run_dir": "/remote/run/task_31",
-        "remote_repo": "/remote/runtime",
-        "remote_python": "/remote/venv/bin/python",
-        "invocation_id": "a" * 32,
-        "workflow": "team-pro",
-        "workflow_env": {},
-        "model_name": "teampro-model",
-        "llm_model": "glm-5.2",
-        "llm_provider": "anthropic",
-        "context_window": 400000,
-        "temperature": 1.0,
-        "top_p": 1.0,
-        "max_output_tokens": 32768,
-        "budget": 4000000,
-        "max_steps": 60,
-        "max_task_starts": 3,
-        "max_empty_patch_retries": 1,
-        "max_eval_attempts": 2,
-        "eval_only": False,
-        "eval_dir_name": "official_eval",
-    }
-    summary = {
-        "slice": "31",
-        "base_run_dir": "/remote/run/task_31",
-        "remote_runtime_repo": "/remote/runtime",
-        "remote_python": "/remote/venv/bin/python",
-        "invocation_id": "a" * 32,
-        "workflow": "team-pro",
-        "workflow_env": {},
-        "model_name": "teampro-model",
-        "llm_model": "glm-5.2",
-        "llm_provider": "anthropic",
-        "context_window": 400000,
-        "temperature": 1.0,
-        "top_p": 1.0,
-        "max_output_tokens": 32768,
-        "budget": 4000000,
-        "max_steps": 60,
-        "max_task_starts": 3,
-        "max_empty_patch_retries": 1,
-        "max_eval_attempts": 2,
-        "eval_only": False,
-        "eval_dir_name": "official_eval",
-        "solver_attribution": "current_run",
-    }
-
-    assert runner.remote_summary_matches_payload(summary, payload) is True
-    summary["invocation_id"] = "b" * 32
-    assert runner.remote_summary_matches_payload(summary, payload) is False
-    summary["invocation_id"] = "a" * 32
-    summary["budget"] = 16000000
-    assert runner.remote_summary_matches_payload(summary, payload) is False
-    summary["budget"] = 4000000
-    summary["remote_python"] = "/another/runtime/bin/python"
-    assert runner.remote_summary_matches_payload(summary, payload) is False
-
-
 def test_run_remote_recovers_terminal_summary_when_primary_ssh_hangs(monkeypatch):
     communicate_calls = []
     terminated = []
@@ -580,10 +537,18 @@ def test_run_remote_recovers_terminal_summary_when_primary_ssh_hangs(monkeypatch
     monkeypatch.setattr(runner.subprocess, "Popen", lambda *args, **kwargs: HangingProcess())
     monkeypatch.setattr(
         runner,
-        "probe_terminal_remote_summary",
-        lambda **kwargs: {"status": "done", "counts": {"technical_failed": 0}},
+        "probe_remote_execution_state",
+        lambda **kwargs: {
+            "runner_state": "dead",
+            "runner_owner": {},
+            "summary": {"status": "done", "counts": {"technical_failed": 0}},
+        },
     )
-    monkeypatch.setattr(runner, "remote_summary_matches_payload", lambda summary, payload: True)
+    monkeypatch.setattr(
+        runner,
+        "matching_terminal_remote_summary",
+        lambda observed, payload: observed["summary"],
+    )
     monkeypatch.setattr(
         runner,
         "terminate_local_process_group",

@@ -606,6 +606,11 @@ RETRYABLE_TASK_REPORT_STATUSES = {"preflight_failed"}
 
 
 def result_resource_reasons(result: dict[str, Any]) -> list[str]:
+    runner_status = str(result.get("runner_status") or "")
+    if runner_status == "missing_report":
+        return ["task_report_missing"]
+    if runner_status == "orchestrator_exception":
+        return ["task_controller_failed"]
     rows = result.get("rows") if isinstance(result.get("rows"), list) else []
     for row in rows:
         generation = row.get("generation") if isinstance(row, dict) else None

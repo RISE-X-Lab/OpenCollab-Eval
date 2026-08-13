@@ -59,6 +59,16 @@ def _verified_runtime(monkeypatch):
         "verify_remote_runtime",
         lambda **kwargs: {"sha256": "a" * 64},
     )
+    monkeypatch.setattr(
+        runner._controller,
+        "recover_existing_remote_summary",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        runner._controller,
+        "probe_preexisting_remote_execution",
+        lambda **kwargs: None,
+    )
 
 
 def test_startup_failure_preserves_remote_error_without_unowned_cleanup(monkeypatch):

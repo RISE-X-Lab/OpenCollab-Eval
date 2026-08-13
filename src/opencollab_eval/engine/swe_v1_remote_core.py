@@ -3,6 +3,7 @@
 # ruff: noqa: F403, F405
 
 from opencollab_eval.engine.swe_v1_remote_state import *
+from opencollab_eval.engine.swe_v1_runner_claim import runner_claim_sha256
 from opencollab_eval.safe_files import write_regular_bytes_atomic
 
 
@@ -476,6 +477,12 @@ def write_runner_pid():
             "pid": pid,
             "start_identity": start_identity,
             "owner_nonce": owner_nonce,
+            "claim_sha256": runner_claim_sha256(cfg),
+            "invocation_id": invocation_id,
+            "run_id": run_id,
+            "runtime_tree_sha256": runtime_tree_sha256,
+            "start_index": start_index,
+            "limit": limit,
         }
         atomic_write_bytes(
             base_run_dir / "runner.pid",

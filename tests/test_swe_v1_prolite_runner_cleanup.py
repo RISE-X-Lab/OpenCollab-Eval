@@ -14,6 +14,20 @@ from swe_v1_prolite_runner_test_support import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_existing_remote_runner(monkeypatch):
+    monkeypatch.setattr(
+        runner._controller,
+        "recover_existing_remote_summary",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        runner._controller,
+        "probe_preexisting_remote_execution",
+        lambda **kwargs: None,
+    )
+
+
 def test_remote_cleanup_ps_scan_and_container_markers_are_bounded(monkeypatch):
     calls = []
 

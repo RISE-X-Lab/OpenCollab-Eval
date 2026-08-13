@@ -23,11 +23,13 @@ from opencollab_eval.commands import swe_v1_prolite_config as _config
 from opencollab_eval.commands import swe_v1_prolite_controller as _controller
 from opencollab_eval.commands import swe_v1_prolite_process as _process
 from opencollab_eval.commands import swe_v1_prolite_report as _report
+from opencollab_eval.commands import swe_v1_transport_recovery as _transport_recovery
 from opencollab_eval.commands.swe_v1_prolite_common import *  # noqa: F403
 from opencollab_eval.commands.swe_v1_prolite_config import *  # noqa: F403
 from opencollab_eval.commands.swe_v1_prolite_controller import *  # noqa: F403
 from opencollab_eval.commands.swe_v1_prolite_process import *  # noqa: F403
 from opencollab_eval.commands.swe_v1_prolite_report import *  # noqa: F403
+from opencollab_eval.commands.swe_v1_transport_recovery import *  # noqa: F403
 from opencollab_eval.engine.solver_backend import KIMI_CODING_BASE_URL, is_kimi_direct_model
 
 
@@ -320,6 +322,7 @@ _COMPATIBILITY_MODULES = (
     _controller,
     _report,
     _ssh_transport,
+    _transport_recovery,
 )
 
 

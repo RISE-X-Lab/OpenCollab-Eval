@@ -7,6 +7,54 @@ import pytest
 from test_swe_g11_parallel_runner import _args, _load_module
 
 
+def test_missing_report_is_not_retried_while_remote_ownership_is_unknown(
+    tmp_path,
+):
+    module = _load_module()
+    config = module.resolve_config(
+        _args(
+            indices="51",
+            start_index=None,
+            end_index=None,
+            output_dir=tmp_path,
+            runner_attempts=3,
+            retry_delay_seconds=0,
+        )
+    )
+    calls = []
+    old_run = module._run_task_process
+    try:
+        def missing_report(command):
+            calls.append(command)
+            return module.subprocess.CompletedProcess(
+                command,
+                255,
+                stdout="",
+                stderr="ssh transport lost",
+            )
+
+        module._run_task_process = missing_report
+        result = module.run_one(config, 51)
+    finally:
+        module._run_task_process = old_run
+
+    assert len(calls) == 1
+    assert result["runner_status"] == "missing_report"
+    assert result["attempts"] == 1
+    assert result["completed"] is False
+
+
+def test_missing_report_always_freezes_pending_task_claims():
+    module = _load_module()
+    result = {
+        "runner_status": "missing_report",
+        "failure_scope": "task",
+        "failure_probe": {"direct": True, "status": "passed"},
+    }
+
+    assert module.systemic_failure_reasons(result) == ["task_report_missing"]
+
+
 def test_run_parallel_stops_before_generation_when_health_check_fails(tmp_path):
     module = _load_module()
     config = module.resolve_config(_args(start_index=51, end_index=52, output_dir=tmp_path))
@@ -306,3 +354,79 @@ def test_unquiesced_generation_prevents_the_next_serial_task_from_starting(tmp_p
     assert final["scheduler"]["halt_reasons"] == [
         "generation_execution_not_quiesced"
     ]
+
+
+def test_completed_ssh_reset_batch_freezes_claims_before_refilling_workers(
+    tmp_path, monkeypatch
+):
+    module = _load_module()
+    config = module.resolve_config(
+        _args(
+            indices="51,52,53",
+            start_index=None,
+            end_index=None,
+            max_workers=2,
+            output_dir=tmp_path,
+            no_sync_runtime=True,
+            expected_runtime_tree_sha256="a" * 64,
+            no_ensure_remote_proxy=True,
+            skip_preflight=True,
+            skip_health_checks=True,
+        )
+    )
+    started = []
+
+    def fake_run_one(_config, index):
+        started.append(index)
+        if index == 52:
+            return {
+                "index": index,
+                "returncode": 255,
+                "runner_status": "missing_report",
+                "completed": False,
+                "failure_scope": "task",
+                "failure_probe": {},
+            }
+        return {
+            "index": index,
+            "returncode": 0,
+            "runner_status": "done",
+            "tasks": 1,
+            "generation_done": 1,
+            "empty_patch": 0,
+            "eval_done": 1,
+            "eval_attempts": 1,
+            "eval_retry_tasks": 0,
+            "resolved": 1,
+            "unresolved": 0,
+            "technical_failed": 0,
+            "completed": True,
+        }
+
+    original_wait = module.concurrent.futures.wait
+
+    def wait_for_current_batch(futures, **_kwargs):
+        original_wait(futures)
+        return list(futures), set()
+
+    monkeypatch.setattr(module, "prepare_runtime", lambda _config: "a" * 64)
+    monkeypatch.setattr(
+        module, "run_remote_health_checks", lambda _config: {"status": "ok"}
+    )
+    monkeypatch.setattr(module, "wait_for_remote_model_probe", lambda _config: {})
+    monkeypatch.setattr(module, "run_one", fake_run_one)
+    monkeypatch.setattr(
+        module,
+        "confirm_shared_runtime_after_task_failure",
+        lambda _config, result: result,
+    )
+    monkeypatch.setattr(module.concurrent.futures, "wait", wait_for_current_batch)
+    monkeypatch.setattr(module, "build_token_summary", lambda _config: {})
+    monkeypatch.setattr(module, "save_progress", lambda *args, **kwargs: None)
+
+    final = module.run_parallel(config)
+
+    assert sorted(started) == [51, 52]
+    assert final["scheduler"]["halted"] is True
+    assert final["scheduler"]["not_started"] == [53]
+    assert final["scheduler"]["halt_reasons"] == ["task_report_missing"]

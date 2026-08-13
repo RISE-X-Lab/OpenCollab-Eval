@@ -15,7 +15,19 @@ from swe_v1_prolite_runner_test_support import (
     sys,
 )
 
-from opencollab_eval.engine.swe_v1_remote_cleanup import process_start_identity
+
+@pytest.fixture(autouse=True)
+def _no_existing_remote_runner(monkeypatch):
+    monkeypatch.setattr(
+        runner._controller,
+        "recover_existing_remote_summary",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        runner._controller,
+        "probe_preexisting_remote_execution",
+        lambda **kwargs: None,
+    )
 
 
 def _run_runtime_sync_command_locally(command, *, timeout=120, input_text=None):
@@ -37,22 +49,13 @@ def _run_runtime_sync_command_locally(command, *, timeout=120, input_text=None):
     return result
 
 
-def test_remote_probe_imports_only_from_the_synced_runtime(monkeypatch, tmp_path):
-    runtime = tmp_path / "runtime"
-    source_root = Path(os.environ.get("OPENCOLLAB_EVAL_SOURCE_ROOT", Path(__file__).parents[1]))
-    source = source_root / "src" / "opencollab_eval"
-    shutil.copytree(source, runtime / "src" / "opencollab_eval")
-    opencollab_root = Path(
-        os.environ.get("OPENCOLLAB_SOURCE_ROOT", source_root.parent / "OpenCollab")
-    )
-    shutil.copytree(
-        opencollab_root / "opencollab",
-        runtime / "src" / "opencollab",
-    )
+def test_remote_probe_is_independent_of_the_synced_runtime(monkeypatch, tmp_path):
+    runtime = tmp_path / "runtime-does-not-exist"
     base = tmp_path / "run"
     base.mkdir()
     nonce = "a" * 32
-    identity = process_start_identity(os.getpid(), [])
+    invocation_id = "b" * 32
+    identity = "ps:fixed runner start"
     (base / "runner.pid").write_text(
         json.dumps(
             {
@@ -60,21 +63,29 @@ def test_remote_probe_imports_only_from_the_synced_runtime(monkeypatch, tmp_path
                 "pid": os.getpid(),
                 "start_identity": identity,
                 "owner_nonce": nonce,
+                "claim_sha256": "c" * 64,
+                "invocation_id": invocation_id,
             }
         ),
         encoding="utf-8",
     )
     empty_cwd = tmp_path / "empty"
     empty_cwd.mkdir()
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_ps = fake_bin / "ps"
+    fake_ps.write_text("#!/bin/sh\necho 'fixed runner start'\n", encoding="utf-8")
+    fake_ps.chmod(0o755)
     real_run = subprocess.run
 
     def run_probe(command, **kwargs):
         assert command[:2] == ["ssh", "remote-host"]
-        assert f"PYTHONPATH={runtime / 'src'}" in command[-1]
+        assert "PYTHONPATH=" not in command[-1]
+        assert not runtime.exists()
         return real_run(
             ["sh", "-c", command[-1]],
             cwd=empty_cwd,
-            env={"PATH": f"{Path(sys.executable).parent}:/usr/bin:/bin"},
+            env={"PATH": f"{fake_bin}:{Path(sys.executable).parent}:/usr/bin:/bin"},
             text=True,
             capture_output=True,
             timeout=kwargs["timeout"],
@@ -83,13 +94,27 @@ def test_remote_probe_imports_only_from_the_synced_runtime(monkeypatch, tmp_path
 
     monkeypatch.setattr(runner.subprocess, "run", run_probe)
 
+    observed = runner.probe_remote_execution_state(
+        ssh_command=["ssh"],
+        host="remote-host",
+        base_run_dir=str(base),
+        remote_runtime_repo=str(runtime),
+        owner_nonce=nonce,
+    )
+    assert observed["runner_state"] == "alive"
+    assert observed["runner_owner"]["invocation_id"] == invocation_id
+
+    owner = json.loads((base / "runner.pid").read_text(encoding="utf-8"))
+    owner.pop("invocation_id")
+    (base / "runner.pid").write_text(json.dumps(owner), encoding="utf-8")
+
     assert runner.probe_remote_execution_state(
         ssh_command=["ssh"],
         host="remote-host",
         base_run_dir=str(base),
         remote_runtime_repo=str(runtime),
         owner_nonce=nonce,
-    )["runner_state"] == "alive"
+    )["runner_state"] == "invalid"
 
 
 @pytest.mark.parametrize(

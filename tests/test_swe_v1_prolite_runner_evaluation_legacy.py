@@ -446,9 +446,9 @@ def test_remote_runner_rebuilds_the_workspace_from_the_dataset_base_commit():
 
 def test_local_eval_only_skips_generation_dependencies():
     main_source = inspect.getsource(runner.main)
-    controller_source = inspect.getsource(runner._run_remote)
+    payload_source = inspect.getsource(runner._controller._remote_payload)
     assert "if args.eval_only:" in main_source
     assert (
         '"token": "" if eval_only or remote_api_env_file else get_proxy_token(args.proxy_env_file)'
-        in controller_source
+        in payload_source
     )

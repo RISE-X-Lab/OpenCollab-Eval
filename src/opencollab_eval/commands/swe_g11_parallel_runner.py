@@ -267,21 +267,35 @@ def run_one(config: ParallelConfig, index: int) -> dict[str, Any]:
         write_text(paths["stdout_log"], proc.stdout)
         write_text(paths["stderr_log"], proc.stderr)
         summary = load_json(paths["json_report"])
-        if summary:
-            result = task_result_from_summary(
-                config,
-                index,
-                summary,
-                reused=False,
-                elapsed=time.time() - started,
-                process_returncode=proc.returncode,
-            )
-            result["attempts"] = attempt
-            if (
-                str(summary.get("status") or "") not in RETRYABLE_TASK_REPORT_STATUSES
-                or attempt >= config.runner_attempts
-            ):
-                return result
+        if not summary:
+            return {
+                "index": index,
+                "returncode": proc.returncode,
+                "elapsed_seconds": round(time.time() - started, 1),
+                "json_report": str(paths["json_report"]),
+                "markdown_report": str(paths["markdown_report"]),
+                "stdout_log": str(paths["stdout_log"]),
+                "stderr_log": str(paths["stderr_log"]),
+                "runner_status": "missing_report",
+                "completed": False,
+                "attempts": attempt,
+                "failure_scope": "task",
+                "failure_probe": {},
+            }
+        result = task_result_from_summary(
+            config,
+            index,
+            summary,
+            reused=False,
+            elapsed=time.time() - started,
+            process_returncode=proc.returncode,
+        )
+        result["attempts"] = attempt
+        if (
+            str(summary.get("status") or "") not in RETRYABLE_TASK_REPORT_STATUSES
+            or attempt >= config.runner_attempts
+        ):
+            return result
         if attempt < config.runner_attempts and config.retry_delay_seconds:
             if _parallel_process.interrupted():
                 break
@@ -289,21 +303,7 @@ def run_one(config: ParallelConfig, index: int) -> dict[str, Any]:
         elif _parallel_process.interrupted():
             break
 
-    assert proc is not None
-    return {
-        "index": index,
-        "returncode": proc.returncode,
-        "elapsed_seconds": round(time.time() - started, 1),
-        "json_report": str(paths["json_report"]),
-        "markdown_report": str(paths["markdown_report"]),
-        "stdout_log": str(paths["stdout_log"]),
-        "stderr_log": str(paths["stderr_log"]),
-        "runner_status": "missing_report",
-        "completed": False,
-        "attempts": config.runner_attempts,
-        "failure_scope": "task",
-        "failure_probe": {},
-    }
+    raise AssertionError("unreachable task retry state")
 
 
 def prepare_runtime(config: ParallelConfig) -> str:
@@ -560,6 +560,7 @@ def _run_parallel(config: ParallelConfig) -> dict[str, Any]:
                 futures,
                 return_when=concurrent.futures.FIRST_COMPLETED,
             )
+            completed_batch: list[tuple[int, dict[str, Any]]] = []
             for future in done:
                 index = futures.pop(future)
                 try:
@@ -576,6 +577,8 @@ def _run_parallel(config: ParallelConfig) -> dict[str, Any]:
                         "failure_probe": {},
                     }
                 result = confirm_shared_runtime_after_task_failure(config, result)
+                completed_batch.append((index, result))
+            for index, result in completed_batch:
                 results.append(result)
                 update_scheduler_state(config, scheduler, result)
                 halt_reasons = systemic_failure_reasons(result)
@@ -593,7 +596,8 @@ def _run_parallel(config: ParallelConfig) -> dict[str, Any]:
                             "not_started": list(pending),
                         }
                     )
-                submit_ready(executor)
+            submit_ready(executor)
+            for _index, _result in completed_batch:
                 save_progress(
                     config,
                     results,
