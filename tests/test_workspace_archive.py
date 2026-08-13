@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from opencollab_eval.generation import gen_prediction_patch as patcher
+from opencollab_eval.generation import workspace_archive as patcher
 
 
 @pytest.mark.parametrize("name", ["../escape", "/absolute"])

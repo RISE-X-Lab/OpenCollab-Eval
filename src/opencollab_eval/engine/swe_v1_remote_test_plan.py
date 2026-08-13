@@ -204,6 +204,7 @@ def prolite_test_plan(
     max_chars=24000,
     target_file="",
     candidate_source_paths=None,
+    candidate_added_go_modules=None,
 ):
     language = str(row.get("repo_language") or "").lower()
     repo = str(row.get("repo") or "").lower()
@@ -292,6 +293,8 @@ def prolite_test_plan(
                 }
                 if candidate_source_paths:
                     proof["candidate_source_paths"] = list(candidate_source_paths)
+                if candidate_added_go_modules:
+                    proof["candidate_added_go_modules"] = list(candidate_added_go_modules)
                 return _test_plan(
                     "go-test-json-discovery",
                     tests,
@@ -320,6 +323,8 @@ def prolite_test_plan(
             }
             if candidate_source_paths:
                 proof["candidate_source_paths"] = list(candidate_source_paths)
+            if candidate_added_go_modules:
+                proof["candidate_added_go_modules"] = list(candidate_added_go_modules)
             proofs.append(proof)
         return _test_plan(
             "go-test-json",

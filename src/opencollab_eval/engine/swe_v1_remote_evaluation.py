@@ -3,9 +3,11 @@
 # ruff: noqa: E501, F403, F405
 
 from opencollab_eval.engine import swe_v1_remote_cleanup as remote_cleanup
+from opencollab_eval.engine.swe_v1_candidate_go_dependencies import candidate_added_go_modules
 from opencollab_eval.engine.swe_v1_remote_artifacts import *
 from opencollab_eval.engine.swe_v1_remote_commands import *
 from opencollab_eval.engine.swe_v1_remote_core import *
+from opencollab_eval.engine.swe_v1_remote_eval_candidate import *
 from opencollab_eval.engine.swe_v1_remote_eval_patch import *
 from opencollab_eval.engine.swe_v1_remote_eval_retry import *
 from opencollab_eval.engine.swe_v1_remote_eval_script import direct_eval_script, eval_workspace_helper_sources
@@ -23,10 +25,8 @@ def eval_for_task_once(row, patch_selection=None):
     eval_dir = run_dir / eval_dir_name
     report_path = eval_dir / "reports" / task / "report.json"
     summary_path = eval_dir / "summary.json"
-    done, prediction, metric, pairing = generation_done(
-        run_dir,
-        task,
-        require_identity=not eval_only,
+    done, prediction, metric, pairing = generation_done_for_mode(
+        run_dir, task, eval_only=eval_only
     )
     if not done:
         if prediction is not None and metric is not None:
@@ -69,17 +69,20 @@ def eval_for_task_once(row, patch_selection=None):
         return {"status": "blocked_missing_eval_spec", "task": task, "summary": summary}
     pass_to_pass = parse_literal_list(row.get("pass_to_pass") or row.get("PASS_TO_PASS"))
     candidate_source_paths = eval_candidate_source_paths(prediction)
+    candidate_go_modules = candidate_added_go_modules(eval_model_patch(prediction))
     f2p_plan = prolite_test_plan(
         row,
         fail_to_pass,
         target_file="/eval_input/f2p.targets.json",
         candidate_source_paths=candidate_source_paths,
+        candidate_added_go_modules=candidate_go_modules,
     )
     p2p_plan = prolite_test_plan(
         row,
         pass_to_pass,
         target_file="/eval_input/p2p.targets.json",
         candidate_source_paths=candidate_source_paths,
+        candidate_added_go_modules=candidate_go_modules,
     )
     runtime_dependency_specs = plan_runtime_dependency_specs(f2p_plan, p2p_plan)
     eval_spec_sha256 = prolite_eval_spec_sha256(row, f2p_plan, p2p_plan)
@@ -672,10 +675,8 @@ def main():
         task = row["instance_id"]
         if eval_only:
             run_dir = base_run_dir / task
-            done, prediction, metric, pairing = generation_done(
-                run_dir,
-                task,
-                require_identity=False,
+            done, prediction, metric, pairing = generation_done_for_mode(
+                run_dir, task, eval_only=True
             )
             if done:
                 gen = eval_only_candidate_identity_error(gen := generation_done_result(
@@ -684,10 +685,8 @@ def main():
                     metric,
                     pairing,
                     eval_only=True,
-                    artifact_identity_status=historical_generation_identity_status(
-                        prediction,
-                        metric,
-                        task,
+                    artifact_identity_status=eval_only_generation_identity_status(
+                        prediction, metric, task
                     ),
                 )) or gen
             else:

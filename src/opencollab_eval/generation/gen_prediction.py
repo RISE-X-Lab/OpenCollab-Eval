@@ -76,6 +76,7 @@ from .gen_prediction_agent import (
 from .gen_prediction_config import (
     _docker_timeout_from_env,
     _stable_docker_component,
+    _workspace_archive_timeout_from_env,
     bind_llm_transport,
     default_container_image,
     unique_container_name,

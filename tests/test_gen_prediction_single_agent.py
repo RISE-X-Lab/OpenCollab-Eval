@@ -485,6 +485,26 @@ def test_docker_timeout_rejects_invalid_values(monkeypatch, value):
         gp._docker("ps")
 
 
+def test_workspace_archive_timeout_defaults_to_fifteen_minutes(monkeypatch):
+    monkeypatch.delenv("OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT", raising=False)
+
+    assert gp._workspace_archive_timeout_from_env() == 900
+
+
+def test_workspace_archive_timeout_accepts_positive_float(monkeypatch):
+    monkeypatch.setenv("OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT", "1200.5")
+
+    assert gp._workspace_archive_timeout_from_env() == 1200.5
+
+
+@pytest.mark.parametrize("value", ["invalid", "0", "-1", "nan", "inf"])
+def test_workspace_archive_timeout_rejects_invalid_values(monkeypatch, value):
+    monkeypatch.setenv("OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT", value)
+
+    with pytest.raises(ValueError, match="must be a positive number"):
+        gp._workspace_archive_timeout_from_env()
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

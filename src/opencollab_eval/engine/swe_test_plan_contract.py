@@ -9,6 +9,9 @@ import shlex
 import unicodedata
 from typing import Any
 
+from opencollab_eval.engine.swe_v1_candidate_go_dependencies import (
+    valid_candidate_added_go_modules,
+)
 from opencollab_eval.engine.swe_v1_remote_target_proof import (
     declared_js_test_files,
     go_test_command,
@@ -245,6 +248,11 @@ def _valid_exact_go_plan(plan: dict[str, Any]) -> bool:
             if not _valid_candidate_source_paths(candidate_paths):
                 return False
             expected_proof["candidate_source_paths"] = candidate_paths
+        candidate_modules = proof.get("candidate_added_go_modules")
+        if candidate_modules is not None:
+            if not valid_candidate_added_go_modules(candidate_modules):
+                return False
+            expected_proof["candidate_added_go_modules"] = candidate_modules
         if command != expected_command or proof != expected_proof:
             return False
     return True
@@ -271,6 +279,11 @@ def _valid_dynamic_go_plan(plan: dict[str, Any]) -> bool:
         if not _valid_candidate_source_paths(candidate_paths):
             return False
         expected_proof["candidate_source_paths"] = candidate_paths
+    candidate_modules = proof.get("candidate_added_go_modules")
+    if candidate_modules is not None:
+        if not valid_candidate_added_go_modules(candidate_modules):
+            return False
+        expected_proof["candidate_added_go_modules"] = candidate_modules
     if proof != expected_proof:
         return False
     return plan["commands"] == [go_test_command(targets)]

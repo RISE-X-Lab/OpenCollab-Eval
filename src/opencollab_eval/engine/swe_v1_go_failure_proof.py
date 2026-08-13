@@ -23,6 +23,12 @@ _GO_DEPENDENCY_BUILD_HEADER_RE = re.compile(r"# (?P<package>\S+)\Z")
 _PLAIN_PACKAGE_FAILURE_RE = re.compile(
     r"FAIL\s+(?P<package>\S+)\s+\[(?:build|setup) failed\]\Z"
 )
+_GO_DOWNLOAD_RE = re.compile(r"go: downloading (?P<module>\S+) (?P<version>v\S+)\Z")
+_GO_MODULE_FETCH_RE = re.compile(
+    r"(?P<path>(?:[A-Za-z]:)?[^:\r\n]*?[^/\\:\r\n]+\.go):"
+    r"[0-9]+(?::[0-9]+)?:\s+(?P<module>[^@\s:]+)@(?P<version>[^:\s]+):"
+    r"\s+Get \"https?://[^\"]+\":\s+.+\Z"
+)
 
 
 def _declared_tests(proof: dict[str, Any]) -> list[str]:
@@ -212,6 +218,80 @@ def _dynamic_bindings(
     if not bindings or owners != expected_names:
         return []
     return bindings
+
+
+def _candidate_dependency_setup_failure_matches(
+    proof: dict[str, Any],
+    log_text: str,
+    declared_tests: list[str],
+    *,
+    expected_command: str,
+    observed_command: str,
+) -> bool:
+    """Bind an unavailable candidate-added Go module to the target package."""
+    modules = proof.get("candidate_added_go_modules")
+    candidate_paths = [
+        str(path).replace("\\", "/").removeprefix("./")
+        for path in proof.get("candidate_source_paths") or []
+        if isinstance(path, str)
+    ]
+    if (
+        not isinstance(modules, list)
+        or not modules
+        or "go.mod" not in candidate_paths
+        or not expected_command
+        or expected_command != observed_command
+    ):
+        return False
+    added = {
+        (item.get("module"), item.get("version"))
+        for item in modules
+        if isinstance(item, dict)
+        and isinstance(item.get("module"), str)
+        and isinstance(item.get("version"), str)
+    }
+    discoveries = []
+    downloads = set()
+    failures = []
+    for raw_line in str(log_text or "").splitlines():
+        line = raw_line.strip()
+        if line.startswith(GO_TARGET_DISCOVERY_PREFIX):
+            try:
+                value = json.loads(line[len(GO_TARGET_DISCOVERY_PREFIX) :])
+            except json.JSONDecodeError:
+                return False
+            if not isinstance(value, dict):
+                return False
+            discoveries.append(value)
+            continue
+        download = _GO_DOWNLOAD_RE.fullmatch(line)
+        if download:
+            downloads.add((download.group("module"), download.group("version")))
+            continue
+        failure = _GO_MODULE_FETCH_RE.fullmatch(line)
+        if failure:
+            failures.append(failure.groupdict())
+            continue
+        if line:
+            return False
+    bindings = _proof_bindings(proof, discoveries, declared_tests)
+    if not bindings:
+        return False
+    for failure in failures:
+        module = (failure["module"], failure["version"])
+        path = failure["path"].replace("\\", "/").removeprefix("./")
+        if module not in added or module not in downloads or path not in candidate_paths:
+            continue
+        if any(
+            _candidate_diagnostic_belongs_to_package(
+                path,
+                binding["package"],
+                candidate_paths,
+            )
+            for binding in bindings
+        ):
+            return True
+    return False
 
 
 def _proof_bindings(
@@ -438,6 +518,14 @@ def go_failure_proof_matches(
 ) -> bool:
     """Accept an exact test failure or a compiler failure bound to its target test."""
     declared_tests = _declared_tests(proof)
+    if declared_tests and _candidate_dependency_setup_failure_matches(
+        proof,
+        log_text,
+        declared_tests,
+        expected_command=expected_command,
+        observed_command=observed_command,
+    ):
+        return True
     parsed = _parse_go_log(log_text)
     if not declared_tests or parsed is None:
         return False

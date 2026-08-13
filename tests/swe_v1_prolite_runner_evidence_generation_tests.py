@@ -34,7 +34,8 @@ def test_remote_generation_identity_includes_effective_thinking_default(tmp_path
     namespace = _remote_namespace(tmp_path)
 
     assert namespace["generation_runtime_identity"]()["workflow_env"] == {
-        "OPENCOLLAB_THINKING": "false"
+        "OPENCOLLAB_THINKING": "false",
+        "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT": "900",
     }
     assert "llm_transport" not in namespace["generation_runtime_identity"]()
     inherited = {"OPENCOLLAB_LLM_TRANSPORT": "direct"}
@@ -51,6 +52,7 @@ def test_remote_generation_identity_includes_model_user_agent(tmp_path):
     assert namespace["generation_runtime_identity"]()["workflow_env"] == {
         "OPENCOLLAB_THINKING": "false",
         "OPENCOLLAB_LLM_USER_AGENT": "compatible-client/1.0",
+        "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT": "900",
     }
     metric = {
         "model_name": namespace["model_name"],

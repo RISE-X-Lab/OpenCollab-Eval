@@ -2,6 +2,7 @@
 
 # ruff: noqa: F403, F405
 
+from opencollab_eval.engine.swe_v1_remote_eval_candidate import *
 from opencollab_eval.engine.swe_v1_remote_eval_patch import *
 from opencollab_eval.engine.swe_v1_remote_generation import *
 from opencollab_eval.engine.swe_v1_remote_records import *
@@ -11,10 +12,8 @@ from opencollab_eval.engine.swe_v1_remote_state import *
 def eval_for_task_with_retries(row, eval_once):
     task = row["instance_id"]
     run_dir = base_run_dir / task
-    done, prediction, metric, pairing = generation_done(
-        run_dir,
-        task,
-        require_identity=not eval_only,
+    done, prediction, metric, pairing = generation_done_for_mode(
+        run_dir, task, eval_only=eval_only
     )
     if not done:
         result = dict(eval_once(row))
