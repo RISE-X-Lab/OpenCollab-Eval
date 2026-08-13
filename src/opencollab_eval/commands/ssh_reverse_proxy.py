@@ -6,6 +6,15 @@ import argparse
 import os
 import shlex
 import subprocess
+import time
+
+
+class RemoteSocketStillActive(RuntimeError):
+    """The previous SSH server process still owns the relay socket."""
+
+
+class RemoteSocketProbeUnavailable(RuntimeError):
+    """The remote socket could not be inspected because SSH is unavailable."""
 
 
 def _cleanup_command(socket_path: str) -> str:
@@ -46,11 +55,57 @@ def remove_stale_remote_socket(
             command, text=True, capture_output=True, timeout=20, check=False
         )
     except subprocess.TimeoutExpired as exc:
-        raise RuntimeError("timed out while checking the remote proxy socket") from exc
+        raise RemoteSocketProbeUnavailable(
+            "timed out while checking the remote proxy socket"
+        ) from exc
     if result.returncode == 5:
-        raise RuntimeError("remote proxy socket is still accepting connections")
-    if result.returncode != 0:
+        raise RemoteSocketStillActive(
+            "remote proxy socket is still accepting connections"
+        )
+    if result.returncode in {3, 4}:
         raise RuntimeError("remote proxy socket cannot be safely replaced")
+    if result.returncode != 0:
+        raise RemoteSocketProbeUnavailable(
+            "remote proxy socket inspection is temporarily unavailable"
+        )
+
+
+def wait_for_remote_socket_release(
+    *,
+    ssh_command: str,
+    host: str,
+    socket_path: str,
+    timeout_seconds: float | None = None,
+    initial_delay_seconds: float = 1.0,
+    maximum_delay_seconds: float = 30.0,
+) -> None:
+    """Wait for an old relay listener to disappear without unlinking it live."""
+    if timeout_seconds is not None and timeout_seconds < 0:
+        raise ValueError("socket release timeout must be non-negative")
+    if initial_delay_seconds <= 0 or maximum_delay_seconds <= 0:
+        raise ValueError("socket release delays must be positive")
+
+    started = time.monotonic()
+    delay = min(initial_delay_seconds, maximum_delay_seconds)
+    while True:
+        try:
+            remove_stale_remote_socket(
+                ssh_command=ssh_command,
+                host=host,
+                socket_path=socket_path,
+            )
+            return
+        except (RemoteSocketStillActive, RemoteSocketProbeUnavailable) as exc:
+            if (
+                timeout_seconds is not None
+                and time.monotonic() - started >= timeout_seconds
+            ):
+                raise RuntimeError(
+                    "timed out while waiting for the remote proxy socket"
+                ) from exc
+            print(f"ssh reverse proxy waiting for remote socket release: {exc}", flush=True)
+            time.sleep(delay)
+            delay = min(delay * 2.0, maximum_delay_seconds)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -74,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("proxy host must be a single SSH destination")
     if not shlex.split(args.ssh_command):
         raise SystemExit("SSH command is empty")
-    remove_stale_remote_socket(
+    wait_for_remote_socket_release(
         ssh_command=args.ssh_command,
         host=args.host,
         socket_path=args.remote_socket,

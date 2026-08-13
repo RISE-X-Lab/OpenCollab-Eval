@@ -39,7 +39,7 @@ from ._swe_eval_relay_health import remote_proxy_healthy as _remote_proxy_health
 from ._swe_eval_relay_health import (
     remote_proxy_socket_healthy as _remote_proxy_socket_healthy,
 )
-from .ssh_reverse_proxy import remove_stale_remote_socket
+from .ssh_reverse_proxy import wait_for_remote_socket_release
 
 WORKSPACE_ROOT = Path(
     os.environ.get("OPENCOLLAB_EVAL_WORKSPACE", Path.cwd())
@@ -313,10 +313,10 @@ def _bootstrap_launch_agent(*, target: str, installed_path: Path) -> None:
 def _remove_stale_remote_proxy_socket(
     *, ssh_command: str, host: str, socket_path: str
 ) -> None:
-    remove_stale_remote_socket(
+    wait_for_remote_socket_release(
         ssh_command=ssh_command,
         host=host,
-        socket_path=socket_path,
+        socket_path=socket_path, timeout_seconds=120.0,
     )
 
 

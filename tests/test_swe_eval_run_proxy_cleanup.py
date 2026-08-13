@@ -29,7 +29,7 @@ def test_stale_remote_relay_cleanup_rejects_an_unowned_path(monkeypatch: Any) ->
     def reject(**_kwargs: Any) -> None:
         raise RuntimeError("remote proxy socket cannot be safely replaced")
 
-    monkeypatch.setattr(module, "remove_stale_remote_socket", reject)
+    monkeypatch.setattr(module, "wait_for_remote_socket_release", reject)
 
     with pytest.raises(RuntimeError, match="cannot be safely replaced"):
         module._remove_stale_remote_proxy_socket(
@@ -145,6 +145,74 @@ def test_restartable_proxy_cleans_before_exec(monkeypatch: Any) -> None:
     assert "StreamLocalBindUnlink=yes" in command
     assert "127.0.0.1:18891:127.0.0.1:8890" in command
     assert "/tmp/opencollab-llmproxy-18891.sock:127.0.0.1:8890" in command
+
+
+def test_restartable_proxy_waits_for_a_live_socket(monkeypatch: Any) -> None:
+    outcomes: list[Exception | None] = [
+        srp.RemoteSocketStillActive("live"),
+        srp.RemoteSocketStillActive("live"),
+        None,
+    ]
+    sleeps: list[float] = []
+
+    def cleanup(**_kwargs: Any) -> None:
+        outcome = outcomes.pop(0)
+        if outcome is not None:
+            raise outcome
+
+    monkeypatch.setattr(srp, "remove_stale_remote_socket", cleanup)
+    monkeypatch.setattr(srp.time, "sleep", sleeps.append)
+
+    srp.wait_for_remote_socket_release(
+        ssh_command="ssh",
+        host="worker",
+        socket_path="/tmp/opencollab-llmproxy-18891.sock",
+    )
+
+    assert sleeps == [1.0, 2.0]
+    assert outcomes == []
+
+
+def test_restartable_proxy_waits_through_an_ssh_outage(monkeypatch: Any) -> None:
+    outcomes: list[Exception | None] = [
+        srp.RemoteSocketProbeUnavailable("offline"),
+        None,
+    ]
+
+    def cleanup(**_kwargs: Any) -> None:
+        outcome = outcomes.pop(0)
+        if outcome is not None:
+            raise outcome
+
+    monkeypatch.setattr(srp, "remove_stale_remote_socket", cleanup)
+    monkeypatch.setattr(srp.time, "sleep", lambda _seconds: None)
+
+    srp.wait_for_remote_socket_release(
+        ssh_command="ssh",
+        host="worker",
+        socket_path="/tmp/opencollab-llmproxy-18891.sock",
+    )
+
+    assert outcomes == []
+
+
+def test_restartable_proxy_does_not_retry_an_unsafe_path(monkeypatch: Any) -> None:
+    def reject(**_kwargs: Any) -> None:
+        raise RuntimeError("remote proxy socket cannot be safely replaced")
+
+    monkeypatch.setattr(srp, "remove_stale_remote_socket", reject)
+    monkeypatch.setattr(
+        srp.time,
+        "sleep",
+        lambda _seconds: pytest.fail("unsafe paths must fail without retrying"),
+    )
+
+    with pytest.raises(RuntimeError, match="cannot be safely replaced"):
+        srp.wait_for_remote_socket_release(
+            ssh_command="ssh",
+            host="worker",
+            socket_path="/tmp/opencollab-llmproxy-18891.sock",
+        )
 
 
 @pytest.mark.parametrize(

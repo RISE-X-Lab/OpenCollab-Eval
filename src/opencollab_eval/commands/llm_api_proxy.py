@@ -262,17 +262,56 @@ def _abort_connection(connection: http.client.HTTPConnection) -> None:
     connection.close()
 
 
+def _configured_http_proxy(target: urllib.parse.SplitResult) -> urllib.parse.SplitResult | None:
+    if target.hostname is None or urllib.request.proxy_bypass(target.hostname):
+        return None
+    configured = urllib.request.getproxies().get(target.scheme)
+    if not configured:
+        configured = urllib.request.getproxies().get("all")
+    if not configured:
+        return None
+    if "://" not in configured:
+        configured = "http://" + configured
+    proxy = urllib.parse.urlsplit(configured)
+    if (
+        proxy.scheme != "http"
+        or not proxy.hostname
+        or proxy.username is not None
+        or proxy.password is not None
+        or proxy.path not in {"", "/"}
+        or proxy.query
+        or proxy.fragment
+    ):
+        raise ValueError("direct upstream requires an uncredentialed HTTP proxy origin")
+    return proxy
+
+
 def _open_direct_upstream(
     request: urllib.request.Request,
     client: socket.socket,
     timeout: float,
 ) -> _DirectResponse:
     parsed = urllib.parse.urlsplit(request.full_url)
-    connection_type = (
-        http.client.HTTPSConnection if parsed.scheme == "https" else http.client.HTTPConnection
-    )
-    connection = connection_type(parsed.hostname, parsed.port, timeout=timeout)
-    target = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
+    proxy = _configured_http_proxy(parsed)
+    if proxy is None:
+        connection_type = (
+            http.client.HTTPSConnection
+            if parsed.scheme == "https"
+            else http.client.HTTPConnection
+        )
+        connection = connection_type(parsed.hostname, parsed.port, timeout=timeout)
+        target = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
+    elif parsed.scheme == "https":
+        connection = http.client.HTTPSConnection(
+            proxy.hostname, proxy.port or 80, timeout=timeout
+        )
+        connection.set_tunnel(parsed.hostname, parsed.port or 443)
+        target = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
+    else:
+        connection = http.client.HTTPConnection(
+            proxy.hostname, proxy.port or 80, timeout=timeout
+        )
+        target = request.full_url
     result: queue.Queue[tuple[_DirectResponse | None, BaseException | None]] = queue.Queue()
 
     def open_response() -> None:
