@@ -12,8 +12,11 @@ from pathlib import Path
 import pytest
 
 from e2e.deterministic_swe_driver import (
+    E2E_MAX_OUTPUT_TOKENS,
+    E2E_TOKEN_BUDGET,
     TARGET_TEST,
     _clean_environment,
+    _production_command,
     _start_fake_service,
     _stop_fake_service,
     validate_official_execution,
@@ -46,6 +49,33 @@ def _request_payload() -> dict:
             for name in ("file_read", "file_write", "bash")
         ],
     }
+
+
+def test_production_command_keeps_budget_headroom_for_the_first_model_call(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr("e2e.deterministic_swe_driver.shutil.which", lambda _name: "/usr/bin/docker")
+    command = _production_command(
+        executable=tmp_path / "bin" / "oc-eval",
+        ssh_command="ssh",
+        host="runner@127.0.0.1",
+        remote_root=tmp_path / "remote-root",
+        runtime=tmp_path / "runtime",
+        run_dir=tmp_path / "run",
+        run_id="deterministic-budget-test",
+        image_repository="example/calculator",
+        local_base_url="http://127.0.0.1:8000/v1",
+        remote_base_url="http://127.0.0.1:8001/v1",
+        proxy_env=tmp_path / "proxy.env",
+        json_output=tmp_path / "report.json",
+        markdown_output=tmp_path / "report.md",
+    )
+
+    assert E2E_TOKEN_BUDGET - E2E_MAX_OUTPUT_TOKENS >= 20_000
+    assert command[command.index("--budget") + 1] == str(E2E_TOKEN_BUDGET)
+    assert command[command.index("--max-output-tokens") + 1] == str(
+        E2E_MAX_OUTPUT_TOKENS
+    )
 
 
 def test_fake_model_rejects_wrong_model_and_thinking_identity():

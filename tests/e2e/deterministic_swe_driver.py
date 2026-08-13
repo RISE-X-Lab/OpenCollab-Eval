@@ -35,6 +35,8 @@ from opencollab_eval.patch_diff import patch_paths
 TARGET_TEST = "test_calculator.py::test_add"
 OWNER_LABEL = "opencollab.eval.deterministic-e2e"
 CANARY = "opencollab-real-key-canary-must-not-propagate"
+E2E_MAX_OUTPUT_TOKENS = 32_768
+E2E_TOKEN_BUDGET = 60_000
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -333,11 +335,12 @@ def _production_command(
         "--base-run-dir", str(run_dir), "--run-id", run_id, "--start-index", "1", "--limit", "1",
         "--workflow", "single-agent", "--model-name", MODEL, "--llm-model", MODEL,
         "--llm-provider", "openai", "--context-window", "262144", "--temperature", "1",
-        "--top-p", "0.95", "--max-output-tokens", "32768", "--session-prefix", "oc-e2e",
+        "--top-p", "0.95", "--max-output-tokens", str(E2E_MAX_OUTPUT_TOKENS),
+        "--session-prefix", "oc-e2e",
         "--image-repository", image_repository, "--local-proxy-base-url", local_base_url,
         "--remote-proxy-base-url", remote_base_url, "--proxy-env-file", str(proxy_env),
         "--workflow-env", "OPENCOLLAB_THINKING=true", "--workflow-env", f"OPENCOLLAB_THINKING_PARAMS={thinking}",
-        "--budget", "5000", "--max-steps", "8", "--swe-timeout", "120",
+        "--budget", str(E2E_TOKEN_BUDGET), "--max-steps", "8", "--swe-timeout", "120",
         "--task-wall-timeout", "150", "--eval-timeout", "120", "--llm-timeout", "60",
         "--max-task-starts", "1", "--max-eval-attempts", "1", "--max-empty-patch-retries", "0",
         "--total-timeout", "300", "--json-output", str(json_output),

@@ -24,6 +24,7 @@ All notable changes to OpenCollab-Eval are recorded in this file.
 
 - Corrected candidate, runtime, transport, report, and official-test evidence handling discovered during SWE-bench Pro-Lite evaluation.
 - Prevented stale checkpoints, malformed streaming responses, duplicate model starts, cleanup races, and parser-specific evidence gaps from producing untrusted terminal results.
+- Raised the deterministic SWE test budget so OpenCollab 0.5.0 can preserve the configured output allowance after conservative input reservation.
 
 [Unreleased]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.5.0...HEAD
 [0.5.0]: https://github.com/RISE-X-Lab/OpenCollab-Eval/releases/tag/v0.5.0
