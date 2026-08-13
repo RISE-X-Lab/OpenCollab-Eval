@@ -9,7 +9,7 @@ use the [SWE Pro-Lite operations guide](swe-prolite-operations.md).
 ## Requirements
 
 The core package supports Python 3.10 through 3.12 and requires OpenCollab
-0.4.1 or newer within the 0.4 or 0.5 series. Docker is required for container-backed tasks and official SWE-bench
+0.5.0 or a later 0.5.x release. Docker is required for container-backed tasks and official SWE-bench
 evaluation. The OpenHands extra is available only on Python 3.12.
 
 The evaluator and the framework should come from compatible releases or from
@@ -21,8 +21,8 @@ wheels and verifies the installed boundary.
 ```bash
 python -m venv .venv
 . .venv/bin/activate
-python -m pip install /path/to/opencollab-0.4.1-py3-none-any.whl
-python -m pip install /path/to/opencollab_eval-0.1.0-py3-none-any.whl
+python -m pip install /path/to/opencollab-0.5.0-py3-none-any.whl
+python -m pip install /path/to/opencollab_eval-0.5.0-py3-none-any.whl
 oc-eval --version
 oc-eval --help
 ```
@@ -30,13 +30,13 @@ oc-eval --help
 Install official SWE-bench support with the package extra.
 
 ```bash
-python -m pip install '/path/to/opencollab_eval-0.1.0-py3-none-any.whl[swebench]'
+python -m pip install '/path/to/opencollab_eval-0.5.0-py3-none-any.whl[swebench]'
 ```
 
 Install OpenHands support in a Python 3.12 environment.
 
 ```bash
-python -m pip install '/path/to/opencollab_eval-0.1.0-py3-none-any.whl[openhands]'
+python -m pip install '/path/to/opencollab_eval-0.5.0-py3-none-any.whl[openhands]'
 ```
 
 ## Install source checkouts

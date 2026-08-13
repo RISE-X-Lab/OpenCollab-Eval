@@ -6,7 +6,7 @@
 
 ## 环境要求
 
-核心软件包支持 Python 3.10 至 3.12，并要求使用 OpenCollab 0.4.1 或更新的 0.4 或 0.5 版本。容器任务和官方 SWE-bench 评测需要 Docker。OpenHands 可选依赖仅支持 Python 3.12。
+核心软件包支持 Python 3.10 至 3.12，并要求使用 OpenCollab 0.5.0 或更高的 0.5.x 版本。容器任务和官方 SWE-bench 评测需要 Docker。OpenHands 可选依赖仅支持 Python 3.12。
 
 评测器与框架应来自彼此兼容的发行版，或来自已经共同测试过的源码修订。仓库 CI 会构建两者的 wheel，并验证安装后的边界。
 
@@ -15,8 +15,8 @@
 ```bash
 python -m venv .venv
 . .venv/bin/activate
-python -m pip install /path/to/opencollab-0.4.1-py3-none-any.whl
-python -m pip install /path/to/opencollab_eval-0.1.0-py3-none-any.whl
+python -m pip install /path/to/opencollab-0.5.0-py3-none-any.whl
+python -m pip install /path/to/opencollab_eval-0.5.0-py3-none-any.whl
 oc-eval --version
 oc-eval --help
 ```
@@ -24,13 +24,13 @@ oc-eval --help
 通过软件包的可选依赖安装官方 SWE-bench 支持。
 
 ```bash
-python -m pip install '/path/to/opencollab_eval-0.1.0-py3-none-any.whl[swebench]'
+python -m pip install '/path/to/opencollab_eval-0.5.0-py3-none-any.whl[swebench]'
 ```
 
 在 Python 3.12 环境中安装 OpenHands 支持。
 
 ```bash
-python -m pip install '/path/to/opencollab_eval-0.1.0-py3-none-any.whl[openhands]'
+python -m pip install '/path/to/opencollab_eval-0.5.0-py3-none-any.whl[openhands]'
 ```
 
 ## 安装源码检出

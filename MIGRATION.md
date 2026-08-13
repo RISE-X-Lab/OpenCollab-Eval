@@ -26,10 +26,12 @@ tree identity, and then imports from that synchronized package root.
 
 ## OpenCollab version boundary
 
-OpenCollab 0.4.0 is the first compatible public API release. The package root
-provides `OpenCollab`, `RunResult`, `RunError`, and `workflow`. Optional public
-contracts and composition helpers live in `opencollab.environments`,
-`opencollab.tools`, and `opencollab.workflows`.
+OpenCollab-Eval 0.5.0 requires OpenCollab 0.5.0. This paired release provides
+the Responses transport, runtime identity checks, and public test contracts
+used by the current evaluator. The package root provides `OpenCollab`,
+`RunResult`, `RunError`, and `workflow`. Optional public contracts and
+composition helpers live in `opencollab.environments`, `opencollab.tools`, and
+`opencollab.workflows`.
 
 Production code and tests cannot import the retired `opencollab.sdk` namespace
 or internal `opencollab.adapters`, `opencollab.application`,

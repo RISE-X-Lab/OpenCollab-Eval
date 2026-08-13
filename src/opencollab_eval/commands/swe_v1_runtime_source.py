@@ -10,7 +10,7 @@ from collections.abc import Callable, Iterable
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-MIN_OPENCOLLAB_RELEASE = (0, 4, 1)
+MIN_OPENCOLLAB_RELEASE = (0, 5, 0)
 
 
 def declared_opencollab_version(package_root: Path) -> str | None:
@@ -62,7 +62,7 @@ def runtime_directory_sources(
     release = tuple(map(int, release_match.groups())) if release_match else ()
     if release < MIN_OPENCOLLAB_RELEASE or release >= (0, 6, 0):
         raise RuntimeError(
-            f"OpenCollab >=0.4.1,<0.6 is required, found {distribution_version}"
+            f"OpenCollab >=0.5.0,<0.6 is required, found {distribution_version}"
         )
     if not configured_root and getattr(package, "__version__", None) != distribution_version:
         raise RuntimeError(

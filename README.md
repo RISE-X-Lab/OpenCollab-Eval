@@ -53,7 +53,7 @@ it starts.
 
 ## Supported environment
 
-Use Python 3.10 or later with OpenCollab 0.4.1 or newer in the 0.4 or 0.5 series.
+Use Python 3.10 or later with OpenCollab 0.5.0 or a later 0.5.x release.
 SWE-bench evaluation also needs Docker and the optional `swebench`
 dependencies. OpenHands needs Python 3.12.
 For a remote Pro-Lite run, provide a Linux machine reachable through SSH. It
@@ -62,14 +62,14 @@ must have Python, the task images, and a writable directory for each run.
 Install the two wheel files.
 
 ```bash
-python -m pip install /path/to/opencollab-0.4.1-py3-none-any.whl
-python -m pip install /path/to/opencollab_eval-0.1.0-py3-none-any.whl
+python -m pip install /path/to/opencollab-0.5.0-py3-none-any.whl
+python -m pip install /path/to/opencollab_eval-0.5.0-py3-none-any.whl
 ```
 
 Install the SWE-bench integration when official evaluation is needed.
 
 ```bash
-python -m pip install '/path/to/opencollab_eval-0.1.0-py3-none-any.whl[swebench]'
+python -m pip install '/path/to/opencollab_eval-0.5.0-py3-none-any.whl[swebench]'
 ```
 
 For a source checkout, install the matching OpenCollab repository first.
@@ -268,6 +268,8 @@ publish a 100-task comparison. [MIGRATION.md](MIGRATION.md) explains which code
 belongs in OpenCollab and which belongs here.
 [CONTRIBUTING.md](CONTRIBUTING.md) covers development and review.
 [SECURITY.md](SECURITY.md) gives the private vulnerability reporting process.
+[CHANGELOG.md](CHANGELOG.md) records release changes, and
+[RELEASING.md](RELEASING.md) defines the exact-SHA release procedure.
 
 OpenCollab-Eval is distributed under the
 [Mulan Permissive Software License v2](LICENSE). Dependency and attribution
@@ -279,8 +281,8 @@ details are recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 ruff check .
 pytest -q
 scripts/verify_wheel_contract.sh \
-  /path/to/opencollab-0.4.1-py3-none-any.whl \
-  /path/to/opencollab_eval-0.1.0-py3-none-any.whl
+  /path/to/opencollab-0.5.0-py3-none-any.whl \
+  /path/to/opencollab_eval-0.5.0-py3-none-any.whl
 scripts/run_deterministic_swe_e2e.sh --output /tmp/oce-e2e --runs 1
 ```
 
@@ -340,19 +342,19 @@ Solver 只能看到公开题面和一次性工作副本。基准提交、测试�
 
 ## 支持的环境
 
-OpenCollab-Eval 支持 Python 3.10 及以上版本，并要求 OpenCollab 0.4.1 或更新的 0.4 或 0.5 版本。运行 SWE-bench 还需要 Docker 和可选的 `swebench` 依赖。OpenHands 需要 Python 3.12。远程运行 Pro-Lite 时，还要准备一台可以通过 SSH 访问的 Linux 机器。机器上需要有 Python、任务镜像，以及每次运行独立使用的可写目录。
+OpenCollab-Eval 支持 Python 3.10 及以上版本，并要求 OpenCollab 0.5.0 或更高的 0.5.x 版本。运行 SWE-bench 还需要 Docker 和可选的 `swebench` 依赖。OpenHands 需要 Python 3.12。远程运行 Pro-Lite 时，还要准备一台可以通过 SSH 访问的 Linux 机器。机器上需要有 Python、任务镜像，以及每次运行独立使用的可写目录。
 
 安装两个 wheel 文件。
 
 ```bash
-python -m pip install /path/to/opencollab-0.4.1-py3-none-any.whl
-python -m pip install /path/to/opencollab_eval-0.1.0-py3-none-any.whl
+python -m pip install /path/to/opencollab-0.5.0-py3-none-any.whl
+python -m pip install /path/to/opencollab_eval-0.5.0-py3-none-any.whl
 ```
 
 需要官方评测时，安装 SWE-bench 集成。
 
 ```bash
-python -m pip install '/path/to/opencollab_eval-0.1.0-py3-none-any.whl[swebench]'
+python -m pip install '/path/to/opencollab_eval-0.5.0-py3-none-any.whl[swebench]'
 ```
 
 使用源码检出时，先安装与之匹配的 OpenCollab 仓库。
@@ -507,6 +509,8 @@ Python 测试由评测控制器启动，并按 Pytest 节点记录结构化事�
 
 [最终报告契约](docs/zh-CN/final-report.md)规定发布 100 题对比结果时需要哪些输入。[MIGRATION.zh-CN.md](MIGRATION.zh-CN.md)解释哪些代码属于 OpenCollab，哪些属于这里。[CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)介绍开发和审查流程。[SECURITY.zh-CN.md](SECURITY.zh-CN.md)说明如何私下报告安全漏洞。
 
+[CHANGELOG.md](CHANGELOG.md)记录版本变化，[RELEASING.md](RELEASING.md)规定基于精确提交的发布流程。
+
 OpenCollab-Eval 依据 [木兰宽松许可证第 2 版](LICENSE) 发行。依赖项和署名详情记录在 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 中。
 
 ## 开发验证
@@ -515,8 +519,8 @@ OpenCollab-Eval 依据 [木兰宽松许可证第 2 版](LICENSE) 发行。依赖
 ruff check .
 pytest -q
 scripts/verify_wheel_contract.sh \
-  /path/to/opencollab-0.4.1-py3-none-any.whl \
-  /path/to/opencollab_eval-0.1.0-py3-none-any.whl
+  /path/to/opencollab-0.5.0-py3-none-any.whl \
+  /path/to/opencollab_eval-0.5.0-py3-none-any.whl
 scripts/run_deterministic_swe_e2e.sh --output /tmp/oce-e2e --runs 1
 ```
 

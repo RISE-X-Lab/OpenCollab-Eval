@@ -20,7 +20,7 @@ python_bin="${PYTHON_BIN:-python3}"
 export OPENCOLLAB_EVAL_SOURCE_ROOT="${OPENCOLLAB_EVAL_SOURCE_ROOT:-$repo_root}"
 if [[ -z "${OPENCOLLAB_SOURCE_ROOT:-}" ]]; then
   for candidate in "$repo_root/../OpenCollab" "$repo_root/../opencollab-source"; do
-    if [[ -f "$candidate/opencollab/pyproject.toml" ]]; then
+    if [[ -f "$candidate/pyproject.toml" && -d "$candidate/opencollab" ]]; then
       OPENCOLLAB_SOURCE_ROOT="$(cd "$candidate" && pwd)"
       break
     fi
@@ -61,7 +61,7 @@ cp -R "$repo_root/tests" "$venv_dir/eval-tests"
 (
   cd "$venv_dir"
   "$venv_dir/bin/python" -I -c \
-    "import opencollab, opencollab.environments, opencollab.tools, opencollab.workflows, opencollab_eval; version = tuple(map(int, opencollab.__version__.split('.'))); assert (0, 4, 1) <= version < (0, 6)"
+    "import opencollab, opencollab.environments, opencollab.tools, opencollab.workflows, opencollab_eval; version = tuple(map(int, opencollab.__version__.split('.'))); assert (0, 5, 0) <= version < (0, 6)"
   "$venv_dir/bin/python" -I -m opencollab_eval --help >/dev/null
   "$venv_dir/bin/oc-eval" --help >/dev/null
 )
