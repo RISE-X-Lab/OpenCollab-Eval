@@ -270,10 +270,8 @@ def _loopback_proxy_environment() -> dict[str, str]:
 
 def _launchd_plist(
     *,
-    label: str,
-    program_arguments: list[str],
-    stdout_path: Path,
-    stderr_path: Path,
+    label: str, program_arguments: list[str],
+    stdout_path: Path, stderr_path: Path,
     keep_alive: bool = False,
 ) -> dict:
     environment = {
@@ -284,6 +282,8 @@ def _launchd_plist(
     }
     if pythonpath := os.environ.get("PYTHONPATH", "").strip():
         environment["PYTHONPATH"] = _absolute_pythonpath(pythonpath)
+    if source_root := os.environ.get("OPENCOLLAB_SOURCE_ROOT", "").strip():
+        environment["OPENCOLLAB_SOURCE_ROOT"] = str(Path(source_root).expanduser().resolve())
     return {
         "Label": label,
         "ProgramArguments": program_arguments,

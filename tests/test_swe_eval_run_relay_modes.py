@@ -13,6 +13,24 @@ def _entry() -> Any:
     return importlib.reload(module)
 
 
+def test_detached_plist_preserves_explicit_opencollab_source_root(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    module = _entry()
+    source_root = tmp_path / "OpenCollab"
+    source_root.mkdir()
+    monkeypatch.setenv("OPENCOLLAB_SOURCE_ROOT", str(source_root))
+
+    payload = module._launchd_plist(
+        label="com.opencollab.eval.test",
+        program_arguments=["python", "-m", "opencollab_eval.commands.swe_eval_run"],
+        stdout_path=tmp_path / "stdout.log",
+        stderr_path=tmp_path / "stderr.log",
+    )
+
+    assert payload["EnvironmentVariables"]["OPENCOLLAB_SOURCE_ROOT"] == str(source_root.resolve())
+
+
 def test_launchd_inherits_only_noncredentialed_loopback_proxy(
     monkeypatch: Any,
     tmp_path: Path,
