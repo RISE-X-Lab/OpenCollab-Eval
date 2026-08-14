@@ -44,9 +44,13 @@ oc-eval run TASKS_FILE --model MODEL --provider PROVIDER
 | Solver | `--workflow`、`--model-name`、`--llm-model`、`--llm-provider`、`--budget`、`--max-steps` |
 | 模型身份 | `--context-window`、`--temperature`、`--top-p`、`--max-output-tokens` |
 | 提供商传输 | `--remote-proxy-base-url`、`--local-proxy-base-url`、`--proxy-env-file`、`--remote-api-env-file` |
-| 证据限制 | `--max-task-starts`、`--max-eval-attempts`、`--checkpoint-interval` |
+| 证据限制 | `--max-task-starts`、`--max-eval-attempts`、`--checkpoint-interval`、`--eval-container-bind-timeout` |
 | 输出 | `--json-output`、`--markdown-output`、`--parent-output-dir` |
 | 维护 | `--dry-run`、`--eval-only`、`--no-sync-runtime`、`--expected-runtime-tree-sha256` |
+
+`--eval-container-bind-timeout` 控制运行器等待 Docker 写出官方评测容器 ID
+的时长。默认值为 30 秒，可配置范围为 1 至 300 秒。该设置属于官方评测
+运行身份。使用不同数值生成的报告不会被复用。
 
 构建自动化前，请先运行已安装命令的帮助。
 

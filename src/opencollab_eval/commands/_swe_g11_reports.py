@@ -405,6 +405,7 @@ def aggregate(
         "max_empty_patch_retries": config.max_empty_patch_retries,
         "budget": config.budget,
         "max_steps": config.max_steps,
+        "eval_container_bind_timeout": config.eval_container_bind_timeout,
         "counts": counts,
         "running": running or [],
         "results": ordered,

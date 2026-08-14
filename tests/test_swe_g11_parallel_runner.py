@@ -198,6 +198,7 @@ def _reusable_summary(config, index: int, *, openhands: bool = False) -> dict:
         "max_task_starts": config.max_task_starts,
         "max_empty_patch_retries": config.max_empty_patch_retries,
         "max_eval_attempts": config.max_eval_attempts,
+        "eval_container_bind_timeout": config.eval_container_bind_timeout,
         "workflow_env": {},
         "eval_only": False,
         "solver_attribution": "current_run",
@@ -270,7 +271,6 @@ def test_parser_defaults_to_g11_three_task_starts_with_explicit_runtime_config()
         ]
     )
     config = module.resolve_config(args)
-
     assert config.indices == tuple(range(51, 76))
     assert config.max_workers == 5
     assert config.max_task_starts == 3

@@ -51,9 +51,15 @@ official evaluation. The main option groups are shown below.
 | Solver | `--workflow`, `--model-name`, `--llm-model`, `--llm-provider`, `--budget`, `--max-steps` |
 | Model identity | `--context-window`, `--temperature`, `--top-p`, `--max-output-tokens` |
 | Provider transport | `--remote-proxy-base-url`, `--local-proxy-base-url`, `--proxy-env-file`, `--remote-api-env-file` |
-| Evidence limits | `--max-task-starts`, `--max-eval-attempts`, `--checkpoint-interval` |
+| Evidence limits | `--max-task-starts`, `--max-eval-attempts`, `--checkpoint-interval`, `--eval-container-bind-timeout` |
 | Output | `--json-output`, `--markdown-output`, `--parent-output-dir` |
 | Maintenance | `--dry-run`, `--eval-only`, `--no-sync-runtime`, `--expected-runtime-tree-sha256` |
+
+`--eval-container-bind-timeout` controls how long the runner waits for Docker
+to publish the official-evaluation container ID. Its default is 30 seconds and
+accepted values range from 1 through 300 seconds. The setting is part of the
+official-evaluation run identity, so a report created with another value is not
+reused.
 
 Run the installed help before constructing automation.
 

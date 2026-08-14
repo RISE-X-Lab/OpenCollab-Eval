@@ -6,6 +6,10 @@ import hashlib
 import json
 from typing import Any
 
+from opencollab_eval.engine.swe_v1_remote_state import (
+    DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
+)
+
 
 def runner_claim_identity(config: dict[str, Any]) -> dict[str, Any]:
     """Return the stable fields that may identify a recoverable remote run."""
@@ -39,6 +43,12 @@ def runner_claim_identity(config: dict[str, Any]) -> dict[str, Any]:
         "swe_timeout": int(config.get("swe_timeout") or 0),
         "task_wall_timeout": int(config.get("task_wall_timeout") or 0),
         "eval_timeout": int(config.get("eval_timeout") or 0),
+        "eval_container_bind_timeout": int(
+            config.get(
+                "eval_container_bind_timeout",
+                DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
+            )
+        ),
         "llm_timeout": int(config.get("llm_timeout") or 0),
         "max_task_starts": max(0, min(3, int(config.get("max_task_starts") or 0))),
         "max_empty_patch_retries": max(

@@ -206,6 +206,7 @@ def _remote_config(tmp_path, **overrides):
         "swe_timeout": 10,
         "task_wall_timeout": 10,
         "eval_timeout": 10,
+        "eval_container_bind_timeout": 30,
         "llm_timeout": 10,
         "checkpoint_interval": 300,
         "max_task_starts": 1,

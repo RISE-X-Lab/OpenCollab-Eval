@@ -164,11 +164,17 @@ Three limits describe different work.
 | `--max-task-starts` | Maximum Solver starts for one task |
 | `--max-eval-attempts` | Maximum official evaluation attempts for one candidate |
 | `--runner-attempts` | Maximum controller attempts after structured runner failure |
+| `--eval-container-bind-timeout` | Seconds to wait for Docker to publish the official-evaluation container ID |
 
 Use value 1 for deterministic smoke tests. Increase a limit only when the
 experiment protocol allows the corresponding retry. A provider quota failure,
 generation failure, and official evaluation technical failure are recorded
 separately and are never converted into unresolved.
+
+The container identity wait defaults to 30 seconds and accepts values from 1
+through 300 seconds. The runner still fails immediately when the Docker process
+exits. A valid container ID and exact ownership labels remain required before
+official evaluation continues.
 
 The parallel runner can reduce concurrency after shared pressure and recover
 after clean tasks. Use `--no-adaptive-concurrency` when fixed concurrency is
