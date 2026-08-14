@@ -581,44 +581,70 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
                 else []
             )
             normalized = " ".join(str(fragment).split()) if not fragment_parts else ""
-            candidates = []
+
+            def file_candidates(candidates):
+                normalized_file = str(test_file or "").replace("\\", "/")
+                if not normalized_file:
+                    return candidates
+                return [
+                    item
+                    for item in candidates
+                    if (
+                        normalized_file
+                        == item.split(" | ", 1)[0].replace("\\", "/")
+                        or normalized_file.endswith(
+                            "/" + item.split(" | ", 1)[0].replace("\\", "/")
+                        )
+                        or item.split(" | ", 1)[0]
+                        .replace("\\", "/")
+                        .endswith("/" + normalized_file)
+                    )
+                ]
+
+            exact_candidates = []
+            abbreviated_candidates = []
             for item, title in expected_titles.items():
                 expected_title = " ".join(str(title).split())
-                if (
+                parts = expected_title_parts[item]
+                exact_part_match = bool(
                     fragment_parts
                     and (
-                        contiguous_title_parts_match(
-                            expected_title_parts[item],
-                            fragment_parts,
+                        any(
+                            parts
+                            == fragment_parts[offset : offset + len(parts)]
+                            for offset in range(len(fragment_parts) - len(parts) + 1)
                         )
                         or hierarchy_suffix_title_matches(
                             expected_title,
                             fragment_parts,
                         )
                     )
-                ) or (
+                )
+                exact_full_name_match = bool(
                     not fragment_parts
                     and (
                         expected_title == normalized
-                        or expected_title.endswith(" " + normalized)
                         or normalized.endswith(" " + expected_title)
                     )
+                )
+                if exact_part_match or exact_full_name_match:
+                    exact_candidates.append(item)
+                elif (
+                    fragment_parts
+                    and contiguous_title_parts_match(parts, fragment_parts)
+                ) or (
+                    not fragment_parts
+                    and expected_title.endswith(" " + normalized)
                 ):
-                    candidates.append(item)
-            normalized_file = str(test_file or "").replace("\\", "/")
-            if normalized_file:
-                file_candidates = []
-                for item in candidates:
-                    expected_file = item.split(" | ", 1)[0].replace("\\", "/")
-                    if (
-                        normalized_file == expected_file
-                        or normalized_file.endswith("/" + expected_file)
-                        or expected_file.endswith("/" + normalized_file)
-                    ):
-                        file_candidates.append(item)
-                candidates = file_candidates
-            if len(candidates) == 1:
-                return candidates[0]
+                    abbreviated_candidates.append(item)
+            exact_candidates = file_candidates(exact_candidates)
+            if len(exact_candidates) == 1:
+                return exact_candidates[0]
+            if exact_candidates:
+                return ""
+            abbreviated_candidates = file_candidates(abbreviated_candidates)
+            if len(abbreviated_candidates) == 1:
+                return abbreviated_candidates[0]
             return ""
 
         for line in text.splitlines():
