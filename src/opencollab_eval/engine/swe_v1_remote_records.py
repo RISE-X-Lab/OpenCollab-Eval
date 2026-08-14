@@ -303,7 +303,10 @@ def generation_runtime_identity():
 
 
 def effective_workflow_env():
-    values = {"OPENCOLLAB_THINKING": "false"}
+    values = {
+        "OPENCOLLAB_THINKING": "false",
+        "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT": "900",
+    }
     values.update({str(key): str(value) for key, value in workflow_env.items()})
     return dict(sorted(values.items()))
 

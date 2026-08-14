@@ -109,12 +109,14 @@ def test_workflow_env_accepts_sampling_settings_and_rejects_secrets():
             "OPENCOLLAB_MAX_OUTPUT_TOKENS=32768",
             "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES=0",
             "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY=1",
+            "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT=1200",
         ]
     ) == {
         "OPENCOLLAB_TEMPERATURE": "1",
         "OPENCOLLAB_MAX_OUTPUT_TOKENS": "32768",
         "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES": "0",
         "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY": "1",
+        "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT": "1200",
     }
     with pytest.raises(ValueError, match="unsupported --workflow-env"):
         runner.normalize_workflow_env(["OPENCOLLAB_API_KEY=secret"])

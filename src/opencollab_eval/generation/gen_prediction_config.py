@@ -81,6 +81,23 @@ def _docker_timeout_from_env() -> float:
     return timeout
 
 
+def _workspace_archive_timeout_from_env() -> float:
+    raw = os.environ.get("OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT", "900").strip()
+    try:
+        timeout = float(raw)
+    except ValueError as exc:
+        raise ValueError(
+            "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT must be a positive number, "
+            f"got {raw!r}"
+        ) from exc
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError(
+            "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT must be a positive number, "
+            f"got {raw!r}"
+        )
+    return timeout
+
+
 def validate_generation_limits(
     *,
     max_steps: object,

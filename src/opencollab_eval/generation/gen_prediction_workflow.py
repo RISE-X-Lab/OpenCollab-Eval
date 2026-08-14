@@ -461,6 +461,7 @@ async def generate(
                         "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT",
                         "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT",
                         "OPENCOLLAB_LLM_USER_AGENT",
+                        "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT",
                     )
                     if key in os.environ
                 },

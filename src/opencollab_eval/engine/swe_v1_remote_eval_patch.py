@@ -4,6 +4,7 @@
 
 import re
 
+from opencollab_eval.engine.swe_v1_candidate_go_dependencies import candidate_added_go_modules
 from opencollab_eval.engine.swe_v1_remote_commands import *
 from opencollab_eval.engine.swe_v1_remote_gitlink_probe import *
 from opencollab_eval.engine.swe_v1_remote_records import *
@@ -67,17 +68,20 @@ def verified_plan_patch_selection(row, prediction, metric):
         return None
     pass_to_pass = parse_literal_list(row.get("pass_to_pass") or row.get("PASS_TO_PASS"))
     candidate_source_paths = eval_candidate_source_paths(prediction)
+    candidate_go_modules = candidate_added_go_modules(eval_model_patch(prediction))
     f2p_plan = prolite_test_plan(
         row,
         fail_to_pass,
         target_file="/eval_input/f2p.targets.json",
         candidate_source_paths=candidate_source_paths,
+        candidate_added_go_modules=candidate_go_modules,
     )
     p2p_plan = prolite_test_plan(
         row,
         pass_to_pass,
         target_file="/eval_input/p2p.targets.json",
         candidate_source_paths=candidate_source_paths,
+        candidate_added_go_modules=candidate_go_modules,
     )
     if not f2p_plan["coverage_verified"] or (
         pass_to_pass and not p2p_plan["coverage_verified"]

@@ -653,7 +653,7 @@ def main() -> None:
                         "OPENCOLLAB_TEMPERATURE",
                         "OPENCOLLAB_THINKING",
                         "OPENCOLLAB_THINKING_PARAMS",
-                        "OPENCOLLAB_TOP_P",
+                        "OPENCOLLAB_TOP_P", "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT",
                     )
                     if key in os.environ
                 },

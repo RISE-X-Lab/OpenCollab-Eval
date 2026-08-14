@@ -55,12 +55,13 @@ def test_remote_probe_is_independent_of_the_synced_runtime(monkeypatch, tmp_path
     base.mkdir()
     nonce = "a" * 32
     invocation_id = "b" * 32
+    fake_pid = 2_147_483_647
     identity = "ps:fixed runner start"
     (base / "runner.pid").write_text(
         json.dumps(
             {
                 "schema": "opencollab.prolite_runner_owner.v1",
-                "pid": os.getpid(),
+                "pid": fake_pid,
                 "start_identity": identity,
                 "owner_nonce": nonce,
                 "claim_sha256": "c" * 64,

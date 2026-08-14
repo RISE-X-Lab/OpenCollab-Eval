@@ -351,7 +351,12 @@ def test_generate_records_provider_rejection_without_extracting_patch(
     )
     monkeypatch.setenv(
         "OPENCOLLAB_EVAL_WORKFLOW_ENV",
-        json.dumps({"OPENCOLLAB_THINKING": "false"}),
+        json.dumps(
+            {
+                "OPENCOLLAB_THINKING": "false",
+                "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT": "900",
+            }
+        ),
     )
     args = SimpleNamespace(
         timeout=10,
