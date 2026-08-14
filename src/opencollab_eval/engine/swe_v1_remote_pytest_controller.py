@@ -85,7 +85,7 @@ def _prepare_worker(repo):
     return home
 
 
-def _worker_environment(home, event_fd):
+def _worker_environment(home, event_fd, command):
     environment = {
         key: value
         for key, value in os.environ.items()
@@ -98,6 +98,10 @@ def _worker_environment(home, event_fd):
         PYTEST_ADDOPTS="-p no:cacheprovider",
         OPENCOLLAB_PYTEST_EVENT_FD=str(event_fd),
     )
+    # The qutebrowser adapter is the only plan that uses this launcher. Its
+    # Qt 6 images abort while constructing QApplication through the xcb path.
+    if command[:5] == ["xvfb-run", "-a", "python", "-m", "pytest"]:
+        environment["QT_QPA_PLATFORM"] = "offscreen"
     return environment
 
 
@@ -367,7 +371,7 @@ def main():
                 args.plugin_dir,
                 args.candidate_source_path,
             ),
-            env=_worker_environment(home, write_fd),
+            env=_worker_environment(home, write_fd, args.command),
             pass_fds=(write_fd,),
             close_fds=True,
             start_new_session=True,
