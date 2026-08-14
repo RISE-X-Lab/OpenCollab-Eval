@@ -214,6 +214,36 @@ def test_controller_reserves_proof_before_candidate_execution(tmp_path):
         controller["_prepare_output"](proof, output)
 
 
+def test_controller_uses_offscreen_qt_for_xvfb_pytest(tmp_path, monkeypatch):
+    namespace = _remote_namespace(tmp_path)
+    controller = {"__name__": "controller_test"}
+    exec(namespace["prolite_pytest_controller_source"](), controller)
+    monkeypatch.setenv("QT_QPA_PLATFORM", "xcb")
+
+    environment = controller["_worker_environment"](
+        tmp_path,
+        7,
+        ["xvfb-run", "-a", "python", "-m", "pytest", "tests/test_widget.py"],
+    )
+
+    assert environment["QT_QPA_PLATFORM"] == "offscreen"
+
+
+def test_controller_preserves_qt_platform_for_regular_pytest(tmp_path, monkeypatch):
+    namespace = _remote_namespace(tmp_path)
+    controller = {"__name__": "controller_test"}
+    exec(namespace["prolite_pytest_controller_source"](), controller)
+    monkeypatch.setenv("QT_QPA_PLATFORM", "xcb")
+
+    environment = controller["_worker_environment"](
+        tmp_path,
+        7,
+        ["python", "-m", "pytest", "tests/test_widget.py"],
+    )
+
+    assert environment["QT_QPA_PLATFORM"] == "xcb"
+
+
 def test_controller_preserves_normal_skip_events(tmp_path):
     namespace = _remote_namespace(tmp_path)
     controller = {"__name__": "controller_test"}
