@@ -15,6 +15,9 @@ from opencollab_eval.commands.swe_v1_prolite_common import (
     REMOTE_COMPLETION_PROBE_TIMEOUT_SECONDS,
     REMOTE_TERMINAL_STATUSES,
 )
+from opencollab_eval.engine.swe_v1_remote_state import (
+    DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
+)
 from opencollab_eval.engine.swe_v1_runner_claim import runner_claim_sha256
 
 
@@ -238,6 +241,12 @@ def _remote_summary_expectation(payload: dict[str, Any]) -> dict[str, Any]:
             1, max(0, int(payload["max_empty_patch_retries"]))
         ),
         "max_eval_attempts": min(2, max(1, int(payload["max_eval_attempts"]))),
+        "eval_container_bind_timeout": int(
+            payload.get(
+                "eval_container_bind_timeout",
+                DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
+            )
+        ),
         "eval_only": payload["eval_only"],
         "eval_dir_name": payload["eval_dir_name"],
         "solver_attribution": (

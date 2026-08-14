@@ -50,6 +50,7 @@ def _summary_pair(*, task_starts: int, eval_only: bool, eval_dir: str):
         "max_task_starts": task_starts,
         "max_empty_patch_retries": 0 if eval_only else 1,
         "max_eval_attempts": 2,
+        "eval_container_bind_timeout": 30,
         "eval_only": eval_only,
         "eval_dir_name": eval_dir,
     }
@@ -79,6 +80,7 @@ def _summary_pair(*, task_starts: int, eval_only: bool, eval_dir: str):
                 "max_task_starts",
                 "max_empty_patch_retries",
                 "max_eval_attempts",
+                "eval_container_bind_timeout",
                 "eval_only",
                 "eval_dir_name",
             )

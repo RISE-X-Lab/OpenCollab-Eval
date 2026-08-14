@@ -19,7 +19,13 @@ def bind_llm_transport_environment(env):
         bind_remote_api_network_environment(env, remote_api_network_env)
 
 
-def bind_eval_container_marker(cidfile, marker_path, container_name, proc, timeout=2.0):
+def bind_eval_container_marker(
+    cidfile,
+    marker_path,
+    container_name,
+    proc,
+    timeout=DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
+):
     deadline = time.monotonic() + timeout
     last_error = "container cidfile did not appear"
     while time.monotonic() < deadline:

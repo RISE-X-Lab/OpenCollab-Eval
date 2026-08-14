@@ -27,6 +27,10 @@ from opencollab_eval.engine.swe_generation_proof import (
     current_generation_summary_proof_valid,
     solver_git_snapshot_valid,
 )
+from opencollab_eval.engine.swe_v1_remote_state import (
+    DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
+    MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
+)
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_REMOTE_ROOT = os.environ.get("OPENCOLLAB_SWE_REMOTE_ROOT", "").strip()
@@ -78,6 +82,7 @@ class ParallelConfig:
     swe_timeout: int
     task_wall_timeout: int
     eval_timeout: int
+    eval_container_bind_timeout: int
     llm_timeout: int
     checkpoint_interval: int
     max_task_starts: int
@@ -325,6 +330,21 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
         raise ValueError("--no-sync-runtime requires --expected-runtime-tree-sha256")
     if args.llm_timeout <= 0:
         raise ValueError("--llm-timeout must be positive")
+    eval_container_bind_timeout = int(
+        getattr(
+            args,
+            "eval_container_bind_timeout",
+            DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
+        )
+    )
+    if (
+        eval_container_bind_timeout <= 0
+        or eval_container_bind_timeout > MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS
+    ):
+        raise ValueError(
+            "--eval-container-bind-timeout must be between 1 and "
+            f"{MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS} seconds"
+        )
     if args.checkpoint_interval != 0:
         raise ValueError(
             "--checkpoint-interval must be 0 for trusted host extraction"
@@ -375,6 +395,7 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
         swe_timeout=args.swe_timeout,
         task_wall_timeout=args.task_wall_timeout,
         eval_timeout=args.eval_timeout,
+        eval_container_bind_timeout=eval_container_bind_timeout,
         llm_timeout=args.llm_timeout,
         checkpoint_interval=args.checkpoint_interval,
         max_task_starts=max(1, min(3, args.max_task_starts)),
@@ -426,6 +447,7 @@ def _expected_summary_identity(
         "max_task_starts": config.max_task_starts,
         "max_empty_patch_retries": getattr(config, "max_empty_patch_retries", 1),
         "max_eval_attempts": config.max_eval_attempts,
+        "eval_container_bind_timeout": config.eval_container_bind_timeout,
         "eval_only": False,
         "solver_attribution": "current_run",
         "remote_runtime_repo": config.remote_runtime_repo,

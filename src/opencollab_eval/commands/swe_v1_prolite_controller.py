@@ -52,6 +52,9 @@ from opencollab_eval.commands.swe_v1_transport_recovery import (
     wait_for_remote_ownership_fact,
     wait_for_terminal_remote_summary,
 )
+from opencollab_eval.engine.swe_v1_remote_state import (
+    DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
+)
 
 _SSH_LIVENESS_OPTIONS = (
     "-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "ServerAliveInterval=30",
@@ -172,6 +175,11 @@ def _remote_payload(
         "swe_timeout": args.swe_timeout,
         "task_wall_timeout": args.task_wall_timeout,
         "eval_timeout": args.eval_timeout,
+        "eval_container_bind_timeout": getattr(
+            args,
+            "eval_container_bind_timeout",
+            DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
+        ),
         "llm_timeout": args.llm_timeout,
         "checkpoint_interval": args.checkpoint_interval,
         "max_task_starts": args.max_task_starts,
@@ -218,6 +226,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
         "temperature": None,
         "top_p": None,
         "max_output_tokens": None,
+        "eval_container_bind_timeout": DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
         "max_eval_attempts": 2,
         "expected_runtime_tree_sha256": "",
     }

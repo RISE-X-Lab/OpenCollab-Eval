@@ -362,10 +362,8 @@ def eval_for_task_once(row, patch_selection=None):
         else:
             ACTIVE_CHILD_PGIDS.add(proc.pid)
             binding = bind_eval_container_marker(
-                cidfile,
-                marker_path,
-                container_name,
-                proc,
+                cidfile, marker_path, container_name, proc,
+                timeout=eval_container_bind_timeout,
             )
             if not binding.get("ok"):
                 cleanup_quiesced = terminate_process_group_bounded(proc)
@@ -424,7 +422,6 @@ def eval_for_task_once(row, patch_selection=None):
             finally:
                 if cleanup_quiesced:
                     ACTIVE_CHILD_PGIDS.discard(proc.pid)
-
     if container_cleanup is None:
         container_cleanup = cleanup_eval_container(
             cidfile,
@@ -485,6 +482,7 @@ def eval_for_task_once(row, patch_selection=None):
         "runtime_dependencies": artifacts["runtime_dependencies"], "runtime_dependency_identities": runtime_dependency_identities,
         **patch_evidence,
         "record_id": row_record_id(prediction),
+        "eval_container_bind_timeout": eval_container_bind_timeout,
         "eval_spec_sha256": eval_spec_sha256,
         "model_patch_chars": len(original_model_patch),
         "eval_model_patch_chars": len(model_patch),
@@ -524,6 +522,7 @@ def eval_for_task_once(row, patch_selection=None):
         "patch_sha256": row_patch_sha(prediction),
         **patch_evidence,
         "record_id": row_record_id(prediction),
+        "eval_container_bind_timeout": eval_container_bind_timeout,
         "eval_spec_sha256": eval_spec_sha256,
         "model_patch_chars": len(original_model_patch),
         "eval_model_patch_chars": len(model_patch),
@@ -780,6 +779,7 @@ def main():
         "max_steps": max_steps,
         "max_task_starts": max_task_starts,
         "max_eval_attempts": max_eval_attempts,
+        "eval_container_bind_timeout": eval_container_bind_timeout,
         "eval_only": eval_only,
         "eval_dir_name": eval_dir_name,
         "solver_attribution": "historical_artifact" if eval_only else "current_run",

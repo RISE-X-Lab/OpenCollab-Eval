@@ -83,6 +83,7 @@ max_steps = 0
 swe_timeout = 0
 task_wall_timeout = 0
 eval_timeout = 0
+eval_container_bind_timeout = 30
 checkpoint_interval = 0
 max_task_starts = 0
 max_eval_attempts = 2
@@ -120,6 +121,8 @@ MAX_EXIT_STATUS_BYTES = 128
 SAFE_FILE_OPEN_RETRIES = 8
 HARNESS_LOCK_TIMEOUT_SECONDS = 10.0
 MAX_REMOTE_API_ENV_BYTES = 64 * 1024
+DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS = 30
+MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS = 300
 REMOTE_API_TOKEN_KEYS = frozenset({
     "OPENCOLLAB_API_KEY",
     "OPENCOLLAB_UPSTREAM_API_KEY",
@@ -203,7 +206,8 @@ def configure(config: dict[str, Any]) -> None:
     global top_p, max_output_tokens, invocation_id, run_id, runtime_tree_sha256, session_prefix
     global image_repository
     global remote_proxy_base_url, start_index, limit, budget, max_steps
-    global swe_timeout, task_wall_timeout, eval_timeout, checkpoint_interval
+    global swe_timeout, task_wall_timeout, eval_timeout
+    global eval_container_bind_timeout, checkpoint_interval
     global max_task_starts, max_eval_attempts, eval_only, eval_dir_name
     global expected_task, expected_record_id, expected_source_patch_sha256, expected_eval_patch_sha256
     global dry_run
@@ -333,6 +337,20 @@ def configure(config: dict[str, Any]) -> None:
     swe_timeout = int(cfg["swe_timeout"])
     task_wall_timeout = int(cfg["task_wall_timeout"])
     eval_timeout = int(cfg["eval_timeout"])
+    eval_container_bind_timeout = int(
+        cfg.get(
+            "eval_container_bind_timeout",
+            DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
+        )
+    )
+    if (
+        eval_container_bind_timeout <= 0
+        or eval_container_bind_timeout > MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS
+    ):
+        raise ValueError(
+            "eval_container_bind_timeout must be between 1 and "
+            f"{MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS} seconds"
+        )
     checkpoint_interval = int(cfg["checkpoint_interval"])
     max_task_starts = min(3, int(cfg["max_task_starts"]))
     max_eval_attempts = min(2, int(cfg.get("max_eval_attempts", 2)))

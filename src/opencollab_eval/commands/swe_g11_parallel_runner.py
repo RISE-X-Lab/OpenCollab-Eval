@@ -127,6 +127,8 @@ def task_command(config: ParallelConfig, index: int) -> list[str]:
         str(config.task_wall_timeout),
         "--eval-timeout",
         str(config.eval_timeout),
+        "--eval-container-bind-timeout",
+        str(config.eval_container_bind_timeout),
         "--llm-timeout",
         str(config.llm_timeout),
         "--checkpoint-interval",
@@ -725,6 +727,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--swe-timeout", type=int, default=14_400)
     parser.add_argument("--task-wall-timeout", type=int, default=15_300)
     parser.add_argument("--eval-timeout", type=int, default=7_200)
+    parser.add_argument(
+        "--eval-container-bind-timeout",
+        type=int,
+        default=_config.DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
+    )
     parser.add_argument("--llm-timeout", type=int, default=900)
     parser.add_argument("--checkpoint-interval", type=int, default=0)
     parser.add_argument("--max-task-starts", type=int, default=3)
