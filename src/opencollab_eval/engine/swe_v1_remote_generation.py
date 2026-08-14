@@ -519,7 +519,8 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
     }
 
 
-def eval_only_candidate_identity_error(result):
+def reconcile_eval_only_candidate_identity(result):
+    """Keep immutable candidate bindings strict and derive the eval patch binding."""
     expected = {
         "task": expected_task,
         "record_id": expected_record_id,
@@ -527,22 +528,42 @@ def eval_only_candidate_identity_error(result):
         "eval_patch_sha256": expected_eval_patch_sha256,
     }
     if not any(expected.values()):
-        return None
+        return result
     observed = {
         "task": str(result.get("task") or ""),
         "record_id": str(result.get("record_id") or ""),
         "source_patch_sha256": str(result.get("source_patch_sha256") or result.get("patch_sha256") or ""),
         "eval_patch_sha256": str(result.get("eval_patch_sha256") or result.get("patch_sha256") or ""),
     }
-    if observed == expected:
-        return None
-    return {
-        "status": "candidate_identity_mismatch",
-        "task": result.get("task"),
-        "eval_only": True,
+    immutable_fields = ("task", "record_id", "source_patch_sha256")
+    mismatched = [
+        field for field in immutable_fields if observed[field] != expected[field]
+    ]
+    if mismatched:
+        return {
+            "status": "candidate_identity_mismatch",
+            "task": result.get("task"),
+            "eval_only": True,
+            "identity_mismatch_fields": mismatched,
+            "expected_candidate_identity": expected,
+            "observed_candidate_identity": observed,
+        }
+    eval_patch_matches = (
+        not expected["eval_patch_sha256"]
+        or observed["eval_patch_sha256"] == expected["eval_patch_sha256"]
+    )
+    if eval_patch_matches:
+        return result
+    reconciled = dict(result)
+    reconciled["artifact_identity_warnings"] = [
+        "stale_expected_eval_patch_sha256"
+    ]
+    reconciled["candidate_identity_reconciliation"] = {
+        "status": "accepted_recomputed_eval_patch",
         "expected_candidate_identity": expected,
         "observed_candidate_identity": observed,
     }
+    return reconciled
 
 
 def generation_for_task(row):

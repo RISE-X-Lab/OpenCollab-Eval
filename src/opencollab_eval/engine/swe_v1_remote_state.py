@@ -353,9 +353,8 @@ def configure(config: dict[str, Any]) -> None:
         expected_task,
         expected_record_id,
         expected_source_patch_sha256,
-        expected_eval_patch_sha256,
     )
-    if any(expected_candidate_fields) and (
+    if any((*expected_candidate_fields, expected_eval_patch_sha256)) and (
         not eval_only
         or not all(expected_candidate_fields)
         or len(expected_task.encode("utf-8")) > 256
@@ -363,7 +362,10 @@ def configure(config: dict[str, Any]) -> None:
         or any(ord(character) < 32 for character in expected_task)
         or any(ord(character) < 32 for character in expected_record_id)
         or re.fullmatch(r"[0-9a-f]{64}", expected_source_patch_sha256) is None
-        or re.fullmatch(r"[0-9a-f]{64}", expected_eval_patch_sha256) is None
+        or (
+            expected_eval_patch_sha256
+            and re.fullmatch(r"[0-9a-f]{64}", expected_eval_patch_sha256) is None
+        )
     ):
         raise ValueError("invalid expected eval-only candidate identity")
     dry_run = bool(cfg["dry_run"])

@@ -141,6 +141,10 @@ def test_remote_runner_eval_only_uses_existing_patch_without_starting_generation
         "max_task_starts": 1,
         "max_eval_attempts": 1,
         "eval_only": True,
+        "expected_task": task,
+        "expected_record_id": "existing",
+        "expected_source_patch_sha256": patch_sha,
+        "expected_eval_patch_sha256": "0" * 64,
         "eval_dir_name": "official_eval_fresh",
         "dry_run": False,
     }
@@ -170,6 +174,12 @@ def test_remote_runner_eval_only_uses_existing_patch_without_starting_generation
     assert summary["solver_attribution"] == "historical_artifact"
     assert summary["rows"][0]["generation"]["eval_only"] is True
     assert summary["rows"][0]["generation"]["artifact_identity_status"] == "legacy_unknown"
+    assert summary["rows"][0]["generation"]["artifact_identity_warnings"] == [
+        "stale_expected_eval_patch_sha256"
+    ]
+    assert summary["rows"][0]["generation"]["candidate_identity_reconciliation"][
+        "status"
+    ] == "accepted_recomputed_eval_patch"
     eval_dir = run_dir / "official_eval_fresh"
     assert eval_dir.stat().st_mode & 0o777 == 0o755
     assert (eval_dir / "input").stat().st_mode & 0o777 == 0o755
