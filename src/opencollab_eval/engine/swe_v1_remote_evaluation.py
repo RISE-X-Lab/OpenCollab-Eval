@@ -678,16 +678,16 @@ def main():
                 run_dir, task, eval_only=True
             )
             if done:
-                gen = eval_only_candidate_identity_error(gen := generation_done_result(
-                    task,
-                    prediction,
-                    metric,
-                    pairing,
-                    eval_only=True,
-                    artifact_identity_status=eval_only_generation_identity_status(
-                        prediction, metric, task
-                    ),
-                )) or gen
+                identity_status = eval_only_generation_identity_status(
+                    prediction, metric, task
+                )
+                gen = reconcile_eval_only_candidate_identity(
+                    generation_done_result(
+                        task, prediction, metric, pairing,
+                        eval_only=True,
+                        artifact_identity_status=identity_status,
+                    )
+                )
             else:
                 gen = {
                     "status": "skipped_no_generation_patch",
