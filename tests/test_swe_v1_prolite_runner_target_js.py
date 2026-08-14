@@ -338,6 +338,39 @@ def test_jest_json_maps_unique_contiguous_abbreviated_titles():
     assert proof["missing"] == []
 
 
+def test_jest_json_prefers_exact_ancestor_titles_over_shorter_prefix_targets():
+    namespace = _proof_namespace()
+    test_file = "test/unit-tests/components/structures/RoomView-test.tsx"
+    variants = [
+        "and the current user adds a Jitsi widget after 10s",
+        "and the current user adds a Jitsi widget after two minutes",
+        "and the current user adds a Jitsi widget without timestamp",
+        "and the current user adds a Jitsi widget",
+    ]
+    expected = [
+        f"{test_file} | {variant} | should not remove the last widget"
+        for variant in variants
+    ]
+    ancestors = ["RoomView", "when there is a RoomView", "another user"]
+    assertions = [
+        {
+            "ancestorTitles": [*ancestors, variant],
+            "title": "should not remove the last widget",
+            "status": "passed",
+        }
+        for variant in variants
+    ]
+    event = {"testResults": [{"name": "/app/" + test_file, "assertionResults": assertions}]}
+    log = json.dumps(event)
+    proof = namespace["fail_to_pass_execution_proof"](
+        {"repo_language": "typescript", "repo": "element-hq/element-web"},
+        expected,
+        0,
+        log,
+    )
+    assert (proof["ok"], proof["passed"], proof["missing"]) == (True, expected, [])
+
+
 def test_jest_json_uses_ancestor_titles_to_disambiguate_duplicate_leaf_titles():
     namespace = _proof_namespace()
     test_file = "src/app/helpers/elements.test.ts"
