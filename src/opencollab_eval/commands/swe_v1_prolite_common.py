@@ -31,7 +31,7 @@ REMOTE_COMPLETION_MAX_CONSECUTIVE_PROBE_FAILURES = 3
 REMOTE_TERMINAL_STATUSES = frozenset(
     {"done", "done_with_technical_failures", "dry_run", "preflight_failed"}
 )
-MAX_TOTAL_EVAL_ATTEMPTS = 2
+MAX_TOTAL_EVAL_ATTEMPTS = 10
 ALLOWED_WORKFLOW_ENV_KEYS = frozenset(
     {
         "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES",

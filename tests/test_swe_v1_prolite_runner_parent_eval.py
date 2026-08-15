@@ -167,7 +167,160 @@ def test_eval_only_reconciliation_keeps_execution_and_derived_verdict(tmp_path):
     assert set(selected) == {executed, derived}
 
 
-def test_eval_only_parent_budget_allows_only_the_remaining_attempt(tmp_path):
+def test_eval_only_reconciliation_retains_prior_final_report_sources(tmp_path):
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    task = "instance_owner__repo-82"
+    prior = tmp_path / "task_82_eval_only_prior.json"
+    prior.write_text(
+        json.dumps(
+            {
+                "rows": [
+                    {
+                        **_row(82, task, "/run/prior.log", 10, "technical_eval_failed"),
+                        "eval": {
+                            "status": "technical_eval_failed",
+                            "attempt_count": 2,
+                            "executed": True,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (parent / "final_eval_layer_report.json").write_text(
+        json.dumps(
+            {
+                "source_reports": [
+                    str(parent / "parallel_summary.json"),
+                    str(prior),
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    current = tmp_path / "task_82_eval_only_current.json"
+    current.write_text(
+        json.dumps({"rows": [_row(82, task, "/run/current.log", 10, "eval_done", True)]}),
+        encoding="utf-8",
+    )
+
+    selected = runner.eval_only_reconciliation_reports(parent, current)
+
+    assert set(selected) == {prior, current}
+
+
+def test_eval_only_reconciliation_rejects_a_corrupt_prior_final_report(tmp_path):
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    (parent / "final_eval_layer_report.json").write_text("{", encoding="utf-8")
+    current = tmp_path / "task_82_eval_only_current.json"
+    current.write_text(
+        json.dumps(
+            {
+                "rows": [
+                    _row(
+                        82,
+                        "instance_owner__repo-82",
+                        "/run/current.log",
+                        10,
+                        "eval_done",
+                        True,
+                    )
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="invalid_report_json"):
+        runner.eval_only_reconciliation_reports(parent, current)
+
+
+@pytest.mark.parametrize("source_reports", [None, {}, [], ["relative.json"], [1]])
+def test_eval_only_reconciliation_rejects_invalid_historical_sources(
+    tmp_path,
+    source_reports,
+):
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    (parent / "final_eval_layer_report.json").write_text(
+        json.dumps({"source_reports": source_reports}),
+        encoding="utf-8",
+    )
+    current = tmp_path / "task_82_eval_only_current.json"
+    current.write_text(
+        json.dumps(
+            {
+                "rows": [
+                    _row(
+                        82,
+                        "instance_owner__repo-82",
+                        "/run/current.log",
+                        10,
+                        "eval_done",
+                        True,
+                    )
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="invalid source_reports"):
+        runner.eval_only_reconciliation_reports(parent, current)
+
+
+def test_eval_only_reconciliation_uses_recency_for_a_derived_verdict(tmp_path):
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    task = "instance_owner__repo-82"
+    older = parent / "task_82_eval_only_old.json"
+    older.write_text(
+        json.dumps(
+            {
+                "rows": [
+                    {
+                        **_row(82, task, "/run/old.log", 10, "eval_done", False),
+                        "eval": {
+                            "status": "eval_done",
+                            "attempt_count": 2,
+                            "executed": False,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    newer = parent / "task_82_eval_only_new.json"
+    newer.write_text(
+        json.dumps(
+            {
+                "rows": [
+                    {
+                        **_row(82, task, "/run/new.log", 10, "eval_done", True),
+                        "eval": {
+                            "status": "eval_done",
+                            "attempt_count": 1,
+                            "executed": False,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    os.utime(older, ns=(1, 1))
+    os.utime(newer, ns=(2, 2))
+
+    selected = runner.eval_only_reconciliation_reports(parent, newer)
+
+    assert selected == [newer]
+
+
+def test_eval_only_parent_budget_keeps_the_current_run_limit_independent(tmp_path):
     parent = tmp_path / "parent"
     parent.mkdir()
     row = {
@@ -184,18 +337,19 @@ def test_eval_only_parent_budget_allows_only_the_remaining_attempt(tmp_path):
         parent_output_dir=parent,
         start_index=82,
         limit=1,
-        max_eval_attempts=2,
+        max_eval_attempts=1,
     )
 
     budget = runner.apply_parent_eval_budget(args)
 
     assert budget["effective_additional_eval_attempts"] == 1
-    assert budget["effective_max_eval_attempts"] == 2
+    assert budget["effective_max_eval_attempts"] == 1
     assert budget["projected_total_eval_attempts"] == 2
-    assert args.max_eval_attempts == 2
+    assert budget["max_total_eval_attempts"] == 10
+    assert args.max_eval_attempts == 1
 
 
-def test_eval_only_parent_budget_rejects_an_extra_retry(tmp_path):
+def test_eval_only_parent_budget_allows_recovery_after_two_prior_attempts(tmp_path):
     parent = tmp_path / "parent"
     parent.mkdir()
     row = {
@@ -215,12 +369,12 @@ def test_eval_only_parent_budget_rejects_an_extra_retry(tmp_path):
         max_eval_attempts=2,
     )
 
-    try:
-        runner.apply_parent_eval_budget(args)
-    except RuntimeError as exc:
-        assert "eval retry budget exhausted" in str(exc)
-    else:
-        raise AssertionError("an exhausted task must not launch another eval")
+    budget = runner.apply_parent_eval_budget(args)
+
+    assert budget["previous_eval_attempts"][82] == 2
+    assert budget["effective_additional_eval_attempts"] == 2
+    assert budget["projected_total_eval_attempts"] == 4
+    assert args.max_eval_attempts == 2
 
 
 def test_eval_only_parent_budget_uses_the_updated_final_report(tmp_path):
@@ -236,7 +390,7 @@ def test_eval_only_parent_budget_uses_the_updated_final_report(tmp_path):
         encoding="utf-8",
     )
     (parent / "final_eval_layer_report.json").write_text(
-        json.dumps({"tasks": [{"index": 82, "eval_attempt_count": 2}]}),
+        json.dumps({"tasks": [{"index": 82, "observed_eval_attempt_count": 9}]}),
         encoding="utf-8",
     )
     args = SimpleNamespace(
@@ -247,12 +401,12 @@ def test_eval_only_parent_budget_uses_the_updated_final_report(tmp_path):
         max_eval_attempts=2,
     )
 
-    try:
-        runner.apply_parent_eval_budget(args)
-    except RuntimeError as exc:
-        assert "eval retry budget exhausted" in str(exc)
-    else:
-        raise AssertionError("the updated parent report must block a third eval")
+    budget = runner.apply_parent_eval_budget(args)
+
+    assert budget["previous_eval_attempts"][82] == 9
+    assert budget["effective_additional_eval_attempts"] == 1
+    assert budget["projected_total_eval_attempts"] == 10
+    assert args.max_eval_attempts == 1
 
 
 def test_eval_only_parent_budget_adds_split_parent_attempts(tmp_path):
@@ -282,12 +436,36 @@ def test_eval_only_parent_budget_adds_split_parent_attempts(tmp_path):
         max_eval_attempts=2,
     )
 
-    try:
+    budget = runner.apply_parent_eval_budget(args)
+
+    assert budget["previous_eval_attempts"][82] == 2
+    assert budget["effective_additional_eval_attempts"] == 2
+    assert budget["projected_total_eval_attempts"] == 4
+    assert args.max_eval_attempts == 2
+
+
+def test_eval_only_parent_budget_rejects_after_ten_attempts(tmp_path):
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    row = {
+        "index": 82,
+        "task": "instance_owner__repo-82",
+        "eval": {"status": "technical_eval_failed", "attempt_count": 10},
+    }
+    (parent / "parallel_summary.json").write_text(
+        json.dumps({"results": [{"rows": [row]}]}),
+        encoding="utf-8",
+    )
+    args = SimpleNamespace(
+        eval_only=True,
+        parent_output_dir=parent,
+        start_index=82,
+        limit=1,
+        max_eval_attempts=1,
+    )
+
+    with pytest.raises(RuntimeError, match="max total is 10"):
         runner.apply_parent_eval_budget(args)
-    except RuntimeError as exc:
-        assert "eval retry budget exhausted" in str(exc)
-    else:
-        raise AssertionError("split parent attempts must consume the full budget")
 
 
 def test_eval_only_parent_budget_does_not_count_a_dry_run(tmp_path):

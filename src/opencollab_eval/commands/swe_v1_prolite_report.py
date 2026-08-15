@@ -54,9 +54,35 @@ def eval_only_reconciliation_reports(
 ) -> list[Path]:
     """Select cumulative execution evidence and the newest verdict per task."""
     candidates = set(parent_output_dir.glob("task_*_eval_only_*.json"))
+    final_report_path = parent_output_dir / "final_eval_layer_report.json"
+    try:
+        final_report_path.lstat()
+    except FileNotFoundError:
+        pass
+    else:
+        final_report, load_error = _swe_report_io.load_json_with_error(
+            final_report_path
+        )
+        if load_error:
+            raise RuntimeError(
+                f"prior final report is unavailable: {load_error}: {final_report_path}"
+            )
+        source_reports = final_report.get("source_reports")
+        if not isinstance(source_reports, list) or not source_reports or any(
+            not isinstance(value, str) or not value or not Path(value).is_absolute()
+            for value in source_reports
+        ):
+            raise RuntimeError(
+                f"prior final report has invalid source_reports: {final_report_path}"
+            )
+        parent_summary = (parent_output_dir / "parallel_summary.json").absolute()
+        for value in source_reports:
+            historical_path = Path(value).absolute()
+            if historical_path != parent_summary:
+                candidates.add(historical_path)
     candidates.add(current_report.absolute())
-    selected_execution: dict[int, tuple[tuple[int, int, str], Path]] = {}
-    selected_verdict: dict[int, tuple[tuple[int, int, str], Path]] = {}
+    selected_execution: set[Path] = set()
+    selected_verdict: dict[int, tuple[tuple[int, str], Path]] = {}
     for path in candidates:
         path = path.absolute()
         info = path.lstat()
@@ -69,24 +95,14 @@ def eval_only_reconciliation_reports(
         if len(rows) != 1 or len(indices) != 1:
             raise RuntimeError(f"eval-only report must contain one indexed row: {path}")
         index = next(iter(indices))
-        evaluation = rows[0].get("eval")
-        represented = (
-            evaluation.get("attempt_count") if isinstance(evaluation, dict) else 0
-        )
-        if isinstance(represented, bool) or not isinstance(represented, int):
-            represented = 0
-        verdict_score = (max(0, represented), info.st_mtime_ns, str(path))
+        verdict_score = (info.st_mtime_ns, str(path))
         if index not in selected_verdict or verdict_score > selected_verdict[index][0]:
             selected_verdict[index] = (verdict_score, path)
         executed = _integrity.eval_attempt_count(rows[0])
-        execution_score = (executed, info.st_mtime_ns, str(path))
-        if executed and (
-            index not in selected_execution
-            or execution_score > selected_execution[index][0]
-        ):
-            selected_execution[index] = (execution_score, path)
-    selected_paths = {
-        entry[1] for selected in (selected_execution, selected_verdict) for entry in selected.values()
+        if executed:
+            selected_execution.add(path)
+    selected_paths = selected_execution | {
+        entry[1] for entry in selected_verdict.values()
     }
     return sorted(selected_paths, key=str)
 
