@@ -11,6 +11,7 @@ from opencollab_eval.engine.swe_v1_remote_records import (
     generation_done,
     historical_generation_identity_status,
     latest_pair,
+    read_jsonl,
 )
 
 _BLOCKED_IDENTITY_FIELDS = (
@@ -30,6 +31,17 @@ _BLOCKED_IDENTITY_FIELDS = (
     "wire_protocol",
     "reasoning_effort",
 )
+_BLOCKED_CAUSAL_FIELDS = (
+    "workflow_status",
+    "runner_returncode",
+    "runtime_status",
+    "error",
+    "submission_eligible",
+    "execution_quiesced",
+    "container_execution_quiesced",
+    "workflow_result",
+)
+_EXECUTION_ABORT_MARKER = "Execution environment has been aborted"
 
 
 def _positive_integer(value):
@@ -104,6 +116,41 @@ def _agent_failure_evidence_valid(value):
     return summarize_terminal_provider_failures(value) is None
 
 
+def _blocked_technical_interruption_proven(metric, matching_official_eval_attempts):
+    if matching_official_eval_attempts != 0:
+        return False
+    if (
+        metric.get("runner_returncode") != 1
+        or metric.get("runtime_status") != "completed"
+        or metric.get("error") not in (None, "")
+        or metric.get("submission_eligible") is not True
+        or metric.get("execution_quiesced") is not True
+        or metric.get("container_execution_quiesced") is not True
+    ):
+        return False
+    result = metric.get("workflow_result")
+    if not isinstance(result, dict) or result.get("status") != "blocked":
+        return False
+    blocker = result.get("blocker")
+    attempts = result.get("attempts")
+    if not isinstance(blocker, str) or _EXECUTION_ABORT_MARKER not in blocker:
+        return False
+    if not isinstance(attempts, list) or not attempts or not isinstance(attempts[-1], dict):
+        return False
+    verdict = attempts[-1].get("final_verdict")
+    return bool(
+        isinstance(verdict, dict) and verdict.get("verdict") == "BLOCKED" and verdict.get("findings") == blocker
+    )
+
+
+def _matching_official_eval_attempt_count(run_dir, task):
+    return sum(
+        1
+        for row in read_jsonl(run_dir / "eval_attempts.jsonl")
+        if row.get("phase") == "eval_attempt_started" and row.get("task") == task
+    )
+
+
 def _blocked_identity_document_proven(prediction, metric):
     if not isinstance(prediction, dict) or not isinstance(metric, dict):
         return False
@@ -126,6 +173,10 @@ def _blocked_identity_document_proven(prediction, metric):
     if any(field not in embedded or field not in metric for field in _BLOCKED_IDENTITY_FIELDS):
         return False
     if any(embedded[field] != metric[field] for field in _BLOCKED_IDENTITY_FIELDS):
+        return False
+    if any(field not in embedded or field not in metric for field in _BLOCKED_CAUSAL_FIELDS):
+        return False
+    if any(embedded[field] != metric[field] for field in _BLOCKED_CAUSAL_FIELDS):
         return False
     if _normalized_historical_llm_transport(embedded, metric) is None:
         return False
@@ -163,7 +214,13 @@ def _blocked_identity_document_proven(prediction, metric):
     )
 
 
-def eval_only_generation_identity_status(prediction, metric, task):
+def eval_only_generation_identity_status(
+    prediction,
+    metric,
+    task,
+    *,
+    matching_official_eval_attempts,
+):
     identity_metric = metric
     if (
         isinstance(metric, dict)
@@ -174,12 +231,19 @@ def eval_only_generation_identity_status(prediction, metric, task):
         agent_failures = metric.get("agent_failures")
         if not _agent_failure_evidence_valid(agent_failures):
             return "invalid"
+        if not _blocked_technical_interruption_proven(
+            metric,
+            matching_official_eval_attempts,
+        ):
+            return "invalid"
         identity_metric = dict(metric)
         identity_metric.pop("provider_failure", None)
         # A blocked workflow can retain an agent-stage failure after producing a
         # complete, quiesced candidate.  The eval-only gate proves that candidate
         # independently, while the original failure evidence remains untouched.
         identity_metric["agent_failures"] = []
+        status = historical_generation_identity_status(prediction, identity_metric, task)
+        return "blocked_technical_verified" if status == "verified" else "invalid"
     return historical_generation_identity_status(prediction, identity_metric, task)
 
 
@@ -187,5 +251,13 @@ def generation_done_for_mode(run_dir, task, *, eval_only):
     if not eval_only:
         return generation_done(run_dir, task, require_identity=True)
     prediction, metric, pairing = latest_pair(run_dir, task)
-    status = eval_only_generation_identity_status(prediction, metric, task)
+    status = eval_only_generation_identity_status(
+        prediction,
+        metric,
+        task,
+        matching_official_eval_attempts=_matching_official_eval_attempt_count(
+            run_dir,
+            task,
+        ),
+    )
     return status != "invalid", prediction, metric, pairing

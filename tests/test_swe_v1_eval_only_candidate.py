@@ -58,6 +58,19 @@ def _blocked_candidate(namespace, task, **overrides):
         agent_failures=[],
         provider_failure=False,
         submission_eligible=True,
+        container_execution_quiesced=True,
+        workflow_result={
+            "status": "blocked",
+            "blocker": "Execution environment has been aborted during verification.",
+            "attempts": [
+                {
+                    "final_verdict": {
+                        "verdict": "BLOCKED",
+                        "findings": "Execution environment has been aborted during verification.",
+                    }
+                }
+            ],
+        },
     )
     metrics[0].update(overrides)
     _write_jsonl(metrics_path, metrics)
@@ -66,6 +79,15 @@ def _blocked_candidate(namespace, task, **overrides):
     predictions[0]["workflow_metric"] = dict(metrics[0])
     _write_jsonl(predictions_path, predictions)
     return namespace["latest_pair"](namespace["base_run_dir"] / task, task)
+
+
+def _eval_only_status(namespace, prediction, metric, task, attempts=0):
+    return namespace["eval_only_generation_identity_status"](
+        prediction,
+        metric,
+        task,
+        matching_official_eval_attempts=attempts,
+    )
 
 
 def test_eval_only_accepts_proven_blocked_candidate_with_no_provider_failure(tmp_path):
@@ -79,9 +101,7 @@ def test_eval_only_accepts_proven_blocked_candidate_with_no_provider_failure(tmp
     assert namespace["historical_generation_identity_status"](
         prediction, metric, task
     ) == "invalid"
-    assert namespace["eval_only_generation_identity_status"](
-        prediction, metric, task
-    ) == "verified"
+    assert _eval_only_status(namespace, prediction, metric, task) == "blocked_technical_verified"
     assert namespace["generation_done"](
         namespace["base_run_dir"] / task, task, require_identity=False
     )[0] is False
@@ -106,10 +126,149 @@ def test_eval_only_accepts_proven_blocked_candidate_with_agent_failure_evidence(
         ],
     )
 
-    assert namespace["eval_only_generation_identity_status"](
-        prediction, metric, task
-    ) == "verified"
+    assert _eval_only_status(namespace, prediction, metric, task) == "blocked_technical_verified"
     assert metric["agent_failures"][0]["exception_type"] == "ResponsesProtocolError"
+
+
+def test_eval_only_rejects_blocked_candidate_after_official_attempt(tmp_path):
+    namespace = _namespace(tmp_path)
+    task = "task-1"
+    prediction, metric, _pairing = _blocked_candidate(namespace, task)
+    _write_jsonl(
+        namespace["base_run_dir"] / task / "eval_attempts.jsonl",
+        [
+            {
+                "phase": "eval_attempt_started",
+                "task": task,
+                "record_id": "different-record",
+            }
+        ],
+    )
+
+    assert _eval_only_status(namespace, prediction, metric, task, attempts=1) == "invalid"
+    assert (
+        namespace["generation_done_for_mode"](
+            namespace["base_run_dir"] / task,
+            task,
+            eval_only=True,
+        )[0]
+        is False
+    )
+
+
+@pytest.mark.parametrize(
+    "workflow_result",
+    [
+        None,
+        {},
+        {"status": "failed"},
+        {
+            "status": "blocked",
+            "blocker": "Verifier returned no evidence.",
+            "attempts": [],
+        },
+        {
+            "status": "blocked",
+            "blocker": "Execution environment has been aborted during verification.",
+            "attempts": [],
+        },
+        {
+            "status": "blocked",
+            "blocker": "Execution environment has been aborted during verification.",
+            "attempts": [
+                {
+                    "final_verdict": {
+                        "verdict": "FAIL",
+                        "findings": "Execution environment has been aborted during verification.",
+                    }
+                }
+            ],
+        },
+        {
+            "status": "blocked",
+            "blocker": "Execution environment has been aborted during verification.",
+            "attempts": [
+                {
+                    "final_verdict": {
+                        "verdict": "BLOCKED",
+                        "findings": "different evidence",
+                    }
+                }
+            ],
+        },
+    ],
+)
+def test_eval_only_rejects_blocked_candidate_without_causal_technical_evidence(
+    tmp_path,
+    workflow_result,
+):
+    namespace = _namespace(tmp_path)
+    task = "task-1"
+    prediction, metric, _pairing = _blocked_candidate(
+        namespace,
+        task,
+        workflow_result=workflow_result,
+    )
+
+    assert _eval_only_status(namespace, prediction, metric, task) == "invalid"
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("workflow_status", "failed"),
+        ("runner_returncode", 0),
+        ("runtime_status", "failed"),
+        ("error", "different error"),
+        ("submission_eligible", False),
+        ("execution_quiesced", False),
+        ("container_execution_quiesced", False),
+        (
+            "workflow_result",
+            {
+                "status": "blocked",
+                "blocker": "Verifier rejected the candidate semantics.",
+                "attempts": [
+                    {
+                        "final_verdict": {
+                            "verdict": "BLOCKED",
+                            "findings": "Verifier rejected the candidate semantics.",
+                        }
+                    }
+                ],
+            },
+        ),
+    ],
+)
+def test_eval_only_rejects_mismatched_embedded_causal_evidence(tmp_path, field, value):
+    namespace = _namespace(tmp_path)
+    task = "task-1"
+    prediction, metric, _pairing = _blocked_candidate(namespace, task)
+    prediction["workflow_metric"][field] = value
+
+    assert _eval_only_status(namespace, prediction, metric, task) == "invalid"
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "workflow_status",
+        "runner_returncode",
+        "runtime_status",
+        "error",
+        "submission_eligible",
+        "execution_quiesced",
+        "container_execution_quiesced",
+        "workflow_result",
+    ],
+)
+def test_eval_only_rejects_one_sided_causal_evidence(tmp_path, field):
+    namespace = _namespace(tmp_path)
+    task = "task-1"
+    prediction, metric, _pairing = _blocked_candidate(namespace, task)
+    prediction["workflow_metric"].pop(field)
+
+    assert _eval_only_status(namespace, prediction, metric, task) == "invalid"
 
 
 def test_eval_only_accepts_legacy_blocked_candidate_without_provider_failure_fields(tmp_path):
@@ -119,9 +278,7 @@ def test_eval_only_accepts_legacy_blocked_candidate_without_provider_failure_fie
     prediction["workflow_metric"].pop("provider_failure")
     metric.pop("provider_failure")
 
-    assert namespace["eval_only_generation_identity_status"](
-        prediction, metric, task
-    ) == "verified"
+    assert _eval_only_status(namespace, prediction, metric, task) == "blocked_technical_verified"
 
 
 @pytest.mark.parametrize("document", ["metric", "embedded"])
@@ -132,9 +289,7 @@ def test_eval_only_rejects_one_sided_provider_failure_field(tmp_path, document):
     target = metric if document == "metric" else prediction["workflow_metric"]
     target.pop("provider_failure")
 
-    assert namespace["eval_only_generation_identity_status"](
-        prediction, metric, task
-    ) == "invalid"
+    assert _eval_only_status(namespace, prediction, metric, task) == "invalid"
 
 
 @pytest.mark.parametrize(
@@ -183,9 +338,7 @@ def test_eval_only_rejects_malformed_agent_failure_evidence(tmp_path, agent_fail
         agent_failures=agent_failures,
     )
 
-    assert namespace["eval_only_generation_identity_status"](
-        prediction, metric, task
-    ) == "invalid"
+    assert _eval_only_status(namespace, prediction, metric, task) == "invalid"
 
 
 @pytest.mark.parametrize("field", ["provider_failure", "agent_failures"])
@@ -205,9 +358,7 @@ def test_eval_only_rejects_mismatched_embedded_failure_evidence(tmp_path, field)
             }
         ]
 
-    assert namespace["eval_only_generation_identity_status"](
-        prediction, metric, task
-    ) == "invalid"
+    assert _eval_only_status(namespace, prediction, metric, task) == "invalid"
 
 
 @pytest.mark.parametrize("transport", ["direct", "reverse_proxy"])
@@ -221,9 +372,7 @@ def test_eval_only_accepts_matching_explicit_transport(tmp_path, transport):
     assert namespace["_normalized_historical_llm_transport"](
         prediction["workflow_metric"], metric
     ) == transport
-    assert namespace["eval_only_generation_identity_status"](
-        prediction, metric, task
-    ) == "verified"
+    assert _eval_only_status(namespace, prediction, metric, task) == "blocked_technical_verified"
 
 
 @pytest.mark.parametrize("document", ["metric", "embedded"])
@@ -234,9 +383,7 @@ def test_eval_only_rejects_one_sided_transport(tmp_path, document):
     target = metric if document == "metric" else prediction["workflow_metric"]
     target["llm_transport"] = "direct"
 
-    assert namespace["eval_only_generation_identity_status"](
-        prediction, metric, task
-    ) == "invalid"
+    assert _eval_only_status(namespace, prediction, metric, task) == "invalid"
 
 
 @pytest.mark.parametrize("transport", ["", "proxy", "DIRECT", None, 1])
@@ -247,9 +394,7 @@ def test_eval_only_rejects_invalid_matching_transport(tmp_path, transport):
     prediction["workflow_metric"]["llm_transport"] = transport
     metric["llm_transport"] = transport
 
-    assert namespace["eval_only_generation_identity_status"](
-        prediction, metric, task
-    ) == "invalid"
+    assert _eval_only_status(namespace, prediction, metric, task) == "invalid"
 
 
 def test_eval_only_rejects_mismatched_transport(tmp_path):
@@ -259,9 +404,7 @@ def test_eval_only_rejects_mismatched_transport(tmp_path):
     prediction["workflow_metric"]["llm_transport"] = "reverse_proxy"
     metric["llm_transport"] = "direct"
 
-    assert namespace["eval_only_generation_identity_status"](
-        prediction, metric, task
-    ) == "invalid"
+    assert _eval_only_status(namespace, prediction, metric, task) == "invalid"
 
 
 @pytest.mark.parametrize(
@@ -270,6 +413,7 @@ def test_eval_only_rejects_mismatched_transport(tmp_path):
         ("provider_failure", True),
         ("submission_eligible", False),
         ("execution_quiesced", False),
+        ("container_execution_quiesced", False),
         ("patch_extraction_succeeded", False),
         ("trusted_patch_extraction", {}),
     ],
@@ -285,9 +429,7 @@ def test_eval_only_rejects_blocked_candidate_without_complete_proof(
         namespace, task, **{field: value}
     )
 
-    assert namespace["eval_only_generation_identity_status"](
-        prediction, metric, task
-    ) == "invalid"
+    assert _eval_only_status(namespace, prediction, metric, task) == "invalid"
 
 
 def _tampered(value):
@@ -323,9 +465,7 @@ def test_eval_only_rejects_incomplete_or_tampered_identity_document(
     else:
         target[key] = _tampered(target[key])
 
-    assert namespace["eval_only_generation_identity_status"](
-        prediction, metric, task
-    ) == "invalid"
+    assert _eval_only_status(namespace, prediction, metric, task) == "invalid"
 
 
 @pytest.mark.parametrize("field", ["model", "workflow"])
@@ -344,6 +484,4 @@ def test_eval_only_rejects_prediction_identity_document_tampering(
     else:
         prediction[key] = _tampered(prediction[key])
 
-    assert namespace["eval_only_generation_identity_status"](
-        prediction, metric, task
-    ) == "invalid"
+    assert _eval_only_status(namespace, prediction, metric, task) == "invalid"
