@@ -18,6 +18,7 @@ from typing import Any
 
 from opencollab_eval.commands import _swe_eval_layer_integrity, _swe_report_io
 from opencollab_eval.commands.swe_v1_parent_eval_lock import ParentEvalLock
+from opencollab_eval.commands.swe_v1_prolite_common import MAX_TOTAL_EVAL_ATTEMPTS
 from opencollab_eval.commands.swe_v1_prolite_controller import update_parent_fact_report
 from opencollab_eval.safe_files import write_regular_bytes_atomic
 
@@ -406,7 +407,7 @@ def _run_job(
             key,
             {"status": "skipped_terminal", "report": str(terminal), **job},
         )
-    if _observed_eval_attempts(job) >= 2:
+    if _observed_eval_attempts(job) >= MAX_TOTAL_EVAL_ATTEMPTS:
         return _set_job_state(
             state_path, state, key, {"status": "budget_exhausted", **job}
         )
@@ -457,7 +458,7 @@ def _run_job(
     if (
         result["status"] in {"command_failed", "technical_failed"}
         and launch_count < 2
-        and _observed_eval_attempts(job) < 2
+        and _observed_eval_attempts(job) < MAX_TOTAL_EVAL_ATTEMPTS
     ):
         return _run_job(
             plan,

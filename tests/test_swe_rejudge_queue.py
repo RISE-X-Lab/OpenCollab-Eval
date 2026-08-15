@@ -277,10 +277,50 @@ def test_queue_runs_eval_only_with_generation_disabled(tmp_path, monkeypatch):
     assert argv[argv.index("--expected-record-id") + 1] == "record-25"
 
 
-def test_queue_skips_an_exhausted_candidate_without_starting_a_child(
+def test_queue_skips_a_ten_attempt_candidate_without_starting_a_child(
     tmp_path,
     monkeypatch,
 ):
+    plan, parent = _plan(tmp_path)
+    (parent / "parallel_summary.json").write_text(
+        json.dumps(
+            {
+                "results": [
+                    {
+                        "rows": [
+                            {
+                                "index": 25,
+                                "task": "instance_owner__repo-25",
+                                "generation": {
+                                    "record_id": "record-25",
+                                    "patch_sha256": "a" * 64,
+                                    "source_patch_sha256": "a" * 64,
+                                    "eval_patch_sha256": "a" * 64,
+                                },
+                                "eval": {
+                                    "status": "technical_eval_failed",
+                                    "attempt_count": 10,
+                                },
+                            }
+                        ]
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        queue,
+        "update_parent_fact_report",
+        lambda args: {"status": "done", "report_json": str(args.json_output)},
+    )
+    result = queue.run_queue(plan, tmp_path / "state", workers=2)
+
+    assert result["counts"] == {"budget_exhausted": 1}
+
+
+def test_queue_allows_recovery_after_two_prior_attempts(tmp_path, monkeypatch):
+    _accept_terminal(monkeypatch)
     plan, parent = _plan(tmp_path)
     (parent / "parallel_summary.json").write_text(
         json.dumps(
@@ -309,14 +349,23 @@ def test_queue_skips_an_exhausted_candidate_without_starting_a_child(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(
-        queue,
-        "update_parent_fact_report",
-        lambda args: {"status": "done", "report_json": str(args.json_output)},
-    )
-    result = queue.run_queue(plan, tmp_path / "state", workers=2)
+    calls = 0
 
-    assert result["counts"] == {"budget_exhausted": 1}
+    def fake_run(argv, *, stdout, stderr, text):
+        nonlocal calls
+        del stdout, stderr, text
+        calls += 1
+        json_output = Path(argv[argv.index("--json-output") + 1])
+        _terminal_report(json_output, index=25, patch_sha256="a" * 64, resolved=True)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(queue.subprocess, "run", fake_run)
+    monkeypatch.setattr(queue, "update_parent_fact_report", lambda args: {})
+
+    result = queue.run_queue(plan, tmp_path / "state", workers=1)
+
+    assert calls == 1
+    assert result["counts"] == {"terminal": 1}
 
 
 @pytest.mark.parametrize(

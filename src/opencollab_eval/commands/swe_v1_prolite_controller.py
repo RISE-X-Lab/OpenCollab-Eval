@@ -641,14 +641,14 @@ def apply_parent_eval_budget(args: argparse.Namespace) -> dict[str, Any] | None:
         counts_by_index.get(index, 0) + effective_additional_attempts
         for index in selected
     )
-    args.max_eval_attempts = projected_total_attempts
+    args.max_eval_attempts = effective_additional_attempts
     return {
         "max_total_eval_attempts": MAX_TOTAL_EVAL_ATTEMPTS,
         "previous_eval_attempts": counts_by_index,
         "final_report_eval_attempts": final_report_counts,
         "remaining_by_index": remaining_by_index,
         "effective_additional_eval_attempts": effective_additional_attempts,
-        "effective_max_eval_attempts": projected_total_attempts,
+        "effective_max_eval_attempts": effective_additional_attempts,
         "projected_total_eval_attempts": projected_total_attempts,
     }
 
@@ -665,7 +665,7 @@ def update_parent_fact_report(args: argparse.Namespace) -> dict[str, Any]:
         "--report-json",
         str(parent_summary),
         "--max-rounds",
-        "2",
+        str(MAX_TOTAL_EVAL_ATTEMPTS),
         "--allow-over-budget-evidence",
         "--json-output",
         str(parent_output_dir / "final_eval_layer_report.json"),

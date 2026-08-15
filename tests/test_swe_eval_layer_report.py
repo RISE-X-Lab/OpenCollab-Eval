@@ -392,7 +392,11 @@ def test_eval_layer_report_rejects_cross_run_third_eval_attempt(tmp_path):
     second_path = _write_json(tmp_path / "second.json", {"rows": [second]})
 
     try:
-        module.build_report([first_path, second_path], max_rounds=2)
+        module.build_report(
+            [first_path, second_path],
+            max_rounds=2,
+            max_eval_attempts=2,
+        )
     except ValueError as exc:
         assert "eval attempt budget exceeded" in str(exc)
         assert "task-a=3" in str(exc)
@@ -411,6 +415,7 @@ def test_eval_layer_report_preserves_over_budget_evidence_outside_final_result(t
     report = module.build_report(
         [first_path, second_path],
         max_rounds=2,
+        max_eval_attempts=2,
         allow_over_budget_evidence=True,
     )
 
@@ -424,6 +429,28 @@ def test_eval_layer_report_preserves_over_budget_evidence_outside_final_result(t
     assert task["accepted_eval_status"] == "technical_eval_failed"
     assert task["over_budget_evidence"][0]["eval_status"] == "eval_done"
     assert task["over_budget_evidence"][0]["resolved"] is False
+
+
+def test_eval_layer_report_default_accepts_ten_cross_run_eval_attempts(tmp_path):
+    module = _load_module()
+    paths = []
+    for index in range(10):
+        row = _row(
+            1,
+            "task-a",
+            f"/run-{index}/task-a.outer.log",
+            100,
+            "technical_eval_failed" if index < 9 else "eval_done",
+            False,
+        )
+        paths.append(_write_json(tmp_path / f"round-{index}.json", {"rows": [row]}))
+
+    report = module.build_report(paths, max_rounds=10)
+
+    assert report["max_eval_attempts"] == 10
+    assert report["counts"]["observed_eval_attempts"] == 10
+    assert report["counts"]["over_budget_tasks"] == 0
+    assert report["tasks"][0]["eval_attempt_count"] == 10
 
 
 def test_eval_layer_report_counts_cumulative_rejudge_ledger_once(tmp_path):

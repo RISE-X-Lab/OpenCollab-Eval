@@ -407,7 +407,7 @@ def build_report(
     token_cost_path: Path | None = None,
     expected_indices: tuple[int, ...] | list[int] | None = None,
     max_rounds: int = 2,
-    max_eval_attempts: int = 2,
+    max_eval_attempts: int = 10,
     allow_over_budget_evidence: bool = False,
     usd_cny: float | None = None,
 ) -> dict[str, Any]:
@@ -773,7 +773,7 @@ def main() -> int:
     parser.add_argument("--expected-index", action="append", type=int, default=[])
     parser.add_argument("--token-cost-json", type=Path)
     parser.add_argument("--max-rounds", type=int, default=2)
-    parser.add_argument("--max-eval-attempts", type=int, default=2)
+    parser.add_argument("--max-eval-attempts", type=int, default=10)
     parser.add_argument("--allow-over-budget-evidence", action="store_true")
     parser.add_argument("--usd-cny", type=float)
     parser.add_argument("--json-output", type=Path, required=True)
