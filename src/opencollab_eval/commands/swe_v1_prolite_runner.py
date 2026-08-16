@@ -193,6 +193,8 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
         parser.error("--eval-only requires --parent-output-dir")
     if args.eval_only and args.limit != 1:
         parser.error("--eval-only requires --limit 1")
+    if args.eval_only and args.max_task_starts != 0:
+        parser.error("--eval-only requires --max-task-starts 0")
 
     if args.start_index < 1:
         parser.error("--start-index must be >= 1")
