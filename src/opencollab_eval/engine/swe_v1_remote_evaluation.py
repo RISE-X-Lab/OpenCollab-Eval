@@ -678,8 +678,9 @@ def main():
                 run_dir, task, eval_only=True
             )
             if done:
+                matching_attempts = _matching_official_eval_attempt_count(run_dir, task)
                 identity_status = eval_only_generation_identity_status(
-                    prediction, metric, task
+                    prediction, metric, task, matching_official_eval_attempts=matching_attempts
                 )
                 gen = reconcile_eval_only_candidate_identity(
                     generation_done_result(
