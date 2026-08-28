@@ -294,8 +294,15 @@ async def generate(
     args: argparse.Namespace,
     workflow_fn,
     workflow_label: str | None = None,
+    team_config: str | None = None,
 ) -> tuple[str, dict]:
-    """Run the chosen workflow in a fresh container; return (patch, metrics)."""
+    """Run the chosen solver in a fresh container; return (patch, metrics).
+
+    ``team_config`` selects the team regime instead of a workflow: the same
+    container, the same anonymous baseline and the same trusted host extraction,
+    with the order of work decided by the model rather than by a script. The two
+    are mutually exclusive and the caller has already rejected passing both.
+    """
     iid = instance["instance_id"]
     name = gp.unique_container_name("oc-wf-", iid)
     run_dir = Path(args.output).parent
@@ -363,7 +370,8 @@ async def generate(
             prompt=gp.WORKFLOW_AGENT_PROMPT,
             env_factory=env_factory,
             max_steps=args.max_steps,
-            workflow=workflow_fn,
+            workflow=None if team_config else workflow_fn,
+            team_config=team_config,
             temperature=cfg["temperature"],
             top_p=cfg.get("top_p"),
             max_output_tokens=cfg.get(
@@ -600,9 +608,16 @@ def main() -> None:
     ap.add_argument("--top-p", type=float)
     ap.add_argument("--max-output-tokens", type=int)
     ap.add_argument("--model-name", default=None, help="model_name_or_path in predictions")
-    ap.add_argument("--workflow", default=None,
-                    help="Bundled workflow name (e.g. analyst-solve); "
-                         "default: the built-in generate_review_fix")
+    solver_group = ap.add_mutually_exclusive_group()
+    solver_group.add_argument("--workflow", default=None,
+                              help="Bundled workflow name (e.g. analyst-solve); "
+                                   "default: the built-in generate_review_fix")
+    solver_group.add_argument(
+        "--team-config", default=None,
+        help="Team file to run instead of a workflow. Selects the regime whose "
+             "order of work the model decides; the path is site-specific and "
+             "has no default.",
+    )
     blind_group = ap.add_mutually_exclusive_group()
     blind_group.add_argument("--blind-validation", dest="blind_validation",
                              action="store_true",
@@ -649,16 +664,24 @@ def main() -> None:
     iid = instance["instance_id"]
     image = args.image or f"sweb.eval.{args.arch}.{iid}:latest"
 
-    # Resolve a named bundled workflow or use the built-in fallback.
-    if args.workflow:
+    # Resolve the solver: a team file, a named bundled workflow, or the
+    # built-in fallback.
+    if args.team_config:
+        team_config_path = Path(args.team_config).expanduser()
+        if not team_config_path.is_file():
+            ap.error(f"--team-config is not a file: {team_config_path}")
+        workflow_fn, wf_label = None, "team"
+    elif args.workflow:
         try:
             workflow_fn = _BUNDLED_WORKFLOWS[args.workflow]
         except KeyError:
             names = ", ".join(sorted(_BUNDLED_WORKFLOWS)) or "(none)"
             ap.error(f"unknown --workflow {args.workflow!r}; available: {names}")
         wf_label = args.workflow
+        team_config_path = None
     else:
         workflow_fn, wf_label = generate_review_fix, "generate_review_fix"
+        team_config_path = None
     args.blind_validation = _resolve_blind_validation(workflow_fn, args.blind_validation, wf_label)
 
     cfg = get_config(str(_REPO_ROOT))
@@ -684,8 +707,10 @@ def main() -> None:
     print(f"Image:    {image}")
     print(f"Model:    {cfg['model']} (provider={cfg['provider']})")
     print(f"Thinking: {cfg.get('thinking', False)}")
-    print(f"Workflow: {wf_label} (budget={args.budget}, "
+    print(f"Solver:   {wf_label} (budget={args.budget}, "
           f"max_steps/session={args.max_steps})")
+    if team_config_path is not None:
+        print(f"Team:     {team_config_path}")
     print(f"Blind validation: {args.blind_validation}")
     print(
         "Checkpoint: "
@@ -697,7 +722,15 @@ def main() -> None:
     args.model_name = model_name
     args._persist_output_after_cleanup = True
     patch, metrics = gp.run_with_bounded_shutdown(
-        generate(instance, image, cfg, args, workflow_fn, wf_label)
+        generate(
+            instance,
+            image,
+            cfg,
+            args,
+            workflow_fn,
+            wf_label,
+            team_config=None if team_config_path is None else str(team_config_path),
+        )
     )
 
     if patch.strip():
@@ -705,7 +738,7 @@ def main() -> None:
         print("--- patch preview ---")
         print("\n".join(patch.splitlines()[:40]))
     else:
-        print("\nWARNING: empty patch (workflow made no tracked changes)")
+        print("\nWARNING: empty patch (the solver made no tracked changes)")
 
     if not gp.metrics_have_completed_identity(metrics, patch):
         raise SystemExit(1)

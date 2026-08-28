@@ -40,6 +40,7 @@ async def run_eval_task_impl(
     resume_from_checkpoint: bool,
     cancellation_cleanup_timeout: float,
     defer_patch_extraction: bool,
+    team_config: Any = None,
 ) -> Any:
     facade = sys.modules["opencollab_eval.engine.evaluator"]
     prepared = prepare_eval_run(
@@ -47,6 +48,7 @@ async def run_eval_task_impl(
         task=task,
         output_dir=output_dir,
         workflow=workflow,
+        team_config=team_config,
         max_steps=max_steps,
         checkpoint_interval_seconds=checkpoint_interval_seconds,
         cancellation_cleanup_timeout=cancellation_cleanup_timeout,
@@ -71,6 +73,7 @@ async def run_eval_task_impl(
         llm_first_event_timeout=llm_first_event_timeout,
         llm_stream_idle_timeout=llm_stream_idle_timeout,
         resume_from_checkpoint=resume_from_checkpoint,
+        team_config=team_config,
     )
     execution = await execute_eval_run(
         facade,

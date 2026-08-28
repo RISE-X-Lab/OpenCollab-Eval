@@ -97,6 +97,7 @@ def _create_tracer(
     task_id: str,
     output_dir: str,
     workflow: Any,
+    team_config: Any = None,
 ) -> tuple[str, str | None, Any]:
     trajectories_dir = os.path.join(output_dir, "trajectories")
     run_dir = os.path.join(trajectories_dir, task_id)
@@ -106,7 +107,9 @@ def _create_tracer(
         output_dir=runtime_dir,
         filename=(
             facade.ORCHESTRATION_FILENAME
-            if workflow is not None
+            # A team run drives several sessions just as a workflow does, so its
+            # run directory is laid out the same way; only who sequences differs.
+            if workflow is not None or team_config is not None
             else "trajectory.jsonl"
         ),
     )
@@ -120,6 +123,7 @@ def prepare_eval_run(
     output_dir: str,
     workflow: Any,
     max_steps: int,
+    team_config: Any = None,
     checkpoint_interval_seconds: float | None,
     cancellation_cleanup_timeout: float,
 ) -> PreparedEvalRun:
@@ -137,6 +141,7 @@ def prepare_eval_run(
         task_id=task.task_id,
         output_dir=output_dir,
         workflow=workflow,
+        team_config=team_config,
     )
     return PreparedEvalRun(
         task=task,

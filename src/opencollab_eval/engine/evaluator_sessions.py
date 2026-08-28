@@ -298,6 +298,82 @@ async def _run_workflow_mode(
     return _EvalRunRecord(result, workflow=True)
 
 
+async def _run_team_mode(
+    *,
+    task: EvalTask,
+    env: ExecutionEnvironment,
+    tracer: EvidenceTrace,
+    team_config: str | os.PathLike[str],
+    model: str,
+    provider: str,
+    api_key: str | None,
+    base_url: str | None,
+    max_steps: int,
+    temperature: float = DEFAULT_TEMPERATURE,
+    top_p: float | None = DEFAULT_TOP_P,
+    max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
+    thinking: bool = DEFAULT_THINKING,
+    thinking_params: dict | None = None,
+    wire_protocol: str = "chat_completions",
+    reasoning_effort: str | None = None,
+    llm_connect_timeout: float = 30.0,
+    llm_first_event_timeout: float = 180.0,
+    llm_stream_idle_timeout: float = 180.0,
+    save_dir: str | None = None,
+    **_unused: Any,
+) -> _EvalRunRecord:
+    """Run one task-bound team, with the order of work left to the model.
+
+    The third regime beside a single session and a workflow, and the only one
+    whose sequence of work is not decided by code. It is here so that a
+    comparison against the workflow regime differs in that one respect and not
+    in where the agents work, what tools they hold, or how they hand results
+    over -- all of which are held equal by running both against the same task
+    container through the same environment.
+
+    Three settings are fixed rather than exposed. The roster is prebuilt, so
+    which roles exist is an input to the run instead of something the model
+    decides midway and the run has a declared topology to be judged against.
+    Each teammate gets its own worktree, so a result reaches a teammate only
+    through a channel the run records. Turns are serialized, so one shared
+    budget is not granted twice over by two agents reading it at once. A run
+    missing any of them still finishes and still looks ordinary, which is
+    exactly why they are not left to a caller to remember.
+    """
+    artifacts = _reserve_artifacts(save_dir)
+    result = await _client(
+        env=env,
+        model=model,
+        provider=provider,
+        api_key=api_key,
+        base_url=base_url,
+        temperature=temperature,
+        top_p=top_p,
+        max_output_tokens=max_output_tokens,
+        thinking=thinking,
+        thinking_params=thinking_params,
+        wire_protocol=wire_protocol,
+        reasoning_effort=reasoning_effort,
+        llm_connect_timeout=llm_connect_timeout,
+        llm_first_event_timeout=llm_first_event_timeout,
+        llm_stream_idle_timeout=llm_stream_idle_timeout,
+    ).team(
+        task.description,
+        config=team_config,
+        budget=task.max_tokens,
+        timeout=task.timeout,
+        artifacts=artifacts,
+        trace=True,
+        use_worktrees=True,
+        prebuild_team=True,
+        max_steps=max_steps,
+        serialize_turns=True,
+    )
+    if artifacts is not None:
+        tracer.bind_artifacts(artifacts, workflow=True)
+    return _EvalRunRecord(result, workflow=True)
+
+
 def _aggregate_tokens(sessions: Sequence[Any]) -> int:
     return sum(int(getattr(session, "used_tokens", 0)) for session in sessions)
 

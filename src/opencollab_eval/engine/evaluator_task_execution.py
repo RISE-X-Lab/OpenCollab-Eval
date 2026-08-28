@@ -37,6 +37,9 @@ class ExecutionConfig:
     llm_first_event_timeout: float
     llm_stream_idle_timeout: float
     resume_from_checkpoint: bool
+    # Path to the team file when this run's order of work is the model's to
+    # decide. Mutually exclusive with ``workflow``; both unset is one session.
+    team_config: Any = None
 
 
 @dataclass
@@ -244,6 +247,30 @@ async def run_session_or_workflow(
     )
     prompt = f"{config.prompt}\n\n{repo_map}" if repo_map else config.prompt
     execution_task = replace(state.task, timeout=controller.remaining_time())
+    if config.team_config is not None:
+        state.session = await facade._run_team_mode(
+            task=execution_task,
+            env=state.env,
+            tracer=tracer,
+            team_config=config.team_config,
+            model=config.model,
+            provider=config.provider,
+            api_key=config.api_key,
+            base_url=config.base_url,
+            max_steps=config.max_steps,
+            temperature=config.temperature,
+            top_p=config.top_p,
+            max_output_tokens=config.max_output_tokens,
+            thinking=config.thinking,
+            thinking_params=config.thinking_params,
+            wire_protocol=config.wire_protocol,
+            reasoning_effort=config.reasoning_effort,
+            llm_connect_timeout=config.llm_connect_timeout,
+            llm_first_event_timeout=config.llm_first_event_timeout,
+            llm_stream_idle_timeout=config.llm_stream_idle_timeout,
+            save_dir=run_dir,
+        )
+        return
     if config.workflow is None:
         state.session = await facade._run_single_session(
             task=execution_task,

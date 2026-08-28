@@ -98,6 +98,9 @@ from opencollab_eval.engine.evaluator_sessions import (
     _run_single_session as _run_single_session,
 )
 from opencollab_eval.engine.evaluator_sessions import (
+    _run_team_mode as _run_team_mode,
+)
+from opencollab_eval.engine.evaluator_sessions import (
     _run_workflow_mode as _run_workflow_mode,
 )
 from opencollab_eval.engine.evaluator_task import run_eval_task_impl
@@ -455,8 +458,18 @@ async def run_eval_task(
     resume_from_checkpoint: bool = False,
     cancellation_cleanup_timeout: float = DEFAULT_EXECUTION_CLEANUP_TIMEOUT,
     defer_patch_extraction: bool = False,
+    team_config: str | os.PathLike[str] | None = None,
 ) -> EvalResult:
-    """Run one isolated evaluation task in session or workflow mode."""
+    """Run one isolated evaluation task in session, workflow, or team mode.
+
+    ``workflow`` and ``team_config`` select the two orchestrated modes and are
+    mutually exclusive: a run whose order of work is decided by code and one
+    whose order is decided by the model. Neither given, the task is one session.
+    """
+    if workflow is not None and team_config is not None:
+        raise ValueError(
+            "a task is sequenced by a workflow or by a team, not by both"
+        )
     return await run_eval_task_impl(
         task,
         model,
@@ -483,6 +496,7 @@ async def run_eval_task(
         resume_from_checkpoint,
         cancellation_cleanup_timeout,
         defer_patch_extraction,
+        team_config,
     )
 
 
