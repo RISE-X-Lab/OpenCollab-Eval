@@ -13,6 +13,10 @@ from opencollab import OpenCollab, RunResult
 from opencollab.tools import Tool
 
 from opencollab_eval.engine.environment import ExecutionEnvironment
+from opencollab_eval.engine.evidence_trace import (
+    ORCHESTRATION_FILENAME,
+    TRAJECTORY_FILENAME,
+)
 from opencollab_eval.usage import DEFAULT_MAX_OUTPUT_TOKENS
 
 if TYPE_CHECKING:
@@ -229,7 +233,7 @@ async def _run_single_session(
         trace=True,
     )
     if artifacts is not None:
-        tracer.bind_artifacts(artifacts, workflow=False)
+        tracer.bind_artifacts(artifacts, filename=TRAJECTORY_FILENAME)
     return _EvalRunRecord(result)
 
 
@@ -294,7 +298,7 @@ async def _run_workflow_mode(
         trace=True,
     )
     if artifacts is not None:
-        tracer.bind_artifacts(artifacts, workflow=True)
+        tracer.bind_artifacts(artifacts, filename=ORCHESTRATION_FILENAME)
     return _EvalRunRecord(result, workflow=True)
 
 
@@ -370,7 +374,7 @@ async def _run_team_mode(
         serialize_turns=True,
     )
     if artifacts is not None:
-        tracer.bind_artifacts(artifacts, workflow=True)
+        tracer.bind_artifacts(artifacts, filename=TRAJECTORY_FILENAME)
     return _EvalRunRecord(result, workflow=True)
 
 

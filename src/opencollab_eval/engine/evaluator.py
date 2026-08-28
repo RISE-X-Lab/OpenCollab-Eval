@@ -104,7 +104,15 @@ from opencollab_eval.engine.evaluator_sessions import (
     _run_workflow_mode as _run_workflow_mode,
 )
 from opencollab_eval.engine.evaluator_task import run_eval_task_impl
-from opencollab_eval.engine.evidence_trace import EvidenceTrace
+from opencollab_eval.engine.evidence_trace import (
+    ORCHESTRATION_FILENAME as ORCHESTRATION_FILENAME,
+)
+from opencollab_eval.engine.evidence_trace import (
+    TRAJECTORY_FILENAME as TRAJECTORY_FILENAME,
+)
+from opencollab_eval.engine.evidence_trace import (
+    EvidenceTrace,
+)
 from opencollab_eval.engine.swe_checkpoint import (
     WorktreeCheckpoint as WorktreeCheckpoint,
 )
@@ -128,7 +136,6 @@ DEFAULT_TEMPERATURE = 0.2
 DEFAULT_TOP_P: float | None = None
 DEFAULT_THINKING = False
 DEFAULT_THINKING_PARAMS = {"enable_thinking": True}
-ORCHESTRATION_FILENAME = "orchestration.jsonl"
 Tracer = EvidenceTrace
 DockerEnvironment = docker_environment
 WorktreeEnvironment = worktree_environment

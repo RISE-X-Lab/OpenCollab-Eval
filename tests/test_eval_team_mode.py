@@ -43,8 +43,8 @@ class _Tracer:
     def __init__(self) -> None:
         self.bound: list[tuple] = []
 
-    def bind_artifacts(self, artifacts, *, workflow) -> None:
-        self.bound.append((artifacts, workflow))
+    def bind_artifacts(self, artifacts, *, filename) -> None:
+        self.bound.append((artifacts, filename))
 
 
 @pytest.fixture
@@ -124,7 +124,7 @@ async def test_a_team_run_carries_the_task_budget_and_deadline(team_calls, tmp_p
     assert record.session_count == 3
     # A team drives several sessions, so its evidence is bound the way a
     # workflow's is rather than a single session's.
-    assert tracer.bound and tracer.bound[0][1] is True
+    assert tracer.bound and tracer.bound[0][1] == "trajectory.jsonl"
 
 
 async def test_a_task_is_sequenced_by_a_workflow_or_by_a_team_but_not_both():
@@ -235,3 +235,44 @@ async def test_the_other_two_regimes_are_unchanged(overrides, expected):
     facade = await _dispatch(_config(**overrides))
 
     assert facade.chosen == expected
+
+
+async def test_a_team_run_reports_the_trace_file_that_was_actually_written(
+    team_calls, tmp_path
+):
+    """A path that names a file nobody wrote is worse than reporting no path.
+
+    OpenCollab writes a workflow run's trace as ``orchestration.jsonl`` and a
+    team run's as ``trajectory.jsonl``. Both are several sessions under one run
+    folder, so it is tempting to report them the same way -- and a run that does
+    reports a path that does not exist, which fails only later, in whatever
+    reads the evidence.
+    """
+    _record, tracer = await _run_team(team_calls, tmp_path)
+
+    (artifacts, filename) = tracer.bound[-1]
+    assert filename == "trajectory.jsonl"
+    assert artifacts is not None
+
+
+def test_setup_and_run_agree_on_where_a_team_run_writes_its_trace(tmp_path):
+    """The two halves must not drift: one names the file, the other reports it.
+
+    ``prepare_eval_run`` builds the tracer with a filename and the run binds the
+    path once the artifacts directory exists. Nothing forces those two to be the
+    same string, so this holds them to it.
+    """
+    from opencollab_eval.engine import evaluator
+    from opencollab_eval.engine.evaluator_task_setup import _create_tracer
+
+    _dir, _run_dir, tracer = _create_tracer(
+        evaluator,
+        task_id="t-4",
+        output_dir=str(tmp_path),
+        workflow=None,
+        team_config=tmp_path / "team.yaml",
+    )
+
+    from pathlib import Path
+
+    assert Path(tracer.path).name == "trajectory.jsonl"

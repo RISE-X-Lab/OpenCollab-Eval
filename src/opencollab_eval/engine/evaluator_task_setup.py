@@ -106,11 +106,13 @@ def _create_tracer(
         run_id=task_id,
         output_dir=runtime_dir,
         filename=(
+            # A team run drives several sessions just as a workflow does, and its
+            # run directory is laid out the same way -- but the two are written by
+            # different parts of OpenCollab and only the workflow writer uses the
+            # orchestration name. Report the file that is actually produced.
             facade.ORCHESTRATION_FILENAME
-            # A team run drives several sessions just as a workflow does, so its
-            # run directory is laid out the same way; only who sequences differs.
-            if workflow is not None or team_config is not None
-            else "trajectory.jsonl"
+            if workflow is not None
+            else facade.TRAJECTORY_FILENAME
         ),
     )
     return trajectories_dir, run_dir, tracer
