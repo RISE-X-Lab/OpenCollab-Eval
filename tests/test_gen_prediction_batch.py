@@ -278,3 +278,35 @@ def test_a_run_that_wrote_nothing_is_reported_and_fails_the_batch(
     out = capsys.readouterr().out
     assert "1 run(s) produced no prediction row" in out
     assert "single a-1" in out
+
+
+def test_staging_an_instance_swaps_the_file_instead_of_rewriting_it(
+    tmp_path: Path,
+) -> None:
+    """Two arms of one task share this directory and stage the same name.
+
+    Writing in place truncates first, so the other arm's generator can open
+    the file mid-write and read an instance record that stops in the middle of
+    the problem statement. Staging under a temporary name and renaming makes
+    the swap atomic, and a reader already holding the previous file reads it to
+    the end -- which is what this checks, because it is the same property and
+    it can be checked without racing anything.
+    """
+    staging = tmp_path / "instances"
+    first_record = _instance("a-1")
+    first_record["problem_statement"] = "first"
+
+    path = batch._instance_path(first_record, staging)
+    reader = path.open("r", encoding="utf-8")
+    try:
+        second_record = _instance("a-1")
+        second_record["problem_statement"] = "second"
+        assert batch._instance_path(second_record, staging) == path
+
+        assert json.loads(reader.read())["problem_statement"] == "first"
+    finally:
+        reader.close()
+
+    # The new record is what anyone opening it now gets, with no debris left.
+    assert json.loads(path.read_text(encoding="utf-8"))["problem_statement"] == "second"
+    assert [entry.name for entry in staging.iterdir()] == ["a-1.json"]

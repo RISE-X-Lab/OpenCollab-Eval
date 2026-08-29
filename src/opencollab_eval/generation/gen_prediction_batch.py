@@ -197,10 +197,21 @@ def build_command(
 
 
 def _instance_path(instance: dict[str, Any], staging: Path) -> Path:
-    """Write the instance out so the generator reads exactly what we selected."""
+    """Write the instance out so the generator reads exactly what we selected.
+
+    Written to a temporary name and renamed into place. Two arms of the same
+    task are usually two processes sharing this directory, they stage the same
+    instance under the same name, and an instance record is tens of kilobytes:
+    a plain write truncates the file first, so the other arm's generator can
+    open it mid-write and read a record that ends in the middle of the problem
+    statement. A rename is atomic, and a reader already holding the old file
+    keeps reading it to the end.
+    """
     staging.mkdir(parents=True, exist_ok=True)
     path = staging / f"{instance['instance_id']}.json"
-    path.write_text(json.dumps(instance), encoding="utf-8")
+    staged = staging / f".{instance['instance_id']}.{os.getpid()}.tmp"
+    staged.write_text(json.dumps(instance), encoding="utf-8")
+    staged.replace(path)
     return path
 
 
