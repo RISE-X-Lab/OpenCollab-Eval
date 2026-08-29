@@ -159,3 +159,21 @@ def test_a_listing_that_could_not_be_taken_appends_nothing():
     for empty in ("", "   \n"):
         assert append_repository_layout(base, empty) == base
     assert REPOSITORY_LAYOUT_HEADER not in base
+
+
+def test_a_listing_that_could_not_be_taken_says_so(capsys):
+    """Silence is how this went unnoticed for a whole day in a container.
+
+    A failed listing produces the same prompt as a run that never asked for
+    one, so nothing downstream had any reason to mention it. The run log now
+    does.
+    """
+    from opencollab_eval.generation.gen_prediction_task_text import (
+        append_repository_layout,
+    )
+
+    append_repository_layout(gpa.build_task(FIXTURE), "")
+    assert "repo map: unavailable" in capsys.readouterr().out
+
+    append_repository_layout(gpa.build_task(FIXTURE), "## Repository layout\nsrc/\n")
+    assert "repo map" not in capsys.readouterr().out

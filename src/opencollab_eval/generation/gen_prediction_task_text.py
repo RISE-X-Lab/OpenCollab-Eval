@@ -92,6 +92,13 @@ def append_repository_layout(task_text: str, repo_map: str) -> str:
     a run without one is a run with a shorter prompt and not a broken one.
     """
     if not repo_map.strip():
+        # Say so. A listing that could not be taken produces exactly the same
+        # prompt as a run that never asked for one, and that is how this
+        # silently produced no listing at all in a container for a whole day:
+        # the environment's login shell writes to stderr on every command, the
+        # builder read that as a failed traversal, and nothing downstream had a
+        # reason to mention it.
+        print("  repo map: unavailable — task text has no repository layout")
         return task_text
     return f"{task_text}\n{repo_map.rstrip()}\n"
 
