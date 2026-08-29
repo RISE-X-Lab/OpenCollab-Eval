@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import json
 
-from opencollab_eval.benchmarks.task_specification import (
-    compose_task_specification,
-)
+from .gen_prediction_task_text import BLIND_VALIDATION_BLOCK, compose_shared_task
 
 BLIND_BY_DEFAULT_WORKFLOWS = {"validation-council-solve", "swe-committee-v2"}
 
@@ -20,35 +18,25 @@ def _fail_to_pass_ids(instance: dict) -> list[str]:
 
 
 def build_task(instance: dict, *, include_fail_to_pass: bool = True) -> str:
-    """Build the solver prompt, optionally including official grading ids."""
-    problem = compose_task_specification(instance)
-    hints = (instance.get("hints_text") or "").strip()
-    hints_block = (
-        f"\n## Hints (from the issue discussion — may help locate the cause)\n{hints}\n"
-        if hints
-        else ""
-    )
+    """The shared task text plus this path's grading disclosure.
+
+    The shared half is the same object the single-agent builder composes, so
+    the two arms differ in the disclosure block and in nothing else. With
+    ``include_fail_to_pass=False`` -- which trusted host extraction requires --
+    the two are byte-identical.
+    """
     if include_fail_to_pass:
         fail_to_pass = _fail_to_pass_ids(instance)
         tests = "\n".join(f"- {target}" for target in fail_to_pass)
-        tests_block = (
+        disclosure = (
             f"## Tests that must pass after your fix\n{tests or '- (project test suite)'}\n"
             "Note: some of these tests may not exist yet at this commit — they are "
             "added by the grading harness. Do not be surprised if you cannot run "
-            "them; verify the fixed behavior directly instead.\n\n"
+            "them; verify the fixed behavior directly instead.\n"
         )
     else:
-        tests_block = (
-            "## Blind validation mode\n"
-            "Use only the public issue, repository, tests, and documentation.\n\n"
-        )
-    return (
-        f"# Issue to fix in `{instance['repo']}`\n\n"
-        f"{problem}\n{hints_block}\n"
-        f"{tests_block}"
-        "Locate the root cause in the source, apply a minimal fix, and ensure "
-        "the behavior described above is satisfied."
-    )
+        disclosure = BLIND_VALIDATION_BLOCK
+    return compose_shared_task(instance) + disclosure
 
 
 def build_extras(instance: dict, *, include_hidden_tests: bool = True) -> dict:

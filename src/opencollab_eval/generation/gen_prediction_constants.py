@@ -28,23 +28,53 @@ AGENT_CANCELLATION_GRACE_SECONDS = 2.0
 _MISSING_CONTAINER_RE = re.compile(r"(?:no such (?:container|object)|not found)", re.IGNORECASE)
 
 
-AGENT_PROMPT = """\
-You are an autonomous software engineer fixing a real bug in a Python repository.
-The repository is checked out at /testbed and all dependencies are installed.
+# The two system prompts below say who the agent is and stop there.
+#
+# They used to say a good deal more, and each arm said something different. The
+# single-agent prompt carried seven imperative rules -- when to stop exploring,
+# which tool to edit with, to verify with a snippet afterwards -- while the
+# workflow prompt carried three lines and the team's roles carry role cards that
+# deliberately give no procedure at all. A comparison across those arms is not
+# reading off how the work was organized; it is partly reading off which arm was
+# handed a tuned prompt. Everything those rules stated that is true of the task
+# rather than of one arm now lives in ``gen_prediction_task_text``, which every
+# arm receives verbatim.
+#
+# Two rules were dropped rather than moved:
+#
+# * "Do NOT run git commit." Patch extraction diffs file *content* against a
+#   trusted host baseline (``gen_prediction_patch``), so a commit made inside the
+#   container changes nothing it reads. The rule constrained nothing, and it is
+#   false for a team whose handoff payload is a commit sha.
+# * "As soon as you know the fix, APPLY it" and the rest of the pacing advice.
+#   How much to explore before acting is a decision the run is measuring, not a
+#   setting it should be pinning for one arm only.
 
-Rules:
-- Explore briefly to find the root cause (a few grep/file_read calls), then ACT.
-- As soon as you know the fix, APPLY it with the file_write tool (str_replace
-  mode is best for a targeted edit). Diagnosing is not enough — you MUST edit
-  the source file. Do not keep exploring once the cause is clear.
-- Make the smallest correct change to the SOURCE code that fixes the issue.
-- Do NOT edit test files — your fix is graded against the project's own tests.
-- After editing, verify with a quick Python snippet that the reported behavior
-  is fixed, then stop.
-- Do NOT run `git commit`. Just leave your edits in the working tree.
+#: The working tools every arm holds. The team configuration this arm is
+#: compared against carries the same six names plus its collaboration channel
+#: (``message_agent``, ``team_status``), and pins that equality in OpenCollab's
+#: ``tests/test_handoff_experiment_team.py``.
+#:
+#: They diverged silently before: this arm had ``file_write`` and no
+#: ``apply_patch``, the team's Analyst had ``apply_patch``, no ``file_write``,
+#: and ``run_tests`` on top. Four capability differences on the one axis these
+#: arms are not supposed to differ on, so a gap in results could be read off the
+#: tool bundles instead of off how the work was organized.
+WORKING_TOOL_NAMES = (
+    "apply_patch",
+    "bash",
+    "file_read",
+    "file_write",
+    "grep",
+    "run_tests",
+)
+
+AGENT_PROMPT = """\
+You are an autonomous software engineer working on a real bug in a Python
+repository. You are working on this task alone.
 """
 
 WORKFLOW_AGENT_PROMPT = """\
-Obey the current software role. Use public repository evidence only.
-Leave source changes in /testbed and do not run git commit.
+You are a software engineer working on a real bug in a Python repository, in
+the role this step of the workflow gives you.
 """

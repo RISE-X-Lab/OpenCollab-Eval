@@ -55,6 +55,10 @@ from opencollab_eval.usage import DEFAULT_MAX_OUTPUT_TOKENS, model_context_windo
 from . import gen_prediction as gp  # noqa: E402 — shared container plumbing
 from .container_quiescence import require_container_quiescence  # noqa: E402
 from .gen_prediction_patch import extract_patch_guarded  # noqa: E402
+from .gen_prediction_run_summary import (  # noqa: E402
+    RUN_SUMMARY_KEY,
+    build_run_summary,
+)
 from .gen_prediction_workflow_inputs import (  # noqa: E402
     _blind_validation_default as _blind_validation_default,
 )
@@ -150,11 +154,23 @@ def _patch_sha256(patch: str) -> str:
 
 
 def _result_metrics(result) -> dict:
-    return {
+    metrics = {
         field.name: _json_safe(getattr(result, field.name))
         for field in fields(result)
         if field.name != "patch"
     }
+    # The same quantities again, under the names the single-agent path also
+    # writes them under. Without this the two arms' records can only be read
+    # one arm at a time; see ``gen_prediction_run_summary``.
+    metrics[RUN_SUMMARY_KEY] = build_run_summary(
+        steps=result.steps,
+        tokens=result.tokens_used,
+        status=result.runtime_status,
+        reason=result.runtime_reason,
+        duration_s=result.duration,
+        error=result.error,
+    )
+    return metrics
 
 
 def _verified_provider_models(

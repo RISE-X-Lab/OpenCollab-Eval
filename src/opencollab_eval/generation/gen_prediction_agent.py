@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -10,9 +11,6 @@ from opencollab import OpenCollab, RunResult
 from opencollab.environments import attach_container
 from opencollab.tools import builtin_tools
 
-from opencollab_eval.benchmarks.task_specification import (
-    compose_task_specification,
-)
 from opencollab_eval.engine.swe_eval_records import read_bounded_json
 from opencollab_eval.usage import DEFAULT_MAX_OUTPUT_TOKENS
 
@@ -23,16 +21,21 @@ from .gen_prediction_constants import (
     AGENT_PROMPT,
     DOCKER_WORKDIR,
     MAX_INSTANCE_BYTES,
+    WORKING_TOOL_NAMES,
 )
+from .gen_prediction_run_summary import RUN_SUMMARY_KEY, build_run_summary
+from .gen_prediction_task_text import BLIND_VALIDATION_BLOCK, compose_shared_task
 
 
 def build_task(instance: dict) -> str:
-    return (
-        f"# Issue to fix in `{instance['repo']}`\n\n"
-        f"{compose_task_specification(instance)}\n\n"
-        "Locate the root cause in the source, apply a minimal fix, and ensure the "
-        "publicly described behavior is satisfied."
-    )
+    """The shared task text plus this path's grading disclosure: none.
+
+    This path is blind by construction -- there is no code here that can name a
+    sealed field, which ``tests/test_boundaries.py`` pins -- so the block it
+    appends is the constant notice, not a decision. The workflow path reaches
+    the same text through a run-time check.
+    """
+    return compose_shared_task(instance) + BLIND_VALIDATION_BLOCK
 
 
 def load_instance(path: str | Path) -> dict:
@@ -58,8 +61,16 @@ def reserve_run_directory(root: str | Path) -> str:
     raise FileExistsError("could not reserve a unique agent artifact directory")
 
 
-def _runtime_failure_metrics(exc: Exception) -> dict[str, Any]:
+def _runtime_failure_metrics(exc: Exception, duration_s: float) -> dict[str, Any]:
     return {
+        RUN_SUMMARY_KEY: build_run_summary(
+            steps=0,
+            tokens=0,
+            status="failed",
+            reason=type(exc).__name__,
+            duration_s=duration_s,
+            error=str(exc),
+        ),
         "workflow_status": "error",
         "session_phase": "error",
         "step_count": 0,
@@ -74,7 +85,7 @@ def _runtime_failure_metrics(exc: Exception) -> dict[str, Any]:
     }
 
 
-def _result_metrics(result: RunResult[str]) -> dict[str, Any]:
+def _result_metrics(result: RunResult[str], duration_s: float) -> dict[str, Any]:
     values = result.metrics
     if "session_quiesced" in values:
         session_quiesced = values.get("session_quiesced") is True
@@ -98,6 +109,14 @@ def _result_metrics(result: RunResult[str]) -> dict[str, Any]:
         and workflow_status in {"done", "done_with_timeout_patch"}
     )
     metrics = {
+        RUN_SUMMARY_KEY: build_run_summary(
+            steps=int(values.get("steps") or 0),
+            tokens=int(result.tokens or 0),
+            status=result.status,
+            reason=result.reason,
+            duration_s=duration_s,
+            error=result.error if result.error is None else str(result.error),
+        ),
         "workflow_status": workflow_status,
         "session_phase": phase,
         "step_count": int(values.get("steps") or 0),
@@ -162,18 +181,13 @@ async def run_agent(
         environment=environment,
     )
     print(f"  agent artifacts: {artifact_dir}")
+    started = time.monotonic()
     try:
         result = await client.agent(
             task,
             name="swe_agent",
             system_prompt=AGENT_PROMPT.strip(),
-            tools=builtin_tools(
-                "bash",
-                "file_read",
-                "file_write",
-                "grep",
-                headless=True,
-            ),
+            tools=builtin_tools(*WORKING_TOOL_NAMES, headless=True),
             budget=budget,
             max_steps=max_steps,
             timeout=timeout,
@@ -183,9 +197,9 @@ async def run_agent(
         )
     except Exception as exc:
         print(f"  agent: runtime failed with {type(exc).__name__}: {exc}")
-        return _runtime_failure_metrics(exc)
+        return _runtime_failure_metrics(exc, time.monotonic() - started)
 
-    metrics = _result_metrics(result)
+    metrics = _result_metrics(result, time.monotonic() - started)
     print(
         f"  agent: steps={metrics['step_count']} "
         f"tokens={metrics['used_tokens']}"

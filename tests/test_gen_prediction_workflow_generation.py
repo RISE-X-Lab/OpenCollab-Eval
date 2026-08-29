@@ -90,8 +90,19 @@ def test_generate_defers_container_patch_extraction(monkeypatch, tmp_path):
     assert captured["kwargs"]["resume_from_checkpoint"] is False
     assert captured["kwargs"]["defer_patch_extraction"] is True
     assert captured["kwargs"]["prompt"] == gpw.gp.WORKFLOW_AGENT_PROMPT
-    assert "Obey the current software role" in captured["kwargs"]["prompt"]
-    assert "public repository evidence only" in captured["kwargs"]["prompt"]
+    # What that prompt may say is pinned in ``test_gen_prediction_task_text``:
+    # it names the role and leaves procedure to the task text every arm shares.
+    assert "in the role this step of the workflow gives you" in (
+        " ".join(captured["kwargs"]["prompt"].split())
+    )
+    # The blind-validation instruction moved from this arm's system prompt into
+    # the task text every arm receives, so assert it where the model now reads
+    # it. That is also the stronger check: it holds for the arms that never see
+    # ``WORKFLOW_AGENT_PROMPT`` at all.
+    assert (
+        "Use only the public issue, repository, tests, and documentation."
+        in captured["task"].description
+    )
     assert "you MUST edit" not in captured["kwargs"]["prompt"]
     assert "api_key" not in captured["kwargs"]
     assert "base_url" not in captured["kwargs"]
