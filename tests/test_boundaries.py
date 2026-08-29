@@ -14,6 +14,7 @@ _PUBLIC_MODULES = frozenset(
     {
         "opencollab",
         "opencollab.environments",
+        "opencollab.teams",
         "opencollab.tools",
         "opencollab.workflows",
     }
@@ -32,6 +33,15 @@ _PUBLIC_NAMES = {
             "docker_environment",
             "local_environment",
             "worktree_environment",
+        }
+    ),
+    "opencollab.teams": frozenset(
+        {
+            # How many seats a team file declares. The pool a team run is
+            # started with is that count times one agent's budget, because the
+            # scheduler caps each seat at pool/N -- so a caller that cannot
+            # read the count cannot state the budget correctly.
+            "declared_role_names",
         }
     ),
     "opencollab.tools": frozenset(
