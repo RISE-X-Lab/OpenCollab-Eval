@@ -25,7 +25,8 @@ OpenCollab-Eval 使用以下 OpenCollab 公开接口。
 | Public module | 使用的能力 |
 | --- | --- |
 | `opencollab` | `OpenCollab` 和 `RunResult` |
-| `opencollab.environments` | `Environment`、`attach_container`、`docker_environment` 和 `worktree_environment` |
+| `opencollab.environments` | `Environment`、`attach_container`、`build_repo_map_via_env`、`docker_environment` 和 `worktree_environment` |
+| `opencollab.teams` | `declared_role_names` |
 | `opencollab.tools` | `BuiltinToolName`、`Tool` 和 `builtin_tools` |
 | `opencollab.workflows` | `workflow` |
 
@@ -34,8 +35,9 @@ OpenCollab-Eval 使用以下 OpenCollab 公开接口。
 `tests/test_boundaries.py` 规定生产代码与测试可以使用哪些导入，并根据已安装的
 OpenCollab 包检查这些公开名称。
 
-OpenCollab-Eval 通过 `opencollab>=0.5.0,<0.6` 声明运行时依赖的版本范围。
-OpenCollab 的公开 API 保持兼容时，其内部实现变化不会影响这里。
+OpenCollab-Eval 只声明一项运行时依赖 `opencollab`，且不写版本范围：OpenCollab
+是从源码 checkout 安装的，不从包索引安装。OpenCollab 的公开 API 保持兼容时，
+其内部实现变化不会影响这里。
 
 ## 包结构
 

@@ -25,7 +25,17 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Testing",
 ]
-dependencies = ["opencollab>=0.5.0,<0.6"]
+# OpenCollab is developed alongside this repository and installed from a
+# checkout, never from an index: every environment that runs this code points
+# at a working tree. A version range here would name an index release that
+# carries the API this code calls, and no such release exists -- the published
+# 0.5.0 predates `opencollab.environments.build_repo_map_via_env`, which
+# generation now calls on both arms. Naming the package without a bound keeps
+# the dependency direction declared without asserting a release that is not
+# there. The compatibility check that does have something real to check lives
+# in `swe_v1_runtime_source.py`, which reads the version out of the checkout
+# it is about to ship to a remote runtime.
+dependencies = ["opencollab"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.5"]

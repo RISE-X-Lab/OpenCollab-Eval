@@ -27,7 +27,8 @@ OpenCollab-Eval currently imports the following public OpenCollab surfaces.
 | Public module | Current production imports |
 | --- | --- |
 | `opencollab` | `OpenCollab` and `RunResult` |
-| `opencollab.environments` | `Environment`, `attach_container`, `docker_environment`, and `worktree_environment` |
+| `opencollab.environments` | `Environment`, `attach_container`, `build_repo_map_via_env`, `docker_environment`, and `worktree_environment` |
+| `opencollab.teams` | `declared_role_names` |
 | `opencollab.tools` | `BuiltinToolName`, `Tool`, and `builtin_tools` |
 | `opencollab.workflows` | `workflow` |
 
@@ -37,9 +38,10 @@ this dependency boundary. `tests/test_boundaries.py` defines the imports
 accepted from production code and tests, then checks those public names against
 the installed OpenCollab package.
 
-This boundary gives OpenCollab-Eval a versioned runtime dependency through
-`opencollab>=0.5.0,<0.6`. A change to OpenCollab internals remains invisible here
-as long as the documented public API remains compatible.
+This boundary gives OpenCollab-Eval a single runtime dependency, `opencollab`,
+declared without a version range because OpenCollab is installed from a
+checkout rather than from an index. A change to OpenCollab internals remains
+invisible here as long as the documented public API remains compatible.
 
 ## Package map
 

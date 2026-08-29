@@ -22,7 +22,8 @@ def test_release_metadata_keeps_versions_aligned_and_includes_license() -> None:
     assert opencollab_eval.__version__ == "0.5.0"
     assert 'requires = ["hatchling==1.31.0"]' in pyproject
     assert f'version = "{opencollab_eval.__version__}"' in pyproject
-    assert 'dependencies = ["opencollab>=0.5.0,<0.6"]' in pyproject
+    # Unbounded on purpose: OpenCollab ships from a checkout, not an index.
+    assert 'dependencies = ["opencollab"]' in pyproject
     assert 'license = "MulanPSL-2.0"' in pyproject
     assert (
         'license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"]'
