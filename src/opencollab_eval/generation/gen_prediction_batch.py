@@ -14,8 +14,11 @@ batch quietly produces something that cannot be compared:
   run first would leave a half-finished batch with no pairs at all.
 * **One task's failure does not end the batch.** A container that will not
   start, a provider that refuses, a run that exceeds its wall clock: each ends
-  that (instance, arm) and nothing else. The exit status reports how many
-  failed; the manifest says which.
+  that (instance, arm) and nothing else. The manifest says which, and the exit
+  status counts the runs that produced *no prediction* rather than the runs
+  that exited non-zero -- a generator exits non-zero whenever a run did not
+  finish normally, and a run stopped at its token budget still writes the patch
+  it had made.
 * **A finished (instance, arm) is never re-run.** Resumption reads the
   predictions file each arm already has and skips what is in it, so an
   interrupted batch is continued by re-issuing the same command.
@@ -295,9 +298,24 @@ def run_batch(args: argparse.Namespace) -> int:
             )
         print(f"  rc={completed.returncode} in {elapsed}s", flush=True)
 
+    missing = [
+        (instance["instance_id"], arm)
+        for instance, arm in work
+        if instance["instance_id"] not in completed_instance_ids(predictions[arm])
+    ]
+    # Two different questions, and the second is the one that decides whether
+    # the batch has to be re-run. A generator exits non-zero whenever the run
+    # did not finish normally -- a token budget spent, a step ceiling reached --
+    # and it writes its prediction first, so a "failed" run of that kind has
+    # produced exactly what the comparison needs. What actually costs a row is
+    # a run that wrote no prediction at all.
     if failures:
-        print(f"batch finished with {failures} failed run(s); see {manifest}")
-    return 1 if failures else 0
+        print(f"batch finished with {failures} run(s) exiting non-zero; see {manifest}")
+    if missing:
+        print(f"{len(missing)} run(s) produced no prediction row:")
+        for iid, arm in missing:
+            print(f"  {arm} {iid}")
+    return 1 if missing else 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:

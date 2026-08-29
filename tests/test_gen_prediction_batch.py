@@ -8,7 +8,9 @@ generator derived.
 
 from __future__ import annotations
 
+import argparse
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -199,3 +201,80 @@ def test_a_file_that_is_not_an_instance_is_refused(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="not an instance record"):
         batch.load_instances(path)
+
+
+def _instance_file(tmp_path: Path, iid: str) -> Path:
+    source = tmp_path / "instances.jsonl"
+    source.write_text(json.dumps(_instance(iid)) + "\n", encoding="utf-8")
+    return source
+
+
+def _args(tmp_path: Path, **overrides: object) -> argparse.Namespace:
+    values: dict[str, object] = {
+        "instances": str(_instance_file(tmp_path, "a-1")),
+        "arm": ["single"],
+        "out_dir": str(tmp_path / "out"),
+        "team_config": None,
+        "image": None,
+        "budget_per_seat": 1000,
+        "max_steps": 5,
+        "timeout": 60.0,
+        "limit": None,
+        "dry_run": False,
+        "pass_through": [],
+    }
+    values.update(overrides)
+    return argparse.Namespace(**values)
+
+
+def _completed_run(predictions: Path, iid: str, returncode: int):
+    def fake_run(command, **kwargs):
+        predictions.parent.mkdir(parents=True, exist_ok=True)
+        with predictions.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"instance_id": iid, "model_patch": "diff"}) + "\n")
+        return subprocess.CompletedProcess(command, returncode)
+
+    return fake_run
+
+
+def test_a_run_that_exited_non_zero_but_wrote_a_prediction_is_not_a_lost_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The two questions the batch has to keep apart.
+
+    A generator exits non-zero whenever the run did not finish normally -- a
+    spent token budget, a reached step ceiling -- and it writes its prediction
+    before doing so. Counting those as failures tells whoever resumes the batch
+    to re-run work that is already done, and hides the runs that really did
+    lose a row.
+    """
+    args = _args(tmp_path)
+    predictions = Path(args.out_dir) / "preds-single.jsonl"
+    monkeypatch.setattr(
+        batch.subprocess, "run", _completed_run(predictions, "a-1", returncode=1)
+    )
+
+    exit_code = batch.run_batch(args)
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "1 run(s) exiting non-zero" in out
+    assert "produced no prediction row" not in out
+
+
+def test_a_run_that_wrote_nothing_is_reported_and_fails_the_batch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = _args(tmp_path)
+    monkeypatch.setattr(
+        batch.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(command, 1),
+    )
+
+    exit_code = batch.run_batch(args)
+
+    assert exit_code == 1
+    out = capsys.readouterr().out
+    assert "1 run(s) produced no prediction row" in out
+    assert "single a-1" in out
