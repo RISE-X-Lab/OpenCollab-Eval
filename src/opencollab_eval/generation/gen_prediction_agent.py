@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from opencollab import OpenCollab, RunResult
-from opencollab.environments import attach_container
+from opencollab.environments import attach_container, build_repo_map_via_env
 from opencollab.tools import builtin_tools
 
 from opencollab_eval.engine.swe_eval_records import read_bounded_json
@@ -24,7 +24,11 @@ from .gen_prediction_constants import (
     WORKING_TOOL_NAMES,
 )
 from .gen_prediction_run_summary import RUN_SUMMARY_KEY, build_run_summary
-from .gen_prediction_task_text import BLIND_VALIDATION_BLOCK, compose_shared_task
+from .gen_prediction_task_text import (
+    BLIND_VALIDATION_BLOCK,
+    append_repository_layout,
+    compose_shared_task,
+)
 
 
 def build_task(instance: dict) -> str:
@@ -155,6 +159,9 @@ async def run_agent(
         command_prefix=_ACTIVATE,
         timeout_returncode=124,
     )
+    # Asked of the container, not walked here: the directory this process could
+    # walk is the one the run was launched from, and the agent never sees it.
+    task = append_repository_layout(task, await build_repo_map_via_env(environment))
     artifact_dir = Path(reserve_run_directory(artifact_root))
     client = runtime or OpenCollab(
         Path.cwd(),

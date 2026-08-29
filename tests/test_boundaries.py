@@ -24,6 +24,11 @@ _PUBLIC_NAMES = {
         {
             "Environment",
             "attach_container",
+            # A listing of the workspace the agents actually read. It has to be
+            # asked of the environment: the directory this process could walk
+            # is the one the run was launched from, not the one in the task
+            # container.
+            "build_repo_map_via_env",
             "docker_environment",
             "local_environment",
             "worktree_environment",

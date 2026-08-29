@@ -120,3 +120,42 @@ def test_the_single_arm_asks_for_exactly_the_declared_working_bundle():
     # Sorted and unique: ``builtin_tools`` rejects a duplicate, and a stable
     # order keeps the tool schemas byte-identical between the arms.
     assert list(WORKING_TOOL_NAMES) == sorted(set(WORKING_TOOL_NAMES))
+
+
+def test_the_repository_listing_is_appended_the_same_way_for_both_arms():
+    """One formatter, two call sites, because the arms reach an env differently.
+
+    An arm handed a map of the repository and an arm that has to go and list it
+    are not doing the same task, and neither are two arms whose maps are laid
+    out differently. The listing itself has to be taken through the environment
+    -- the directory this process could walk is the one the run was launched
+    from, not the one inside the task container -- so it arrives as a string and
+    only the formatting is shared.
+    """
+    from opencollab_eval.generation.gen_prediction_task_text import (
+        append_repository_layout,
+    )
+
+    repo_map = "## Repository layout\nsrc/\nsrc/widget.py\n"
+    single = append_repository_layout(gpa.build_task(FIXTURE), repo_map)
+    team = append_repository_layout(
+        gpw.build_task(FIXTURE, include_fail_to_pass=False), repo_map
+    )
+
+    assert single == team
+    assert single.endswith("src/widget.py\n")
+
+
+def test_a_listing_that_could_not_be_taken_appends_nothing():
+    """``build_repo_map_via_env`` returns "" when it fails, so callers append
+    unconditionally. A run without a map must be a shorter prompt, not a prompt
+    with an empty section in it."""
+    from opencollab_eval.generation.gen_prediction_task_text import (
+        REPOSITORY_LAYOUT_HEADER,
+        append_repository_layout,
+    )
+
+    base = gpa.build_task(FIXTURE)
+    for empty in ("", "   \n"):
+        assert append_repository_layout(base, empty) == base
+    assert REPOSITORY_LAYOUT_HEADER not in base

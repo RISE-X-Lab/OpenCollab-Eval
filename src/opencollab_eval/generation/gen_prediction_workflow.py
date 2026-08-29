@@ -35,7 +35,7 @@ import uuid
 from dataclasses import fields
 from pathlib import Path
 
-from opencollab.environments import attach_container
+from opencollab.environments import attach_container, build_repo_map_via_env
 
 from opencollab_eval import workflows as bundled_workflows
 from opencollab_eval.engine.evaluator import EvalTask, run_eval_task  # noqa: E402
@@ -59,6 +59,7 @@ from .gen_prediction_run_summary import (  # noqa: E402
     RUN_SUMMARY_KEY,
     build_run_summary,
 )
+from .gen_prediction_task_text import append_repository_layout  # noqa: E402
 from .gen_prediction_workflow_inputs import (  # noqa: E402
     _blind_validation_default as _blind_validation_default,
 )
@@ -365,9 +366,16 @@ async def generate(
                 "trusted host extraction does not accept container Git checkpoints"
             )
         include_hidden_tests = not blind_validation
+        # Asked of the container, not walked here: the directory this process
+        # could walk is the one the run was launched from, and the agents never
+        # see it. The single-agent arm asks for the same listing the same way.
+        repo_map = await build_repo_map_via_env(env)
         task = EvalTask(
             task_id=gp.anonymous_solver_task_id(),
-            description=build_task(instance, include_fail_to_pass=include_hidden_tests),
+            description=append_repository_layout(
+                build_task(instance, include_fail_to_pass=include_hidden_tests),
+                repo_map,
+            ),
             timeout=args.timeout,
             max_tokens=args.budget,
             extras=build_extras(instance, include_hidden_tests=include_hidden_tests),

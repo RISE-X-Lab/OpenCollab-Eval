@@ -42,6 +42,10 @@ BLIND_VALIDATION_BLOCK = """\
 Use only the public issue, repository, tests, and documentation.
 """
 
+#: Prefix of the block ``build_repo_map_via_env`` renders, kept here so the
+#: appended section can be recognised without importing the renderer.
+REPOSITORY_LAYOUT_HEADER = "## Repository layout"
+
 _CLOSING = (
     "Locate the root cause in the source, apply a minimal fix, and ensure "
     "the behavior described above is satisfied."
@@ -72,4 +76,30 @@ def compose_shared_task(instance: dict) -> str:
     )
 
 
-__all__ = ["BLIND_VALIDATION_BLOCK", "WORKSPACE_FACTS", "compose_shared_task"]
+def append_repository_layout(task_text: str, repo_map: str) -> str:
+    """Put a bounded listing of the workspace at the end of the task text.
+
+    The listing has to be taken through the environment, because the directory
+    the agents read is inside the task container and the directory this process
+    could walk is the one the run was launched from. That is why it arrives here
+    as a string rather than being built here: the two generators reach their
+    environment at different points, and only the formatting is shared.
+
+    Sharing the formatting is the part that matters. An arm that is handed a map
+    of the repository and an arm that has to go and list it are not doing the
+    same task, and neither is an arm whose map is laid out differently. An empty
+    ``repo_map`` -- which is what a failed listing returns -- appends nothing, so
+    a run without one is a run with a shorter prompt and not a broken one.
+    """
+    if not repo_map.strip():
+        return task_text
+    return f"{task_text}\n{repo_map.rstrip()}\n"
+
+
+__all__ = [
+    "BLIND_VALIDATION_BLOCK",
+    "REPOSITORY_LAYOUT_HEADER",
+    "WORKSPACE_FACTS",
+    "append_repository_layout",
+    "compose_shared_task",
+]
