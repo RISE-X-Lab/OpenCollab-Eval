@@ -90,6 +90,9 @@ from .gen_prediction_constants import (
     AGENT_PROMPT,
     CONTAINER_OWNER_LABEL,
     CONTAINER_OWNER_SCHEMA_VERSION,
+    DEFAULT_BUDGET,
+    DEFAULT_MAX_STEPS,
+    DEFAULT_TIMEOUT,
     DOCKER_WORKDIR,
     HARNESS_LOCK_TIMEOUT_SECONDS,
     MAX_CAPTURED_STDERR_BYTES,
@@ -209,9 +212,9 @@ def main() -> None:
     ap.add_argument("--top-p", type=float)
     ap.add_argument("--max-output-tokens", type=int)
     ap.add_argument("--model-name", default=None, help="model_name_or_path in predictions")
-    ap.add_argument("--max-steps", type=int, default=40)
-    ap.add_argument("--budget", type=int, default=1_000_000)
-    ap.add_argument("--timeout", type=float, default=900.0)
+    ap.add_argument("--max-steps", type=int, default=DEFAULT_MAX_STEPS)
+    ap.add_argument("--budget", type=int, default=DEFAULT_BUDGET)
+    ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
     ap.add_argument("--keep-container", action="store_true")
     args = ap.parse_args()
     try:

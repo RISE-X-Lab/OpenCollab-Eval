@@ -54,6 +54,11 @@ from opencollab_eval.usage import DEFAULT_MAX_OUTPUT_TOKENS, model_context_windo
 
 from . import gen_prediction as gp  # noqa: E402 — shared container plumbing
 from .container_quiescence import require_container_quiescence  # noqa: E402
+from .gen_prediction_constants import (  # noqa: E402
+    DEFAULT_BUDGET,
+    DEFAULT_MAX_STEPS,
+    DEFAULT_TIMEOUT,
+)
 from .gen_prediction_patch import extract_patch_guarded  # noqa: E402
 from .gen_prediction_run_summary import (  # noqa: E402
     RUN_SUMMARY_KEY,
@@ -136,9 +141,6 @@ from opencollab_eval.engine.workflows import generate_review_fix  # noqa: E402
 
 # Team-baseline parity: use the current default per-instance cap for comparable
 # OpenCollab SWE-bench runs.
-DEFAULT_BUDGET = 1_000_000
-DEFAULT_MAX_STEPS = 60  # per workflow session; 60 proved enough to act, 40 did not
-DEFAULT_TIMEOUT = 1800.0  # the workflow runs up to 3 sequential sessions
 DEFAULT_CHECKPOINT_INTERVAL_SECONDS = 0.0
 def _json_safe(value: object) -> object:
     if value is None or isinstance(value, str | int | float | bool):

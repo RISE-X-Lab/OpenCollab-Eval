@@ -10,6 +10,7 @@ the one block that is allowed to differ.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from opencollab_eval.generation import gen_prediction_agent as gpa
 from opencollab_eval.generation import gen_prediction_workflow_inputs as gpw
@@ -177,3 +178,38 @@ def test_a_listing_that_could_not_be_taken_says_so(capsys):
 
     append_repository_layout(gpa.build_task(FIXTURE), "## Repository layout\nsrc/\n")
     assert "repo map" not in capsys.readouterr().out
+
+
+def test_both_arms_default_to_the_same_run_limits() -> None:
+    """A ceiling that differs by arm is a ration that differs by arm.
+
+    The two generators wrote their own numbers and had drifted apart: 40 steps
+    and 900 seconds for the single agent, 60 and 1800 for the workflow and the
+    team. Neither ceiling bound on the runs that had been done, so the gap left
+    no trace in any result -- and a longer run, or a slower machine, is all it
+    would take for one arm to be stopped by a limit the other never meets.
+
+    Tokens are what the arms are aligned on. These two are stop-losses, so what
+    is pinned is that both arms read the same value, not what the value is: the
+    constants come from one module, and each CLI names them instead of writing
+    a number of its own.
+    """
+    from opencollab_eval.generation import gen_prediction as single
+    from opencollab_eval.generation import gen_prediction_workflow as workflow
+
+    names = ("DEFAULT_BUDGET", "DEFAULT_MAX_STEPS", "DEFAULT_TIMEOUT")
+    for name in names:
+        assert getattr(single, name) is getattr(workflow, name), name
+
+    generation = Path(single.__file__).parent
+    for module_name, flags in (
+        ("gen_prediction.py", ("--budget", "--max-steps", "--timeout")),
+        ("gen_prediction_workflow.py", ("--budget", "--max-steps", "--timeout")),
+    ):
+        source = (generation / module_name).read_text(encoding="utf-8")
+        for flag in flags:
+            line = next(
+                text for text in source.splitlines()
+                if f'add_argument("{flag}"' in text
+            )
+            assert "default=DEFAULT_" in line, (module_name, flag, line)

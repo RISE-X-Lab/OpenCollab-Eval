@@ -7,6 +7,23 @@ import re
 from opencollab_eval.engine.swe_eval_records import MAX_JSONL_SCAN_BYTES
 
 DOCKER_WORKDIR = "/testbed"
+
+# The run limits every arm is given. They live here, in one place both
+# generators import, because they used to be written out separately and had
+# drifted: the single-agent CLI defaulted to 40 steps and a 900-second wall
+# clock, the workflow/team CLI to 60 steps and 1800 seconds. On the eight runs
+# of 2026-08-28 neither ceiling bound -- 23 to 38 steps were used -- so the
+# difference never showed up in a number, which is exactly why it survived.
+#
+# Tokens are the resource the arms are aligned on; the step and time ceilings
+# are here to stop a run that has gone nowhere, not to ration anything. So both
+# are set high enough that a working run does not meet them, and both are set
+# to the same value on every arm, per seat: one agent gets the same 60 steps
+# whether it is working alone or sitting in a team, the same way it gets the
+# same token budget.
+DEFAULT_BUDGET = 1_000_000
+DEFAULT_MAX_STEPS = 60  # per session; 60 proved enough to act, 40 did not
+DEFAULT_TIMEOUT = 1800.0  # wall clock; a serialized team needs more of it
 # Activate the testbed conda env so the agent's `python`/tests see the repo deps.
 _ACTIVATE = "source /opt/miniconda3/bin/activate testbed 2>/dev/null || true"
 MAX_EXTRACTED_PATCH_BYTES = 8 * 1024 * 1024
