@@ -107,11 +107,34 @@ def _result_metrics(result: RunResult[str], duration_s: float) -> dict[str, Any]
         workflow_status = str(result.reason or phase)
     else:
         workflow_status = "error"
-    candidate_probe_eligible = (
-        session_quiesced
-        and result.status in {"completed", "stopped"}
-        and workflow_status in {"done", "done_with_timeout_patch"}
-    )
+    # Whether the workspace is worth reading, and deliberately not a function of
+    # *why* a quiesced session stopped.
+    #
+    # It used to also require ``workflow_status in {"done",
+    # "done_with_timeout_patch"}``. A wall-clock timeout maps to the second of
+    # those, so a run that ran out of time kept its patch -- but a run that ran
+    # out of tokens maps to the raw stop reason, matched neither, and had its
+    # work thrown away with the warning "empty patch (agent made no tracked
+    # changes)". Observed on django-11292: the agent's own ``git diff --stat``
+    # four steps before the end reported 2 files and 15 insertions still in the
+    # tree.
+    #
+    # The arm this one is compared against never behaved that way. The
+    # workflow/team path gates extraction on the container evidence being intact
+    # (``gen_prediction_workflow`` around ``outer_extraction_allowed``) and not
+    # on the terminal reason, so an identically budget-stopped team run kept its
+    # patch. Two arms, one outcome measure, and a run's patch survived on one of
+    # them and not the other for a reason that is not what the comparison is
+    # about.
+    #
+    # ``stopped`` is every controlled halt -- budget, step ceiling, loop block,
+    # cancel, context overflow -- and in all of them the agent's edits are
+    # sitting in /testbed exactly as they are after a timeout. ``failed`` is
+    # still excluded: an unhandled fault leaves no promise about the workspace.
+    candidate_probe_eligible = session_quiesced and result.status in {
+        "completed",
+        "stopped",
+    }
     metrics = {
         RUN_SUMMARY_KEY: build_run_summary(
             steps=int(values.get("steps") or 0),
