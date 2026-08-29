@@ -100,11 +100,11 @@ def test_neither_system_prompt_carries_procedure_for_one_arm_only():
 def test_the_single_arm_asks_for_exactly_the_declared_working_bundle():
     """The list passed to ``builtin_tools`` is the one both arms declare.
 
-    Its counterpart -- that the team's Analyst holds these six and only the
+    Its counterpart -- that the team's Analyst holds these seven and only the
     collaboration channel on top -- is pinned in OpenCollab's
     ``tests/test_handoff_experiment_team.py``, because the team configuration
-    lives in that repository. Both sides assert the same six names, so a change
-    on either fails a test rather than drifting.
+    lives in that repository. Both sides assert the same seven names, so a
+    change on either fails a test rather than drifting.
     """
     from opencollab_eval.generation.gen_prediction_constants import (
         WORKING_TOOL_NAMES,
@@ -117,6 +117,10 @@ def test_the_single_arm_asks_for_exactly_the_declared_working_bundle():
         "file_write",
         "grep",
         "run_tests",
+        # Ending a turn on purpose is available to every arm, so that "the
+        # agent said it was finished" is a fact about the model rather than
+        # about which arm it was in.
+        "submit",
     }
     # Sorted and unique: ``builtin_tools`` rejects a duplicate, and a stable
     # order keeps the tool schemas byte-identical between the arms.

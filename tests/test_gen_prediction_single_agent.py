@@ -289,7 +289,7 @@ def test_single_agent_builds_stable_runtime_request(monkeypatch, tmp_path):
     assert request.timeout == 12.5
     assert request.cleanup_timeout == gp.AGENT_CANCELLATION_GRACE_SECONDS
     # The working bundle both arms hold, in the order they are declared. Which
-    # six names those are, and why they must match the team's, is pinned in
+    # seven names those are, and why they must match the team's, is pinned in
     # ``test_gen_prediction_task_text``.
     assert [type(tool).__name__ for tool in request.tools] == [
         "ApplyPatchTool",
@@ -298,6 +298,7 @@ def test_single_agent_builds_stable_runtime_request(monkeypatch, tmp_path):
         "FileWriteTool",
         "GrepTool",
         "RunTestsTool",
+        "SubmitTool",
     ]
     assert metrics["workflow_status"] == "done"
 

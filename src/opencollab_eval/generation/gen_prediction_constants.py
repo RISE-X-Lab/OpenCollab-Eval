@@ -84,6 +84,7 @@ WORKING_TOOL_NAMES = (
     "file_write",
     "grep",
     "run_tests",
+    "submit",
 )
 
 AGENT_PROMPT = """\

@@ -35,6 +35,10 @@ Do not edit test files: a fix is graded against the project's own tests.
 
 When the run ends, the answer is read from the working tree at /testbed and
 from nowhere else.
+
+Call submit when you are finished, with a short summary of what you changed.
+It ends your turn and records that you stopped on purpose. It does not decide
+whether your work counts: /testbed is read either way.
 """
 
 BLIND_VALIDATION_BLOCK = """\
