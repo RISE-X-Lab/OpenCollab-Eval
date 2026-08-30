@@ -680,3 +680,57 @@ def test_durable_append_separates_preexisting_truncated_tail(tmp_path):
         except json.JSONDecodeError:
             pass
     assert valid_rows == [row]
+
+
+def test_single_arm_records_where_its_trajectory_landed(monkeypatch, tmp_path):
+    """Both arms must name the directory holding the run's trajectory.
+
+    The workflow arm writes ``trajectory_path`` on every record. The single arm
+    reserves ``agent-<uuid>`` directly under the batch root and stores no
+    instance id inside it, so without this key nothing downstream can match a
+    trajectory back to its task -- an input that differs by arm.
+    """
+    artifact_dir = _reserve_empty_artifact_dir(monkeypatch, tmp_path)
+    runtime = RecordingRuntime(_runtime_result())
+
+    metrics = asyncio.run(
+        gp.run_agent(
+            "task",
+            "cid",
+            _agent_config(),
+            4,
+            100,
+            1,
+            artifact_root=tmp_path,
+            runtime=runtime,
+        )
+    )
+
+    assert metrics["trajectory_path"] == str(artifact_dir)
+
+
+def test_single_arm_names_its_trajectory_even_when_the_runtime_fails(
+    monkeypatch, tmp_path
+):
+    """A run that dies still leaves artifacts, so the key cannot be conditional."""
+    artifact_dir = _reserve_empty_artifact_dir(monkeypatch, tmp_path)
+
+    class ExplodingRuntime:
+        async def agent(self, *_args, **_kwargs):
+            raise AgentRunLifecycleError("provider went away")
+
+    metrics = asyncio.run(
+        gp.run_agent(
+            "task",
+            "cid",
+            _agent_config(),
+            4,
+            100,
+            1,
+            artifact_root=tmp_path,
+            runtime=ExplodingRuntime(),
+        )
+    )
+
+    assert metrics["workflow_status"] == "error"
+    assert metrics["trajectory_path"] == str(artifact_dir)

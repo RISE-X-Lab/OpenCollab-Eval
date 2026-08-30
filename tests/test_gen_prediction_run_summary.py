@@ -86,15 +86,18 @@ def test_the_team_block_carries_that_run_s_own_numbers():
     }
 
 
-def test_a_single_agent_run_that_never_returned_still_writes_the_block():
+def test_a_single_agent_run_that_never_returned_still_writes_the_block(tmp_path):
     """A crashed run must be a readable row, not an absent one."""
-    metrics = gpa._runtime_failure_metrics(RuntimeError("provider fell over"), 4.0)
+    metrics = gpa._runtime_failure_metrics(
+        RuntimeError("provider fell over"), 4.0, tmp_path
+    )
 
     summary = metrics[RUN_SUMMARY_KEY]
     assert set(summary) == set(RUN_SUMMARY_FIELDS)
     assert summary["status"] == "failed"
     assert summary["error"] == "provider fell over"
     assert summary["tokens"] == 0
+    assert metrics["trajectory_path"] == str(tmp_path)
 
 
 def test_the_arm_native_keys_are_left_alone():

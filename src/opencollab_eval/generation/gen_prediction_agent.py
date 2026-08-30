@@ -65,8 +65,11 @@ def reserve_run_directory(root: str | Path) -> str:
     raise FileExistsError("could not reserve a unique agent artifact directory")
 
 
-def _runtime_failure_metrics(exc: Exception, duration_s: float) -> dict[str, Any]:
+def _runtime_failure_metrics(
+    exc: Exception, duration_s: float, artifact_dir: Path
+) -> dict[str, Any]:
     return {
+        "trajectory_path": str(artifact_dir),
         RUN_SUMMARY_KEY: build_run_summary(
             steps=0,
             tokens=0,
@@ -227,9 +230,14 @@ async def run_agent(
         )
     except Exception as exc:
         print(f"  agent: runtime failed with {type(exc).__name__}: {exc}")
-        return _runtime_failure_metrics(exc, time.monotonic() - started)
+        return _runtime_failure_metrics(exc, time.monotonic() - started, artifact_dir)
 
     metrics = _result_metrics(result, time.monotonic() - started)
+    # The workflow path records where this run's trajectory landed; without the
+    # same key here the two arms differ in an input to every per-instance
+    # analysis, and the single-arm artifact directory carries no instance id of
+    # its own, so nothing downstream could match a trajectory back to its task.
+    metrics["trajectory_path"] = str(artifact_dir)
     print(
         f"  agent: steps={metrics['step_count']} "
         f"tokens={metrics['used_tokens']}"
