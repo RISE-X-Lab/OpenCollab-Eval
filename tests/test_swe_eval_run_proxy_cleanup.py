@@ -44,9 +44,11 @@ def test_remote_cleanup_does_not_unlink_socket_replaced_after_probe() -> None:
         replacement_hook = "\n".join(
             (
                 marker,
-                "    os.unlink(path)",
                 "    replacement=socket.socket(socket.AF_UNIX)",
-                "    replacement.bind(path)",
+                "    replacement_path=path + '.replacement'",
+                "    replacement.bind(replacement_path)",
+                "    os.unlink(path)",
+                "    os.rename(replacement_path,path)",
                 "    replacement.close()",
             )
         )

@@ -297,12 +297,25 @@ def _raise_or_note_cleanup_failures(
     if generation_error is None:
         raise failures[0][1]
     add_note = getattr(generation_error, "add_note", None)
-    if callable(add_note):
-        for label, error in failures:
-            add_note(
-                f"{label} failed after generation error: "
-                f"{type(error).__name__}: {str(error)[:512]}"
-            )
+    for label, error in failures:
+        note = (
+            f"{label} failed after generation error: "
+            f"{type(error).__name__}: {str(error)[:512]}"
+        )
+        if callable(add_note):
+            try:
+                add_note(note)
+                continue
+            except BaseException:
+                pass
+        try:
+            notes = getattr(generation_error, "__notes__", None)
+            if not isinstance(notes, list):
+                notes = []
+                generation_error.__notes__ = notes  # type: ignore[attr-defined]
+            notes.append(note)
+        except BaseException:
+            pass
 
 
 def main() -> None:

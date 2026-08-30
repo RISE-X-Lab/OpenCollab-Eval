@@ -36,13 +36,211 @@ else
   exit 2
 fi
 
+# Docker CLI requests can otherwise wait forever when the daemon/socket is
+# wedged.  Keep this bound for short-lived control calls only; the streaming
+# Claude runtime invocation below intentionally remains an unwrapped `docker
+# run -i` so its stdin/stdout semantics are unchanged.  The existing
+# DOCKER_CLIENT_TIMEOUT is accepted as the compatibility default, while the
+# Claude-specific variable lets callers choose a shorter/longer control bound.
+docker_control_timeout="${OPENCOLLAB_CLAUDE_DOCKER_CONTROL_TIMEOUT_SECONDS:-${DOCKER_CLIENT_TIMEOUT:-120}}"
+docker_health_timeout="${OPENCOLLAB_CLAUDE_DOCKER_HEALTH_TIMEOUT_SECONDS:-5}"
+docker_health_retry_budget="${OPENCOLLAB_CLAUDE_DOCKER_HEALTH_RETRY_BUDGET_SECONDS:-30}"
+# This is an internal per-health-loop deadline; never inherit a caller's
+# stale value into ordinary control requests.
+unset OPENCOLLAB_DOCKER_DEADLINE_MONOTONIC
+validate_positive_timeout() {
+  "$python_bin" -c '
+import math
+import sys
+
+try:
+    value = float(sys.argv[1])
+except (IndexError, TypeError, ValueError, OverflowError):
+    raise SystemExit(1)
+raise SystemExit(0 if math.isfinite(value) and value > 0 else 1)
+' "$1"
+}
+if ! validate_positive_timeout "$docker_control_timeout"; then
+  echo "Claude Code Docker control timeout must be finite and positive" >&2
+  exit 2
+fi
+if ! validate_positive_timeout "$docker_health_timeout"; then
+  echo "Claude Code Docker health timeout must be finite and positive" >&2
+  exit 2
+fi
+if ! "$python_bin" -c '
+import math
+import sys
+
+try:
+    value = float(sys.argv[1])
+except (IndexError, TypeError, ValueError, OverflowError):
+    raise SystemExit(1)
+raise SystemExit(0 if math.isfinite(value) and 0 < value <= 5 else 1)
+' "$docker_health_timeout"; then
+  echo "Claude Code Docker health timeout must be at most five seconds" >&2
+  exit 2
+fi
+if ! validate_positive_timeout "$docker_health_retry_budget"; then
+  echo "Claude Code Docker health retry budget must be finite and positive" >&2
+  exit 2
+fi
+if ! "$python_bin" -c '
+import math
+import sys
+
+try:
+    value = float(sys.argv[1])
+except (IndexError, TypeError, ValueError, OverflowError):
+    raise SystemExit(1)
+raise SystemExit(0 if math.isfinite(value) and 0 < value <= 30 else 1)
+' "$docker_health_retry_budget"; then
+  echo "Claude Code Docker health retry budget must be at most thirty seconds" >&2
+  exit 2
+fi
+docker_control_with_timeout() {
+  local timeout="$1"
+  shift
+  "$python_bin" -c '
+import math
+import os
+import signal
+import subprocess
+import sys
+import time
+
+timeout = float(sys.argv[1])
+deadline_raw = os.environ.get("OPENCOLLAB_DOCKER_DEADLINE_MONOTONIC")
+if deadline_raw is not None:
+    try:
+        deadline = float(deadline_raw)
+    except (TypeError, ValueError, OverflowError):
+        raise SystemExit(125)
+    if not math.isfinite(deadline):
+        raise SystemExit(125)
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        # Private status used by the retry loop to distinguish an exhausted
+        # total budget from one probe timing out while budget remains.
+        raise SystemExit(122)
+    timeout = min(timeout, remaining)
+command = ["docker", *sys.argv[2:]]
+try:
+    process = subprocess.Popen(command, start_new_session=True)
+except OSError as exc:
+    print(f"could not start Docker control command: {exc}", file=sys.stderr)
+    raise SystemExit(127)
+
+
+def kill_and_reap() -> bool:
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    except OSError:
+        return False
+    try:
+        process.wait(timeout=min(5.0, max(0.1, timeout)))
+    except (OSError, ChildProcessError, subprocess.TimeoutExpired):
+        return False
+    return True
+
+
+def forward_signal(signum, _frame) -> None:
+    try:
+        os.killpg(process.pid, signum)
+    except ProcessLookupError:
+        pass
+    except OSError:
+        raise SystemExit(125)
+    try:
+        process.wait(timeout=1.0)
+    except subprocess.TimeoutExpired:
+        if not kill_and_reap():
+            raise SystemExit(125)
+    except (OSError, ChildProcessError):
+        raise SystemExit(125)
+    raise SystemExit(128 + signum)
+
+
+signal.signal(signal.SIGINT, forward_signal)
+signal.signal(signal.SIGTERM, forward_signal)
+try:
+    returncode = process.wait(timeout=timeout)
+except subprocess.TimeoutExpired:
+    if not kill_and_reap():
+        print("could not reap timed-out Docker control command", file=sys.stderr)
+        raise SystemExit(125)
+    print("Docker control command timed out", file=sys.stderr)
+    raise SystemExit(124)
+if returncode < 0:
+    returncode = 128 - returncode
+raise SystemExit(returncode)
+' "$timeout" "$@"
+}
+
+docker_control() {
+  docker_control_with_timeout "$docker_control_timeout" "$@"
+}
+
+wait_for_docker_health() {
+  local reference="$1"
+  local probe="$2"
+  (
+    local deadline
+    deadline="$("$python_bin" -c '
+import sys
+import time
+
+try:
+    budget = float(sys.argv[1])
+except (IndexError, TypeError, ValueError, OverflowError):
+    raise SystemExit(1)
+print(time.monotonic() + budget)
+' "$docker_health_retry_budget")" || exit 2
+    export OPENCOLLAB_DOCKER_DEADLINE_MONOTONIC="$deadline"
+    while :; do
+      local status=0
+      if docker_control_with_timeout "$docker_health_timeout" exec "$reference" python3 -c "$probe" \
+        >/dev/null 2>&1; then
+        exit 0
+      else
+        status=$?
+      fi
+      if [[ "$status" -eq 122 ]]; then
+        break
+      fi
+      if [[ "$status" -eq 125 ]]; then
+        echo "Docker health probe process could not be reaped" >&2
+        exit 125
+      fi
+      sleep 0.05
+    done
+    echo "Docker health probe did not become ready within its bounded retry budget" >&2
+    exit 124
+  )
+}
+
+# Initialize cleanup state before the first Docker call.  A daemon timeout can
+# happen during image inspection, before the normal setup assignments below;
+# nounset-safe empty values keep the EXIT trap from masking that failure.
+actual_runtime_id=""
+network_name=""
+workspace=""
+test_id=""
+runtime_name=""
+trusted_git_dir=""
+trusted_git_home=""
+gateway_id=""
+relay_id=""
+
 mkdir -p "$output_dir"
-actual_runtime_id="$(docker image inspect --format '{{.Id}}' "$runtime_image")"
+actual_runtime_id="$(docker_control image inspect --format '{{.Id}}' "$runtime_image")"
 if [[ "$actual_runtime_id" != "$expected_runtime_id" ]]; then
   echo "Claude Code runtime image identity mismatch" >&2
   exit 2
 fi
-task_image_id="$(docker inspect --format '{{.Image}}' "$container_id")"
+task_image_id="$(docker_control inspect --format '{{.Image}}' "$container_id")"
 if [[ ! "$task_image_id" =~ ^sha256:[0-9a-f]{64}$ ]]; then
   echo "task container image identity is invalid" >&2
   exit 2
@@ -53,11 +251,6 @@ printf '{"solver":"claude-code","expected_model":"%s","expected_runtime_image_id
   "$OPENHANDS_INSTANCE_ID" "$network_name" \
   > "$output_dir/external_solver.required.json"
 workspace="$(mktemp -d "$output_dir/claude-workspace.XXXXXX")"
-test_id=""
-runtime_name=""
-trusted_git_dir=""
-trusted_git_home=""
-gateway_id=""
 gateway_cidfile="$output_dir/gateway-container.id"
 relay_id=""
 relay_cidfile="$output_dir/relay-container.id"
@@ -69,8 +262,8 @@ remove_container_and_prove_absent() {
   local inspect_output
   local inspect_status
   [[ -n "$reference" ]] || return 0
-  docker rm -f "$reference" >/dev/null 2>&1 || true
-  inspect_output="$(docker container inspect "$reference" 2>&1)"
+  docker_control rm -f "$reference" >/dev/null 2>&1 || true
+  inspect_output="$(docker_control container inspect "$reference" 2>&1)"
   inspect_status=$?
   if [[ "$inspect_status" -eq 0 ]]; then
     return 1
@@ -91,8 +284,8 @@ remove_network_and_prove_absent() {
   local inspect_output
   local inspect_status
   [[ -n "$network" ]] || return 0
-  docker network rm "$network" >/dev/null 2>&1 || true
-  inspect_output="$(docker network inspect "$network" 2>&1)"
+  docker_control network rm "$network" >/dev/null 2>&1 || true
+  inspect_output="$(docker_control network inspect "$network" 2>&1)"
   inspect_status=$?
   if [[ "$inspect_status" -eq 0 ]]; then
     return 1
@@ -135,7 +328,7 @@ cleanup() {
   fi
   rm -rf "$workspace" >/dev/null 2>&1
   if [[ -d "$workspace" ]]; then
-    docker run --rm --network none --user 0:0 \
+    docker_control run --rm --network none --user 0:0 \
       --label opencollab.owner=claude-code-probe \
       --label "opencollab.solver_task_id=$OPENHANDS_INSTANCE_ID" \
       --mount "type=bind,src=$workspace,dst=/cleanup" \
@@ -158,7 +351,7 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-docker cp "$container_id:/testbed/." "$workspace"
+docker_control cp "$container_id:/testbed/." "$workspace"
 if [[ ! -d "$workspace/.git" || -L "$workspace/.git" ]]; then
   echo "task repository Git metadata is unavailable" >&2
   exit 2
@@ -192,7 +385,7 @@ gitlink_projection_manifest="$output_dir/claude-gitlink-projections.json"
 test_name="oc-claude-${container_id:0:12}-$$"
 solver_global_config="/tmp/opencollab-solver-global-$$.gitconfig"
 solver_system_config="/tmp/opencollab-solver-system-$$.gitconfig"
-test_id="$(docker run -d --network none --name "$test_name" --cidfile "$test_cidfile" \
+test_id="$(docker_control run -d --network none --name "$test_name" --cidfile "$test_cidfile" \
   --label opencollab.owner=claude-code-external \
   --label "opencollab.solver_task_id=$OPENHANDS_INSTANCE_ID" \
   -e GIT_ATTR_NOSYSTEM=1 -e "GIT_CONFIG_GLOBAL=$solver_global_config" \
@@ -205,10 +398,10 @@ if [[ "$(<"$test_cidfile")" != "$test_id" ]]; then
   echo "test container cidfile identity mismatch" >&2
   exit 2
 fi
-docker exec "$test_id" sh -c 'umask 077; : > "$1"; : > "$2"; chmod 600 "$1"; chmod 400 "$2"' -- \
+docker_control exec "$test_id" sh -c 'umask 077; : > "$1"; : > "$2"; chmod 600 "$1"; chmod 400 "$2"' -- \
   "$solver_global_config" "$solver_system_config"
 
-docker network create --internal \
+docker_control network create --internal \
   --label opencollab.owner=claude-code-network \
   --label "opencollab.solver_task_id=$OPENHANDS_INSTANCE_ID" \
   "$network_name" >/dev/null
@@ -219,7 +412,7 @@ chmod 500 "$relay_script"
 relay_name="oc-claude-relay-${container_id:0:12}-$$"
 relay_socket="$($python_bin -m opencollab_eval.generation.claude_code_sidecar \
   relay-socket --base-url "$LLM_BASE_URL")"
-relay_id="$(docker run -d --name "$relay_name" --cidfile "$relay_cidfile" \
+relay_id="$(docker_control run -d --name "$relay_name" --cidfile "$relay_cidfile" \
   --label opencollab.owner=claude-code-relay \
   --label "opencollab.solver_task_id=$OPENHANDS_INSTANCE_ID" \
   --network "$network_name" --network-alias claude-api \
@@ -227,18 +420,9 @@ relay_id="$(docker run -d --name "$relay_name" --cidfile "$relay_cidfile" \
   --mount "type=bind,src=$relay_socket,dst=/control/upstream.sock" \
   --mount "type=bind,src=$relay_script,dst=/control/claude_api_relay.py,readonly" \
   --entrypoint python3 "$runtime_image" /control/claude_api_relay.py)"
-for _ in $(seq 1 100); do
-  if docker exec "$relay_id" python3 -c \
-    'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=1).read()' \
-    >/dev/null 2>&1; then
-    break
-  fi
-  sleep 0.05
-done
-docker exec "$relay_id" python3 -c \
-  'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=1).read()' \
-  >/dev/null
-docker run --rm --network "$network_name" \
+relay_health_probe='import urllib.request; urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=1).read()'
+wait_for_docker_health "$relay_id" "$relay_health_probe"
+docker_control run --rm --network "$network_name" \
   --label opencollab.owner=claude-code-probe \
   --label "opencollab.solver_task_id=$OPENHANDS_INSTANCE_ID" \
   --entrypoint python3 "$runtime_image" -c '
@@ -261,7 +445,7 @@ rm -f "$gateway_server"
 cp "$(dirname "$0")/../generation/claude_container_gateway.py" "$gateway_server"
 chmod 500 "$gateway_server"
 gateway_name="oc-claude-gateway-${container_id:0:12}-$$"
-gateway_id="$(docker run -d --name "$gateway_name" --cidfile "$gateway_cidfile" \
+gateway_id="$(docker_control run -d --name "$gateway_name" --cidfile "$gateway_cidfile" \
   --label opencollab.owner=claude-code-gateway \
   --label "opencollab.solver_task_id=$OPENHANDS_INSTANCE_ID" \
   --network "$network_name" --network-alias command-gateway \
@@ -269,17 +453,8 @@ gateway_id="$(docker run -d --name "$gateway_name" --cidfile "$gateway_cidfile" 
   --mount "type=bind,src=$gateway_server,dst=/control/claude_container_gateway.py,readonly" \
   --entrypoint python3 "$runtime_image" /control/claude_container_gateway.py \
   --listen 0.0.0.0:8090 --container "$test_id")"
-for _ in $(seq 1 100); do
-  if docker exec "$gateway_id" python3 -c \
-    'import socket; socket.create_connection(("127.0.0.1", 8090), timeout=1).close()' \
-    >/dev/null 2>&1; then
-    break
-  fi
-  sleep 0.05
-done
-docker exec "$gateway_id" python3 -c \
-  'import socket; socket.create_connection(("127.0.0.1", 8090), timeout=1).close()' \
-  >/dev/null
+gateway_health_probe='import socket; socket.create_connection(("127.0.0.1", 8090), timeout=1).close()'
+wait_for_docker_health "$gateway_id" "$gateway_health_probe"
 
 run_wrapper="$output_dir/run_in_container"
 printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
@@ -300,7 +475,7 @@ patch_file="$output_dir/claude.patch"
 
 host_sentinel="$output_dir/host-isolation-sentinel"
 printf 'must remain outside Claude runtime\n' > "$host_sentinel"
-docker run --rm --network none \
+docker_control run --rm --network none \
   --label opencollab.owner=claude-code-probe \
   --label "opencollab.solver_task_id=$OPENHANDS_INSTANCE_ID" \
   --mount "type=bind,src=$run_wrapper,dst=/control/run_in_container,readonly" \
@@ -316,7 +491,7 @@ docker run --rm --network none \
   ' -- "$host_sentinel" > "$output_dir/runtime-isolation.proof"
 rm -f "$host_sentinel"
 
-runtime_identity="$(docker run --rm \
+runtime_identity="$(docker_control run --rm \
   --label opencollab.owner=claude-code-probe \
   --label "opencollab.solver_task_id=$OPENHANDS_INSTANCE_ID" \
   --entrypoint bash "$runtime_image" -lc \
@@ -448,13 +623,13 @@ if [[ -s "$patch_file" ]]; then
   "$python_bin" -m opencollab_eval.generation.candidate_gitlinks_cli replay-paths \
     --manifest "$gitlink_projection_manifest" --output "$gitlink_replay_paths"
   while IFS= read -r -d '' gitlink_path; do
-    docker exec "$container_id" rm -rf -- "/testbed/$gitlink_path"
-    docker exec "$container_id" mkdir -p -- "/testbed/$gitlink_path"
+    docker_control exec "$container_id" rm -rf -- "/testbed/$gitlink_path"
+    docker_control exec "$container_id" mkdir -p -- "/testbed/$gitlink_path"
   done < "$gitlink_replay_paths"
-  docker exec -i -w /testbed "$container_id" git apply --binary --whitespace=nowarn - \
+  docker_control exec -i -w /testbed "$container_id" git apply --binary --whitespace=nowarn - \
     < "$patch_file"
 fi
-docker exec -w /testbed "$container_id" git \
+docker_control exec -w /testbed "$container_id" git \
   -c core.fsmonitor=false -c core.hooksPath=/dev/null \
   -c core.attributesFile=/dev/null -c diff.external= \
   status --short \

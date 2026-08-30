@@ -7,6 +7,25 @@ from pathlib import Path
 from typing import Any
 
 
+def _append_exception_note(error: BaseException, note: str) -> None:
+    """Attach diagnostics on Python versions before ``BaseException.add_note``."""
+    add_note = getattr(error, "add_note", None)
+    if callable(add_note):
+        try:
+            add_note(note)
+            return
+        except BaseException:
+            pass
+    try:
+        notes = getattr(error, "__notes__", None)
+        if not isinstance(notes, list):
+            notes = []
+            error.__notes__ = notes  # type: ignore[attr-defined]
+        notes.append(note)
+    except BaseException:
+        pass
+
+
 def cleanup_openhands_attempt(
     *,
     gp: Any,
@@ -87,11 +106,6 @@ def cleanup_openhands_attempt(
     if not failures:
         return generation_error
     primary = generation_error or failures[0][0]
-    add_note = getattr(primary, "add_note", None)
-    if callable(add_note):
-        for _exc, message in failures:
-            try:
-                add_note(f"OpenHands finalization failed ({message})")
-            except BaseException:
-                pass
+    for _exc, message in failures:
+        _append_exception_note(primary, f"OpenHands finalization failed ({message})")
     return primary

@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -285,7 +286,7 @@ def test_claude_launcher_has_fixed_identity_permissions_and_empty_patch_gate() -
     assert "b4131d5c" not in script
     assert "Read Edit Write Glob Grep TaskOutput TaskStop Bash(/control/run_in_container *)" in script
     assert '--disallowedTools "WebFetch WebSearch"' in script
-    assert "docker run -d --network none" in script
+    assert "docker_control run -d --network none" in script
     assert "type=bind,src=/dev/null,dst=/dev/null,readonly" in script
     assert "dst=/control/run_in_container,readonly" in script
     assert "dst=/control/claude.settings.json,readonly" in script
@@ -293,7 +294,7 @@ def test_claude_launcher_has_fixed_identity_permissions_and_empty_patch_gate() -
     assert script.count("dst=/var/run/docker.sock") == 1
     assert "command-gateway:8090" in script
     assert "--network host" not in script
-    assert "docker network create --internal" in script
+    assert "docker_control network create --internal" in script
     assert 'docker run --rm -i --name "$runtime_name"' in script
     assert "CLAUDE_RELAY_UPSTREAM_UNIX=/control/upstream.sock" in script
     assert "src=$relay_socket,dst=/control/upstream.sock" in script
@@ -303,7 +304,7 @@ def test_claude_launcher_has_fixed_identity_permissions_and_empty_patch_gate() -
     assert "opencollab_eval.generation.candidate_gitlinks_cli" in script
     assert "add -f -A" not in script
     assert '--gitlink-projections "$gitlink_projection_manifest"' in script
-    assert "docker inspect --format '{{.Image}}'" in script
+    assert "docker_control inspect --format '{{.Image}}'" in script
     assert 'GIT_CONFIG_GLOBAL=$solver_global_config' in script
     assert 'GIT_CONFIG_SYSTEM=$solver_system_config' in script
     assert "GIT_NO_REPLACE_OBJECTS=1" in script
@@ -360,6 +361,68 @@ def test_claude_launcher_rejects_non_unix_docker_host_before_side_effects(
     assert completed.returncode == 2
     assert "DOCKER_HOST" in completed.stderr
     assert not output.exists()
+
+
+def test_claude_launcher_bounds_control_docker_hang_without_wrapping_runtime(
+    tmp_path: Path,
+) -> None:
+    """A wedged short-lived Docker request fails promptly, while Claude stays streaming."""
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "docker-calls.log"
+    fake_docker = bin_dir / "docker"
+    fake_docker.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -eu\n"
+        "printf '%s\\n' \"$*\" >> \"$FAKE_DOCKER_CALLS\"\n"
+        "if [[ \"$1\" == image && \"$2\" == inspect ]]; then\n"
+        "  while :; do sleep 1; done\n"
+        "fi\n"
+        "exit 99\n",
+        encoding="utf-8",
+    )
+    fake_docker.chmod(0o755)
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text("Fix the repository.\n", encoding="utf-8")
+    output = tmp_path / "output"
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{bin_dir}:{environment['PATH']}",
+            "FAKE_DOCKER_CALLS": str(calls),
+            "LLM_API_KEY": "fake-key",
+            "LLM_BASE_URL": "http://127.0.0.1:1",
+            "LLM_MODEL": "glm-5.2",
+            "OPENCOLLAB_CLAUDE_EXPECTED_MODEL": "glm-5.2",
+            "OPENCOLLAB_CLAUDE_EXPECTED_VERSION": "2.1.175",
+            "OPENCOLLAB_CLAUDE_RUNTIME_IMAGE": RUNTIME_IMAGE,
+            "OPENCOLLAB_CLAUDE_RUNTIME_IMAGE_ID": RUNTIME_IMAGE_ID,
+            "OPENCOLLAB_CLAUDE_SIDECAR_PYTHON": sys.executable,
+            "OPENCOLLAB_CLAUDE_DOCKER_CONTROL_TIMEOUT_SECONDS": "0.2",
+            "OPENHANDS_INSTANCE_ID": "solver-" + "1" * 32,
+        }
+    )
+    started = time.monotonic()
+    completed = subprocess.run(
+        ["bash", str(SCRIPT), "task-container", str(prompt), str(output)],
+        cwd=tmp_path,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=5,
+    )
+
+    assert completed.returncode == 124
+    assert time.monotonic() - started < 3
+    assert "Docker control command timed out" in completed.stderr
+    assert calls.read_text(encoding="utf-8").splitlines() == [
+        "image inspect --format {{.Id}} registry.example.invalid/claude-runtime:2.1.175"
+    ]
+    script = SCRIPT.read_text(encoding="utf-8")
+    assert 'docker run --rm -i --name "$runtime_name"' in script
+    assert 'docker_control run --rm -i --name "$runtime_name"' not in script
 
 
 def test_read_only_probe_suppresses_expected_shell_noise(tmp_path: Path) -> None:
