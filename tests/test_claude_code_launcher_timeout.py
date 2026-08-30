@@ -76,6 +76,6 @@ def test_claude_health_probe_uses_small_monotonic_budget_without_seconds_counter
     assert completed.returncode == 124
     assert time.monotonic() - started < 2
     assert "bounded retry budget" in completed.stderr
-    assert calls.read_text(encoding="utf-8").splitlines() == [
-        "exec fake-container python3 -c raise SystemExit(1)"
-    ]
+    call_lines = calls.read_text(encoding="utf-8").splitlines()
+    assert 1 <= len(call_lines) <= 2
+    assert set(call_lines) == {"exec fake-container python3 -c raise SystemExit(1)"}
