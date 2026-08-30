@@ -37,6 +37,21 @@ def _decode_wait_status(status: int) -> int:
     raise SupervisorError("child returned an unsupported wait status")
 
 
+def _validate_timeout_seconds(timeout_seconds: float | None) -> float | None:
+    """Validate the programmatic timeout before forking any supervised work."""
+    if timeout_seconds is None:
+        return None
+    if isinstance(timeout_seconds, bool):
+        raise SupervisorError("timeout_seconds must be finite and positive")
+    try:
+        value = float(timeout_seconds)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise SupervisorError("timeout_seconds must be finite and positive") from exc
+    if not math.isfinite(value) or value <= 0:
+        raise SupervisorError("timeout_seconds must be finite and positive")
+    return value
+
+
 def enable_subreaper() -> None:
     if not sys.platform.startswith("linux") or not os.path.isdir("/proc"):
         raise SupervisorError("Linux /proc is required for descendant supervision")
@@ -319,6 +334,7 @@ def prepare_guard_root(path: Path) -> None:
 def run(command: Sequence[str], *, timeout_seconds: float | None = None) -> int:
     if not command:
         raise SupervisorError("supervised command is empty")
+    timeout_seconds = _validate_timeout_seconds(timeout_seconds)
     enable_subreaper()
     interrupted = 0
 

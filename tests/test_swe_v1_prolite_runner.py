@@ -524,6 +524,7 @@ def test_run_remote_sigterm_cleans_up_ssh_before_exiting(monkeypatch):
 
 def test_run_remote_recovers_terminal_summary_when_primary_ssh_hangs(monkeypatch):
     communicate_calls = []
+    probe_calls = []
     terminated = []
 
     class HangingProcess:
@@ -535,15 +536,15 @@ def test_run_remote_recovers_terminal_summary_when_primary_ssh_hangs(monkeypatch
             raise subprocess.TimeoutExpired(["ssh"], timeout)
 
     monkeypatch.setattr(runner.subprocess, "Popen", lambda *args, **kwargs: HangingProcess())
-    monkeypatch.setattr(
-        runner,
-        "probe_remote_execution_state",
-        lambda **kwargs: {
+    def probe(**kwargs):
+        probe_calls.append(kwargs)
+        return {
             "runner_state": "dead",
             "runner_owner": {},
             "summary": {"status": "done", "counts": {"technical_failed": 0}},
-        },
-    )
+        }
+
+    monkeypatch.setattr(runner, "probe_remote_execution_state", probe)
     monkeypatch.setattr(
         runner,
         "matching_terminal_remote_summary",
@@ -600,6 +601,8 @@ def test_run_remote_recovers_terminal_summary_when_primary_ssh_hangs(monkeypatch
     summary = runner.run_remote(args)
 
     assert communicate_calls
+    assert probe_calls
+    assert 0 < probe_calls[0]["timeout"] <= runner.REMOTE_COMPLETION_PROBE_TIMEOUT_SECONDS
     sent_payload = json.loads(communicate_calls[0][0])
     assert re.fullmatch(r"[0-9a-f]{32}", sent_payload["invocation_id"])
     assert terminated == [4321]

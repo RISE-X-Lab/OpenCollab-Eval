@@ -171,6 +171,47 @@ def _require_path_matches_open_file(path: Path, fd: int) -> None:
         raise OSError(f"output path changed during durable append: {path}")
 
 
+def _existing_output_record(fd: int, row: dict) -> bool:
+    """Return whether this record is already durably present under the lock.
+
+    Prediction and metric projections are committed to separate JSONL files.
+    If a process dies between those appends, a retry must not append a second
+    prediction row.  Scan only while holding the same file lock used for the
+    append, and reject an identity collision with different contents.
+    """
+    instance_id = row.get("instance_id")
+    record_id = row.get("record_id")
+    if instance_id is None or record_id is None:
+        return False
+    chunks: list[bytes] = []
+    offset = 0
+    while offset <= MAX_OUTPUT_JSONL_BYTES:
+        chunk = os.pread(fd, min(1024 * 1024, MAX_OUTPUT_JSONL_BYTES + 1 - offset), offset)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        offset += len(chunk)
+        if offset > MAX_OUTPUT_JSONL_BYTES:
+            break
+    for line in b"".join(chunks).splitlines():
+        try:
+            existing = json.loads(line)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(existing, dict):
+            continue
+        if (
+            existing.get("instance_id") == instance_id
+            and existing.get("record_id") == record_id
+        ):
+            if existing != row:
+                raise OSError(
+                    "output record identity collision with different contents"
+                )
+            return True
+    return False
+
+
 def _atomic_write_bytes(path: Path, payload: bytes) -> None:
     write_regular_bytes_atomic(path, payload)
 
@@ -426,6 +467,8 @@ def _append_jsonl_durable(path: Path, row: dict) -> None:
         _acquire_exclusive_lock(fd, label=f"output lock {path}")
         locked = True
         _require_path_matches_open_file(path, fd)
+        if _existing_output_record(fd, row):
+            return
         size = os.fstat(fd).st_size
         needs_separator = size > 0 and os.pread(fd, 1, size - 1) != b"\n"
         if size + int(needs_separator) + len(payload) > MAX_OUTPUT_JSONL_BYTES:

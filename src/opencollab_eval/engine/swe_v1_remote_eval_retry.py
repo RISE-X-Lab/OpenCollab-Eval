@@ -9,7 +9,10 @@ from opencollab_eval.engine.swe_v1_remote_records import *
 from opencollab_eval.engine.swe_v1_remote_state import *
 
 
-def eval_for_task_with_retries(row, eval_once):
+def eval_for_task_with_retries(row, eval_once, eval_timeout=None, controller_timeout=None):
+    eval_timeout = resolve_eval_timeout(eval_timeout)
+    if controller_timeout is None:
+        controller_timeout = eval_timeout
     task = row["instance_id"]
     run_dir = base_run_dir / task
     done, prediction, metric, pairing = generation_done_for_mode(
@@ -20,7 +23,9 @@ def eval_for_task_with_retries(row, eval_once):
         result["attempt_count"] = 0
         result["max_eval_attempts"] = max_eval_attempts
         return result
-    patch_selection = verified_plan_patch_selection(row, prediction, metric)
+    patch_selection = verified_plan_patch_selection(
+        row, prediction, metric, eval_timeout, controller_timeout
+    )
     expected_eval_patch_sha256 = (
         str(patch_selection.get("eval_patch_sha256") or "")
         if patch_selection is not None
@@ -72,7 +77,9 @@ def eval_for_task_with_retries(row, eval_once):
     retry_statuses = {"technical_eval_failed", "blocked_missing_eval_image"}
     for attempt_index in range(max_eval_attempts - persisted_attempts):
         if patch_selection is None or attempt_index > 0 and not patch_selection.get("ok"):
-            patch_selection = verified_plan_patch_selection(row, prediction, metric)
+            patch_selection = verified_plan_patch_selection(
+                row, prediction, metric, eval_timeout, controller_timeout
+            )
         if patch_selection is not None and patch_selection.get("ok"):
             expected_eval_patch_sha256 = str(patch_selection.get("eval_patch_sha256") or "")
             expected_eval_image_id = str(patch_selection.get("image_id") or "")

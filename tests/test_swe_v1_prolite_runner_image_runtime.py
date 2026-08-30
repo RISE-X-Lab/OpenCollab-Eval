@@ -124,7 +124,7 @@ def test_image_workdir_preflight_is_offline_owned_and_cleaned_after_timeout(tmp_
     def fake_run(command, timeout=60):
         nonlocal removed
         calls.append((command, timeout))
-        if command[:3] == ["timeout", "120", "docker"]:
+        if command[:3] == ["timeout", "120", "docker"] or command[:2] == ["docker", "run"]:
             return {"returncode": 124, "stdout": "", "stderr": "timed out"}
         if command[:2] == ["docker", "inspect"]:
             reference = command[-1]
@@ -162,6 +162,26 @@ def test_image_workdir_preflight_is_offline_owned_and_cleaned_after_timeout(tmp_
     assert ["docker", "rm", "-f", "--", container_id] in [
         call for call, _timeout in calls
     ]
+
+
+def test_image_workdir_preflight_does_not_require_gnu_timeout(tmp_path, monkeypatch):
+    namespace = _remote_namespace(tmp_path)
+    calls = []
+    monkeypatch.setattr(namespace["shutil"], "which", lambda _name: None)
+    namespace["run"] = lambda command, timeout=60: calls.append((command, timeout)) or {
+        "returncode": 2,
+        "stdout": "",
+        "stderr": "preflight failed",
+    }
+    namespace["cleanup_preflight_container"] = lambda *args, **kwargs: {
+        "ok": True,
+        "status": "absent",
+    }
+
+    result = namespace["image_repo_workdir_status"]("registry.example/image:tag")
+
+    assert result["ok"] is False
+    assert calls[0][0][:2] == ["docker", "run"]
 
 
 def test_runtime_dependency_identity_probe_binds_an_ignored_file_to_the_image(tmp_path):
@@ -223,6 +243,40 @@ def test_runtime_dependency_identity_probe_binds_an_ignored_file_to_the_image(tm
     assert '"GIT_CONFIG_GLOBAL": "/dev/null"' in probe_source
     assert '"GIT_CONFIG_NOSYSTEM": "1"' in probe_source
     assert '"GIT_CONFIG_KEY_0": "safe.directory"' in probe_source
+
+
+def test_runtime_dependency_probe_does_not_require_gnu_timeout(tmp_path, monkeypatch):
+    namespace = _remote_namespace(tmp_path)
+    calls = []
+    monkeypatch.setattr(namespace["shutil"], "which", lambda _name: None)
+
+    namespace["_run_bounded"] = lambda command, timeout=60: (
+        calls.append((command, timeout))
+        or {
+            "returncode": 0,
+            "stdout": "[]",
+            "stderr": "",
+        }
+    )
+    namespace["cleanup_preflight_container"] = lambda *args, **kwargs: {
+        "ok": True,
+        "status": "absent",
+    }
+
+    result = namespace["image_runtime_dependency_identities"](
+        "sha256:" + "2" * 64,
+        [
+            {
+                "root": "package.json",
+                "required_paths": ["package.json"],
+                "kind": "file",
+                "candidate_protected": False,
+            }
+        ],
+    )
+
+    assert result["ok"] is True
+    assert calls[0][0][:2] == ["docker", "run"]
 
 
 def test_runtime_dependency_identity_probe_rejects_malformed_image_evidence(tmp_path):

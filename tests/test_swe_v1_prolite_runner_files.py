@@ -618,3 +618,76 @@ def test_remote_output_capture_runs_periodic_liveness_probe():
         runner.terminate_local_process_group(proc, term_timeout=0.2, kill_timeout=1)
 
     assert probes == [True]
+
+
+def test_remote_output_capture_bounds_stdin_write_when_child_does_not_read():
+    """A full request pipe must not bypass the communication timeout."""
+    proc = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    outcome = []
+
+    def communicate() -> None:
+        try:
+            runner._bounded_remote_communicate(
+                proc,
+                "x" * (8 * 1024 * 1024),
+                timeout=0.1,
+            )
+        except BaseException as exc:  # capture the worker result for assertions
+            outcome.append(exc)
+
+    worker = threading.Thread(target=communicate)
+    worker.start()
+    worker.join(timeout=2)
+    try:
+        assert not worker.is_alive(), "stdin write bypassed its timeout"
+        assert len(outcome) == 1
+        assert isinstance(outcome[0], subprocess.TimeoutExpired)
+    finally:
+        if worker.is_alive():
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            worker.join(timeout=2)
+        runner.terminate_local_process_group(proc, term_timeout=0.2, kill_timeout=1)
+
+
+@pytest.mark.parametrize("timeout", [float("nan"), float("inf"), float("-inf")])
+def test_remote_output_capture_rejects_nonfinite_timeout_before_start(timeout):
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        runner._bounded_remote_communicate(object(), "payload", timeout=timeout)
+
+
+def test_remote_output_capture_poll_interval_without_callback_does_not_shorten_timeout():
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import sys,time; sys.stdin.read(); time.sleep(0.2); print('ok')",
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = runner._bounded_remote_communicate(
+            proc,
+            "payload",
+            timeout=1,
+            poll_interval=0.05,
+        )
+    finally:
+        if proc.poll() is None:
+            runner.terminate_local_process_group(proc, term_timeout=0.2, kill_timeout=1)
+
+    assert stdout.strip() == "ok"
+    assert stderr == ""

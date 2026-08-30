@@ -2,6 +2,8 @@
 
 # ruff: noqa: F403, F405
 
+import shutil
+
 from opencollab_eval.engine.swe_eval_records import SUBMISSION_INTEGRITY_PROVEN
 from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid
 from opencollab_eval.engine.swe_v1_remote_core import *
@@ -758,9 +760,9 @@ exit 2
 """
     container_name = "opencollab-prolite-preflight-" + uuid.uuid4().hex[:24]
     cidfile = base_run_dir / ("." + container_name + ".cid")
+    timeout_prefix = ["timeout", "120"] if shutil.which("timeout") else []
     command = [
-        "timeout",
-        "120",
+        *timeout_prefix,
         "docker",
         "run",
         "--rm",

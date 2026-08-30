@@ -314,6 +314,11 @@ def test_claude_launcher_has_fixed_identity_permissions_and_empty_patch_gate() -
     assert '--entrypoint find "$actual_runtime_id" /cleanup -mindepth 1 -delete' in script
     assert 'if [[ -e "$workspace" ]]' in script
     assert "workspace_cleanup_failed=125" in script
+    assert "remove_container_and_prove_absent" in script
+    assert "remove_network_and_prove_absent" in script
+    assert 'claude_returncode=$?\nruntime_name=""' not in script
+    assert "-c core.fsmonitor=false -c core.hooksPath=/dev/null" in script
+    assert "-c core.attributesFile=/dev/null -c diff.external=" in script
     assert 'echo "Claude Code version must be $expected_version" >&2\n  exit 2' in script
     assert "if (printf x >> /control/run_in_container) 2>/dev/null" in script
     assert "if (printf x >> /control/claude.settings.json) 2>/dev/null" in script
@@ -322,6 +327,39 @@ def test_claude_launcher_has_fixed_identity_permissions_and_empty_patch_gate() -
     final_sidecar = script.index('build_claude_sidecar "$raw_patch_sha256" "$candidate_tree"')
     assert first_sidecar < candidate < final_sidecar
     assert 'if [[ ! -s "$sidecar_file" ]]' in script
+
+
+@pytest.mark.parametrize("docker_host", ["tcp://127.0.0.1:2375", "ssh://builder", "unix://", "relative.sock"])
+def test_claude_launcher_rejects_non_unix_docker_host_before_side_effects(
+    tmp_path: Path,
+    docker_host: str,
+) -> None:
+    output = tmp_path / "output"
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "DOCKER_HOST": docker_host,
+            "LLM_API_KEY": "test-key",
+            "LLM_BASE_URL": "http://127.0.0.1:1",
+            "LLM_MODEL": "glm-5.2",
+            "OPENCOLLAB_CLAUDE_EXPECTED_MODEL": "glm-5.2",
+            "OPENCOLLAB_CLAUDE_EXPECTED_VERSION": "2.1.175",
+            "OPENCOLLAB_CLAUDE_RUNTIME_IMAGE": "runtime-image",
+            "OPENCOLLAB_CLAUDE_RUNTIME_IMAGE_ID": RUNTIME_IMAGE_ID,
+            "OPENHANDS_INSTANCE_ID": "solver-" + "1" * 32,
+        }
+    )
+    completed = subprocess.run(
+        ["bash", str(SCRIPT), "task-container", str(tmp_path / "prompt"), str(output)],
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert "DOCKER_HOST" in completed.stderr
+    assert not output.exists()
 
 
 def test_read_only_probe_suppresses_expected_shell_noise(tmp_path: Path) -> None:
@@ -393,6 +431,9 @@ for ((index=1; index<=$#; index++)); do
 done
 if [[ "$1" == image && "$2" == inspect ]]; then
   printf '{RUNTIME_IMAGE_ID}\\n'
+elif [[ "$1" == network && "$2" == inspect ]]; then
+  echo 'Error: No such network' >&2
+  exit 1
 elif [[ "$1" == network ]]; then
   exit 0
 elif [[ "$1" == cp ]]; then
@@ -569,7 +610,7 @@ exec /bin/rm "$@"
     assert sidecar["invocation_binding"]["task_image_id"] == TASK_IMAGE_ID
     assert not (tmp_path / "untrusted-git-config-executed").exists()
     script = SCRIPT.read_text(encoding="utf-8")
-    assert script.index('docker rm -f "$test_id"') < script.index(
+    assert script.index('remove_container_and_prove_absent "$test_id"') < script.index(
         "opencollab_eval.generation.candidate_patch_cli"
     )
 

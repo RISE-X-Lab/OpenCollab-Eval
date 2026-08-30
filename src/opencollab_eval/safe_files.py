@@ -6,6 +6,7 @@ import errno
 import fcntl
 import os
 import stat
+import sys
 import time
 import uuid
 from collections.abc import Callable
@@ -14,6 +15,17 @@ from typing import BinaryIO, TextIO
 
 _LOCK_TIMEOUT_SECONDS = 10.0
 _READ_CHUNK_BYTES = 1024 * 1024
+
+# macOS keeps these public spellings as root-owned compatibility symlinks.  An
+# ``O_NOFOLLOW`` component walk quite correctly rejects them, but that would
+# make the default ``tempfile`` location (usually under ``/var/folders``)
+# unusable.  We canonicalize only these exact, independently validated aliases;
+# every user-controlled component remains subject to the descriptor walk below.
+_MACOS_SYSTEM_ALIASES = (
+    (Path("/var"), Path("/private/var")),
+    (Path("/tmp"), Path("/private/tmp")),
+    (Path("/etc"), Path("/private/etc")),
+)
 
 
 class OwnedFileRetirementError(OSError):
@@ -28,7 +40,61 @@ def _absolute(path: str | os.PathLike[str]) -> Path:
     value = os.fspath(path)
     if not value or "\0" in value:
         raise ValueError("path must be non-empty text without NUL bytes")
-    return Path(os.path.abspath(value))
+    return _canonicalize_system_alias(Path(os.path.abspath(value)))
+
+
+def _root_owned_non_writable_directory(path: Path) -> bool:
+    """Check a canonical system directory without following a final link.
+
+    ``/private/tmp`` is deliberately sticky and mode ``1777`` on macOS.  It is
+    writable for creating new entries, but the sticky bit prevents an
+    untrusted user from replacing another user's entries.  Permit that one
+    well-known shape while rejecting ordinary group/other-writable directories.
+    """
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return False
+    if info.st_uid != 0 or not stat.S_ISDIR(info.st_mode):
+        return False
+    mode = stat.S_IMODE(info.st_mode)
+    if mode & 0o022:
+        # A sticky root-owned directory (notably macOS's /private/tmp, 1777)
+        # is safe as an alias anchor: users may create children but cannot
+        # rename one another's entries.  Ordinary writable directories are not.
+        return bool(mode & stat.S_ISVTX and mode & 0o002)
+    return True
+
+
+def _validated_system_alias(alias: Path, canonical: Path) -> bool:
+    """Return whether ``alias`` is the trusted macOS spelling of ``canonical``."""
+    try:
+        alias_info = os.lstat(alias)
+    except OSError:
+        return False
+    # Do not infer trust from a textual path alone: a user-created replacement
+    # at one of these names must continue through the normal symlink rejection.
+    if not stat.S_ISLNK(alias_info.st_mode) or alias_info.st_uid != 0:
+        return False
+    try:
+        if Path(os.path.realpath(alias)) != canonical:
+            return False
+    except OSError:
+        return False
+    return _root_owned_non_writable_directory(canonical)
+
+
+def _canonicalize_system_alias(path: Path) -> Path:
+    if sys.platform != "darwin":
+        return path
+    for alias, canonical in _MACOS_SYSTEM_ALIASES:
+        try:
+            relative = path.relative_to(alias)
+        except ValueError:
+            continue
+        if _validated_system_alias(alias, canonical):
+            return canonical / relative
+    return path
 
 
 def _directory_flags() -> int:

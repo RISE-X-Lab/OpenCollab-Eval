@@ -119,7 +119,7 @@ def validate_generation_limits(
         raise ValueError("--timeout must be a positive finite number")
     try:
         timeout_seconds = float(timeout)
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError("--timeout must be a positive finite number") from exc
     if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
         raise ValueError("--timeout must be a positive finite number")

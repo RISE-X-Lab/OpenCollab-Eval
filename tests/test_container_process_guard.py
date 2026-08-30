@@ -407,6 +407,88 @@ def test_container_guard_owned_record_cleanup_fails_on_corrupt_replacement(tmp_p
     assert marker.read_text(encoding="utf-8") == "{corrupt"
 
 
+def test_container_guard_refuses_to_signal_when_pid_identity_is_unavailable(monkeypatch):
+    guard = _load_guard_module()
+    record = {
+        "session_id": 12345,
+        "start_identity": "proc:old",
+    }
+    monkeypatch.setattr(guard, "_start_identity", lambda _pid: "")
+
+    with pytest.raises(guard.GuardError, match="unavailable or changed"):
+        guard._assert_identity(record, trusted=False)
+
+
+def test_container_guard_reaped_leader_never_killpgs_an_unverifiable_pgid(
+    monkeypatch,
+):
+    """A reaped leader must not turn a recycled pid into a group kill."""
+    guard = _load_guard_module()
+    record = {"session_id": 12345, "start_identity": "proc:old"}
+    group_signals = []
+    member_signals = []
+    clock = [0.0]
+
+    monkeypatch.setattr(guard, "_start_identity", lambda _pid: "")
+    monkeypatch.setattr(guard, "_session_members", lambda _sid: set())
+    monkeypatch.setattr(
+        guard,
+        "_signal_group",
+        lambda sid, sig: group_signals.append((sid, sig)),
+    )
+    monkeypatch.setattr(
+        guard,
+        "_signal_members",
+        lambda sid, members, sig, **kwargs: member_signals.append(
+            (sid, members, sig, kwargs)
+        ),
+    )
+    monkeypatch.setattr(
+        guard.time,
+        "monotonic",
+        lambda: clock.__setitem__(0, clock[0] + 1.0) or clock[0],
+    )
+    monkeypatch.setattr(guard.time, "sleep", lambda _seconds: None)
+
+    guard._terminate_session(record, trusted=True, leader_reaped=True)
+
+    assert group_signals == []
+    assert member_signals == []
+
+
+def test_container_guard_reaped_leader_signals_enumerated_members_without_killpg(
+    monkeypatch,
+):
+    """Remaining members can be handled individually when the leader is gone."""
+    guard = _load_guard_module()
+    record = {"session_id": 12345, "start_identity": "proc:old"}
+    group_signals = []
+    member_signals = []
+    scans = iter([{77}, set(), set(), set()])
+    monkeypatch.setattr(guard, "_start_identity", lambda _pid: "")
+    monkeypatch.setattr(guard, "_session_members", lambda _sid: next(scans))
+    monkeypatch.setattr(
+        guard,
+        "_signal_group",
+        lambda sid, sig: group_signals.append((sid, sig)),
+    )
+    monkeypatch.setattr(
+        guard,
+        "_signal_members",
+        lambda sid, members, sig, **kwargs: member_signals.append(
+            (sid, members, sig, kwargs)
+        ),
+    )
+    monkeypatch.setattr(guard.time, "sleep", lambda _seconds: None)
+
+    guard._terminate_session(record, trusted=True, leader_reaped=True)
+
+    assert group_signals == []
+    assert member_signals == [
+        (12345, {77}, signal.SIGTERM, {"signal_group": False}),
+    ]
+
+
 def test_container_guard_pgrep_results_filter_zombies(monkeypatch):
     guard = _load_guard_module()
     monkeypatch.setattr(

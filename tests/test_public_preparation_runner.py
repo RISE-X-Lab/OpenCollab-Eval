@@ -123,6 +123,60 @@ def test_public_preparation_reports_cleanup_failure(
     assert status == 125
 
 
+def test_public_preparation_timeout_is_bounded_and_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class HungProcess:
+        pid = 1234
+        returncode = None
+
+        def __init__(self) -> None:
+            self.wait_calls: list[float | None] = []
+            self._polls = 0
+
+        def wait(self, timeout: float | None = None) -> int:
+            self.wait_calls.append(timeout)
+            if len(self.wait_calls) == 1:
+                raise subprocess.TimeoutExpired("before_repo", timeout)
+            self.returncode = -signal.SIGKILL
+            return self.returncode
+
+        def poll(self) -> int | None:
+            self._polls += 1
+            return self.returncode
+
+    process = HungProcess()
+    monkeypatch.setattr(runner, "_enable_subreaper", lambda: None)
+    monkeypatch.setattr(runner, "_PREPARATION_TIMEOUT_SECONDS", 0.25)
+    monkeypatch.setattr(runner.subprocess, "Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr(runner, "_quiesce_group", lambda group_id: True)
+    monkeypatch.setattr(runner, "_quiesce_descendants", lambda: True)
+
+    status = runner.run_public_preparation(
+        _script(tmp_path, "exit 0\n"),
+        tmp_path / "prepare.log",
+        tmp_path,
+    )
+
+    assert status == 124
+    assert process.wait_calls == [0.25, runner._CLEANUP_SECONDS]
+    assert "timed out after 0.25 seconds" in (
+        tmp_path / "prepare.log"
+    ).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "value", ["0", "-1", "nan", "inf", "-inf", "86401", "not-a-number"]
+)
+def test_public_preparation_timeout_env_rejects_nonfinite_or_nonpositive(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS", value)
+
+    with pytest.raises(ValueError, match="finite.*positive"):
+        runner._preparation_timeout_seconds()
+
+
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux prctl required")
 def test_public_preparation_cli_does_not_change_parent_subreaper_state(
     tmp_path: Path,

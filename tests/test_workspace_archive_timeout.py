@@ -140,6 +140,60 @@ def test_workspace_archive_timeout_reports_bounded_progress(
     assert observed["process"].killed is True
 
 
+def test_workspace_archive_stubborn_wait_is_a_bounded_technical_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    waits: list[float | None] = []
+
+    class StubbornProcess:
+        stdout = io.BytesIO()
+
+        def poll(self):
+            return None
+
+        def kill(self) -> None:
+            pass
+
+        def wait(self, timeout=None) -> int:
+            waits.append(timeout)
+            raise subprocess.TimeoutExpired(["docker", "cp"], timeout)
+
+    process = StubbornProcess()
+
+    def popen(_command, *, stdout, stderr):
+        assert stdout == subprocess.PIPE
+        return process
+
+    monkeypatch.setattr(workspace_archive.subprocess, "Popen", popen)
+
+    with pytest.raises(RuntimeError, match="did not exit after SIGKILL"):
+        workspace_archive._copy_workspace_archive("cid", tmp_path)
+
+    assert waits
+    assert all(timeout is not None for timeout in waits)
+    assert all(
+        timeout <= workspace_archive._PROCESS_KILL_REAP_TIMEOUT_SECONDS
+        for timeout in waits
+    )
+
+
+def test_workspace_archive_kill_race_still_reaps_exited_process() -> None:
+    waits: list[float | None] = []
+
+    class ExitedProcess:
+        def kill(self) -> None:
+            raise ProcessLookupError
+
+        def wait(self, timeout=None) -> int:
+            waits.append(timeout)
+            return -9
+
+    workspace_archive._kill_and_reap(ExitedProcess())
+
+    assert waits == [workspace_archive._PROCESS_KILL_REAP_TIMEOUT_SECONDS]
+
+
 def test_workspace_archive_timeout_covers_local_processing_after_docker_exit(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

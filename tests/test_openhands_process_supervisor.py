@@ -239,3 +239,14 @@ def test_supervisor_rejects_non_finite_timeout(value: str) -> None:
     )
     assert result.returncode == 125
     assert "finite and positive" in result.stderr
+
+
+@pytest.mark.parametrize("value", [0, -1, float("nan"), float("inf"), float("-inf"), True])
+def test_run_rejects_invalid_timeout_before_starting_supervisor(
+    value: float,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(supervisor, "enable_subreaper", pytest.fail)
+
+    with pytest.raises(supervisor.SupervisorError, match="finite and positive"):
+        supervisor.run(["ignored-command"], timeout_seconds=value)

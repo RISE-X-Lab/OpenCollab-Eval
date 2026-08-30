@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import math
+import shlex
+import socket
 import subprocess
 import tempfile
 from pathlib import Path
@@ -21,6 +24,43 @@ def test_stale_remote_relay_cleanup_requires_an_owned_socket() -> None:
     assert "errno.ECONNREFUSED" in remote_command
     assert "os.unlink(path)" in remote_command
     assert subprocess.run(["sh", "-n", "-c", remote_command], check=False).returncode == 0
+
+
+def test_remote_cleanup_does_not_unlink_socket_replaced_after_probe() -> None:
+    """A pathname replacement between connect and unlink must be preserved."""
+    with tempfile.TemporaryDirectory() as directory:
+        candidate = Path(directory) / "relay.sock"
+        stale = socket.socket(socket.AF_UNIX)
+        stale.bind(str(candidate))
+        stale.close()
+
+        command = shlex.split(srp._cleanup_command(str(candidate)))
+        assert command[:2] == ["python3", "-c"]
+        marker = (
+            "if exc.errno not in {errno.ECONNREFUSED,errno.ENOENT}: "
+            "raise SystemExit(4)"
+        )
+        assert marker in command[2]
+        replacement_hook = "\n".join(
+            (
+                marker,
+                "    os.unlink(path)",
+                "    replacement=socket.socket(socket.AF_UNIX)",
+                "    replacement.bind(path)",
+                "    replacement.close()",
+            )
+        )
+        probe = command[2].replace(marker, replacement_hook, 1)
+        result = subprocess.run(
+            [command[0], command[1], probe, str(candidate)],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 5
+        assert candidate.exists()
+        candidate.unlink()
 
 
 def test_stale_remote_relay_cleanup_rejects_an_unowned_path(monkeypatch: Any) -> None:
@@ -194,6 +234,55 @@ def test_restartable_proxy_waits_through_an_ssh_outage(monkeypatch: Any) -> None
     )
 
     assert outcomes == []
+
+
+def test_restartable_proxy_clamps_remote_probe_to_remaining_budget(monkeypatch: Any) -> None:
+    calls: list[dict[str, object]] = []
+
+    def cleanup(**kwargs: object) -> None:
+        calls.append(kwargs)
+
+    monkeypatch.setattr(srp, "remove_stale_remote_socket", cleanup)
+
+    srp.wait_for_remote_socket_release(
+        ssh_command="ssh",
+        host="worker",
+        socket_path="/tmp/opencollab-llmproxy-18891.sock",
+        timeout_seconds=0.5,
+    )
+
+    assert len(calls) == 1
+    assert 0 < float(calls[0]["probe_timeout_seconds"]) <= 0.5
+
+
+@pytest.mark.parametrize(
+    ("argument", "value"),
+    [
+        ("timeout_seconds", True),
+        ("timeout_seconds", "nan"),
+        ("timeout_seconds", math.nan),
+        ("timeout_seconds", math.inf),
+        ("timeout_seconds", 0.0),
+        ("initial_delay_seconds", math.nan),
+        ("initial_delay_seconds", "0"),
+        ("initial_delay_seconds", math.inf),
+        ("initial_delay_seconds", 0.0),
+        ("maximum_delay_seconds", math.nan),
+        ("maximum_delay_seconds", math.inf),
+        ("maximum_delay_seconds", 0.0),
+    ],
+)
+def test_restartable_proxy_rejects_nonfinite_or_nonpositive_wait_values(
+    argument: str, value: float
+) -> None:
+    kwargs: dict[str, Any] = {
+        "ssh_command": "ssh",
+        "host": "worker",
+        "socket_path": "/tmp/opencollab-llmproxy-18891.sock",
+    }
+    kwargs[argument] = value
+    with pytest.raises(ValueError, match="finite and positive"):
+        srp.wait_for_remote_socket_release(**kwargs)
 
 
 def test_restartable_proxy_does_not_retry_an_unsafe_path(monkeypatch: Any) -> None:

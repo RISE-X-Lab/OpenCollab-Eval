@@ -85,7 +85,14 @@ def eval_for_task_once(row, patch_selection=None):
         candidate_added_go_modules=candidate_go_modules,
     )
     runtime_dependency_specs = plan_runtime_dependency_specs(f2p_plan, p2p_plan)
-    eval_spec_sha256 = prolite_eval_spec_sha256(row, f2p_plan, p2p_plan)
+    eval_timeout = configured_eval_timeout = resolve_eval_timeout(globals().get("eval_timeout") or None)
+    eval_spec_sha256 = prolite_eval_spec_sha256(
+        row,
+        f2p_plan,
+        p2p_plan,
+        eval_timeout=configured_eval_timeout,
+        controller_timeout=configured_eval_timeout,
+    )
     unverified_plan_reasons = []
     if not f2p_plan["coverage_verified"]:
         unverified_plan_reasons.append("no_verified_fail_to_pass_plan")
@@ -206,14 +213,8 @@ def eval_for_task_once(row, patch_selection=None):
     atomic_write_bytes(input_dir / "opencollab_pytest_proof.py", prolite_pytest_proof_plugin_source().encode("utf-8"))
     atomic_write_bytes(controller_path, prolite_pytest_controller_source().encode("utf-8"))
     atomic_write_bytes(input_dir / "proof.nonce", (proof_nonce + "\n").encode("ascii"))
-    atomic_write_bytes(
-        input_dir / "f2p.sh",
-        prolite_test_plan_script(f2p_plan, "f2p", proof_nonce).encode("utf-8"),
-    )
-    atomic_write_bytes(
-        input_dir / "p2p.sh",
-        prolite_test_plan_script(p2p_plan, "p2p", proof_nonce).encode("utf-8"),
-    )
+    atomic_write_bytes(input_dir / "f2p.sh", prolite_test_plan_script(f2p_plan, "f2p", proof_nonce, controller_timeout=configured_eval_timeout).encode("utf-8"))
+    atomic_write_bytes(input_dir / "p2p.sh", prolite_test_plan_script(p2p_plan, "p2p", proof_nonce, controller_timeout=configured_eval_timeout).encode("utf-8"))
     write_json(input_dir / "f2p.plan.json", f2p_plan)
     write_json(input_dir / "p2p.plan.json", p2p_plan)
     inner = direct_eval_script()
@@ -285,9 +286,9 @@ def eval_for_task_once(row, patch_selection=None):
             "created_at": now(),
         },
     )
+    timeout_prefix = ["timeout", str(eval_timeout)] if shutil.which("timeout") else []
     docker_cmd = [
-        "timeout",
-        str(eval_timeout),
+        *timeout_prefix,
         "docker",
         "run",
         "--rm",
@@ -309,6 +310,7 @@ def eval_for_task_once(row, patch_selection=None):
         f"{input_dir}:/eval_input:ro",
         "-v",
         f"{container_output_dir}:/eval_output",
+        *_public_preparation_docker_env(),
         image,
         "/eval_input/run_prolite_direct_eval.sh",
     ]
@@ -550,7 +552,7 @@ def eval_for_task_once(row, patch_selection=None):
 
 
 def eval_for_task(row):
-    return eval_for_task_with_retries(row, eval_for_task_once)
+    return eval_for_task_with_retries(row, eval_for_task_once, resolve_eval_timeout(globals().get("eval_timeout") or None), resolve_eval_timeout(globals().get("eval_timeout") or None))
 
 
 def write_markdown(summary):
@@ -791,10 +793,7 @@ def main():
     }
     write_markdown(summary)
     write_json(base_run_dir / "summary.json", summary)
-    atomic_write_bytes(
-        base_run_dir / "summary.md",
-        summary["markdown"].encode("utf-8"),
-    )
+    atomic_write_bytes(base_run_dir / "summary.md", summary["markdown"].encode("utf-8"))
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0 if counts["technical_failed"] == 0 else 1
 __all__ = [name for name in globals() if not name.startswith("__")]

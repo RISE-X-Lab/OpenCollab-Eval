@@ -24,7 +24,106 @@ cleanup_secret_files() {
 }
 trap cleanup_secret_files EXIT INT TERM
 
-read -r OC_PROXY_TOKEN < "$TOKEN_FIFO"
+TOKEN_READ_TIMEOUT_SECONDS="${OPENCOLLAB_PROXY_TOKEN_TIMEOUT_SECONDS:-120}"
+if OC_PROXY_TOKEN="$(python3 - "$TOKEN_FIFO" "$TOKEN_READ_TIMEOUT_SECONDS" <<'PY'
+import errno
+import math
+import os
+import select
+import sys
+import time
+
+
+TOKEN_MAX_BYTES = 64 * 1024
+POLL_SECONDS = 0.1
+
+
+def fail(message: str, status: int) -> None:
+    print(message, file=sys.stderr)
+    raise SystemExit(status)
+
+
+try:
+    timeout = float(sys.argv[2])
+except (IndexError, TypeError, ValueError):
+    fail("proxy token timeout must be finite and positive", 2)
+if not math.isfinite(timeout) or timeout <= 0:
+    fail("proxy token timeout must be finite and positive", 2)
+
+path = sys.argv[1]
+deadline = time.monotonic() + timeout
+flags = os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+fd = None
+payload = bytearray()
+try:
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            fail("timed out waiting for proxy token", 124)
+
+        # Opening a FIFO read-only with O_NONBLOCK succeeds even when no
+        # writer exists, but immediately reports EOF.  Reopen after EOF so a
+        # writer that arrives later can still deliver the token.
+        if fd is None:
+            try:
+                fd = os.open(path, flags)
+            except OSError as exc:
+                if exc.errno in {errno.EINTR, errno.ENOENT, errno.ENXIO}:
+                    time.sleep(min(POLL_SECONDS, remaining))
+                    continue
+                fail(f"could not open proxy token fifo: {exc}", 125)
+
+        try:
+            ready, _, _ = select.select([fd], [], [], min(POLL_SECONDS, remaining))
+        except InterruptedError:
+            continue
+        except (OSError, ValueError) as exc:
+            fail(f"could not wait for proxy token fifo: {exc}", 125)
+        if not ready:
+            continue
+
+        try:
+            chunk = os.read(fd, TOKEN_MAX_BYTES + 1)
+        except BlockingIOError:
+            continue
+        except OSError as exc:
+            if exc.errno == errno.EINTR:
+                continue
+            fail(f"could not read proxy token fifo: {exc}", 125)
+
+        if chunk:
+            payload.extend(chunk)
+            if len(payload) > TOKEN_MAX_BYTES:
+                fail("proxy token fifo payload is too large", 125)
+            newline = payload.find(b"\n")
+            if newline >= 0:
+                sys.stdout.buffer.write(payload[:newline])
+                break
+            continue
+
+        # EOF means that the writer closed without a newline.  Match the
+        # historical `read` behavior for a partial token, while reopening on
+        # an empty EOF to wait for a later writer.
+        os.close(fd)
+        fd = None
+        if payload:
+            sys.stdout.buffer.write(payload)
+            break
+        time.sleep(min(POLL_SECONDS, max(0.0, deadline - time.monotonic())))
+finally:
+    if fd is not None:
+        os.close(fd)
+PY
+)"; then
+  :
+else
+  token_status=$?
+  exit "$token_status"
+fi
+if [[ -z "$OC_PROXY_TOKEN" ]]; then
+  echo "proxy token fifo contained an empty token" >&2
+  exit 125
+fi
 rm -f "$TOKEN_FIFO"
 
 export OPENCOLLAB_API_KEY="$OC_PROXY_TOKEN"
@@ -67,18 +166,38 @@ if [[ ! -f "$INSTANCE_FILE" && "$SWE_DATASET" == "swe-batch-pro-lite" && -f "$BA
   INSTANCE_FILE="$RUN/instance_files/$IID.json"
   python3 - "$BASE/datasets/swe-batch-pro-lite/instances.jsonl" "$IID" "$INSTANCE_FILE" <<'PY'
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 source = Path(sys.argv[1])
 instance_id = sys.argv[2]
 target = Path(sys.argv[3])
-for line in source.read_text(encoding="utf-8", errors="replace").splitlines():
-    if not line.strip():
-        continue
-    row = json.loads(line)
-    if row.get("instance_id") == instance_id:
-        target.write_text(json.dumps(row, ensure_ascii=False) + "\n", encoding="utf-8")
+with source.open("r", encoding="utf-8", errors="replace") as stream:
+    for line in stream:
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if row.get("instance_id") != instance_id:
+            continue
+        fd, temporary = tempfile.mkstemp(
+            prefix=f".{target.name}.", dir=str(target.parent)
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                fd = -1
+                handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, target)
+        finally:
+            if fd >= 0:
+                os.close(fd)
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
         raise SystemExit(0)
 raise SystemExit(2)
 PY
@@ -123,7 +242,7 @@ if [[ "$SWE_GENERATOR" == "single-agent" ]]; then
     --model-name "$MODEL_NAME" \
     --budget "$SWE_BUDGET" \
     --max-steps "$SWE_MAX_STEPS" \
-    "${llm_args[@]}" \
+    ${llm_args[@]+"${llm_args[@]}"} \
     --timeout "$SWE_TIMEOUT" 2>&1 | tee -a "$RUN/generation_logs/$IID.log"
 elif [[ "$SWE_GENERATOR" == "openhands" ]]; then
   if [[ -z "$LLM_MODEL" ]]; then
@@ -160,7 +279,7 @@ elif [[ "$SWE_GENERATOR" == "openhands" ]]; then
     --empty-patch-rejections "$OPENHANDS_EMPTY_PATCH_REJECTIONS" \
     --timeout "$SWE_TIMEOUT" \
     --command "${OPENCOLLAB_OPENHANDS_COMMAND:-}" \
-    "${openhands_args[@]}" 2>&1 | tee -a "$RUN/generation_logs/$IID.log"
+    ${openhands_args[@]+"${openhands_args[@]}"} 2>&1 | tee -a "$RUN/generation_logs/$IID.log"
 else
   python3 -u -m opencollab_eval.generation.gen_prediction_workflow \
     --workflow "$WORKFLOW" \
@@ -172,6 +291,6 @@ else
     --budget "$SWE_BUDGET" \
     --max-steps "$SWE_MAX_STEPS" \
     --timeout "$SWE_TIMEOUT" \
-    "${llm_args[@]}" \
+    ${llm_args[@]+"${llm_args[@]}"} \
     ${checkpoint_args[@]+"${checkpoint_args[@]}"} 2>&1 | tee -a "$RUN/generation_logs/$IID.log"
 fi

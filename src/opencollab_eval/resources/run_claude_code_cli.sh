@@ -26,6 +26,15 @@ if [[ ! "$expected_runtime_id" =~ ^sha256:[0-9a-f]{64}$ ]]; then
   echo "Claude runtime image identity must be an immutable sha256 digest" >&2
   exit 2
 fi
+docker_host="${DOCKER_HOST:-}"
+if [[ -z "$docker_host" ]]; then
+  docker_socket="/var/run/docker.sock"
+elif [[ "$docker_host" == unix:///* ]]; then
+  docker_socket="${docker_host#unix://}"
+else
+  echo "Claude Code requires DOCKER_HOST to be empty or unix://<absolute socket path>" >&2
+  exit 2
+fi
 
 mkdir -p "$output_dir"
 actual_runtime_id="$(docker image inspect --format '{{.Id}}' "$runtime_image")"
@@ -55,24 +64,69 @@ relay_cidfile="$output_dir/relay-container.id"
 test_cidfile="$output_dir/test-container.id"
 runtime_cidfile="$output_dir/runtime-container.id"
 
+remove_container_and_prove_absent() {
+  local reference="$1"
+  local inspect_output
+  local inspect_status
+  [[ -n "$reference" ]] || return 0
+  docker rm -f "$reference" >/dev/null 2>&1 || true
+  inspect_output="$(docker container inspect "$reference" 2>&1)"
+  inspect_status=$?
+  if [[ "$inspect_status" -eq 0 ]]; then
+    return 1
+  fi
+  # A daemon error is not proof of absence.  Accept only Docker's explicit
+  # not-found responses; callers convert every other outcome to 125.
+  if [[ "$inspect_output" == *"No such container"* ||
+        "$inspect_output" == *"No such object"* ||
+        "$inspect_output" == *"no such container"* ||
+        "$inspect_output" == *"no such object"* ]]; then
+    return 0
+  fi
+  return 1
+}
+
+remove_network_and_prove_absent() {
+  local network="$1"
+  local inspect_output
+  local inspect_status
+  [[ -n "$network" ]] || return 0
+  docker network rm "$network" >/dev/null 2>&1 || true
+  inspect_output="$(docker network inspect "$network" 2>&1)"
+  inspect_status=$?
+  if [[ "$inspect_status" -eq 0 ]]; then
+    return 1
+  fi
+  if [[ "$inspect_output" == *"No such network"* ||
+        "$inspect_output" == *"no such network"* ]]; then
+    return 0
+  fi
+  return 1
+}
+
 cleanup() {
   local status=$?
   local workspace_cleanup_failed=0
+  local container_cleanup_failed=0
   trap - EXIT INT TERM
   set +e
-  if [[ -n "$test_id" ]]; then
-    docker rm -f "$test_id" >/dev/null 2>&1 || true
+  if [[ -n "$test_id" ]] && ! remove_container_and_prove_absent "$test_id"; then
+    container_cleanup_failed=1
   fi
   if [[ -n "$runtime_name" ]]; then
-    docker rm -f "$runtime_name" >/dev/null 2>&1 || true
+    if ! remove_container_and_prove_absent "$runtime_name"; then
+      container_cleanup_failed=1
+    fi
   fi
-  if [[ -n "$relay_id" ]]; then
-    docker rm -f "$relay_id" >/dev/null 2>&1 || true
+  if [[ -n "$relay_id" ]] && ! remove_container_and_prove_absent "$relay_id"; then
+    container_cleanup_failed=1
   fi
-  if [[ -n "$gateway_id" ]]; then
-    docker rm -f "$gateway_id" >/dev/null 2>&1 || true
+  if [[ -n "$gateway_id" ]] && ! remove_container_and_prove_absent "$gateway_id"; then
+    container_cleanup_failed=1
   fi
-  docker network rm "$network_name" >/dev/null 2>&1 || true
+  if ! remove_network_and_prove_absent "$network_name"; then
+    container_cleanup_failed=1
+  fi
   if [[ -n "$trusted_git_dir" ]]; then
     rm -rf "$trusted_git_dir"
   fi
@@ -94,6 +148,9 @@ cleanup() {
   fi
   if [[ "$status" -eq 0 && "$workspace_cleanup_failed" -ne 0 ]]; then
     status="$workspace_cleanup_failed"
+  fi
+  if [[ "$status" -eq 0 && "$container_cleanup_failed" -ne 0 ]]; then
+    status=125
   fi
   exit "$status"
 }
@@ -203,11 +260,6 @@ gateway_server="$output_dir/claude_container_gateway.py"
 rm -f "$gateway_server"
 cp "$(dirname "$0")/../generation/claude_container_gateway.py" "$gateway_server"
 chmod 500 "$gateway_server"
-docker_host="${DOCKER_HOST:-}"
-docker_socket="${docker_host#unix://}"
-if [[ "$docker_socket" == "$docker_host" || -z "$docker_host" ]]; then
-  docker_socket="/var/run/docker.sock"
-fi
 gateway_name="oc-claude-gateway-${container_id:0:12}-$$"
 gateway_id="$(docker run -d --name "$gateway_name" --cidfile "$gateway_cidfile" \
   --label opencollab.owner=claude-code-gateway \
@@ -308,20 +360,33 @@ docker run --rm -i --name "$runtime_name" --cidfile "$runtime_cidfile" --network
   --allowedTools "$allowed_tools" --disallowedTools "WebFetch WebSearch" \
   --no-session-persistence < "$rendered_prompt" > "$stream_file"
 claude_returncode=$?
-runtime_name=""
 set -e
 
-docker rm -f "$relay_id" >/dev/null
-relay_id=""
-docker rm -f "$gateway_id" >/dev/null
-gateway_id=""
-docker rm -f "$test_id" >/dev/null
-if docker container inspect "$test_id" >/dev/null 2>&1; then
-  echo "test container remained after bounded cleanup" >&2
+container_cleanup_failed=0
+if remove_container_and_prove_absent "$relay_id"; then
+  relay_id=""
+else
+  container_cleanup_failed=1
+fi
+if remove_container_and_prove_absent "$gateway_id"; then
+  gateway_id=""
+else
+  container_cleanup_failed=1
+fi
+if remove_container_and_prove_absent "$test_id"; then
+  test_id=""
+else
+  container_cleanup_failed=1
+fi
+if remove_network_and_prove_absent "$network_name"; then
+  :
+else
+  container_cleanup_failed=1
+fi
+if [[ "$claude_returncode" -eq 0 && "$container_cleanup_failed" -ne 0 ]]; then
+  echo "external solver container/network cleanup could not be proven" >&2
   exit 125
 fi
-test_id=""
-docker network rm "$network_name" >/dev/null
 
 prompt_sha256="$(sha256sum "$rendered_prompt" | awk '{print $1}')"
 build_claude_sidecar() {
@@ -389,5 +454,8 @@ if [[ -s "$patch_file" ]]; then
   docker exec -i -w /testbed "$container_id" git apply --binary --whitespace=nowarn - \
     < "$patch_file"
 fi
-docker exec -w /testbed "$container_id" git status --short \
+docker exec -w /testbed "$container_id" git \
+  -c core.fsmonitor=false -c core.hooksPath=/dev/null \
+  -c core.attributesFile=/dev/null -c diff.external= \
+  status --short \
   > "$output_dir/container.git-status.txt"

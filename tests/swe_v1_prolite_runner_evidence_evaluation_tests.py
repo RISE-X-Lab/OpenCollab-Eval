@@ -101,7 +101,7 @@ def test_prolite_eval_marks_ruby_echo_ok_as_technical_red(tmp_path):
 
 
 def test_pre_execution_failure_is_not_retried_without_state_change(tmp_path):
-    namespace = _remote_namespace(tmp_path)
+    namespace = _remote_namespace(tmp_path, eval_timeout=10)
     prediction = {
         "instance_id": "task",
         "record_id": "record",
@@ -113,11 +113,17 @@ def test_pre_execution_failure_is_not_retried_without_state_change(tmp_path):
         {"instance_id": "task", "record_id": "record"},
         "record_id",
     )
-    namespace["verified_plan_patch_selection"] = lambda *args: {
-        "ok": True,
-        "eval_patch_sha256": "a" * 64,
-        "image_id": "sha256:" + "b" * 64,
-    }
+    selection_calls = []
+
+    def select(*args):
+        selection_calls.append(args)
+        return {
+            "ok": True,
+            "eval_patch_sha256": "a" * 64,
+            "image_id": "sha256:" + "b" * 64,
+        }
+
+    namespace["verified_plan_patch_selection"] = select
     namespace["eval_attempt_count"] = lambda *args, **kwargs: 0
     calls = []
 
@@ -130,6 +136,7 @@ def test_pre_execution_failure_is_not_retried_without_state_change(tmp_path):
     )
 
     assert len(calls) == 1
+    assert selection_calls[0][3:] == (10, 10)
     assert result["attempt_count"] == 0
     assert "attempts" not in result
 
@@ -200,21 +207,89 @@ def test_remote_runner_rejects_identity_only_done_summary_without_test_evidence(
     ) is False
 
 
-def test_eval_spec_binds_base_script_and_workspace_helpers(tmp_path):
+def test_eval_spec_binds_base_script_helpers_and_timeout_controller_identity(tmp_path):
     namespace = _remote_namespace(tmp_path)
     f2p_plan = {"commands": ["pytest -q test_x.py"], "coverage_verified": True}
     p2p_plan = {"commands": [], "coverage_verified": True}
 
-    def digest(*, base="a", script="script-a", helper=b"helper-a"):
+    def digest(
+        *,
+        base="a",
+        script="script-a",
+        helper=b"helper-a",
+        eval_timeout=None,
+        controller_timeout=None,
+        controller_source="controller-a",
+    ):
         return namespace["prolite_eval_spec_sha256"](
             {"base_commit": base * 40},
             f2p_plan,
             p2p_plan,
             script_source=script,
             helper_sources={"workspace.py": helper},
+            eval_timeout=eval_timeout,
+            controller_timeout=controller_timeout,
+            controller_source=controller_source,
         )
 
     original = digest()
     assert digest(base="b") != original
     assert digest(script="script-b") != original
     assert digest(helper=b"helper-b") != original
+    assert digest(eval_timeout=11) != original
+    assert digest(controller_timeout=11) != original
+    assert digest(controller_source="controller-b") != original
+
+
+@pytest.mark.parametrize(
+    "value",
+    [True, "nan", float("inf"), 0, pytest.param(10**10000, id="huge-int")],
+)
+def test_eval_spec_rejects_invalid_timeout_identity_values(tmp_path, value):
+    namespace = _remote_namespace(tmp_path)
+    with pytest.raises(ValueError, match="finite and positive"):
+        namespace["prolite_eval_spec_sha256"](
+            {},
+            {"commands": [], "coverage_verified": True},
+            {"commands": [], "coverage_verified": True},
+            eval_timeout=value,
+        )
+
+
+def test_direct_patch_selection_uses_configured_timeout(monkeypatch):
+    from opencollab_eval.engine import swe_v1_remote_eval_patch as patch_module
+    from opencollab_eval.engine import swe_v1_remote_state
+
+    observed = {}
+    monkeypatch.setattr(patch_module, "eval_timeout", 0)
+    monkeypatch.setattr(swe_v1_remote_state, "eval_timeout", 13)
+    monkeypatch.setattr(swe_v1_remote_state, "cfg", {"eval_timeout": 13})
+    monkeypatch.setattr(patch_module, "parse_literal_list", lambda value: value or [])
+    monkeypatch.setattr(patch_module, "eval_candidate_source_paths", lambda _p: [])
+    monkeypatch.setattr(patch_module, "eval_model_patch", lambda _p: "patch")
+    monkeypatch.setattr(patch_module, "candidate_added_go_modules", lambda _p: [])
+    monkeypatch.setattr(
+        patch_module,
+        "prolite_test_plan",
+        lambda *args, **kwargs: {"coverage_verified": True, "commands": []},
+    )
+    monkeypatch.setattr(patch_module, "plan_runtime_dependency_specs", lambda *_: [])
+    monkeypatch.setattr(
+        patch_module,
+        "prepare_eval_patch_selection",
+        lambda *args: {"ok": True},
+    )
+    monkeypatch.setattr(patch_module, "bind_eval_image", lambda _row, selection: selection)
+
+    def digest(*args, **kwargs):
+        observed.update(kwargs)
+        return "a" * 64
+
+    monkeypatch.setattr(patch_module, "prolite_eval_spec_sha256", digest)
+    selection = patch_module.verified_plan_patch_selection(
+        {"fail_to_pass": ["test_x"]}, {"model_patch": "patch"}, {}
+    )
+
+    assert selection["eval_spec_sha256"] == "a" * 64
+    assert observed["eval_timeout"] == 13
+    assert observed["controller_timeout"] == 13

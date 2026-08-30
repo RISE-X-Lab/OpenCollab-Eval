@@ -4,6 +4,7 @@ import fcntl
 import json
 import os
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 
@@ -255,6 +256,46 @@ def test_generation_failure_record_keeps_stage_evidence(tmp_path):
         "execution_quiesced": False,
         "container_quiescence_error": "busy",
     }
+
+
+def test_cleanup_helper_preserves_generation_error_and_finalizes(
+    monkeypatch,
+    tmp_path,
+):
+    generation_error = RuntimeError("generation failed")
+    baseline_error = OSError("baseline cleanup failed")
+    finalized = []
+
+    def fail_baseline_cleanup() -> None:
+        raise baseline_error
+
+    baseline = SimpleNamespace(cleanup=fail_baseline_cleanup)
+    monkeypatch.setattr(
+        gp,
+        "finalize_container_ownership",
+        lambda **kwargs: finalized.append(kwargs),
+    )
+
+    failures = gp._cleanup_generation_attempt(
+        trusted_baseline=baseline,
+        run_dir=tmp_path,
+        cid="cid",
+        name="name",
+        args=SimpleNamespace(keep_container=False),
+        metrics={},
+        patch="",
+        pending_required=False,
+        pending_path=None,
+        generation_error=generation_error,
+    )
+
+    gp._raise_or_note_cleanup_failures(failures, generation_error)
+
+    assert len(failures) == 1
+    assert finalized[0]["completed"] is False
+    assert finalized[0]["keep_container"] is False
+    assert any("baseline cleanup failed" in note for note in generation_error.__notes__)
+    assert any("baseline cleanup failed" in item for item in failures[0][1].args)
 
 
 def test_atomic_create_propagates_sdk_failure_without_output(tmp_path, monkeypatch):

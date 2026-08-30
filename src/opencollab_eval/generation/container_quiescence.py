@@ -408,13 +408,59 @@ def _fresh_image_python(image_id: str) -> str:
 
 
 def _remove_helper_container(name: str) -> None:
-    subprocess.run(
-        ["docker", "rm", "-f", name],
+    """Remove a timed-out daemon helper and prove that it is gone.
+
+    ``docker run --rm`` cannot be relied on after the client is killed by a
+    timeout: the daemon may have already created the helper and keep it alive
+    after the attach process disappears.  Treat cleanup as successful only
+    when a follow-up inspect explicitly reports that the name no longer
+    resolves.  A daemon/API error is not equivalent to absence.
+    """
+    timeout = container_control_timeout()
+    removed: subprocess.CompletedProcess[str] | None = None
+    remove_error: OSError | subprocess.TimeoutExpired | None = None
+    try:
+        removed = subprocess.run(
+            ["docker", "rm", "-f", name],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        # The CLI can time out after the daemon has already removed the
+        # container.  Continue to the authoritative inspect before deciding
+        # whether cleanup was actually proven.
+        remove_error = exc
+    inspected = subprocess.run(
+        [
+            "docker",
+            "inspect",
+            "--type",
+            "container",
+            "--format",
+            "{{.Id}}",
+            name,
+        ],
         capture_output=True,
         text=True,
-        timeout=container_control_timeout(),
+        timeout=timeout,
         check=False,
     )
+    if inspected.returncode == 0:
+        raise RuntimeError("daemon-side helper container remained after cleanup")
+    detail = (inspected.stderr or inspected.stdout).strip()
+    if not re.search(r"no such (?:object|container)", detail, re.IGNORECASE):
+        remove_status = (
+            str(removed.returncode)
+            if removed is not None
+            else type(remove_error).__name__
+        )
+        raise RuntimeError(
+            "could not prove daemon-side helper container cleanup"
+            f" (rm exit {remove_status}, "
+            f"inspect exit {inspected.returncode}): {detail}"
+        )
 
 
 def _quiesce_with_daemon_helper(container_id: str) -> None:

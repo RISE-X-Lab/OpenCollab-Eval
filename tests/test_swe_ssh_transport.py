@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import time
 
 import pytest
 from swe_v1_prolite_runner_test_support import runner
@@ -232,6 +233,19 @@ def test_idempotent_ssh_retries_timeout_with_bounded_attempt_log(monkeypatch):
         "command_timeout",
         "command_timeout",
     ]
+
+
+def test_ssh_checked_rejects_an_expired_shared_deadline(monkeypatch):
+    invoked = []
+    monkeypatch.setattr(runner, "run_checked", lambda *args, **kwargs: invoked.append(args))
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        runner.run_ssh_checked(
+            ["ssh", "remote-host", "true"],
+            deadline=time.monotonic() - 1,
+        )
+
+    assert invoked == []
 
 
 def test_runtime_sync_cleans_archive_after_transport_retry_exhaustion(monkeypatch):

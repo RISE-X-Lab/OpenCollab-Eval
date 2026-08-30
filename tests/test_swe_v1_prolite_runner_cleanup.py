@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from swe_v1_prolite_runner_test_support import (
     SimpleNamespace,
     _remote_namespace,
@@ -151,6 +153,50 @@ def test_local_remote_wrapper_kill_reap_is_bounded_and_drained(monkeypatch):
     assert consumer_started.wait(timeout=0.2)
     release.set()
     assert consumer_finished.wait(timeout=0.2)
+
+
+@pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf, -1.0, True])
+def test_local_cleanup_rejects_invalid_term_timeout_before_spawning(value):
+    with pytest.raises(ValueError, match="local process termination timeout"):
+        runner.terminate_local_process_group(
+            object(),
+            term_timeout=value,
+            kill_timeout=1.0,
+        )
+
+
+@pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf, -1.0, True])
+def test_local_cleanup_rejects_invalid_kill_timeout_before_spawning(value):
+    with pytest.raises(ValueError, match="local process kill timeout"):
+        runner.terminate_local_process_group(
+            object(),
+            term_timeout=1.0,
+            kill_timeout=value,
+        )
+
+
+@pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf, -1.0, True])
+def test_remote_cleanup_rejects_invalid_timeout_before_launch(monkeypatch, value):
+    monkeypatch.setattr(
+        runner.subprocess,
+        "run",
+        lambda *args, **kwargs: pytest.fail("invalid timeout must fail before SSH"),
+    )
+    with pytest.raises(ValueError, match="remote cleanup timeout"):
+        runner.terminate_remote_run(
+            ssh_command=["ssh"],
+            host="host",
+            base_run_dir="/remote/run",
+            timeout=value,
+        )
+
+
+@pytest.mark.parametrize("value", [0, -1.0, math.nan, math.inf, -math.inf, True])
+def test_remote_communication_rejects_invalid_poll_interval_before_io(value):
+    with pytest.raises(ValueError, match="remote poll interval"):
+        runner._process._bounded_remote_communicate(
+            object(), "", timeout=1.0, poll_interval=value
+        )
 
 
 def test_remote_cleanup_kills_descendant_after_leader_exits(tmp_path):

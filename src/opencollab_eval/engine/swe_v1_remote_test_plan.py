@@ -390,7 +390,9 @@ def prolite_test_command(row, tests, target_file=""):
     return " && ".join(plan["commands"])
 
 
-def prolite_test_plan_script(plan, evidence_prefix, proof_nonce="proof"):
+def prolite_test_plan_script(
+    plan, evidence_prefix, proof_nonce="proof", *, controller_timeout=None
+):
     if not re.fullmatch(r"[a-z][a-z0-9_]*", str(evidence_prefix)):
         raise ValueError("invalid test evidence prefix")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", str(proof_nonce)):
@@ -414,19 +416,26 @@ def prolite_test_plan_script(plan, evidence_prefix, proof_nonce="proof"):
                 for path in proof.get("candidate_source_paths") or []
                 for value in ("--candidate-source-path", str(path))
             ]
-            execution_command = shlex.join(
-                [
+            controller_args = [
                     "python3",
                     "/eval_input/opencollab_pytest_controller.py",
                     "--proof-output",
                     proof_path,
                     "--command-sha256",
                     str(proof.get("command_sha256") or ""),
+            ]
+            if controller_timeout is not None:
+                controller_args.extend(
+                    ["--event-timeout-seconds", str(controller_timeout)]
+                )
+            controller_args.extend(
+                [
                     *candidate_path_args,
                     "--",
                     *shlex.split(command),
                 ]
             )
+            execution_command = shlex.join(controller_args)
         lines.extend(
             [
                 f"printf '%s\\n' {shlex.quote(command)} > {stem}.command",

@@ -39,6 +39,10 @@ from .external_solver_usage import (  # noqa: E402
     _external_solver_usage_evidence,
     _openhands_usage,
 )
+from .gen_prediction_config import validate_generation_limits  # noqa: E402
+from .gen_prediction_openhands_cleanup import (  # noqa: E402
+    cleanup_openhands_attempt,
+)
 from .gen_prediction_patch import extract_patch_guarded, prepare_trusted_patch_baseline  # noqa: E402
 from .gen_prediction_snapshot import (  # noqa: E402
     anonymous_solver_task_id,
@@ -187,6 +191,11 @@ def _openhands_patch_extraction_allowed(metrics: dict) -> bool:
         and metrics.get("host_execution_quiesced") is True
         and metrics.get("container_execution_quiesced") is True
     )
+
+
+def _cleanup_openhands_attempt(**kwargs: object) -> BaseException | None:
+    """Compatibility wrapper used by tests and the main teardown path."""
+    return cleanup_openhands_attempt(gp=gp, shutil_module=shutil, **kwargs)
 
 
 def _run_openhands(
@@ -424,6 +433,14 @@ def main() -> None:
         raise SystemExit(
             "missing OpenHands command. Set OPENCOLLAB_OPENHANDS_COMMAND or pass --command."
         )
+    try:
+        args.max_steps, args.budget, args.timeout = validate_generation_limits(
+            max_steps=args.max_steps,
+            budget=args.budget,
+            timeout=args.timeout,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
     instance_file = Path(args.instance_file)
     instance = json.loads(instance_file.read_text(encoding="utf-8"))
@@ -653,7 +670,9 @@ def main() -> None:
                         "OPENCOLLAB_TEMPERATURE",
                         "OPENCOLLAB_THINKING",
                         "OPENCOLLAB_THINKING_PARAMS",
-                        "OPENCOLLAB_TOP_P", "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT",
+                        "OPENCOLLAB_TOP_P",
+                        "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT",
+                        "OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS",
                     )
                     if key in os.environ
                 },
@@ -731,49 +750,20 @@ def main() -> None:
         )
         raise
     finally:
-        if trusted_baseline is not None:
-            trusted_baseline.cleanup()
-        try:
-            evidence_dir.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(openhands_dir, evidence_dir)
-        finally:
-            shutil.rmtree(openhands_dir, ignore_errors=True)
-            preserve_container = (
-                pending_required
-                and pending_path is None
-                and gp.output_staging_requires_container_preservation(
-                    run_dir,
-                    cid=cid,
-                    name=name,
-                )
-            )
-            if preserve_container:
-                metrics["container_preservation_required"] = True
-            else:
-                completed = (
-                    generation_error is None
-                    and gp.metrics_have_completed_identity(metrics, patch)
-                )
-                try:
-                    gp.finalize_container_ownership(
-                        run_dir=run_dir,
-                        cid=cid,
-                        name=name,
-                        keep_container=(
-                            args.keep_container if generation_error is None else False
-                        ),
-                        completed=completed,
-                        metrics=metrics,
-                    )
-                except BaseException as cleanup_error:
-                    if generation_error is None:
-                        raise
-                    add_note = getattr(generation_error, "add_note", None)
-                    if callable(add_note):
-                        add_note(
-                            "container cleanup failed after OpenHands generation error: "
-                            f"{type(cleanup_error).__name__}: {cleanup_error}"
-                        )
+        generation_error = _cleanup_openhands_attempt(
+            trusted_baseline=trusted_baseline,
+            evidence_dir=evidence_dir,
+            openhands_dir=openhands_dir,
+            run_dir=run_dir,
+            cid=cid,
+            name=name,
+            pending_required=pending_required,
+            pending_path=pending_path,
+            metrics=metrics,
+            patch=patch,
+            generation_error=generation_error,
+            keep_container=args.keep_container,
+        )
 
     if generation_error is not None:
         gp.raise_generation_failure_metrics(run_dir, instance_id, "openhands_generation", generation_error, metrics)

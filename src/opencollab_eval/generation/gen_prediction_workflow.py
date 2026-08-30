@@ -462,6 +462,7 @@ async def generate(
                         "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT",
                         "OPENCOLLAB_LLM_USER_AGENT",
                         "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT",
+                        "OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS",
                     )
                     if key in os.environ
                 },
@@ -528,42 +529,19 @@ async def generate(
         )
         raise
     finally:
-        if trusted_baseline is not None:
-            trusted_baseline.cleanup()
-        preserve_container = (
-            pending_required
-            and pending_path is None
-            and gp.output_staging_requires_container_preservation(
-                run_dir,
-                cid=cid,
-                name=name,
-            )
+        cleanup_failures = gp._cleanup_generation_attempt(
+            trusted_baseline=trusted_baseline,
+            run_dir=run_dir,
+            cid=cid,
+            name=name,
+            args=args,
+            metrics=metrics,
+            patch=patch,
+            pending_required=pending_required,
+            pending_path=pending_path,
+            generation_error=generation_error,
         )
-        if preserve_container:
-            metrics["container_preservation_required"] = True
-        else:
-            completed = generation_error is None and gp.metrics_have_completed_identity(
-                metrics,
-                patch,
-            )
-            try:
-                gp.finalize_container_ownership(
-                    run_dir=run_dir,
-                    cid=cid,
-                    name=name,
-                    keep_container=args.keep_container if generation_error is None else False,
-                    completed=completed,
-                    metrics=metrics,
-                )
-            except BaseException as cleanup_error:
-                if generation_error is None:
-                    raise
-                add_note = getattr(generation_error, "add_note", None)
-                if callable(add_note):
-                    add_note(
-                        "container cleanup failed after generation error: "
-                        f"{type(cleanup_error).__name__}: {cleanup_error}"
-                    )
+        gp._raise_or_note_cleanup_failures(cleanup_failures, generation_error)
 
     if getattr(args, "_persist_output_after_cleanup", False):
         if (

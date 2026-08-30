@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import shlex
 import signal
@@ -23,6 +24,7 @@ from opencollab_eval.commands.swe_v1_prolite_common import (
     LOCAL_SPAWN_SIGNALS,
     MAX_TOTAL_EVAL_ATTEMPTS,
     REMOTE_COMPLETION_POLL_SECONDS,
+    REMOTE_COMPLETION_PROBE_TIMEOUT_SECONDS,
     REPO_ROOT,
     _redacted,
 )
@@ -98,24 +100,31 @@ def prepare_runtime_summary(
     ssh_command: list[str],
     *,
     eval_only: bool,
+    deadline: float | None = None,
 ) -> dict[str, Any]:
     expected = str(getattr(args, "expected_runtime_tree_sha256", "") or "")
     if not args.no_sync_runtime:
-        return sync_runtime(
-            ssh_command=ssh_command,
-            host=args.host,
-            remote_runtime_repo=args.remote_runtime_repo,
-            remote_python=str(getattr(args, "remote_python", "python3")),
-        )
+        kwargs: dict[str, Any] = {
+            "ssh_command": ssh_command,
+            "host": args.host,
+            "remote_runtime_repo": args.remote_runtime_repo,
+            "remote_python": str(getattr(args, "remote_python", "python3")),
+        }
+        if deadline is not None:
+            kwargs["deadline"] = deadline
+        return sync_runtime(**kwargs)
     if not expected:
         raise RuntimeError("--no-sync-runtime requires --expected-runtime-tree-sha256")
-    observed = verify_remote_runtime(
-        ssh_command=ssh_command,
-        host=args.host,
-        remote_runtime_repo=args.remote_runtime_repo,
-        expected=None,
-        remote_python=str(getattr(args, "remote_python", "python3")),
-    )
+    kwargs = {
+        "ssh_command": ssh_command,
+        "host": args.host,
+        "remote_runtime_repo": args.remote_runtime_repo,
+        "expected": None,
+        "remote_python": str(getattr(args, "remote_python", "python3")),
+    }
+    if deadline is not None:
+        kwargs["deadline"] = deadline
+    observed = verify_remote_runtime(**kwargs)
     if observed.get("sha256") != expected:
         raise RuntimeError(
             "installed remote runtime source tree does not match the shared preflight"
@@ -207,8 +216,49 @@ def _recovery_invocation_id(observed: dict[str, Any]) -> str:
     return value if re.fullmatch(r"[0-9a-f]{32}", value) else ""
 
 
+def _validate_total_timeout(value: object) -> float:
+    if isinstance(value, bool):
+        raise ValueError("total_timeout must be finite and positive")
+    try:
+        timeout = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("total_timeout must be finite and positive") from exc
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("total_timeout must be finite and positive")
+    return timeout
+
+
+def _remaining_timeout(deadline: float) -> float:
+    """Return remaining time in the controller's end-to-end wall-clock budget."""
+    if not math.isfinite(deadline):
+        raise subprocess.TimeoutExpired("remote runner", 0)
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise subprocess.TimeoutExpired("remote runner", 0)
+    return remaining
+
+
+def _remote_preflight_timeout_summary(
+    args: argparse.Namespace,
+    phase: str,
+    error: BaseException,
+    *,
+    runtime_sync: dict[str, Any] | None = None,
+    remote_proxy: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    transport = {
+        "status": "timeout", "phase": phase, "base_run_dir": args.base_run_dir,
+        "error": _redacted(str(error)),
+    }
+    return {
+        "status": "preflight_failed", "task": "",
+        "technical_reasons": ["remote_ownership_timeout"], "remote_transport": transport,
+        "runtime_sync": runtime_sync or {"status": "not_started"},
+        "remote_proxy": remote_proxy or {"status": "not_started"},
+    }
+
+
 def probe_preexisting_remote_execution(**kwargs: Any) -> dict[str, Any] | None:
-    """Probe before runtime or proxy mutation so an old owner remains untouched."""
     return wait_for_remote_ownership_fact(**kwargs)
 
 
@@ -236,15 +286,19 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
     ssh_command = _ssh_with_liveness_options(shlex.split(args.ssh_command))
     eval_only = bool(getattr(args, "eval_only", False))
     remote_api_env_file = str(getattr(args, "remote_api_env_file", "") or "").strip()
-    completion_deadline = time.monotonic() + max(0.0, args.total_timeout)
-    preexisting = probe_preexisting_remote_execution(
-        ssh_command=ssh_command,
-        host=args.host,
-        base_run_dir=args.base_run_dir,
-        remote_runtime_repo=args.remote_runtime_repo,
-        remote_python=str(args.remote_python),
-        deadline=completion_deadline,
-    )
+    total_timeout = _validate_total_timeout(args.total_timeout)
+    completion_deadline = time.monotonic() + total_timeout
+    try:
+        preexisting = probe_preexisting_remote_execution(
+            ssh_command=ssh_command,
+            host=args.host,
+            base_run_dir=args.base_run_dir,
+            remote_runtime_repo=args.remote_runtime_repo,
+            remote_python=str(args.remote_python),
+            deadline=completion_deadline,
+        )
+    except TimeoutError as exc:
+        return _remote_preflight_timeout_summary(args, "preexisting_owner_probe", exc)
     if preexisting is not None and not (
         preexisting.get("runner_state") == "missing"
         and preexisting.get("summary") is None
@@ -271,16 +325,21 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             runtime_tree_sha256=runtime_tree_sha256,
             remote_proxy_base_url=args.remote_proxy_base_url,
         )
-        existing_summary = recover_existing_remote_summary(
-            ssh_command=ssh_command,
-            host=args.host,
-            base_run_dir=args.base_run_dir,
-            remote_runtime_repo=args.remote_runtime_repo,
-            remote_python=str(args.remote_python),
-            payload=payload,
-            deadline=completion_deadline,
-            expected_owner=expected_owner,
-        )
+        try:
+            existing_summary = recover_existing_remote_summary(
+                ssh_command=ssh_command,
+                host=args.host,
+                base_run_dir=args.base_run_dir,
+                remote_runtime_repo=args.remote_runtime_repo,
+                remote_python=str(args.remote_python),
+                payload=payload,
+                deadline=completion_deadline,
+                expected_owner=expected_owner,
+            )
+        except TimeoutError as exc:
+            return _remote_preflight_timeout_summary(
+                args, "existing_owner_recovery_probe", exc
+            )
         if existing_summary is not None:
             existing_summary["remote_transport"] = {
                 "status": "recovered_terminal_summary",
@@ -307,29 +366,50 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             "remote_proxy_base_url": args.remote_proxy_base_url,
         }
     else:
-        proxy_summary = ensure_remote_proxy(
-            ssh_command=ssh_command,
-            host=args.host,
-            local_proxy_base_url=args.local_proxy_base_url,
-            remote_proxy_base_url=args.remote_proxy_base_url,
-            remote_python=str(args.remote_python),
-            enabled=not args.no_ensure_remote_proxy,
+        try:
+            proxy_summary = ensure_remote_proxy(
+                ssh_command=ssh_command,
+                host=args.host,
+                local_proxy_base_url=args.local_proxy_base_url,
+                remote_proxy_base_url=args.remote_proxy_base_url,
+                remote_python=str(args.remote_python),
+                enabled=not args.no_ensure_remote_proxy,
+                deadline=completion_deadline,
+            )
+        except (TimeoutError, subprocess.TimeoutExpired) as exc:
+            return _remote_preflight_timeout_summary(args, "remote_proxy_setup", exc)
+    try:
+        _remaining_timeout(completion_deadline)
+        sync_summary = prepare_runtime_summary(
+            args,
+            ssh_command,
+            eval_only=eval_only,
+            deadline=completion_deadline,
         )
-    sync_summary = prepare_runtime_summary(
-        args,
-        ssh_command,
-        eval_only=eval_only,
-    )
+    except (TimeoutError, subprocess.TimeoutExpired) as exc:
+        return _remote_preflight_timeout_summary(
+            args, "runtime_sync", exc, remote_proxy=proxy_summary
+        )
     selected_remote_proxy_base_url = proxy_summary.get("remote_proxy_base_url", args.remote_proxy_base_url)
     source_tree = sync_summary.get("source_tree") if isinstance(sync_summary, dict) else None
     if isinstance(source_tree, dict) and isinstance(source_tree.get("local"), dict):
-        source_tree["pre_generation_remote"] = verify_remote_runtime(
-            ssh_command=ssh_command,
-            host=args.host,
-            remote_runtime_repo=args.remote_runtime_repo,
-            expected=source_tree["local"],
-            remote_python=str(args.remote_python),
-        )
+        try:
+            source_tree["pre_generation_remote"] = verify_remote_runtime(
+                ssh_command=ssh_command,
+                host=args.host,
+                remote_runtime_repo=args.remote_runtime_repo,
+                expected=source_tree["local"],
+                remote_python=str(args.remote_python),
+                deadline=completion_deadline,
+            )
+        except (TimeoutError, subprocess.TimeoutExpired) as exc:
+            return _remote_preflight_timeout_summary(
+                args,
+                "runtime_verification",
+                exc,
+                runtime_sync=sync_summary,
+                remote_proxy=proxy_summary,
+            )
     owner_nonce = uuid.uuid4().hex
     payload = _remote_payload(
         args,
@@ -364,15 +444,24 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
     )
     command = [*ssh_command, args.host, remote_command]
     primary_failure_detail = ""
-    existing_summary = recover_existing_remote_summary(
-        ssh_command=ssh_command,
-        host=args.host,
-        base_run_dir=args.base_run_dir,
-        remote_runtime_repo=args.remote_runtime_repo,
-        remote_python=str(args.remote_python),
-        payload=payload,
-        deadline=completion_deadline,
-    )
+    try:
+        existing_summary = recover_existing_remote_summary(
+            ssh_command=ssh_command,
+            host=args.host,
+            base_run_dir=args.base_run_dir,
+            remote_runtime_repo=args.remote_runtime_repo,
+            remote_python=str(args.remote_python),
+            payload=payload,
+            deadline=completion_deadline,
+        )
+    except TimeoutError as exc:
+        return _remote_preflight_timeout_summary(
+            args,
+            "existing_owner_recovery_probe",
+            exc,
+            runtime_sync=sync_summary,
+            remote_proxy=proxy_summary,
+        )
     if existing_summary is not None:
         existing_summary["remote_transport"] = {
             "status": "recovered_terminal_summary",
@@ -419,6 +508,10 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
                 remote_runtime_repo=args.remote_runtime_repo,
                 remote_python=str(args.remote_python),
                 owner_nonce=owner_nonce,
+                timeout=min(
+                    _remaining_timeout(completion_deadline),
+                    REMOTE_COMPLETION_PROBE_TIMEOUT_SECONDS,
+                ),
             )
             if observed is not None and observed.get("runner_state") != "alive":
                 raise RemoteRunnerUnavailable(observed)
@@ -426,7 +519,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
         stdout, stderr = _bounded_remote_communicate(
             proc,
             json.dumps(payload),
-            timeout=args.total_timeout,
+            timeout=_remaining_timeout(completion_deadline),
             poll_interval=REMOTE_COMPLETION_POLL_SECONDS,
             poll_callback=poll_remote_runner,
         )
@@ -512,14 +605,23 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             f"state={exc.observed.get('runner_state')}; cleanup={cleanup}"
         ) from exc
     except subprocess.TimeoutExpired as exc:
-        observed = probe_remote_execution_state(
-            ssh_command=ssh_command,
-            host=args.host,
-            base_run_dir=args.base_run_dir,
-            remote_runtime_repo=args.remote_runtime_repo,
-            remote_python=str(args.remote_python),
-            owner_nonce=owner_nonce,
-        )
+        try:
+            probe_timeout = min(
+                _remaining_timeout(completion_deadline),
+                REMOTE_COMPLETION_PROBE_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            observed = None
+        else:
+            observed = probe_remote_execution_state(
+                ssh_command=ssh_command,
+                host=args.host,
+                base_run_dir=args.base_run_dir,
+                remote_runtime_repo=args.remote_runtime_repo,
+                remote_python=str(args.remote_python),
+                owner_nonce=owner_nonce,
+                timeout=probe_timeout,
+            )
         recovered_summary = (
             matching_terminal_remote_summary(observed, payload)
             if observed is not None
