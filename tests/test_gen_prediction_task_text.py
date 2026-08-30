@@ -217,3 +217,32 @@ def test_both_arms_default_to_the_same_run_limits() -> None:
                 if f'add_argument("{flag}"' in text
             )
             assert "default=DEFAULT_" in line, (module_name, flag, line)
+
+
+def test_the_token_budget_is_the_only_ceiling_a_working_run_can_reach() -> None:
+    """Raising the budget alone changes which limit stops a productive run.
+
+    Both ceilings are stop-losses, so a run that is still producing has to be
+    stopped by the token budget rather than by the step count. A batch at 2M
+    tokens per seat put that to the test on 2026-08-29: mwaskom__seaborn-3069
+    and pylint-dev__astroid-946 both ended on a step limit of 60 while still
+    writing source, and seaborn's last successful write was its last event.
+
+    A step is charged for the whole conversation before it, so late steps are
+    the expensive ones; the priciest run measured over that batch averaged
+    about 31k tokens per step. The step ceiling therefore has to be at least
+    the budget divided by that figure, or raising the budget just hands the
+    stop to the other ceiling.
+
+    The wall clock is the third ceiling and takes the same treatment. The
+    slowest run measured at 2M spent 1,951,723 tokens in 2,234 seconds, so a
+    seat's worth of tokens takes on the order of 2,300 seconds to spend; the
+    old 1800-second default would have cut that run off mid-run.
+    """
+    from opencollab_eval.generation import gen_prediction_constants as const
+
+    observed_tokens_per_step = 31_000  # 1,865,210 tokens over 60 steps, seaborn at 2M
+    assert const.DEFAULT_MAX_STEPS >= const.DEFAULT_BUDGET / observed_tokens_per_step
+
+    observed_tokens_per_second = 874  # 1,951,723 tokens in 2,234 s, astroid at 2M
+    assert const.DEFAULT_TIMEOUT >= const.DEFAULT_BUDGET / observed_tokens_per_second

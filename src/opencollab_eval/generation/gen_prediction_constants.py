@@ -18,12 +18,24 @@ DOCKER_WORKDIR = "/testbed"
 # Tokens are the resource the arms are aligned on; the step and time ceilings
 # are here to stop a run that has gone nowhere, not to ration anything. So both
 # are set high enough that a working run does not meet them, and both are set
-# to the same value on every arm, per seat: one agent gets the same 60 steps
+# to the same value on every arm, per seat: one agent gets the same steps
 # whether it is working alone or sitting in a team, the same way it gets the
 # same token budget.
-DEFAULT_BUDGET = 1_000_000
-DEFAULT_MAX_STEPS = 60  # per session; 60 proved enough to act, 40 did not
-DEFAULT_TIMEOUT = 1800.0  # wall clock; a serialized team needs more of it
+#
+# The seat went from 1M to 2M tokens on 2026-08-29. At 1M, four of fifteen
+# single runs ended on the budget, and two of those were solvable: rerun at 2M,
+# mwaskom__seaborn-3069 and pylint-dev__astroid-946 each went from an empty
+# patch to an officially resolved one, and every successful write in those two
+# runs happened after the millionth token. The budget was deciding the outcome,
+# which is the one thing a stop-loss must not do.
+#
+# The step ceiling moved with it, from 60 to 100, because at 2M the old one
+# began to bind: both of those runs stopped on the step limit rather than on
+# the budget, and seaborn's last successful write was its last event. That is
+# the property stated above -- a working run does not meet them -- failing.
+DEFAULT_BUDGET = 2_000_000
+DEFAULT_MAX_STEPS = 100  # per session; at 2M, 60 was reached by runs still producing
+DEFAULT_TIMEOUT = 5400.0  # wall clock; a serialized team at 2M needs it
 # Activate the testbed conda env so the agent's `python`/tests see the repo deps.
 _ACTIVATE = "source /opt/miniconda3/bin/activate testbed 2>/dev/null || true"
 MAX_EXTRACTED_PATCH_BYTES = 8 * 1024 * 1024
