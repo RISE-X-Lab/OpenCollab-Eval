@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import math
 import os
 import re
 import signal
@@ -396,8 +397,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ValueError:
             print("invalid --timeout-seconds value", file=sys.stderr)
             return TECHNICAL_FAILURE
-        if timeout_seconds <= 0:
-            print("--timeout-seconds must be positive", file=sys.stderr)
+        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+            print("--timeout-seconds must be finite and positive", file=sys.stderr)
             return TECHNICAL_FAILURE
         args = args[2:]
     if args[:1] == ["--"]:
