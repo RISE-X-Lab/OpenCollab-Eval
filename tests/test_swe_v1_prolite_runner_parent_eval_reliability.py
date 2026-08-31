@@ -324,3 +324,82 @@ def test_update_parent_report_filters_old_same_index_candidate(tmp_path):
     assert final["counts"]["resolved"] == 1
     assert final["counts"]["technical_failed_final"] == 0
     assert not list(parent.glob(".candidate-identities-*.json"))
+
+
+def test_eval_attempt_budget_deduplicates_top_level_legacy_mirror(tmp_path):
+    """A legacy top-level/results mirror must consume one cumulative count."""
+    from opencollab_eval.commands import swe_v1_prolite_controller as controller
+
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    patch = "a" * 64
+    row = {
+        "index": 82,
+        "task": "instance_owner__repo-82",
+        "generation": {
+            "record_id": "record-82",
+            "patch_sha256": patch,
+            "source_patch_sha256": patch,
+            "eval_patch_sha256": patch,
+        },
+        "eval": {"status": "technical_eval_failed", "attempt_count": 3},
+    }
+    (parent / "parallel_summary.json").write_text(
+        json.dumps({"rows": [row], "results": [{"rows": [row]}]}),
+        encoding="utf-8",
+    )
+    args = SimpleNamespace(
+        eval_only=True,
+        parent_output_dir=parent,
+        start_index=82,
+        limit=1,
+        max_eval_attempts=2,
+        expected_task=row["task"],
+        expected_record_id="record-82",
+        expected_source_patch_sha256=patch,
+        expected_eval_patch_sha256=patch,
+    )
+
+    budget = controller.apply_parent_eval_budget(args)
+
+    assert budget["previous_eval_attempts"][82] == 3
+    assert budget["remaining_by_index"][82] == 7
+
+
+def test_eval_attempt_budget_preserves_nested_duplicate_ledgers(tmp_path):
+    """Separate nested result ledgers remain separate cumulative histories."""
+    from opencollab_eval.commands import swe_v1_prolite_controller as controller
+
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    patch = "a" * 64
+    row = {
+        "index": 82,
+        "task": "instance_owner__repo-82",
+        "generation": {
+            "record_id": "record-82",
+            "patch_sha256": patch,
+            "source_patch_sha256": patch,
+            "eval_patch_sha256": patch,
+        },
+        "eval": {"status": "technical_eval_failed", "attempt_count": 3},
+    }
+    (parent / "parallel_summary.json").write_text(
+        json.dumps({"results": [{"rows": [row]}, {"rows": [row]}]}),
+        encoding="utf-8",
+    )
+    args = SimpleNamespace(
+        eval_only=True,
+        parent_output_dir=parent,
+        start_index=82,
+        limit=1,
+        max_eval_attempts=2,
+        expected_task=row["task"],
+        expected_record_id="record-82",
+        expected_source_patch_sha256=patch,
+        expected_eval_patch_sha256=patch,
+    )
+
+    budget = controller.apply_parent_eval_budget(args)
+
+    assert budget["previous_eval_attempts"][82] == 6

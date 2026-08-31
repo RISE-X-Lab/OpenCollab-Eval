@@ -27,6 +27,7 @@ from opencollab_eval.commands.swe_v1_prolite_process import (
 )
 from opencollab_eval.commands.swe_v1_prolite_report import (
     _has_quarantine_marker,
+    _report_rows_for_attempt_count,
     quarantine_report,
 )
 from opencollab_eval.engine.swe_eval_record_identity import direct_payload_task_id
@@ -308,13 +309,7 @@ def _observed_eval_attempts(job: dict[str, Any]) -> int:
     if parent_summary.is_file():
         report = _swe_report_io.load_json(parent_summary)
         total = 0
-        top_rows = [row for row in report.get("rows") or [] if isinstance(row, dict)]
-        top_row_keys = {json.dumps(row, sort_keys=True, separators=(",", ":")) for row in top_rows}
-        rows = top_rows + [
-            row for row in _report_rows(report)[len(top_rows):]
-            if json.dumps(row, sort_keys=True, separators=(",", ":")) not in top_row_keys
-        ]
-        for row in rows:
+        for row in _report_rows_for_attempt_count(report):
             if not _row_index_matches(row, job) or not _row_matches_job(row, job):
                 continue
             evaluation = row.get("eval")

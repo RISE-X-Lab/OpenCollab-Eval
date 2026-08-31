@@ -223,6 +223,27 @@ def remove_candidate_identities_file(path: Path | None) -> None:
         return
 
 
+def _report_rows_for_attempt_count(report: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return report rows without duplicating top-level compatibility mirrors."""
+    top_rows = [row for row in report.get("rows") or [] if isinstance(row, dict)]
+    top_row_keys = {
+        json.dumps(row, sort_keys=True, separators=(",", ":")) for row in top_rows
+    }
+    nested_rows = [
+        row
+        for result in report.get("results") or []
+        if isinstance(result, dict)
+        for row in result.get("rows") or []
+        if isinstance(row, dict)
+    ]
+    return top_rows + [
+        row
+        for row in nested_rows
+        if json.dumps(row, sort_keys=True, separators=(",", ":"))
+        not in top_row_keys
+    ]
+
+
 def candidate_eval_attempt_counts(
     report: dict[str, Any],
     *,
@@ -231,11 +252,7 @@ def candidate_eval_attempt_counts(
 ) -> dict[int, int]:
     """Count attempts while excluding stale rows for a bound candidate."""
     counts: dict[int, int] = {}
-    rows = [row for row in report.get("rows") or [] if isinstance(row, dict)]
-    for result in report.get("results") or []:
-        if isinstance(result, dict):
-            rows.extend(row for row in result.get("rows") or [] if isinstance(row, dict))
-    for row in rows:
+    for row in _report_rows_for_attempt_count(report):
         index = _integrity.strict_index(row.get("index"))
         if index is None:
             continue
