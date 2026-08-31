@@ -448,7 +448,10 @@ def _stop_identity_probe(process: subprocess.Popen) -> None:
 
 def process_start_identity(pid: int) -> str:
     if Path("/proc").is_dir():
-        proc_identity = _proc_process_start_identity(pid)
+        # Resolve the probe through the active per-instance runner module so
+        # embedded callers and tests can replace the platform-specific ABI
+        # probe without accidentally bypassing the bounded ``ps`` fallback.
+        proc_identity = _runner()._proc_process_start_identity(pid)
         if proc_identity:
             return proc_identity
         # A few POSIX systems expose a ``/proc`` directory without Linux's
