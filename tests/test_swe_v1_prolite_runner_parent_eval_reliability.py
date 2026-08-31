@@ -105,6 +105,47 @@ def test_eval_only_reconciliation_scopes_late_verdict_to_planned_identity(tmp_pa
     assert set(selected) == {historical_same, current}
     assert late_other not in selected
 
+
+def test_eval_only_reconciliation_accepts_legacy_task_id_alias(tmp_path):
+    """A legacy ``task_id`` row remains reusable for its bound candidate."""
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    task = "instance_owner__repo-82"
+    source_sha = "a" * 64
+    report = parent / "task_82_eval_only_legacy.json"
+    report.write_text(
+        json.dumps(
+            {
+                "rows": [
+                    {
+                        "index": 82,
+                        "task_id": task,
+                        "generation": {
+                            "record_id": "record-current",
+                            "source_patch_sha256": source_sha,
+                            "eval_patch_sha256": source_sha,
+                        },
+                        "eval": {
+                            "status": "eval_done",
+                            "summary": {"resolved": True},
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    selected = runner.eval_only_reconciliation_reports(
+        parent,
+        report,
+        candidate_identities={
+            82: (task, "record-current", source_sha, source_sha),
+        },
+    )
+
+    assert selected == [report]
+
 def test_eval_only_reconciliation_accepts_recomputed_eval_hash_and_execution_history(
     tmp_path,
 ):

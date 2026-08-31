@@ -40,9 +40,21 @@ def _report_candidate_identity(
             return None
         return present[0]
 
-    task = one_text(row.get("task"), row.get("instance_id"))
-    generation_task = one_text(generation.get("task"))
-    evaluation_task = one_text(evaluation.get("task"), summary.get("task"))
+    # Legacy reports use ``task_id`` in addition to ``task``/``instance_id``.
+    # Treat all aliases as one identity set so a valid older report is not
+    # mistaken for a missing candidate during queue reconciliation.
+    task = one_text(row.get("task"), row.get("instance_id"), row.get("task_id"))
+    generation_task = one_text(
+        generation.get("task"), generation.get("instance_id"), generation.get("task_id")
+    )
+    evaluation_task = one_text(
+        evaluation.get("task"),
+        evaluation.get("instance_id"),
+        evaluation.get("task_id"),
+        summary.get("task"),
+        summary.get("instance_id"),
+        summary.get("task_id"),
+    )
     if task is None:
         return None
     if generation_task is not None and generation_task != task:
