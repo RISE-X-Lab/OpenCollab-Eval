@@ -367,10 +367,22 @@ def eval_for_task_once(row, patch_selection=None):
             raise
         else:
             ACTIVE_CHILD_PGIDS.add(proc.pid)
-            binding = bind_eval_container_marker(
-                cidfile, marker_path, container_name, proc,
-                timeout=eval_container_bind_timeout,
-            )
+            # Binding normally reports a structured failure, but marker/cidfile
+            # publication can also raise (for example, a transient I/O error).
+            # Convert that exception into the same cleanup path as an explicit
+            # binding failure; otherwise the already-started docker process can
+            # survive while this task is recorded as a technical failure.
+            try:
+                binding = bind_eval_container_marker(
+                    cidfile, marker_path, container_name, proc,
+                    timeout=eval_container_bind_timeout,
+                )
+            except Exception as exc:
+                binding = {
+                    "ok": False,
+                    "status": "container_identity_binding_exception",
+                    "details": f"{type(exc).__name__}: {exc}",
+                }
             if not binding.get("ok"):
                 cleanup_quiesced = terminate_process_group_bounded(proc)
                 cleanup = cleanup_eval_container(
