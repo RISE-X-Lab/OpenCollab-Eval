@@ -120,6 +120,46 @@ def _candidate_identity_matches(
     return observed[:3] == expected[:3]
 
 
+def _has_reconciliation_verdict(row: dict[str, Any]) -> bool:
+    """Return whether a row carries a terminal eval verdict, not just evidence."""
+    evaluation = row.get("eval") if isinstance(row.get("eval"), dict) else {}
+    summary = evaluation.get("summary")
+    return bool(
+        evaluation.get("status") == "eval_done"
+        and isinstance(summary, dict)
+        and isinstance(summary.get("resolved"), bool)
+    )
+
+
+def _report_projection_identity(
+    row: dict[str, Any],
+    observed_identity: tuple[str, str, str, str] | None,
+) -> tuple[str, tuple[str, ...]] | None:
+    """Extract the eval projection key used by the final-report integrity gate."""
+    if observed_identity is None:
+        return None
+    evaluation = row.get("eval") if isinstance(row.get("eval"), dict) else {}
+    summary = evaluation.get("summary")
+    summary = summary if isinstance(summary, dict) else {}
+    generation = row.get("generation")
+    generation = generation if isinstance(generation, dict) else {}
+    path_values: list[tuple[str, ...]] = []
+    for container in (generation, summary):
+        if "filtered_patch_paths" not in container:
+            continue
+        value = container.get("filtered_patch_paths")
+        if (
+            not isinstance(value, list)
+            or any(not isinstance(path, str) or not path for path in value)
+            or len(value) != len(set(value))
+        ):
+            return None
+        path_values.append(tuple(value))
+    if not path_values or len(set(path_values)) != 1:
+        return None
+    return observed_identity[3], path_values[0]
+
+
 def _regular_identity(path: Path) -> tuple[int, int] | None:
     try:
         info = path.lstat()
@@ -323,7 +363,33 @@ def eval_only_reconciliation_reports(
                 candidates.add(historical_path)
     candidates.add(current)
     selected_execution: set[Path] = set()
-    selected_verdict: dict[int, tuple[tuple[int, str], Path]] = {}
+    selected_verdict: dict[
+        int,
+        tuple[
+            tuple[int, str],
+            Path,
+            tuple[str, str, str, str] | None,
+            tuple[str, tuple[str, ...]] | None,
+        ],
+    ] = {}
+    selected_any: dict[
+        int,
+        tuple[
+            tuple[int, str],
+            Path,
+            tuple[str, str, str, str] | None,
+            tuple[str, tuple[str, ...]] | None,
+        ],
+    ] = {}
+    accepted: list[
+        tuple[
+            Path,
+            int,
+            tuple[str, str, str, str] | None,
+            tuple[str, tuple[str, ...]] | None,
+            bool,
+        ]
+    ] = []
     for path in candidates:
         path = path.absolute()
         if path != current and (path in ignored or _has_quarantine_marker(path)):
@@ -346,14 +412,62 @@ def eval_only_reconciliation_reports(
         ):
             continue
         verdict_score = (info.st_mtime_ns, str(path))
-        if index not in selected_verdict or verdict_score > selected_verdict[index][0]:
-            selected_verdict[index] = (verdict_score, path)
-        executed = _integrity.eval_attempt_count(rows[0])
-        if executed:
-            selected_execution.add(path)
-    selected_paths = selected_execution | {
-        entry[1] for entry in selected_verdict.values()
+        projection_identity = _report_projection_identity(rows[0], observed_identity)
+        entry = (verdict_score, path, observed_identity, projection_identity)
+        if index not in selected_any or verdict_score > selected_any[index][0]:
+            selected_any[index] = entry
+        # Under an explicit queue binding, a late execution-only artifact must
+        # not displace a real verdict merely because its mtime is newer.  Keep
+        # the historical mtime rule among rows that actually carry a verdict.
+        if (
+            expected_identity is None
+            or _has_reconciliation_verdict(rows[0])
+        ) and (
+            index not in selected_verdict or verdict_score > selected_verdict[index][0]
+        ):
+            selected_verdict[index] = entry
+        accepted.append(
+            (
+                path,
+                index,
+                observed_identity,
+                projection_identity,
+                bool(_integrity.eval_attempt_count(rows[0])),
+            )
+        )
+    canonical = {
+        index: selected_verdict.get(index) or entry
+        for index, entry in selected_any.items()
     }
+    if expected_identities:
+        # A recomputed eval projection is still the same source candidate, but
+        # mixing projections in one final report triggers its integrity gate.
+        # Bind execution history to the actual selected verdict projection.
+        for path, index, observed_identity, projection_identity, executed in accepted:
+            if not executed:
+                continue
+            if expected_identities.get(index) is None:
+                selected_execution.add(path)
+                continue
+            selected = selected_verdict.get(index) or selected_any.get(index)
+            selected_identity = selected[2] if selected else None
+            selected_projection = selected[3] if selected else None
+            if (
+                observed_identity is None
+                or selected_identity is None
+                or observed_identity != selected_identity
+                or selected_projection is None
+                and projection_identity is not None
+                or selected_projection is not None
+                and projection_identity != selected_projection
+            ):
+                continue
+            selected_execution.add(path)
+    else:
+        selected_execution = {
+            path for path, _index, _identity, _projection, executed in accepted if executed
+        }
+    selected_paths = selected_execution | {entry[1] for entry in canonical.values()}
     return sorted(selected_paths, key=str)
 
 
