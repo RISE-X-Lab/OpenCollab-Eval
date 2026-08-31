@@ -162,6 +162,42 @@ def test_discovery_honors_per_instance_prior_report_fingerprint(tmp_path):
     assert reports[0].record_id == ""
 
 
+def test_discovery_binds_changed_per_instance_prior_report_fingerprint(tmp_path):
+    runner = importlib.import_module("opencollab_eval.commands.run_swebench_eval_per_instance")
+    report = tmp_path / "report.json"
+    report.write_text(
+        json.dumps({"task-1": {"resolved": False}}),
+        encoding="utf-8",
+    )
+    prior_fingerprint = runner.file_fingerprint(report)
+    started_at_ns = time.time_ns()
+    identity = {
+        "instance_id": "task-1",
+        "record_id": "new-record",
+        "patch_sha256": "b" * 64,
+    }
+    runner.write_identity(
+        runner.identity_path(report),
+        identity,
+        status="completed",
+        started_at_ns=started_at_ns,
+        prior_report_fingerprint=prior_fingerprint,
+    )
+    report.write_text(
+        json.dumps({"task-1": {"resolved": True}}),
+        encoding="utf-8",
+    )
+    now_ns = max(time.time_ns(), started_at_ns + 1)
+    os.utime(report, ns=(now_ns, now_ns))
+
+    reports = discover_eval_reports(tmp_path)
+
+    assert len(reports) == 1
+    assert reports[0].patch_sha == "b" * 64
+    assert reports[0].record_id == "new-record"
+    assert reports[0].resolved_count == 1
+
+
 def test_completed_attempt_with_reused_live_pid_is_not_active_and_binds_report(tmp_path):
     prediction = {
         "instance_id": "task-1",

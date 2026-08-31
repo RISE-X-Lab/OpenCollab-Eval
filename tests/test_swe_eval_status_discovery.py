@@ -675,15 +675,51 @@ def test_auto_eval_fingerprints_top_level_task_report_before_new_attempt(tmp_pat
         ),
         encoding="utf-8",
     )
-    report_path.write_text(json.dumps(stale_payload), encoding="utf-8")
-    now_ns = time.time_ns()
-    os.utime(report_path, ns=(now_ns, now_ns))
-
     reports = discover_eval_reports(tmp_path)
 
     assert "summary.json" in prior_reports
     assert reports[0].patch_sha == ""
     assert reports[0].record_id == ""
+
+
+def test_auto_eval_binds_changed_prior_report_to_new_attempt(tmp_path):
+    """A rewritten legacy report must not remain attached to the stale cache."""
+    driver = importlib.import_module("opencollab_eval.commands.swe_auto_eval_driver")
+    report_path = tmp_path / "summary.json"
+    report_path.write_text(
+        json.dumps({"task-1": {"resolved": False}}),
+        encoding="utf-8",
+    )
+    prior_reports = driver._report_fingerprints(tmp_path, "task-1")
+    started_at_ns = time.time_ns()
+    (tmp_path / "attempt.json").write_text(
+        json.dumps(
+            {
+                "schema": "opencollab.swe_eval_attempt.v1",
+                "instance_id": "task-1",
+                "record_id": "new-record",
+                "patch_sha256": "b" * 64,
+                "started_at_ns": started_at_ns,
+                "status": "completed",
+                "pid": 0,
+                "prior_reports": prior_reports,
+            }
+        ),
+        encoding="utf-8",
+    )
+    report_path.write_text(
+        json.dumps({"task-1": {"resolved": True}}),
+        encoding="utf-8",
+    )
+    now_ns = max(time.time_ns(), started_at_ns + 1)
+    os.utime(report_path, ns=(now_ns, now_ns))
+
+    reports = discover_eval_reports(tmp_path)
+
+    assert len(reports) == 1
+    assert reports[0].patch_sha == "b" * 64
+    assert reports[0].record_id == "new-record"
+    assert reports[0].resolved_count == 1
 
 
 def test_per_instance_release_does_not_delete_successor_claim(tmp_path):

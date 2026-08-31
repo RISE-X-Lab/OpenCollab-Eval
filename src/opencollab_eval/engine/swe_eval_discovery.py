@@ -318,6 +318,11 @@ def _report_path_sort_key(path: Path) -> tuple[int, str]:
     return mtime_ns, str(path)
 
 
+def _report_stat_fingerprint(info: os.stat_result) -> str:
+    """Return the same metadata fingerprint captured before an eval attempt."""
+    return f"{info.st_mtime_ns}:{info.st_ctime_ns}:{info.st_size}:{info.st_ino}"
+
+
 def _pid_is_active(pid: int) -> bool:
     if pid <= 0:
         return False
@@ -559,14 +564,22 @@ def _discover_eval_artifacts(
                 relative = str(path.relative_to(side_dir))
             except ValueError:
                 relative = str(path)
-            if relative in attempt.prior_reports:
+            prior_fingerprint = attempt.prior_reports.get(relative)
+            if (
+                prior_fingerprint is not None
+                and _report_stat_fingerprint(report_stat) == prior_fingerprint
+            ):
                 reports.append(report)
                 continue
         elif (
             attempt.prior_report_fingerprint is not None
             and path == Path(attempt.path).with_name("report.json")
         ):
-            if attempt.prior_report_fingerprint:
+            if (
+                attempt.prior_report_fingerprint
+                and _report_stat_fingerprint(report_stat)
+                == attempt.prior_report_fingerprint
+            ):
                 reports.append(report)
                 continue
         elif attempt.prior_reports is None:
