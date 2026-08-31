@@ -421,6 +421,7 @@ def build_report(
         if load_error:
             global_census_issues.append(f"{load_error}:{path}")
             continue
+        report = _prolite_report.candidate_report_view(report, expected_identities)
         report_indices, report_issues, report_global_issues = _integrity.report_census(report)
         for index in report_indices:
             if index not in inferred_indices:
@@ -793,7 +794,6 @@ def main() -> int:
     _report_io.write_text(args.markdown_output, to_markdown(report))
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

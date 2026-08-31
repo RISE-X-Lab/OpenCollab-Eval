@@ -130,6 +130,53 @@ def candidate_row_is_admitted(
     return observed is not None and _candidate_identity_matches(observed, expected)
 
 
+def candidate_report_view(
+    report: dict[str, Any],
+    candidate_identities: Mapping[object, object] | None,
+) -> dict[str, Any]:
+    """Remove stale rows from queue-bound orchestrator results before census.
+
+    A parent summary can retain a result wrapper from an older candidate while
+    a later eval-only report carries the planned candidate.  Census checks on
+    the stale wrapper must not poison the later candidate, but a wrapper that
+    contains an admitted row still remains fully subject to its own integrity
+    checks.
+    """
+    expected = _normalized_candidate_identities(candidate_identities)
+    if not expected:
+        return report
+    results = report.get("results")
+    if not isinstance(results, list):
+        return report
+    filtered_results: list[object] = []
+    for result in results:
+        if not isinstance(result, dict):
+            filtered_results.append(result)
+            continue
+        index = _integrity.strict_index(result.get("index"))
+        identity = expected.get(index)
+        if identity is None:
+            filtered_results.append(result)
+            continue
+        rows = result.get("rows")
+        if not isinstance(rows, list):
+            continue
+        admitted = [
+            row
+            for row in rows
+            if isinstance(row, dict)
+            and _integrity.strict_index(row.get("index")) == index
+            and candidate_row_is_admitted(row, identity)
+        ]
+        if admitted:
+            filtered = dict(result)
+            filtered["rows"] = admitted
+            filtered_results.append(filtered)
+    view = dict(report)
+    view["results"] = filtered_results
+    return view
+
+
 def load_candidate_identities_json(value: str | None) -> dict[int, tuple[str, str, str, str]]:
     """Decode and strictly validate the queue's candidate identity map."""
     if not value:

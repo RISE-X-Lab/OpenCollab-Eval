@@ -122,6 +122,90 @@ def test_bound_parent_filter_rejects_malformed_same_index_row():
     assert candidate_row_is_admitted(malformed, expected) is False
 
 
+def test_bound_parent_census_ignores_stale_row_index_from_old_candidate(tmp_path):
+    """A stale nested result must not poison a later bound candidate verdict."""
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    task = "instance_owner__repo-82"
+    current = _bound_row(82, task, "eval_done", True, "c" * 64, ["new.py"])
+    current_path = _write(parent / "task_82_eval_only_current.json", current, 2)
+    stale = {
+        "index": 81,
+        "task": "instance_owner__old-repo",
+        "generation": {"record_id": "old-record", "patch_sha256": "d" * 64},
+        "eval": {"status": "eval_done", "summary": {"resolved": False}},
+    }
+    parent_path = parent / "parallel_summary.json"
+    parent_path.write_text(
+        json.dumps(
+            {
+                "indices": [82],
+                "results": [
+                    {
+                        "index": 82,
+                        "completed": True,
+                        "runner_status": "done",
+                        "rows": [stale],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    source_sha = current["generation"]["patch_sha256"]
+    identity = (task, current["generation"]["record_id"], source_sha, "b" * 64)
+
+    report = build_report(
+        [parent_path, current_path],
+        max_rounds=10,
+        allow_over_budget_evidence=True,
+        candidate_identities={82: identity},
+    )
+
+    assert report["counts"]["eval_success"] == 1
+    assert report["counts"]["resolved"] == 1
+    assert report["counts"]["technical_failed_final"] == 0
+
+
+def test_bound_parent_census_keeps_admitted_result_integrity_errors(tmp_path):
+    """Binding a candidate must not hide errors on its admitted result wrapper."""
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    task = "instance_owner__repo-82"
+    current = _bound_row(82, task, "eval_done", True, "c" * 64, ["new.py"])
+    current_path = _write(parent / "task_82_eval_only_current.json", current, 2)
+    current_row = dict(current)
+    parent_path = parent / "parallel_summary.json"
+    parent_path.write_text(
+        json.dumps(
+            {
+                "indices": [82],
+                "results": [
+                    {
+                        "index": 82,
+                        "completed": False,
+                        "runner_status": "done",
+                        "rows": [current_row],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    source_sha = current["generation"]["patch_sha256"]
+    identity = (task, current["generation"]["record_id"], source_sha, "b" * 64)
+
+    report = build_report(
+        [parent_path, current_path],
+        max_rounds=10,
+        allow_over_budget_evidence=True,
+        candidate_identities={82: identity},
+    )
+
+    assert report["counts"]["technical_failed_final"] == 1
+    assert "incomplete_orchestrator_result" in report["tasks"][0]["technical_reasons"]
+
+
 def test_bound_parent_filter_accepts_source_only_legacy_identity():
     from opencollab_eval.commands.swe_v1_prolite_report import candidate_row_is_admitted
 
