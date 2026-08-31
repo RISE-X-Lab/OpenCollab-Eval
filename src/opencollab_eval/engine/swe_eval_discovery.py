@@ -276,7 +276,10 @@ def _attempt_from_payload(path: Path, payload: Any) -> EvalAttempt | None:
         return None
     task_id = task_id_value
     record_id = str(payload.get("record_id") or "")
-    patch_sha = str(payload.get("patch_sha256") or "")
+    # SHA-256 hexadecimal spellings are case-insensitive.  Store the
+    # canonical form so completed-attempt identity de-duplication remains
+    # symmetric with legacy reports that may use upper-case hex.
+    patch_sha = str(payload.get("patch_sha256") or "").lower()
     started_at_ns = strict_integer(payload.get("started_at_ns", 0), nonnegative=True)
     pid = strict_integer(payload.get("pid", 0), nonnegative=True)
     evaluator_pgid = strict_integer(payload.get("evaluator_pgid", 0), nonnegative=True)
@@ -627,7 +630,12 @@ def _discover_eval_artifacts(
         )
 
     reported_identities = {
-        (report.task_id, report.record_id, report.patch_sha) for report in reports
+        # SHA-256 hexadecimal spellings are case-insensitive.  Keep the
+        # identity key canonical so a legacy upper-case report does not look
+        # distinct from the same completed attempt and trigger a synthetic
+        # technical failure that masks its valid verdict.
+        (report.task_id, report.record_id, report.patch_sha.lower())
+        for report in reports
     }
     for attempt in attempts.values():
         identity = (attempt.task_id, attempt.record_id, attempt.patch_sha)

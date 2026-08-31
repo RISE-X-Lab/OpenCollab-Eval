@@ -139,6 +139,57 @@ def test_patch_sha_matching_accepts_hex_case_but_keeps_strict_shape():
     ) == ""
 
 
+def test_discovery_does_not_mask_uppercase_legacy_success_with_synthetic_failure(
+    tmp_path,
+):
+    """A completed attempt and its upper-case legacy report share one identity."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    task = "task-1"
+    prediction = {"instance_id": task, "record_id": "r1", "model_patch": _patch("+uppercase\n")}
+    patch_sha = row_patch_sha(prediction)
+    _write_jsonl(run_dir / "predictions.jsonl", [prediction])
+    _write_jsonl(
+        run_dir / "metrics.jsonl",
+        [{"instance_id": task, "record_id": "r1", "patch_sha256": patch_sha, "workflow_status": "done"}],
+    )
+    side_dir = run_dir / "official_eval_auto"
+    attempt_dir = side_dir / ".opencollab" / "attempts"
+    attempt_dir.mkdir(parents=True)
+    started_at_ns = time.time_ns()
+    (attempt_dir / "current.json").write_text(
+        json.dumps(
+            {
+                "schema": "opencollab.swe_eval_attempt.v1",
+                "instance_id": task,
+                "record_id": "r1",
+                "patch_sha256": patch_sha,
+                "started_at_ns": started_at_ns,
+                "status": "completed",
+                "prior_reports": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (side_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                task: {
+                    "resolved": True,
+                    "patch_sha256": patch_sha.upper(),
+                    "record_id": "r1",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = build_snapshots(run_dir)[0]
+
+    assert snapshot.eval_summary.done_count == 1
+    assert snapshot.eval_summary.failed_count == 0
+
+
 def test_expired_claim_retains_live_group_when_identity_probe_is_unknown(
     monkeypatch, tmp_path
 ):
