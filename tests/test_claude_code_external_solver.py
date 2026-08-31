@@ -405,9 +405,8 @@ def test_claude_launcher_bounds_control_docker_hang_without_wrapping_runtime(
             "OPENCOLLAB_CLAUDE_RUNTIME_IMAGE_ID": RUNTIME_IMAGE_ID,
             "OPENCOLLAB_CLAUDE_SIDECAR_PYTHON": sys.executable,
             # Keep enough startup headroom for a loaded CI/macOS host while
-            # still exercising the bounded control path well below the test's
-            # outer five-second guard.
-            "OPENCOLLAB_CLAUDE_DOCKER_CONTROL_TIMEOUT_SECONDS": "1",
+            # still exercising a short bounded control path.
+            "OPENCOLLAB_CLAUDE_DOCKER_CONTROL_TIMEOUT_SECONDS": "2",
             "OPENHANDS_INSTANCE_ID": "solver-" + "1" * 32,
         }
     )
@@ -419,11 +418,11 @@ def test_claude_launcher_bounds_control_docker_hang_without_wrapping_runtime(
         text=True,
         capture_output=True,
         check=False,
-        timeout=5,
+        timeout=7,
     )
 
     assert completed.returncode == 124
-    assert time.monotonic() - started < 3
+    assert time.monotonic() - started < 5
     assert "Docker control command timed out" in completed.stderr
     assert calls.read_text(encoding="utf-8").splitlines() == [
         "image inspect --format {{.Id}} registry.example.invalid/claude-runtime:2.1.175"

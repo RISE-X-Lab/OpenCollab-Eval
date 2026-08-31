@@ -544,3 +544,170 @@ def test_queue_treats_corrupt_persisted_launch_count_as_exhausted(
 
     assert result["counts"] == {"launch_budget_exhausted": 1}
     assert next(iter(result["jobs"].values()))["launch_count"] == 2
+
+
+def test_queue_refreshes_parent_for_later_job_after_summary_terminal(
+    tmp_path, monkeypatch
+):
+    """A terminal summary row must not hide a later task report."""
+    _accept_terminal(monkeypatch)
+    plan, parent = _plan(tmp_path)
+    value = json.loads(plan.read_text(encoding="utf-8"))
+    first = value["jobs"][0]
+    second = {
+        **first,
+        "index": 27,
+        "base_run_dir": "/worker/run/task_27",
+        "remote_runtime_repo": "/worker/runtime/task_27",
+        "run_id": "rejudge-task-27",
+        "task": "instance_owner__repo-27",
+        "record_id": "record-27",
+        "source_patch_sha256": "b" * 64,
+        "eval_patch_sha256": "b" * 64,
+    }
+    value["jobs"].append(second)
+    plan.write_text(json.dumps(value), encoding="utf-8")
+    rows = []
+    for job in value["jobs"]:
+        row = {
+            "index": job["index"],
+            "task": job["task"],
+            "generation": {
+                "record_id": job["record_id"],
+                "patch_sha256": job["source_patch_sha256"],
+                "source_patch_sha256": job["source_patch_sha256"],
+                "eval_patch_sha256": job["eval_patch_sha256"],
+            },
+        }
+        if job is first:
+            row["eval"] = {
+                "status": "eval_done",
+                "summary": {"resolved": False},
+            }
+        rows.append(row)
+    (parent / "parallel_summary.json").write_text(
+        json.dumps({"rows": rows}), encoding="utf-8"
+    )
+    child_reports = []
+
+    def fake_run(argv, *, log, timeout):
+        del log, timeout
+        output = Path(argv[argv.index("--json-output") + 1])
+        _terminal_report(output, index=27, patch_sha256="b" * 64, resolved=True)
+        payload = json.loads(output.read_text(encoding="utf-8"))
+        payload["rows"][0]["task"] = second["task"]
+        payload["rows"][0]["generation"]["record_id"] = second["record_id"]
+        output.write_text(json.dumps(payload), encoding="utf-8")
+        child_reports.append(output)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(queue, "_run_bounded_child", fake_run)
+    refreshes = []
+    monkeypatch.setattr(
+        queue,
+        "update_parent_fact_report",
+        lambda args: refreshes.append(args) or {"status": "done"},
+    )
+
+    result = queue.run_queue(plan, tmp_path / "state", workers=1)
+
+    assert result["counts"] == {"skipped_terminal": 1, "terminal": 1}
+    assert len(refreshes) == 1
+    assert child_reports == [refreshes[0].json_output]
+
+
+def test_queue_quarantines_malformed_historical_report_before_refresh(
+    tmp_path, monkeypatch
+):
+    """One bad historical file must not erase a valid new terminal result."""
+    _accept_terminal(monkeypatch)
+    plan, parent = _plan(tmp_path)
+    (parent / "parallel_summary.json").write_text(
+        json.dumps(
+            {
+                "rows": [
+                    {
+                        "index": 25,
+                        "task": "instance_owner__repo-25",
+                        "generation": {
+                            "record_id": "record-25",
+                            "patch_sha256": "a" * 64,
+                            "source_patch_sha256": "a" * 64,
+                            "eval_patch_sha256": "a" * 64,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    malformed = parent / "task_25_eval_only_partial.json"
+    malformed.write_text('{"rows":[', encoding="utf-8")
+
+    def fake_run(argv, *, log, timeout):
+        del log, timeout
+        output = Path(argv[argv.index("--json-output") + 1])
+        _terminal_report(output, index=25, patch_sha256="a" * 64, resolved=True)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(queue, "_run_bounded_child", fake_run)
+    refreshes = []
+    monkeypatch.setattr(
+        queue,
+        "update_parent_fact_report",
+        lambda args: refreshes.append(args) or {"status": "done"},
+    )
+
+    result = queue.run_queue(plan, tmp_path / "state", workers=1)
+
+    assert result["counts"] == {"terminal": 1}
+    assert len(refreshes) == 1
+    assert not malformed.exists()
+    backups = list(parent.glob("task_25_eval_only_partial.json.invalid*"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == '{"rows":['
+
+
+def test_queue_quarantine_does_not_overwrite_existing_backup(tmp_path, monkeypatch):
+    _accept_terminal(monkeypatch)
+    plan, parent = _plan(tmp_path)
+    (parent / "parallel_summary.json").write_text(
+        json.dumps(
+            {
+                "rows": [
+                    {
+                        "index": 25,
+                        "task": "instance_owner__repo-25",
+                        "generation": {
+                            "record_id": "record-25",
+                            "patch_sha256": "a" * 64,
+                            "source_patch_sha256": "a" * 64,
+                            "eval_patch_sha256": "a" * 64,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    malformed = parent / "task_25_eval_only_partial.json"
+    malformed.write_text("bad", encoding="utf-8")
+    existing = parent / "task_25_eval_only_partial.json.invalid"
+    existing.write_text("keep", encoding="utf-8")
+
+    def fake_run(argv, *, log, timeout):
+        del log, timeout
+        output = Path(argv[argv.index("--json-output") + 1])
+        _terminal_report(output, index=25, patch_sha256="a" * 64, resolved=True)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(queue, "_run_bounded_child", fake_run)
+    monkeypatch.setattr(queue, "update_parent_fact_report", lambda args: {})
+
+    result = queue.run_queue(plan, tmp_path / "state", workers=1)
+
+    assert result["counts"] == {"terminal": 1}
+    assert existing.read_text(encoding="utf-8") == "keep"
+    assert (parent / "task_25_eval_only_partial.json.invalid.1").read_text(
+        encoding="utf-8"
+    ) == "bad"

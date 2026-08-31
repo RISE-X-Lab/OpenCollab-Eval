@@ -139,6 +139,55 @@ def test_public_preparation_ps_tracking_quiesces_a_setsid_writer(
     assert not target.exists()
 
 
+@pytest.mark.skipif(
+    sys.platform.startswith("linux") or os.name != "posix",
+    reason="non-/proc process-tree fallback is only exercised on POSIX hosts",
+)
+def test_public_preparation_cleans_a_disowned_setsid_writer(
+    tmp_path: Path,
+) -> None:
+    """A disowned child must not survive a successful preparation return."""
+    ready = tmp_path / "ready"
+    pid_path = tmp_path / "child.pid"
+    target = tmp_path / "late.txt"
+    child = (
+        "import os,pathlib,time;"
+        "os.setsid();"
+        f"pathlib.Path({str(ready)!r}).write_text('ready');"
+        f"pathlib.Path({str(pid_path)!r}).write_text(str(os.getpid()));"
+        "time.sleep(10);"
+        f"pathlib.Path({str(target)!r}).write_text('late')"
+    )
+    source = (
+        f"python3 -c {child!r} &\n"
+        "child=$!\n"
+        f"while [ ! -e {ready} ]; do sleep 0.01; done\n"
+        'disown "$child"\n'
+        "exit 0\n"
+    )
+
+    completed = _run_cli(
+        _script(tmp_path, source),
+        tmp_path / "prepare.log",
+        tmp_path,
+    )
+
+    assert completed.returncode == 0
+    assert pid_path.exists()
+    child_pid = int(pid_path.read_text(encoding="utf-8"))
+    try:
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline and runner._pid_is_live(child_pid):
+            time.sleep(0.01)
+        assert not runner._pid_is_live(child_pid)
+    finally:
+        try:
+            os.kill(child_pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    assert not target.exists()
+
+
 def test_public_preparation_reports_cleanup_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

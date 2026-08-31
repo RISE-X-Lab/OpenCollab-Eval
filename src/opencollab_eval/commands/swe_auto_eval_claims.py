@@ -121,12 +121,38 @@ def _claim_owner_is_active(claim: dict, file_mtime_ns: int) -> bool:
         return False
     expected = str(claim.get("owner_start_identity") or "")
     current = _process_start_identity(pid)
-    if expected and (not current or expected != current):
-        return False
+    # An empty probe is inconclusive.  If the claim carries an identity
+    # assertion, retain an active owner even when the bounded probe is
+    # temporarily unavailable; reclaiming it can start a second evaluator.
+    # Only a non-empty mismatch proves PID reuse.  Legacy claims without an
+    # identity continue to use their lease as the liveness bound.
+    if expected:
+        if not current:
+            return True
+        if expected != current:
+            return False
+        # A matching start identity is positive ownership evidence.  Do not
+        # let an expired heartbeat lease trigger a concurrent evaluator while
+        # this same owner process is still alive; the lease remains the
+        # fallback only for legacy claims without an identity assertion.
+        return True
     return _claim_lease_is_fresh(claim, file_mtime_ns)
 
 
 def _claim_residual_group_is_live(claim: dict, file_mtime_ns: int) -> bool:
+    """Return whether a persisted evaluator group must retain its claim.
+
+    ``os.kill(-pgid, 0)`` proves that a group still exists, while the start
+    identity is an ownership check only when the probe returns a value.  An
+    empty identity is an unknown (usually transient) probe and must not be
+    treated as proof of a stale group: reclaiming then can start a second
+    evaluator against the same worktree.  A non-empty mismatch is conclusive
+    evidence that the recorded evaluator is gone/reused and remains
+    reclaimable.  A matching identity is positive ownership evidence and
+    remains live even after lease expiry; the lease is consulted only when no
+    identity assertion is available.  An unknown live group is also retained
+    so that a retry cannot race its cleanup.
+    """
     try:
         pgid = int(claim.get("evaluator_pgid") or 0)
     except (TypeError, ValueError):
@@ -135,11 +161,20 @@ def _claim_residual_group_is_live(claim: dict, file_mtime_ns: int) -> bool:
         return False
     expected = str(claim.get("evaluator_start_identity") or "")
     current = _process_start_identity(pgid)
-    # Once a claim records an evaluator identity, an unavailable probe is
-    # indistinguishable from a dead/reused process.  Do not renew the lease
-    # on an empty probe; the next claimant can safely reclaim it.
-    if expected and (not current or expected != current):
+    # An empty identity is unknown, not a dead/reused group.  Retain the claim
+    # regardless of lease freshness until the group is observed gone.
+    if not current:
+        return True
+    if expected and expected != current:
         return False
+    # A matching start identity is positive ownership evidence.  Do not let a
+    # stale heartbeat/lease override that evidence: the evaluator may still
+    # be alive but unable to refresh its claim (for example while blocked in a
+    # child process).  Taking over here can start a concurrent evaluator in
+    # the same worktree.  Claims without an identity assertion retain the
+    # legacy lease-based fallback below.
+    if expected and expected == current:
+        return True
     return _claim_lease_is_fresh(claim, file_mtime_ns)
 
 

@@ -102,6 +102,67 @@ def test_openhands_token_budget_uses_observed_usage_not_context_window() -> None
     assert guard.reserved == 0
 
 
+def test_openhands_token_budget_does_not_reject_short_call_after_large_request() -> None:
+    class Usage:
+        prompt_tokens = 0
+        completion_tokens = 0
+
+    class Metrics:
+        accumulated_token_usage = Usage()
+
+    class FakeLLM:
+        max_output_tokens = 1_000_000
+        metrics = Metrics()
+
+    llm = FakeLLM()
+    guard = openhands_runtime.TokenBudgetGuard(1_000_000)
+
+    first_reservation = guard.reserve(guard.request_upper_bound(llm))
+    llm.metrics.accumulated_token_usage.prompt_tokens = 899_000
+    llm.metrics.accumulated_token_usage.completion_tokens = 1_000
+    guard.record(llm, reservation=first_reservation)
+
+    # The historical 900k request is not a proof that the next call needs
+    # 900k.  Clamp only the reservation to the remaining budget and let the
+    # measured usage enforce the aggregate hard cap.
+    assert guard.request_upper_bound(llm) == 100_000
+    second_reservation = guard.reserve(guard.request_upper_bound(llm))
+    llm.metrics.accumulated_token_usage.prompt_tokens += 100
+    llm.metrics.accumulated_token_usage.completion_tokens += 50
+    guard.record(llm, reservation=second_reservation)
+
+    assert guard.spent == 900_150
+    assert guard.reserved == 0
+
+
+def test_openhands_token_budget_default_short_requests_survive_near_limit() -> None:
+    class Usage:
+        prompt_tokens = 0
+        completion_tokens = 0
+
+    class Metrics:
+        accumulated_token_usage = Usage()
+
+    class FakeLLM:
+        # Deliberately omit max_output_tokens to exercise the fallback path.
+        metrics = Metrics()
+
+    llm = FakeLLM()
+    guard = openhands_runtime.TokenBudgetGuard(1_000)
+
+    first_reservation = guard.reserve(guard.request_upper_bound(llm))
+    llm.metrics.accumulated_token_usage.prompt_tokens = 900
+    guard.record(llm, reservation=first_reservation)
+
+    assert guard.request_upper_bound(llm) == 100
+    second_reservation = guard.reserve(guard.request_upper_bound(llm))
+    llm.metrics.accumulated_token_usage.prompt_tokens += 10
+    guard.record(llm, reservation=second_reservation)
+
+    assert guard.spent == 910
+    assert guard.reserved == 0
+
+
 @pytest.mark.parametrize(
     "prompt, completion, expected",
     [

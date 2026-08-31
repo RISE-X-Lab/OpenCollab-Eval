@@ -51,7 +51,6 @@ QUEUE_EVAL_TIMEOUT_GRACE_SECONDS = 120.0
 QUEUE_PROCESS_TERM_GRACE_SECONDS = 5.0
 QUEUE_PROCESS_KILL_REAP_TIMEOUT_SECONDS = 5.0
 _state_lock = threading.Lock()
-
 def _positive_finite_timeout(value: object, *, label: str) -> float:
     if isinstance(value, bool):
         raise ValueError(f"{label} must be a positive finite number of seconds")
@@ -62,7 +61,6 @@ def _positive_finite_timeout(value: object, *, label: str) -> float:
     if not math.isfinite(timeout) or timeout <= 0:
         raise ValueError(f"{label} must be a positive finite number of seconds")
     return timeout
-
 def _runner_eval_timeout(runner_args: list[str]) -> float | None:
     values: list[str] = []
     index = 0
@@ -86,7 +84,6 @@ def _runner_eval_timeout(runner_args: list[str]) -> float | None:
             raise ValueError("--eval-timeout must be an integer number of seconds")
     parsed.append(timeout)
     return parsed[-1]
-
 def _job_eval_timeout(plan: dict[str, Any], job: dict[str, Any]) -> float:
     if "eval_timeout" in job and job["eval_timeout"] is not None:
         return _positive_finite_timeout(job["eval_timeout"], label="eval_timeout")
@@ -97,7 +94,6 @@ def _job_eval_timeout(plan: dict[str, Any], job: dict[str, Any]) -> float:
     if environment_timeout is not None and environment_timeout.strip():
         return _positive_finite_timeout(environment_timeout, label="OPENCOLLAB_EVAL_TIMEOUT_SECONDS")
     return DEFAULT_EVAL_TIMEOUT_SECONDS
-
 def _absolute_directory(value: object, *, label: str) -> Path:
     if not isinstance(value, str) or not value or "\0" in value:
         raise ValueError(f"{label} must be a non-empty path")
@@ -108,7 +104,6 @@ def _absolute_directory(value: object, *, label: str) -> Path:
     if not stat.S_ISDIR(info.st_mode):
         raise ValueError(f"{label} must be a directory")
     return path
-
 def _read_plan(path: Path) -> dict[str, Any]:
     value = _swe_report_io.load_json(path)
     if value.get("schema") != SCHEMA:
@@ -195,7 +190,6 @@ def _read_plan(path: Path) -> dict[str, Any]:
             normalized_job["eval_timeout"] = eval_timeout
         normalized.append(normalized_job)
     return {"schema": SCHEMA, "runner_args": runner_args, "jobs": normalized}
-
 def _row_identity(row: dict[str, Any]) -> tuple[str, str, str, str] | None:
     generation = row.get("generation")
     if not isinstance(generation, dict):
@@ -220,7 +214,6 @@ def _row_identity(row: dict[str, Any]) -> tuple[str, str, str, str] | None:
     ):
         return None
     return task, record_id, source_patch_sha256, eval_patch_sha256
-
 def _job_identity(job: dict[str, Any]) -> tuple[str, str, str, str]:
     return (
         job["task"],
@@ -228,7 +221,6 @@ def _job_identity(job: dict[str, Any]) -> tuple[str, str, str, str]:
         job["source_patch_sha256"],
         job["eval_patch_sha256"],
     )
-
 def _row_terminal(row: dict[str, Any], *, job: dict[str, Any]) -> bool:
     evaluation = row.get("eval")
     if (
@@ -246,7 +238,6 @@ def _row_terminal(row: dict[str, Any], *, job: dict[str, Any]) -> bool:
         and integrity.direct_execution_proven
         and not integrity.reasons
     )
-
 def _report_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
     rows = [row for row in report.get("rows") or [] if isinstance(row, dict)]
     for result in report.get("results") or []:
@@ -255,7 +246,6 @@ def _report_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
                 row for row in result.get("rows") or [] if isinstance(row, dict)
             )
     return rows
-
 def _candidate_identity_status(job: dict[str, Any]) -> str:
     parent = Path(job["parent_output_dir"])
     paths = [parent / "parallel_summary.json", *parent.glob("task_*_eval_only_*.json")]
@@ -356,13 +346,9 @@ def _final_task_matches_job(task: dict[str, Any], job: dict[str, Any]) -> bool:
 def _write_state_unlocked(path: Path, state: dict[str, Any]) -> None:
     payload = (json.dumps(state, ensure_ascii=False, indent=2) + "\n").encode()
     write_regular_bytes_atomic(path, payload)
-
-
 def _write_state(path: Path, state: dict[str, Any]) -> None:
     with _state_lock:
         _write_state_unlocked(path, state)
-
-
 def _state_launch_count(previous: object) -> int:
     if not isinstance(previous, dict):
         return 0
@@ -373,8 +359,6 @@ def _state_launch_count(previous: object) -> int:
     if count is None:
         return 2
     return count
-
-
 def _set_job_state(
     path: Path,
     state: dict[str, Any],
@@ -385,8 +369,6 @@ def _set_job_state(
         state["jobs"][key] = result
         _write_state_unlocked(path, state)
     return result
-
-
 def _reserve_launch(
     path: Path,
     state: dict[str, Any],
@@ -402,12 +384,8 @@ def _reserve_launch(
         state["jobs"][key] = {"status": "running", "launch_count": launch_count, **job}
         _write_state_unlocked(path, state)
     return launch_count
-
-
 def _job_key(job: dict[str, Any]) -> str:
     return hashlib.sha256("\0".join(_job_identity(job)).encode("utf-8")).hexdigest()[:16]
-
-
 def _child_argv(
     plan: dict[str, Any],
     job: dict[str, Any],
@@ -469,8 +447,6 @@ def _child_argv(
             raise ValueError("eval_timeout must be an integer number of seconds")
         argv.extend(["--eval-timeout", str(int(timeout))])
     return argv, json_output, markdown_output
-
-
 def _run_bounded_child(
     argv: list[str],
     *,
@@ -517,8 +493,6 @@ def _run_bounded_child(
             pass
         raise
     return subprocess.CompletedProcess(argv, returncode)
-
-
 def _run_job(
     plan: dict[str, Any],
     job: dict[str, Any],
@@ -642,10 +616,9 @@ def _run_job(
             state=state,
         )
     return persisted
-
-
 def _refresh_parent_report(parent: str, report: Path) -> dict[str, Any]:
     with ParentEvalLock(Path(parent), "report"):
+        _quarantine_invalid_reports(Path(parent), report)
         return update_parent_fact_report(
             SimpleNamespace(
                 parent_output_dir=Path(parent),
@@ -653,8 +626,38 @@ def _refresh_parent_report(parent: str, report: Path) -> dict[str, Any]:
                 usd_cny=None,
             )
         )
-
-
+def _quarantine_invalid_reports(parent: Path, current_report: Path) -> None:
+    """Move stale malformed task reports aside without replacing backups."""
+    current = current_report.absolute()
+    for path in parent.glob("task_*_eval_only_*.json"):
+        if path.absolute() == current:
+            continue
+        try:
+            info = path.lstat()
+            if not stat.S_ISREG(info.st_mode):
+                continue
+            report, error = _swe_report_io.load_json_with_error(path)
+            rows = [row for row in report.get("rows") or [] if isinstance(row, dict)]
+            if not error and len(rows) == 1 and strict_integer(rows[0].get("index")) is not None:
+                continue
+            for suffix in range(100):
+                tag = ".invalid" if suffix == 0 else f".invalid.{suffix}"
+                target = path.with_name(path.name + tag)
+                try:
+                    os.link(path, target, follow_symlinks=False)
+                except FileExistsError:
+                    continue
+                try:
+                    now = path.lstat()
+                    if (now.st_dev, now.st_ino) == (info.st_dev, info.st_ino):
+                        path.unlink()
+                    else:
+                        target.unlink(missing_ok=True)
+                except OSError:
+                    target.unlink(missing_ok=True)
+                break
+        except (FileNotFoundError, OSError):
+            continue
 def _future_result(future: Any, job: dict[str, Any], state_path: Path, state: dict[str, Any]) -> dict[str, Any]:
     try:
         result = future.result()
@@ -669,7 +672,6 @@ def _future_result(future: Any, job: dict[str, Any], state_path: Path, state: di
             {"status": "command_failed", "returncode": 125, "error": detail,
              "launch_count": launch_count, **job},
         )
-
 
 def _run_queue_locked(
     plan: dict[str, Any],
@@ -740,15 +742,20 @@ def _run_queue_locked(
             parent_reports[parent] = {"status": first.get("status") or "command_failed"}
             continue
         report = None
+        parent_summary = Path(parent) / "parallel_summary.json"
         terminal_status = "missing"
         for job in eligible:
             candidate, candidate_status = _terminal_report(job)
             if candidate_status == "terminal_verdict_conflict":
                 terminal_status = candidate_status
                 break
-            if candidate is not None:
+            if candidate is not None and candidate != parent_summary:
+                # A task report is the queue's new evidence.  Prefer it over
+                # the cumulative parent summary even when the latter is also
+                # terminal for an earlier index.
                 report, terminal_status = candidate, candidate_status
-                break
+            elif candidate is not None and report is None:
+                report, terminal_status = candidate, candidate_status
         if terminal_status == "terminal_verdict_conflict":
             parent_reports[parent] = {"status": terminal_status}
             continue
@@ -766,8 +773,6 @@ def _run_queue_locked(
     state.update({"status": "done", "counts": counts, "parent_reports": parent_reports})
     _write_state(state_path, state)
     return state
-
-
 def run_queue(plan_path: Path, output_dir: Path, *, workers: int) -> dict[str, Any]:
     if not 1 <= workers <= 4:
         raise ValueError("workers must be between 1 and 4")
@@ -777,14 +782,12 @@ def run_queue(plan_path: Path, output_dir: Path, *, workers: int) -> dict[str, A
     with ParentEvalLock(output_dir, f"rejudge-queue-{queue_id}", blocking=False):
         return _run_queue_locked(plan, output_dir, workers=workers, queue_id=queue_id)
 
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--workers", type=int, default=2)
     return parser
-
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)

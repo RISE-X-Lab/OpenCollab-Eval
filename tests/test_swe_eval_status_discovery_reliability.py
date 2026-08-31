@@ -6,9 +6,14 @@ from swe_eval_status_support import (
     build_snapshots,
     discover_eval_reports,
     discovery_mod,
+    importlib,
     json,
+    os,
     pytest,
     row_patch_sha,
+    signal,
+    subprocess,
+    time,
 )
 
 from opencollab_eval.engine import swe_eval_records
@@ -126,3 +131,65 @@ def test_record_alias_conflicts_are_not_resolved_by_field_order():
     assert swe_eval_records.row_explicit_patch_sha(
         {"patch_sha256": "a" * 64, "patch_sha": "b" * 64}
     ) == ""
+
+
+def test_expired_claim_retains_live_group_when_identity_probe_is_unknown(
+    monkeypatch, tmp_path
+):
+    runner = importlib.import_module(
+        "opencollab_eval.commands.run_swebench_eval_per_instance"
+    )
+    process = subprocess.Popen(
+        [
+            runner.sys.executable,
+            "-c",
+            "import subprocess,sys,time; subprocess.Popen([sys.executable, "
+            "'-c', 'import time; time.sleep(30)']); time.sleep(.2)",
+        ],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    work_dir = tmp_path / "eval"
+    identity = {
+        "instance_id": "task-1",
+        "record_id": "r1",
+        "patch_sha256": "a" * 64,
+    }
+    claim_path = runner._claim_path(work_dir, "task-1")
+    try:
+        expected = runner.process_start_identity(process.pid)
+        time_limit = time.monotonic() + 2
+        while not runner._process_group_exists(process.pid) and time.monotonic() < time_limit:
+            runner.time.sleep(0.01)
+        process.wait(timeout=2)
+        monkeypatch.setattr(runner, "process_start_identity", lambda _pid: "")
+        runner._write_json_atomic(
+            claim_path,
+            {
+                "schema": "opencollab.swe_eval_claim.v1",
+                **identity,
+                "owner_token": "old-owner",
+                "status": "cleanup_failed",
+                "lease_until_ns": 1,
+                "evaluator_pgid": process.pid,
+                "evaluator_start_identity": expected or "proc:expected",
+            },
+        )
+        acquired, returned_path = runner.acquire_claim(
+            work_dir, "task-1", identity, lease_seconds=10, owner_token="new-owner"
+        )
+        retained = json.loads(claim_path.read_text(encoding="utf-8"))
+        assert acquired is False
+        assert returned_path == claim_path
+        assert retained["owner_token"] == "old-owner"
+    finally:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            process.kill()

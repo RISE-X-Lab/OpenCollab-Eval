@@ -187,11 +187,22 @@ class TokenBudgetGuard:
             output = self._UNKNOWN_OUTPUT_RESERVATION
         with self._lock:
             observed_request = self._request_estimate_by_llm.get(id(llm), 0)
+            remaining = self.limit - self.spent - self.reserved
         # Once one response has supplied real usage, reserve that observed
         # request size rather than the provider's much larger output ceiling.
         # If a later request genuinely grows beyond the estimate, ``record``
         # measures the delta and enforces the hard aggregate budget then.
-        return observed_request if observed_request > 0 else min(output, self.limit)
+        estimate = observed_request if observed_request > 0 else min(output, self.limit)
+        # A previous request can be much larger than the next one.  Never let
+        # that historical estimate reject a call solely because less budget
+        # remains: the provider's actual usage is authoritative and ``record``
+        # still raises if the call crosses the hard aggregate limit.  Keep a
+        # positive estimate when no budget remains so ``reserve`` preserves
+        # its existing RuntimeError contract instead of failing with the
+        # invalid-input ValueError used for non-positive reservations.
+        if remaining > 0:
+            estimate = min(estimate, remaining)
+        return estimate
 
     def reserve(self, request_upper_bound: int) -> int:
         if isinstance(request_upper_bound, bool) or request_upper_bound <= 0:

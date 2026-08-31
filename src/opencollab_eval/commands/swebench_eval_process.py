@@ -503,6 +503,17 @@ def process_start_identity(pid: int) -> str:
 
 
 def _claim_residual_group_is_live(claim: dict) -> bool:
+    """Return whether a persisted evaluator group must retain its claim.
+
+    A positive process-group probe is enough to establish that cleanup is not
+    quiescent.  The start-identity probe is an ownership check only when it
+    returns a value: an empty result is an *unknown* probe (for example, a
+    transient ``ps`` timeout), not proof that the group disappeared or was
+    reused.  Reclaiming in that state can launch a second evaluator against
+    the same worktree, so retain the claim conservatively until the group is
+    observed gone.  A non-empty mismatch still proves that the old evaluator
+    is no longer the recorded process and permits reclamation.
+    """
     try:
         pgid = int(claim.get("evaluator_pgid") or 0)
     except (TypeError, ValueError):
@@ -511,11 +522,12 @@ def _claim_residual_group_is_live(claim: dict) -> bool:
         return False
     expected_start = str(claim.get("evaluator_start_identity") or "")
     current_start = _runner().process_start_identity(pgid)
-    # A persisted start identity is an ownership assertion, not advisory
-    # metadata.  An empty probe means that ownership could not be verified
-    # (for example, a bounded ``ps`` probe timed out), so retaining/renewing
-    # the lease would be fail-open and could strand a stale claim forever.
-    if expected_start and (not current_start or expected_start != current_start):
+    # An empty identity is unknown, not a dead/reused group.  Never reclaim a
+    # live group on that transient observation: doing so can start a second
+    # evaluator while the first one's descendants still mutate the worktree.
+    if not current_start:
+        return True
+    if expected_start and expected_start != current_start:
         return False
     return True
 

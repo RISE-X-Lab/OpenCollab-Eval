@@ -19,6 +19,14 @@ _MAX_PREPARATION_TIMEOUT_SECONDS = 86_400.0
 _PROCESS_SCAN_TIMEOUT_SECONDS = 1.0
 _MAX_PROCESS_SCAN_OUTPUT_BYTES = 4 * 1024 * 1024
 _PROCESS_SCAN_INTERVAL_SECONDS = 0.05
+# On hosts without a child subreaper, keep the shell supervisor alive long
+# enough for the parent-process sampler to observe a child that has detached
+# from the script's job table (for example after ``disown`` + ``setsid``).
+# The grace is bounded by the same one-second inspection budget and is only
+# used on the non-``/proc`` fallback path.
+_NON_PROC_POST_SCRIPT_GRACE_SECONDS = (
+    _PROCESS_SCAN_TIMEOUT_SECONDS + _PROCESS_SCAN_INTERVAL_SECONDS
+)
 _PR_SET_CHILD_SUBREAPER = 36
 _REAL_POPEN = subprocess.Popen
 
@@ -508,7 +516,9 @@ def run_public_preparation(script: Path, log_path: Path, workspace: Path) -> int
             (
                 "trap 'status=$?; trap - EXIT; "
                 'for pid in $(jobs -pr); do kill -KILL "$pid" 2>/dev/null; done; '
-                'wait; exit "$status"' "' EXIT; . \"$1\""
+                'wait; '
+                f"sleep {_NON_PROC_POST_SCRIPT_GRACE_SECONDS:g}; "
+                'exit "$status"' "' EXIT; . \"$1\""
             ),
             "opencollab-preparation-supervisor",
             str(script),

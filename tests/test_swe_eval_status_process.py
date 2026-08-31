@@ -29,11 +29,40 @@ def test_per_instance_decodes_wait_status_without_python39_helper(monkeypatch):
 
 
 @pytest.mark.skipif(not hasattr(os, "killpg"), reason="identity claims use POSIX process groups")
-def test_residual_group_with_unavailable_identity_probe_is_not_retained(monkeypatch):
+def test_residual_group_with_unavailable_identity_probe_is_retained(monkeypatch):
     process = importlib.import_module("opencollab_eval.commands.swebench_eval_process")
     monkeypatch.setattr(process, "_runner", lambda: process)
     monkeypatch.setattr(process, "_process_group_exists", lambda _pgid: True)
     monkeypatch.setattr(process, "process_start_identity", lambda _pgid: "")
+
+    assert process._claim_residual_group_is_live(
+        {
+            "evaluator_pgid": 424242,
+            "evaluator_start_identity": "proc:expected",
+        }
+    ) is True
+
+
+@pytest.mark.skipif(not hasattr(os, "killpg"), reason="identity claims use POSIX process groups")
+def test_residual_group_with_identity_mismatch_is_reclaimable(monkeypatch):
+    process = importlib.import_module("opencollab_eval.commands.swebench_eval_process")
+    monkeypatch.setattr(process, "_runner", lambda: process)
+    monkeypatch.setattr(process, "_process_group_exists", lambda _pgid: True)
+    monkeypatch.setattr(process, "process_start_identity", lambda _pgid: "proc:actual")
+
+    assert process._claim_residual_group_is_live(
+        {
+            "evaluator_pgid": 424242,
+            "evaluator_start_identity": "proc:expected",
+        }
+    ) is False
+
+
+@pytest.mark.skipif(not hasattr(os, "killpg"), reason="identity claims use POSIX process groups")
+def test_residual_group_absence_is_reclaimable(monkeypatch):
+    process = importlib.import_module("opencollab_eval.commands.swebench_eval_process")
+    monkeypatch.setattr(process, "_runner", lambda: process)
+    monkeypatch.setattr(process, "_process_group_exists", lambda _pgid: False)
 
     assert process._claim_residual_group_is_live(
         {
