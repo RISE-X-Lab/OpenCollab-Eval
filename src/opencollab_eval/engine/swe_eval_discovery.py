@@ -551,14 +551,29 @@ def _discover_eval_artifacts(
 
     reports: list[EvalReport] = []
     for report, path, report_stat in reports_with_paths:
-        if report.patch_sha:
+        attempt = attempts.get(report.task_id)
+        # Legacy batch reports may carry the evaluated patch hash but omit
+        # ``record_id``.  Once an attempt sidecar exists, leaving that report
+        # unbound allows the synthetic sidecar failure (which has the record
+        # id) to win the current-candidate summary.  Bind only a matching
+        # task+patch report that was created/changed after the attempt; an
+        # unchanged pre-attempt report must remain legacy evidence and still
+        # be shadowed by the conservative synthetic failure below.
+        can_bind_legacy_identity = bool(
+            report.patch_sha
+            and not report.record_id
+            and attempt is not None
+            and attempt.status in REPORT_BINDING_ATTEMPT_STATUSES
+            and patch_sha_matches(report.patch_sha, attempt.patch_sha)
+        )
+        if report.patch_sha and not can_bind_legacy_identity:
             reports.append(report)
             continue
-        attempt = attempts.get(report.task_id)
         if attempt is None or attempt.status not in REPORT_BINDING_ATTEMPT_STATUSES:
             reports.append(report)
             continue
         report_mtime_ns = report_stat.st_mtime_ns
+        fresh_for_attempt = False
         if attempt.prior_reports is not None:
             try:
                 relative = str(path.relative_to(side_dir))
@@ -571,6 +586,9 @@ def _discover_eval_artifacts(
             ):
                 reports.append(report)
                 continue
+            fresh_for_attempt = prior_fingerprint is None or (
+                _report_stat_fingerprint(report_stat) != prior_fingerprint
+            )
         elif (
             attempt.prior_report_fingerprint is not None
             and path == Path(attempt.path).with_name("report.json")
@@ -582,10 +600,18 @@ def _discover_eval_artifacts(
             ):
                 reports.append(report)
                 continue
+            fresh_for_attempt = bool(
+                attempt.prior_report_fingerprint
+                and _report_stat_fingerprint(report_stat)
+                != attempt.prior_report_fingerprint
+            )
         elif attempt.prior_reports is None:
             reports.append(report)
             continue
         if report_mtime_ns < attempt.started_at_ns:
+            reports.append(report)
+            continue
+        if can_bind_legacy_identity and not fresh_for_attempt:
             reports.append(report)
             continue
         reports.append(

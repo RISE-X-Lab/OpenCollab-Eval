@@ -719,6 +719,133 @@ def test_auto_eval_binds_changed_prior_report_to_new_attempt(tmp_path):
     assert reports[0].record_id == "new-record"
     assert reports[0].resolved_count == 1
 
+
+def test_auto_eval_binds_changed_legacy_report_with_patch_but_no_record(tmp_path):
+    """A rewritten batch result inherits the matching attempt record identity."""
+    side_dir = tmp_path / "official_eval_auto"
+    attempt_dir = side_dir / ".opencollab" / "attempts"
+    attempt_dir.mkdir(parents=True)
+    report_path = side_dir / "summary.json"
+    patch_sha = "a" * 64
+    report_path.write_text(
+        json.dumps({"task-1": {"resolved": False, "patch_sha256": patch_sha}}),
+        encoding="utf-8",
+    )
+    prior_fingerprint = discovery_mod._report_stat_fingerprint(report_path.stat())
+    started_at_ns = time.time_ns()
+    (attempt_dir / "current.json").write_text(
+        json.dumps(
+            {
+                "schema": "opencollab.swe_eval_attempt.v1",
+                "instance_id": "task-1",
+                "record_id": "r1",
+                "patch_sha256": patch_sha,
+                "started_at_ns": started_at_ns,
+                "status": "completed",
+                "pid": 0,
+                "evaluator_pgid": 0,
+                "prior_reports": {"summary.json": prior_fingerprint},
+            }
+        ),
+        encoding="utf-8",
+    )
+    report_path.write_text(
+        json.dumps({"task-1": {"resolved": True, "patch_sha256": patch_sha}}),
+        encoding="utf-8",
+    )
+    changed_ns = max(time.time_ns(), started_at_ns + 1)
+    os.utime(report_path, ns=(changed_ns, changed_ns))
+
+    reports = discovery_mod.discover_eval_reports(side_dir)
+
+    assert len(reports) == 1
+    assert reports[0].record_id == "r1"
+    assert reports[0].status == "done"
+    assert reports[0].resolved_count == 1
+
+
+def test_auto_eval_binds_new_legacy_report_with_patch_but_no_record(tmp_path):
+    """A report absent from the prior fingerprint set is new attempt evidence."""
+    side_dir = tmp_path / "official_eval_auto"
+    attempt_dir = side_dir / ".opencollab" / "attempts"
+    attempt_dir.mkdir(parents=True)
+    patch_sha = "a" * 64
+    started_at_ns = time.time_ns()
+    (attempt_dir / "current.json").write_text(
+        json.dumps(
+            {
+                "schema": "opencollab.swe_eval_attempt.v1",
+                "instance_id": "task-1",
+                "record_id": "r1",
+                "patch_sha256": patch_sha,
+                "started_at_ns": started_at_ns,
+                "status": "completed",
+                "pid": 0,
+                "evaluator_pgid": 0,
+                "prior_reports": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    report_path = side_dir / "new-summary.json"
+    report_path.write_text(
+        json.dumps({"task-1": {"resolved": True, "patch_sha256": patch_sha}}),
+        encoding="utf-8",
+    )
+    changed_ns = max(time.time_ns(), started_at_ns + 1)
+    os.utime(report_path, ns=(changed_ns, changed_ns))
+
+    reports = discovery_mod.discover_eval_reports(side_dir)
+
+    assert len(reports) == 1
+    assert reports[0].record_id == "r1"
+    assert reports[0].status == "done"
+
+
+def test_auto_eval_does_not_bind_unchanged_legacy_report_with_patch_but_no_record(
+    tmp_path,
+):
+    """An unchanged pre-attempt result must still produce a technical sidecar result."""
+    side_dir = tmp_path / "official_eval_auto"
+    attempt_dir = side_dir / ".opencollab" / "attempts"
+    attempt_dir.mkdir(parents=True)
+    report_path = side_dir / "summary.json"
+    patch_sha = "a" * 64
+    report_path.write_text(
+        json.dumps({"task-1": {"resolved": True, "patch_sha256": patch_sha}}),
+        encoding="utf-8",
+    )
+    prior_fingerprint = discovery_mod._report_stat_fingerprint(report_path.stat())
+    started_at_ns = time.time_ns()
+    (attempt_dir / "current.json").write_text(
+        json.dumps(
+            {
+                "schema": "opencollab.swe_eval_attempt.v1",
+                "instance_id": "task-1",
+                "record_id": "r1",
+                "patch_sha256": patch_sha,
+                "started_at_ns": started_at_ns,
+                "status": "completed",
+                "pid": 0,
+                "evaluator_pgid": 0,
+                "prior_reports": {"summary.json": prior_fingerprint},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    reports = discovery_mod.discover_eval_reports(side_dir)
+    summary = discovery_mod.summarize_eval_reports(
+        reports,
+        task_id="task-1",
+        current_patch_sha=patch_sha,
+        current_record_id="r1",
+    )
+
+    assert any(report.record_id == "" and report.status == "done" for report in reports)
+    assert summary.done_count == 0
+    assert summary.failed_count == 1
+
 def test_per_instance_release_does_not_delete_successor_claim(tmp_path):
     runner = importlib.import_module("opencollab_eval.commands.run_swebench_eval_per_instance")
     identity = {
