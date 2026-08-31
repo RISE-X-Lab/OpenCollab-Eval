@@ -82,6 +82,45 @@ def test_module_download_progress_does_not_hide_a_successful_target() -> None:
     assert go_pass_proof_matches(proof, log)
 
 
+def test_toolchain_download_progress_does_not_hide_a_successful_target() -> None:
+    """Go's automatic toolchain selection can precede the JSON event stream."""
+    proof = {
+        "kind": "go_json_test_pass",
+        "test": "TestEvaluate",
+        "package": "./internal/server",
+        "test_file": "internal/server/evaluator_test.go",
+    }
+    package = "example.invalid/project/internal/server"
+    events = (
+        {"Action": "start", "Package": package},
+        {"Action": "run", "Package": package, "Test": "TestEvaluate"},
+        {
+            "Action": "output",
+            "Package": package,
+            "Test": "TestEvaluate",
+            "Output": "ok\n",
+        },
+        {"Action": "pass", "Package": package, "Test": "TestEvaluate"},
+        {"Action": "pass", "Package": package},
+    )
+    event_log = "\n".join(json.dumps(event) for event in events)
+
+    assert go_pass_proof_matches(
+        proof,
+        "go: downloading go1.21.0 (linux/amd64)\n" + event_log,
+    )
+    assert go_pass_proof_matches(
+        proof,
+        "go: downloading go1.21rc3\n" + event_log,
+    )
+    # Do not turn an arbitrary diagnostic that resembles the prefix into a
+    # successful proof.
+    assert not go_pass_proof_matches(
+        proof,
+        "go: downloading go1.21.0 (linux/amd64) unexpected\n" + event_log,
+    )
+
+
 def test_external_test_package_plain_build_failure_proves_target_failure():
     command = "exact discovery command"
     log = "\n".join(
