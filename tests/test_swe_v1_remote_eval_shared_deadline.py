@@ -5,6 +5,8 @@ import subprocess
 import time
 from pathlib import Path
 
+import pytest
+
 from opencollab_eval.engine import swe_v1_remote_eval_script
 from opencollab_eval.engine import swe_v1_remote_test_plan as plans
 
@@ -13,7 +15,10 @@ def test_direct_eval_wires_one_deadline_to_both_test_phases() -> None:
     script = swe_v1_remote_eval_script.direct_eval_script()
     evaluation_source = Path(
         "src/opencollab_eval/engine/swe_v1_remote_evaluation.py"
-    ).read_text(encoding="utf-8")
+    )
+    if not evaluation_source.is_file():
+        pytest.skip("evaluation source is unavailable in the installed-wheel contract")
+    evaluation_source = evaluation_source.read_text(encoding="utf-8")
 
     assert "OPENCOLLAB_EVAL_TIMEOUT_SECONDS" in script
     assert "export OPENCOLLAB_EVAL_DEADLINE" in script

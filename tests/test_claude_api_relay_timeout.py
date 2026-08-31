@@ -16,6 +16,8 @@ MAX_TIMEOUT = 6 * 60 * 60 + 60
 def _load_relay(
     monkeypatch: pytest.MonkeyPatch, *, unix: bool, timeout: str
 ) -> ModuleType:
+    if not RELAY.is_file():
+        pytest.skip("relay source is unavailable in the installed-wheel contract")
     if unix:
         monkeypatch.setenv("CLAUDE_RELAY_UPSTREAM_UNIX", "/tmp/fake-upstream.sock")
         monkeypatch.delenv("CLAUDE_RELAY_UPSTREAM", raising=False)
