@@ -468,3 +468,26 @@ def test_queue_counts_a_mirrored_top_level_row_only_once(tmp_path):
     )
 
     assert queue._observed_eval_attempts(job) == 3
+
+
+def test_queue_preserves_distinct_nested_duplicate_attempt_ledgers(tmp_path):
+    """Rows from separate nested result ledgers retain their cumulative counts."""
+    plan, parent = _plan(tmp_path)
+    job = queue._read_plan(plan)["jobs"][0]
+    row = {
+        "index": job["index"],
+        "task": job["task"],
+        "generation": {
+            "record_id": job["record_id"],
+            "patch_sha256": job["source_patch_sha256"],
+            "source_patch_sha256": job["source_patch_sha256"],
+            "eval_patch_sha256": job["eval_patch_sha256"],
+        },
+        "eval": {"status": "technical_eval_failed", "attempt_count": 3},
+    }
+    (parent / "parallel_summary.json").write_text(
+        json.dumps({"results": [{"rows": [row]}, {"rows": [row]}]}),
+        encoding="utf-8",
+    )
+
+    assert queue._observed_eval_attempts(job) == 6

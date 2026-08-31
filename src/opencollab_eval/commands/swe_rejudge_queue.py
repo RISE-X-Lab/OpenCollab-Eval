@@ -308,15 +308,15 @@ def _observed_eval_attempts(job: dict[str, Any]) -> int:
     if parent_summary.is_file():
         report = _swe_report_io.load_json(parent_summary)
         total = 0
-        seen_rows: set[str] = set()
-        for row in _report_rows(report):
+        top_rows = [row for row in report.get("rows") or [] if isinstance(row, dict)]
+        top_row_keys = {json.dumps(row, sort_keys=True, separators=(",", ":")) for row in top_rows}
+        rows = top_rows + [
+            row for row in _report_rows(report)[len(top_rows):]
+            if json.dumps(row, sort_keys=True, separators=(",", ":")) not in top_row_keys
+        ]
+        for row in rows:
             if not _row_index_matches(row, job) or not _row_matches_job(row, job):
                 continue
-            # Legacy summaries may mirror this row at top level and in results.
-            row_key = json.dumps(row, sort_keys=True, separators=(",", ":"))
-            if row_key in seen_rows:
-                continue
-            seen_rows.add(row_key)
             evaluation = row.get("eval")
             if isinstance(evaluation, dict):
                 count = strict_integer(
