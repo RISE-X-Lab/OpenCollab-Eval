@@ -26,6 +26,22 @@ DEFAULT_THINKING_PARAMS = {"enable_thinking": True}
 _CONTROLLED_STOP_REASONS = frozenset(
     {"budget_exceeded", "context_overflow", "step_limit_exceeded", "timeout"}
 )
+_CONTROLLED_STOP_REASON_PREFIXES = (
+    "budget exceeded:",
+    "budget exhausted before model call:",
+    "team budget exceeded:",
+    "step limit reached:",
+    "context overflow:",
+)
+
+
+def _is_controlled_stop_reason(reason: object) -> bool:
+    if not isinstance(reason, str):
+        return False
+    normalized = reason.strip().lower()
+    return normalized in _CONTROLLED_STOP_REASONS or normalized.startswith(
+        _CONTROLLED_STOP_REASON_PREFIXES
+    )
 
 
 def _workflow_concurrency() -> int:
@@ -118,9 +134,8 @@ class _EvalRunRecord:
             return "OpenCollab session did not quiesce"
         if self.result.status == "completed":
             return None
-        if (
-            self.result.status == "stopped"
-            and self.result.reason in _CONTROLLED_STOP_REASONS
+        if self.result.status == "stopped" and _is_controlled_stop_reason(
+            self.result.reason
         ):
             return None
         return self.result.reason or self.result.status

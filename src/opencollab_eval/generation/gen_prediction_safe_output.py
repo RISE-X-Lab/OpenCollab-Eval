@@ -21,6 +21,7 @@ from opencollab_eval.safe_files import (
     write_regular_bytes_atomic,
 )
 
+from .gen_prediction_agent import _controlled_stop_status
 from .gen_prediction_constants import (
     HARNESS_LOCK_TIMEOUT_SECONDS,
     MAX_OUTPUT_JSONL_BYTES,
@@ -372,12 +373,10 @@ def complete_single_agent_integrity(
     metrics["submission_eligible"] = (
         metrics.get("submission_eligible") is True and proof_valid
     )
-    if patch.strip() and proof_valid and metrics.get("workflow_status") in {
-        "budget_exceeded",
-        "step_limit_exceeded",
-        "context_overflow",
-    }:
-        metrics["workflow_status"] = "done_with_timeout_patch"
+    if patch.strip() and proof_valid:
+        controlled_status = _controlled_stop_status(metrics.get("workflow_status"))
+        if controlled_status is not None:
+            metrics["workflow_status"] = controlled_status
 
 
 def normalize_trusted_extraction_status(metrics: dict, patch: str) -> None:

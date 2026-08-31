@@ -7,7 +7,16 @@ from opencollab_eval.generation import gen_prediction_safe_output as safe_output
 
 @pytest.mark.parametrize(
     "reason",
-    ["budget_exceeded", "step_limit_exceeded", "context_overflow"],
+    [
+        "budget_exceeded",
+        "budget exceeded: 100 tokens used",
+        "budget exhausted before model call: no output headroom",
+        "team budget exceeded: aggregate spend reached the global cap",
+        "step_limit_exceeded",
+        "step limit reached: 4 steps",
+        "context_overflow",
+        "context overflow: prompt exceeds the model context window",
+    ],
 )
 def test_trusted_controlled_stop_patch_uses_timeout_contract(
     monkeypatch: pytest.MonkeyPatch, reason: str
@@ -50,7 +59,7 @@ def test_empty_controlled_stop_patch_remains_ineligible(
         lambda metrics, candidate: True,
     )
     metrics = {
-        "workflow_status": "budget_exceeded",
+        "workflow_status": "budget exceeded: 100 tokens used",
         "execution_quiesced": True,
         "submission_eligible": True,
     }
@@ -62,5 +71,30 @@ def test_empty_controlled_stop_patch_remains_ineligible(
         patch_extraction_succeeded=True,
     )
 
-    assert metrics["workflow_status"] == "budget_exceeded"
+    assert metrics["workflow_status"] == "budget exceeded: 100 tokens used"
     assert metrics["submission_eligible"] is False
+
+
+@pytest.mark.parametrize("reason", ["cancelled", "loop block limit reached: 3"])
+def test_uncontrolled_stop_patch_keeps_original_status(
+    monkeypatch: pytest.MonkeyPatch, reason: str
+) -> None:
+    patch = "+fixed\n"
+    monkeypatch.setattr(
+        safe_output,
+        "current_generation_proof_valid",
+        lambda metrics, candidate: True,
+    )
+    metrics = {
+        "workflow_status": reason,
+        "execution_quiesced": True,
+        "submission_eligible": True,
+    }
+
+    safe_output.complete_single_agent_integrity(
+        metrics,
+        patch=patch,
+        patch_extraction_succeeded=True,
+    )
+
+    assert metrics["workflow_status"] == reason
