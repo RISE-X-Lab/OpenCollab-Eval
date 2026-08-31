@@ -297,3 +297,51 @@ def test_queue_quarantine_does_not_overwrite_existing_backup(tmp_path, monkeypat
     assert (parent / "task_25_eval_only_partial.json.invalid.1").read_text(
         encoding="utf-8"
     ) == "bad"
+
+
+@pytest.mark.parametrize("alias", ["task", "instance_id", "task_id"])
+def test_queue_accepts_legacy_task_identity_aliases(tmp_path, monkeypatch, alias):
+    """Legacy rows remain reusable when their canonical task alias is present."""
+    _accept_terminal(monkeypatch)
+    plan, parent = _plan(tmp_path)
+    job = queue._read_plan(plan)["jobs"][0]
+    row = {
+        "index": job["index"],
+        alias: job["task"],
+        "generation": {
+            "record_id": job["record_id"],
+            "patch_sha256": job["source_patch_sha256"],
+            "source_patch_sha256": job["source_patch_sha256"],
+            "eval_patch_sha256": job["eval_patch_sha256"],
+        },
+        "eval": {"status": "eval_done", "summary": {"resolved": True}},
+    }
+    report = parent / "parallel_summary.json"
+    report.write_text(json.dumps({"rows": [row]}), encoding="utf-8")
+
+    assert queue._candidate_identity_status(job) == "verified"
+    assert queue._terminal_report(job) == (report, "verified")
+
+
+def test_queue_rejects_conflicting_legacy_task_aliases(tmp_path):
+    """Conflicting task aliases must not silently choose one identity."""
+    plan, parent = _plan(tmp_path)
+    job = queue._read_plan(plan)["jobs"][0]
+    row = {
+        "index": job["index"],
+        "task": job["task"],
+        "instance_id": "instance_owner__other-25",
+        "generation": {
+            "record_id": job["record_id"],
+            "patch_sha256": job["source_patch_sha256"],
+            "source_patch_sha256": job["source_patch_sha256"],
+            "eval_patch_sha256": job["eval_patch_sha256"],
+        },
+    }
+    (parent / "parallel_summary.json").write_text(
+        json.dumps({"rows": [row]}), encoding="utf-8"
+    )
+
+    assert queue._row_identity(row) is None
+    assert queue._candidate_identity_status(job) == "candidate_identity_missing"
+    assert queue._terminal_report(job) == (None, "missing")

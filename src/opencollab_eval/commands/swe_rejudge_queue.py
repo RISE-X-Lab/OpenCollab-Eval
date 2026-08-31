@@ -29,6 +29,7 @@ from opencollab_eval.commands.swe_v1_prolite_report import (
     _has_quarantine_marker,
     quarantine_report,
 )
+from opencollab_eval.engine.swe_eval_record_identity import direct_payload_task_id
 from opencollab_eval.engine.swe_eval_records import strict_integer
 from opencollab_eval.safe_files import write_regular_bytes_atomic
 
@@ -188,7 +189,10 @@ def _row_identity(row: dict[str, Any]) -> tuple[str, str, str, str] | None:
     generation = row.get("generation")
     if not isinstance(generation, dict):
         return None
-    task = row.get("task")
+    # Historical reports use ``task``, ``instance_id`` or ``task_id``.  Keep
+    # the alias handling centralized so conflicting copies fail closed rather
+    # than silently binding a report to the wrong queue job.
+    task = direct_payload_task_id(row)
     record_id = generation.get("record_id")
     source_patch_sha256 = generation.get("source_patch_sha256") or generation.get("patch_sha256")
     eval_patch_sha256 = generation.get("eval_patch_sha256") or generation.get(
