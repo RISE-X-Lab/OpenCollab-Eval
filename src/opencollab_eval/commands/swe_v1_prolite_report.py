@@ -120,6 +120,62 @@ def _candidate_identity_matches(
     return observed[:3] == expected[:3]
 
 
+def candidate_row_is_admitted(
+    row: dict[str, Any], expected: tuple[str, str, str, str] | None
+) -> bool:
+    """Admit only an exact identity when this index is queue-bound."""
+    if expected is None:
+        return True
+    observed = _report_candidate_identity(row)
+    return observed is not None and _candidate_identity_matches(observed, expected)
+
+
+def load_candidate_identities_json(value: str | None) -> dict[int, tuple[str, str, str, str]]:
+    """Decode and strictly validate the queue's candidate identity map."""
+    if not value:
+        return {}
+    raw, error = _swe_report_io.load_json_with_error(Path(value))
+    if error:
+        raise ValueError(f"candidate identities are unavailable: {error}")
+    if not isinstance(raw, dict):
+        raise ValueError("candidate identities must be a JSON object")
+    converted: dict[int, object] = {}
+    for raw_index, identity in raw.items():
+        if not isinstance(raw_index, str) or not raw_index.isdecimal():
+            raise ValueError("candidate identity index must be an integer")
+        converted[int(raw_index)] = identity
+    normalized = _normalized_candidate_identities(converted)
+    if len(normalized) != len(converted):
+        raise ValueError("candidate identities contain an invalid identity")
+    return normalized
+
+
+def write_candidate_identities_file(
+    parent: Path,
+    values: Mapping[object, object],
+) -> Path:
+    """Persist a validated queue identity map in a hidden report-side file."""
+    normalized = _normalized_candidate_identities(values)
+    if len(normalized) != len(values):
+        raise ValueError("candidate identities contain an invalid identity")
+    path = parent / f".candidate-identities-{uuid.uuid4().hex}.json"
+    _swe_report_io.write_json(
+        path,
+        {str(index): list(identity) for index, identity in normalized.items()},
+    )
+    return path
+
+
+def remove_candidate_identities_file(path: Path | None) -> None:
+    """Best-effort cleanup that never masks the report result."""
+    if path is None:
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        return
+
+
 def _has_reconciliation_verdict(row: dict[str, Any]) -> bool:
     """Return whether a row carries a terminal eval verdict, not just evidence."""
     evaluation = row.get("eval") if isinstance(row.get("eval"), dict) else {}

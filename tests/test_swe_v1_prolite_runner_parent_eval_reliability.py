@@ -5,7 +5,13 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 
+from generation_proof_test_support import (
+    candidate_eval_proof_fields,
+    candidate_source_projection_fields,
+    trusted_summary_proof_fields,
+)
 from swe_v1_prolite_runner_test_support import runner
+from test_swe_eval_layer_report import _row
 
 
 def test_eval_only_reconciliation_scopes_late_verdict_to_planned_identity(tmp_path):
@@ -250,3 +256,71 @@ def test_update_parent_report_binds_legacy_candidate_without_eval_hash(
             "a" * 64,
         )
     }
+
+
+def test_update_parent_report_filters_old_same_index_candidate(tmp_path):
+    """A queue-bound rejudge must replace, not merge, an older parent candidate."""
+    from opencollab_eval.commands import swe_v1_prolite_controller as controller
+
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    task = "instance_owner__repo-82"
+
+    def make_row(record_id: str, source: str, evaluated: str, resolved: bool) -> dict:
+        value = _row(82, task, f"/run/{record_id}.log", 10, "eval_done", resolved)
+        value["generation"].update(
+            record_id=record_id,
+            patch_sha256=source,
+            source_patch_sha256=source,
+            eval_patch_sha256=evaluated,
+            **trusted_summary_proof_fields(source),
+        )
+        expectation, projection = candidate_eval_proof_fields(
+            task, record_id, source, evaluated
+        )
+        value["eval"]["summary"].update(
+            record_id=record_id,
+            patch_sha256=source,
+            eval_patch_sha256=evaluated,
+            candidate_expectation=expectation,
+            candidate_projection=projection,
+            source_candidate_projection=candidate_source_projection_fields(expectation),
+        )
+        return value
+
+    old = make_row("record-old", "a" * 64, "a" * 64, False)
+    current = make_row("record-current", "b" * 64, "c" * 64, True)
+    (parent / "parallel_summary.json").write_text(
+        json.dumps(
+            {
+                "schema": "opencollab.swe_parallel_runner.v2",
+                "indices": [82],
+                "results": [
+                    {
+                        "index": 82,
+                        "completed": True,
+                        "runner_status": "done",
+                        "rows": [old],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    child = parent / "task_82_eval_only_current.json"
+    child.write_text(json.dumps({"rows": [current]}), encoding="utf-8")
+
+    controller.update_parent_fact_report(
+        SimpleNamespace(
+            parent_output_dir=parent,
+            json_output=child,
+            usd_cny=None,
+            candidate_identities={82: (task, "record-current", "b" * 64, "c" * 64)},
+        )
+    )
+
+    final = json.loads((parent / "final_eval_layer_report.json").read_text())
+    assert final["counts"]["eval_success"] == 1
+    assert final["counts"]["resolved"] == 1
+    assert final["counts"]["technical_failed_final"] == 0
+    assert not list(parent.glob(".candidate-identities-*.json"))

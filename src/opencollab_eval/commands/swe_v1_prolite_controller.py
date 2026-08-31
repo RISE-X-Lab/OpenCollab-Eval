@@ -15,6 +15,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from opencollab_eval.commands import swe_v1_prolite_report as _p
 from opencollab_eval.commands.swe_v1_parent_eval_lock import (
     ParentEvalLock,  # noqa: F401
     parent_eval_lock,  # noqa: F401
@@ -44,7 +45,6 @@ from opencollab_eval.commands.swe_v1_prolite_process import (
     _restore_local_spawn_signals,
     terminate_local_process_group,
 )
-from opencollab_eval.commands.swe_v1_prolite_report import eval_only_reconciliation_reports
 from opencollab_eval.commands.swe_v1_transport_recovery import (
     RemoteRunnerUnavailable,
     matching_terminal_remote_summary,
@@ -58,6 +58,8 @@ from opencollab_eval.engine.swe_eval_records import strict_integer
 from opencollab_eval.engine.swe_v1_remote_state import (
     DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
 )
+
+eval_only_reconciliation_reports = _p.eval_only_reconciliation_reports
 
 _SSH_LIVENESS_OPTIONS = (
     "-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "ServerAliveInterval=30",
@@ -76,7 +78,6 @@ def _install_local_abort_handlers() -> dict[signal.Signals, Any]:
         previous[signum] = signal.getsignal(signum)
         signal.signal(signum, abort)
     return previous
-
 def _restore_local_abort_handlers(previous: dict[signal.Signals, Any]) -> None:
     for signum, handler in previous.items():
         signal.signal(signum, handler)
@@ -128,7 +129,6 @@ def prepare_runtime_summary(
             "verified": True,
         }
     }
-
 def _remote_payload(
     args: argparse.Namespace,
     *,
@@ -189,7 +189,6 @@ def _remote_payload(
         **expected_candidate_identity(args),
         "dry_run": args.dry_run,
     }
-
 def _recovery_runtime_tree(observed: dict[str, Any]) -> str:
     owner = observed.get("runner_owner")
     if not isinstance(owner, dict):
@@ -202,7 +201,6 @@ def _recovery_invocation_id(observed: dict[str, Any]) -> str:
         return ""
     value = str(owner.get("invocation_id") or "")
     return value if re.fullmatch(r"[0-9a-f]{32}", value) else ""
-
 def _validate_total_timeout(value: object) -> float:
     if isinstance(value, bool):
         raise ValueError("total_timeout must be finite and positive")
@@ -213,7 +211,6 @@ def _validate_total_timeout(value: object) -> float:
     if not math.isfinite(timeout) or timeout <= 0:
         raise ValueError("total_timeout must be finite and positive")
     return timeout
-
 def _remaining_timeout(deadline: float) -> float:
     """Return remaining time in the controller's end-to-end wall-clock budget."""
     if not math.isfinite(deadline):
@@ -240,10 +237,8 @@ def _remote_preflight_timeout_summary(
         "runtime_sync": runtime_sync or {"status": "not_started"},
         "remote_proxy": remote_proxy or {"status": "not_started"},
     }
-
 def probe_preexisting_remote_execution(**kwargs: Any) -> dict[str, Any] | None:
     return wait_for_remote_ownership_fact(**kwargs)
-
 def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
     defaults = {
         "run_id": "",
@@ -656,7 +651,6 @@ def _report_task_eval_counts(report: dict[str, Any]) -> dict[int, int]:
             continue
         counts[index] = counts.get(index, 0) + _row_eval_attempt_count(row)
     return counts
-
 def _final_report_task_eval_counts(report: dict[str, Any]) -> dict[int, int]:
     counts: dict[int, int] = {}
     for task in report.get("tasks") or []:
@@ -718,7 +712,6 @@ def apply_parent_eval_budget(args: argparse.Namespace) -> dict[str, Any] | None:
         "effective_max_eval_attempts": effective_additional_attempts,
         "projected_total_eval_attempts": projected_total_attempts,
     }
-
 def update_parent_fact_report(args: argparse.Namespace) -> dict[str, Any]:
     parent_output_dir = args.parent_output_dir.resolve()
     parent_summary = parent_output_dir / "parallel_summary.json"
@@ -769,22 +762,30 @@ def update_parent_fact_report(args: argparse.Namespace) -> dict[str, Any]:
     reconciliation_kwargs = {
         "ignored_paths": getattr(args, "ignored_reports", ()),
     }
+    candidate_identity_path: Path | None = None
     if candidate_identities is not None:
         reconciliation_kwargs["candidate_identities"] = candidate_identities
-    for report_path in eval_only_reconciliation_reports(
-        parent_output_dir,
-        args.json_output,
-        **reconciliation_kwargs,
-    ):
-        command.extend(["--report-json", str(report_path)])
-    token_cost = parent_output_dir / "parallel_token_cost_summary.json"
-    if token_cost.exists():
-        command.extend(["--token-cost-json", str(token_cost)])
-    if args.usd_cny is not None:
-        command.extend(["--usd-cny", str(args.usd_cny)])
-    proc = subprocess.run(command, text=True, capture_output=True, cwd=REPO_ROOT)
-    log_path = parent_output_dir / "eval_only_reconciliation.log"
-    log_path.write_text(proc.stdout + proc.stderr, encoding="utf-8", errors="replace")
+        candidate_identity_path = _p.write_candidate_identities_file(
+            parent_output_dir, candidate_identities
+        )
+        command.extend(["--candidate-identities-json", str(candidate_identity_path)])
+    try:
+        for report_path in eval_only_reconciliation_reports(
+            parent_output_dir,
+            args.json_output,
+            **reconciliation_kwargs,
+        ):
+            command.extend(["--report-json", str(report_path)])
+        token_cost = parent_output_dir / "parallel_token_cost_summary.json"
+        if token_cost.exists():
+            command.extend(["--token-cost-json", str(token_cost)])
+        if args.usd_cny is not None:
+            command.extend(["--usd-cny", str(args.usd_cny)])
+        proc = subprocess.run(command, text=True, capture_output=True, cwd=REPO_ROOT)
+        log_path = parent_output_dir / "eval_only_reconciliation.log"
+        log_path.write_text(proc.stdout + proc.stderr, encoding="utf-8", errors="replace")
+    finally:
+        _p.remove_candidate_identities_file(candidate_identity_path)
     if proc.returncode != 0:
         raise RuntimeError(f"parent fact report failed rc={proc.returncode}; see {log_path}")
     report_path = parent_output_dir / "final_eval_layer_report.json"
@@ -795,5 +796,4 @@ def update_parent_fact_report(args: argparse.Namespace) -> dict[str, Any]:
         "report_markdown": str(parent_output_dir / "final_eval_layer_report.md"),
         "counts": report.get("counts") if isinstance(report, dict) else {},
     }
-
 __all__ = [name for name in globals() if not name.startswith("__")]

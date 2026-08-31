@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 
+import pytest
 from generation_proof_test_support import (
     candidate_eval_proof_fields,
     candidate_source_projection_fields,
@@ -105,3 +106,40 @@ def test_reconciliation_retains_an_unexecuted_second_index(tmp_path):
     )
 
     assert set(selected) == {current, pending}
+
+
+def test_bound_parent_filter_rejects_malformed_same_index_row():
+    from opencollab_eval.commands.swe_v1_prolite_report import candidate_row_is_admitted
+
+    expected = ("instance_owner__repo-82", "record", "a" * 64, "b" * 64)
+    malformed = {
+        "index": 82,
+        "task": expected[0],
+        "generation": {
+            "source_patch_sha256": expected[2],
+        },
+    }
+    assert candidate_row_is_admitted(malformed, expected) is False
+
+
+def test_bound_parent_filter_accepts_source_only_legacy_identity():
+    from opencollab_eval.commands.swe_v1_prolite_report import candidate_row_is_admitted
+
+    task = "instance_owner__repo-82"
+    source = "a" * 64
+    row = {
+        "index": 82,
+        "task": task,
+        "generation": {
+            "record_id": "record",
+            "patch_sha256": source,
+        },
+    }
+    assert candidate_row_is_admitted(row, (task, "record", source, source)) is True
+
+
+def test_candidate_identity_file_is_fail_closed_when_missing(tmp_path):
+    from opencollab_eval.commands.swe_v1_prolite_report import load_candidate_identities_json
+
+    with pytest.raises(ValueError, match="unavailable"):
+        load_candidate_identities_json(str(tmp_path / "missing.json"))
