@@ -210,6 +210,13 @@ def _row_identity(row: dict[str, Any]) -> tuple[str, str, str, str] | None:
     ):
         return None
     return task, record_id, source_patch_sha256, eval_patch_sha256
+
+
+def _row_index_matches(row: dict[str, Any], job: dict[str, Any]) -> bool:
+    """Match legacy numeric-string indices without accepting lossy values."""
+    return strict_integer(row.get("index")) == job["index"]
+
+
 def _job_identity(job: dict[str, Any]) -> tuple[str, str, str, str]:
     return (
         job["task"],
@@ -230,7 +237,7 @@ def _row_matches_job(row: dict[str, Any], job: dict[str, Any]) -> bool:
 def _row_terminal(row: dict[str, Any], *, job: dict[str, Any]) -> bool:
     evaluation = row.get("eval")
     if (
-        row.get("index") != job["index"]
+        not _row_index_matches(row, job)
         or not _row_matches_job(row, job)
         or not isinstance(evaluation, dict)
         or evaluation.get("status") != "eval_done"
@@ -267,7 +274,7 @@ def _candidate_identity_status(job: dict[str, Any]) -> str:
             raise RuntimeError(f"queue report must be a regular file: {path}")
         report = _swe_report_io.load_json(path)
         for row in _report_rows(report):
-            if row.get("index") == job["index"] and (identity := _row_identity(row)):
+            if _row_index_matches(row, job) and (identity := _row_identity(row)):
                 identities.add(identity[:3])
     if _job_identity(job)[:3] in identities:
         return "verified"
@@ -314,7 +321,7 @@ def _observed_eval_attempts(job: dict[str, Any]) -> int:
             for row in result.get("rows") or []:
                 if (
                     isinstance(row, dict)
-                    and row.get("index") == job["index"]
+                    and _row_index_matches(row, job)
                     and _row_matches_job(row, job)
                 ):
                     evaluation = row.get("eval")
@@ -339,7 +346,7 @@ def _observed_eval_attempts(job: dict[str, Any]) -> int:
                 counts.append(count)
     return max(counts, default=0)
 def _final_task_matches_job(task: dict[str, Any], job: dict[str, Any]) -> bool:
-    if task.get("index") != job["index"] or task.get("task") != job["task"]:
+    if not _row_index_matches(task, job) or task.get("task") != job["task"]:
         return False
     record_id = task.get("record_id")
     source_sha = task.get("source_patch_sha256") or task.get("patch_sha256")

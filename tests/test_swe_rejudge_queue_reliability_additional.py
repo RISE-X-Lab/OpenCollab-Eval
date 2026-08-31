@@ -345,3 +345,42 @@ def test_queue_rejects_conflicting_legacy_task_aliases(tmp_path):
     assert queue._row_identity(row) is None
     assert queue._candidate_identity_status(job) == "candidate_identity_missing"
     assert queue._terminal_report(job) == (None, "missing")
+
+
+@pytest.mark.parametrize("legacy_index", ["25", " 25 "])
+def test_queue_normalizes_legacy_numeric_string_indices(tmp_path, monkeypatch, legacy_index):
+    """Legacy JSON reports may serialize the positive index as a string."""
+    _accept_terminal(monkeypatch)
+    plan, parent = _plan(tmp_path)
+    job = queue._read_plan(plan)["jobs"][0]
+    terminal = parent / "task_25_eval_only_legacy_index.json"
+    _terminal_report(
+        terminal,
+        index=job["index"],
+        patch_sha256=job["source_patch_sha256"],
+        resolved=True,
+    )
+    payload = json.loads(terminal.read_text(encoding="utf-8"))
+    payload["rows"][0]["index"] = legacy_index
+    terminal.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert queue._candidate_identity_status(job) == "verified"
+    assert queue._terminal_report(job) == (terminal, "verified")
+    assert queue._final_task_matches_job(
+        {
+            "index": legacy_index,
+            "task": job["task"],
+            "record_id": job["record_id"],
+            "patch_sha256": job["source_patch_sha256"],
+        },
+        job,
+    )
+
+    parent_row = json.loads(terminal.read_text(encoding="utf-8"))["rows"][0]
+    parent_row["index"] = legacy_index
+    parent_row["eval"]["attempt_count"] = 3
+    (parent / "parallel_summary.json").write_text(
+        json.dumps({"results": [{"rows": [parent_row]}]}),
+        encoding="utf-8",
+    )
+    assert queue._observed_eval_attempts(job) == 3
