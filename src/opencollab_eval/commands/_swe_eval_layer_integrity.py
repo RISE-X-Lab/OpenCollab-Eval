@@ -12,6 +12,7 @@ from typing import Any
 from opencollab_eval.engine.swe_eval_discovery import (
     _direct_eval_done_has_execution_proof,
 )
+from opencollab_eval.engine.swe_eval_record_identity import direct_payload_task_id
 from opencollab_eval.engine.swe_eval_records import strict_integer
 from opencollab_eval.engine.swe_generation_proof import (
     current_generation_summary_proof_valid,
@@ -35,6 +36,12 @@ class AttemptIntegrity:
 
 def _mapping(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _task_alias(value: Any) -> str:
+    """Read task/instance_id/task_id aliases, rejecting conflicts."""
+    task = direct_payload_task_id(value if isinstance(value, dict) else None)
+    return task or ""
 
 
 def _full_sha(value: Any) -> str:
@@ -63,7 +70,7 @@ def _empty_patch_integrity(row: dict[str, Any], task: str) -> AttemptIntegrity:
     patch_len = generation.get("patch_len")
     if isinstance(patch_len, bool) or patch_len != 0:
         reasons.append("empty_patch_length_invalid")
-    if str(generation.get("task") or "") != task:
+    if _task_alias(generation) != task:
         reasons.append("generation_task_mismatch")
     record_id = str(generation.get("record_id") or "")
     if not record_id:
@@ -96,7 +103,7 @@ def _empty_patch_integrity(row: dict[str, Any], task: str) -> AttemptIntegrity:
         or extraction.get("patch_bytes") != 0
     ):
         reasons.append("missing_trusted_empty_patch_proof")
-    if str(evaluation.get("task") or "") != task:
+    if _task_alias(evaluation) != task:
         reasons.append("evaluation_task_mismatch")
     if evaluation.get("status") != "skipped_empty_patch":
         reasons.append("empty_patch_eval_status_invalid")
@@ -119,7 +126,7 @@ def _empty_patch_integrity(row: dict[str, Any], task: str) -> AttemptIntegrity:
 
 
 def declared_empty_patch(row: dict[str, Any]) -> bool:
-    task = str(row.get("task") or row.get("instance_id") or "")
+    task = _task_alias(row)
     generation = _mapping(row.get("generation"))
     evaluation = _mapping(row.get("eval"))
     claims_empty = bool(
@@ -152,7 +159,7 @@ def attempt_integrity(row: dict[str, Any], task: str) -> AttemptIntegrity:
             if not generation_status
             else f"unexpected_generation_status:{generation_status}",
         )
-    if str(generation.get("task") or "") != task:
+    if _task_alias(generation) != task:
         _append_once(reasons, "generation_task_mismatch")
     record_id = str(generation.get("record_id") or "")
     if not record_id:
@@ -168,7 +175,7 @@ def attempt_integrity(row: dict[str, Any], task: str) -> AttemptIntegrity:
     generation_eval_sha = _full_sha(generation.get("eval_patch_sha256"))
     generation_filtered_paths = _filtered_paths(generation.get("filtered_patch_paths"))
 
-    if evaluation and str(evaluation.get("task") or "") != task:
+    if evaluation and _task_alias(evaluation) != task:
         _append_once(reasons, "evaluation_task_mismatch")
 
     terminal_or_recorded = bool(summary) or eval_status in {
@@ -182,7 +189,7 @@ def attempt_integrity(row: dict[str, Any], task: str) -> AttemptIntegrity:
     summary_eval_sha = _full_sha(summary.get("eval_patch_sha256"))
     summary_filtered_paths = _filtered_paths(summary.get("filtered_patch_paths"))
     if terminal_or_recorded:
-        if str(summary.get("task") or "") != task:
+        if _task_alias(summary) != task:
             _append_once(reasons, "eval_summary_task_mismatch")
         if not summary_record_id:
             _append_once(reasons, "missing_eval_record_id")
@@ -288,7 +295,7 @@ def row_attempt_identity(row: dict[str, Any]) -> dict[str, str] | None:
     if not isinstance(generation, dict) or not isinstance(summary, dict):
         return None
     identity = {
-        "task": str(row.get("task") or ""),
+        "task": _task_alias(row),
         "record_id": str(generation.get("record_id") or ""),
         "patch_sha256": str(
             generation.get("source_patch_sha256")

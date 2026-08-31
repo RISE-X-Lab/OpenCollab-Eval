@@ -146,6 +146,30 @@ def test_eval_only_reconciliation_accepts_legacy_task_id_alias(tmp_path):
 
     assert selected == [report]
 
+
+def test_task_id_only_legacy_row_survives_layer_build_report(tmp_path):
+    """The complete reconciliation/layer path accepts legacy task_id aliases."""
+    from test_swe_eval_layer_report import _row
+
+    from opencollab_eval.commands import swe_eval_layer_report
+
+    task = "instance_owner__repo-82"
+    row = _row(82, task, "/run/task-82.log", 10, "eval_done", True)
+    for container in (row, row["generation"], row["eval"], row["eval"]["summary"]):
+        container["task_id"] = container.pop("task")
+    report = tmp_path / "task_82_eval_only_legacy.json"
+    report.write_text(json.dumps({"rows": [row]}), encoding="utf-8")
+    source_sha = row["generation"]["patch_sha256"]
+    identity = (task, row["generation"]["record_id"], source_sha, source_sha)
+
+    result = swe_eval_layer_report.build_report(
+        [report], expected_indices=[82], candidate_identities={82: identity}
+    )
+
+    assert result["counts"]["eval_success"] == 1
+    assert result["counts"]["resolved"] == 1
+    assert result["counts"]["technical_failed_final"] == 0
+
 def test_eval_only_reconciliation_accepts_recomputed_eval_hash_and_execution_history(
     tmp_path,
 ):

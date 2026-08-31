@@ -31,7 +31,7 @@ def _patch_sha(row: dict[str, Any]) -> str:
     return generation_sha or evaluation_sha
 
 def _task_key(row: dict[str, Any]) -> str:
-    return str(row.get("task") or row.get("instance_id") or "")
+    return _integrity._task_alias(row)
 
 def _task_index(row: dict[str, Any]) -> int | None:
     return _integrity.strict_index(row.get("index"))
