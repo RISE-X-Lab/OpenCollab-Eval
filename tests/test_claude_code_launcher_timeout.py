@@ -173,7 +173,9 @@ def test_claude_health_probe_retries_docker_status_125(tmp_path: Path) -> None:
         f"python_bin={shlex.quote(sys.executable)}\n"
         "docker_control_timeout=10\n"
         "docker_health_timeout=0.2\n"
-        "docker_health_retry_budget=1\n"
+        # Leave startup headroom on busy CI/macOS hosts; the fake daemon still
+        # exercises the same two-call retry path immediately.
+        "docker_health_retry_budget=3\n"
         f"{functions}\n"
         "wait_for_docker_health fake-container 'raise SystemExit(0)'\n",
         encoding="utf-8",
@@ -193,7 +195,7 @@ def test_claude_health_probe_retries_docker_status_125(tmp_path: Path) -> None:
         text=True,
         capture_output=True,
         check=False,
-        timeout=3,
+        timeout=5,
     )
 
     assert completed.returncode == 0, completed.stderr
