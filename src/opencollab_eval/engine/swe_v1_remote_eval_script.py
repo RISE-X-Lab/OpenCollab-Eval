@@ -222,12 +222,43 @@ echo "$test_status" > /eval_output/test_patch.exit
 if [ "$base_commit_status" -eq 0 ] && [ "$before_repo_status" -eq 0 ] && [ "$post_before_base_status" -eq 0 ] && [ "$service_bootstrap_status" -eq 0 ] && [ "$model_status" -eq 0 ] && [ "$test_status" -eq 0 ]; then
   cp /eval_input/f2p.command /eval_output/f2p.command
   chmod 0644 /eval_output/f2p.command 2>/dev/null || true
-  bash /eval_input/f2p.sh > /eval_output/f2p.log 2>&1
-  echo "$?" > /eval_output/f2p.exit
   cp /eval_input/p2p.command /eval_output/p2p.command
   chmod 0644 /eval_output/p2p.command 2>/dev/null || true
-  bash /eval_input/p2p.sh > /eval_output/p2p.log 2>&1
-  echo "$?" > /eval_output/p2p.exit
+  # The host passes the configured per-task budget into the container.  Start
+  # one absolute monotonic deadline immediately before f2p and let both phase
+  # scripts consume its remaining time.  If the variable is absent (for
+  # compatibility with older manually assembled inputs), each script keeps
+  # its historical standalone timeout behavior.
+  eval_deadline_status=0
+  if [ -n "${OPENCOLLAB_EVAL_TIMEOUT_SECONDS:-}" ]; then
+    if ! eval_deadline="$(python3 -c 'import math,sys,time; v=float(sys.argv[1]); sys.exit(2) if not math.isfinite(v) or v <= 0 else print(time.monotonic()+v)' "$OPENCOLLAB_EVAL_TIMEOUT_SECONDS" 2>/dev/null)" || [ -z "$eval_deadline" ]; then
+      eval_deadline_status=1
+      echo "invalid OPENCOLLAB_EVAL_TIMEOUT_SECONDS" > /eval_output/f2p.log
+      echo "invalid OPENCOLLAB_EVAL_TIMEOUT_SECONDS" > /eval_output/p2p.log
+    else
+      export OPENCOLLAB_EVAL_DEADLINE="$eval_deadline"
+    fi
+  fi
+  if [ "$eval_deadline_status" -eq 0 ]; then
+    bash /eval_input/f2p.sh > /eval_output/f2p.log 2>&1
+    f2p_status=$?
+    echo "$f2p_status" > /eval_output/f2p.exit
+    # 125 means the phase could not prove its process-group cleanup.  Starting
+    # the second phase in that state would run it concurrently with an
+    # unowned descendant and contaminate the same checkout; fail closed and
+    # leave a durable status artifact instead.
+    if [ "$f2p_status" -eq 125 ]; then
+      p2p_status=125
+      echo "f2p cleanup was not proven; p2p was not started" > /eval_output/p2p.log
+    else
+      bash /eval_input/p2p.sh > /eval_output/p2p.log 2>&1
+      p2p_status=$?
+    fi
+    echo "$p2p_status" > /eval_output/p2p.exit
+  else
+    echo 124 > /eval_output/f2p.exit
+    echo 124 > /eval_output/p2p.exit
+  fi
 else
   echo 99 > /eval_output/f2p.exit
   echo 99 > /eval_output/p2p.exit

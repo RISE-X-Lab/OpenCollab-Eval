@@ -149,6 +149,34 @@ def test_gitlink_probe_filters_only_matching_baseline_oid(monkeypatch, tmp_path:
     assert command[-3:] == ["2" * 40, "--", "vendor/infogami"]
 
 
+def test_gitlink_probe_does_not_require_gnu_timeout(monkeypatch, tmp_path: Path) -> None:
+    """macOS and minimal images may not provide the external timeout utility."""
+    oid = "1" * 40
+    candidates = gitlink_deletion_candidates(_gitlink_delete("vendor/infogami", oid))
+    calls = _configure_probe(
+        monkeypatch,
+        tmp_path,
+        f"160000 commit {oid}\tvendor/infogami\0",
+    )
+    monkeypatch.setattr(probe.shutil, "which", lambda name: None)
+
+    result = probe.probe_gitlink_deletions(
+        task="instance_repo-1",
+        image="registry.example/repo:latest",
+        image_id="sha256:" + "9" * 64,
+        base_commit="2" * 40,
+        source_patch_sha256="3" * 64,
+        candidates=candidates,
+    )
+
+    assert result["ok"] is True
+    command, timeout = calls[0]
+    assert command[:2] == ["docker", "run"]
+    assert "timeout" not in command
+    # The Python subprocess timeout remains the portable safety bound.
+    assert timeout == 150
+
+
 def test_gitlink_probe_unsets_git_redirection_environment() -> None:
     for name in (
         "GIT_DIR",

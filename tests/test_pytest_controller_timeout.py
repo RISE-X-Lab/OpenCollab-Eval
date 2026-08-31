@@ -130,4 +130,8 @@ def test_pytest_plan_passes_the_eval_timeout_to_the_controller(tmp_path: Path) -
         plan, "f2p", "nonce", controller_timeout=7
     )
 
-    assert "--event-timeout-seconds 7" in script
+    # The controller is wrapped in the portable process-group watchdog.  The
+    # inner command is hex-encoded to preserve its shell quoting, so inspect
+    # the encoded payload rather than coupling this test to an unescaped
+    # implementation detail.
+    assert b"--event-timeout-seconds 7".hex() in script

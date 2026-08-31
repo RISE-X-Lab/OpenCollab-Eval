@@ -207,6 +207,37 @@ def test_latest_paired_rows_rejects_record_id_patch_sha_mismatch():
     assert pair.metric is None
     assert pair.status == "record_id_patch_sha_mismatch"
 
+
+def test_latest_paired_rows_does_not_reuse_legacy_metric_for_patch_body():
+    prediction = {
+        "instance_id": "task-1",
+        "model_patch": _patch("+current\n"),
+    }
+    legacy_metric = {
+        "instance_id": "task-1",
+        "workflow_status": "done",
+    }
+
+    pair = latest_paired_rows([prediction], [legacy_metric], "task-1")
+
+    assert pair.prediction == prediction
+    assert pair.metric is None
+    assert pair.status == "missing_metric_for_patch_sha"
+
+
+def test_latest_paired_rows_keeps_no_patch_legacy_compatibility():
+    prediction = {"instance_id": "task-1"}
+    legacy_metric = {
+        "instance_id": "task-1",
+        "workflow_status": "done",
+    }
+
+    pair = latest_paired_rows([prediction], [legacy_metric], "task-1")
+
+    assert pair.metric == legacy_metric
+    assert pair.status == "legacy_latest"
+
+
 def test_prediction_patch_text_wins_over_stale_explicit_sha():
     current_patch = _patch("+current\n")
     stale_patch = _patch("+stale\n")

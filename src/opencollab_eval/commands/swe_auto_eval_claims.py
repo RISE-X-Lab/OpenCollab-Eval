@@ -121,7 +121,7 @@ def _claim_owner_is_active(claim: dict, file_mtime_ns: int) -> bool:
         return False
     expected = str(claim.get("owner_start_identity") or "")
     current = _process_start_identity(pid)
-    if expected and current and expected != current:
+    if expected and (not current or expected != current):
         return False
     return _claim_lease_is_fresh(claim, file_mtime_ns)
 
@@ -135,7 +135,10 @@ def _claim_residual_group_is_live(claim: dict, file_mtime_ns: int) -> bool:
         return False
     expected = str(claim.get("evaluator_start_identity") or "")
     current = _process_start_identity(pgid)
-    if expected and current and expected != current:
+    # Once a claim records an evaluator identity, an unavailable probe is
+    # indistinguishable from a dead/reused process.  Do not renew the lease
+    # on an empty probe; the next claimant can safely reclaim it.
+    if expected and (not current or expected != current):
         return False
     return _claim_lease_is_fresh(claim, file_mtime_ns)
 

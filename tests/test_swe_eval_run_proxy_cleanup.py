@@ -257,6 +257,32 @@ def test_restartable_proxy_clamps_remote_probe_to_remaining_budget(monkeypatch: 
     assert 0 < float(calls[0]["probe_timeout_seconds"]) <= 0.5
 
 
+def test_restartable_proxy_clamps_backoff_to_remaining_budget(monkeypatch: Any) -> None:
+    outcomes: list[Exception | None] = [srp.RemoteSocketStillActive("busy"), None]
+    sleeps: list[float] = []
+    now = iter([0.0, 0.4, 0.4, 0.4, 0.5])
+
+    def cleanup(**_kwargs: Any) -> None:
+        outcome = outcomes.pop(0)
+        if outcome is not None:
+            raise outcome
+
+    monkeypatch.setattr(srp, "remove_stale_remote_socket", cleanup)
+    monkeypatch.setattr(srp.time, "monotonic", lambda: next(now))
+    monkeypatch.setattr(srp.time, "sleep", sleeps.append)
+
+    srp.wait_for_remote_socket_release(
+        ssh_command="ssh",
+        host="worker",
+        socket_path="/tmp/opencollab-llmproxy-18891.sock",
+        timeout_seconds=0.6,
+        initial_delay_seconds=1.0,
+        maximum_delay_seconds=30.0,
+    )
+
+    assert sleeps == [pytest.approx(0.2)]
+
+
 @pytest.mark.parametrize(
     ("argument", "value"),
     [

@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import pathlib
+import shutil
 
 from opencollab_eval.engine.swe_generation_proof import solver_git_snapshot_valid
 from opencollab_eval.engine.swe_v1_remote_records import *
@@ -252,9 +253,9 @@ def probe_gitlink_deletions(
         "--",
         *paths,
     ]
+    timeout_prefix = ["timeout", "120"] if shutil.which("timeout") else []
     command = [
-        "timeout",
-        "120",
+        *timeout_prefix,
         "docker",
         "run",
         "--rm",

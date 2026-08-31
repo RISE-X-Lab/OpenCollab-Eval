@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import errno
 import json
 import os
 import re
@@ -19,25 +20,73 @@ MAX_REQUEST_BYTES = 1024 * 1024
 MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 COMMAND_TIMEOUT_SECONDS = 1800
 CONNECTION_IO_TIMEOUT_SECONDS = 30.0
+PROCESS_STOP_TIMEOUT_SECONDS = 1.0
+PROCESS_STOP_POLL_SECONDS = 0.02
+
+
+def _process_group_exists(group_id: int) -> bool:
+    """Return whether a process group still has a member."""
+
+    killpg = getattr(os, "killpg", None)
+    if killpg is None:
+        return False
+    try:
+        killpg(group_id, 0)
+    except (AttributeError, ProcessLookupError):
+        return False
+    except OSError as exc:
+        # ESRCH is the only reliable empty-group indication.  Permission and
+        # other kernel errors are treated conservatively as still present.
+        return exc.errno != errno.ESRCH
+    return True
+
+
+def _signal_process_group(process: subprocess.Popen[bytes]) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (AttributeError, ProcessLookupError, OSError):
+        try:
+            process.kill()
+        except (OSError, ProcessLookupError):
+            pass
 
 
 def _stop_process(process: subprocess.Popen[bytes]) -> None:
     # ``docker exec`` can leave grandchildren alive after the CLI is killed.
     # Each gateway command owns a fresh process group so timeout cleanup can
     # terminate the whole invocation, not just the client wrapper.
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except (AttributeError, ProcessLookupError, OSError):
-        try:
-            process.kill()
-        except ProcessLookupError:
-            pass
-    try:
-        # A child can remain in an uninterruptible kernel wait.  Cleanup must
-        # not turn an already-bounded command into an unbounded gateway hang.
-        process.wait(timeout=1.0)
-    except subprocess.TimeoutExpired:
-        pass
+    # A member can fork just after the first group signal has been delivered.
+    # Re-signal and probe the group until two consecutive empty observations,
+    # while keeping one finite cleanup window so this path cannot hang.
+    deadline = time.monotonic() + PROCESS_STOP_TIMEOUT_SECONDS
+    empty_scans = 0
+    max_polls = max(
+        2, int(PROCESS_STOP_TIMEOUT_SECONDS / PROCESS_STOP_POLL_SECONDS) + 2
+    )
+    for _ in range(max_polls):
+        _signal_process_group(process)
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            try:
+                # A child can remain in an uninterruptible kernel wait.  Do
+                # not let reaping consume the whole cleanup window.
+                process.wait(timeout=min(remaining, PROCESS_STOP_POLL_SECONDS))
+            except (OSError, ChildProcessError, subprocess.TimeoutExpired):
+                pass
+        else:
+            process.poll()
+        leader_alive = process.poll() is None
+        group_alive = _process_group_exists(process.pid)
+        if not leader_alive and not group_alive:
+            empty_scans += 1
+            if empty_scans >= 2:
+                return
+        else:
+            empty_scans = 0
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(remaining, PROCESS_STOP_POLL_SECONDS))
 
 
 def _bounded_exec(command: list[str], container_id: str) -> tuple[int, bytes, bytes] | str:

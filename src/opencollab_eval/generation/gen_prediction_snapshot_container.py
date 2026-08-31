@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -45,6 +46,7 @@ _workspace_sha256 = _snapshot_support.workspace_sha256
 
 _OBJECT_ID_RE = re.compile(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}")
 _MAX_GIT_OUTPUT_BYTES = 8 * 1024 * 1024
+_GIT_COMMAND_TIMEOUT_SECONDS = 300.0
 _MAX_STATUS_PATH_SAMPLES = 32
 _MAX_STATUS_SAMPLE_BYTES = 16 * 1024
 _PREPARATION_INPUT_SCHEMA = "opencollab.preparation_input.v1"
@@ -70,8 +72,7 @@ def _clean_git_env(home: Path) -> dict[str, str]:
     env.update(
         {
             "GIT_ATTR_NOSYSTEM": "1",
-            "GIT_CONFIG_GLOBAL": os.devnull,
-            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_CONFIG_SYSTEM": os.devnull,
             "GIT_NO_REPLACE_OBJECTS": "1",
             "HOME": str(home),
@@ -106,18 +107,40 @@ def _run_git(
     *args: str,
     env: dict[str, str],
     input_bytes: bytes | None = None,
+    allowed_returncodes: tuple[int, ...] = (0,),
 ) -> subprocess.CompletedProcess[bytes]:
     safe_repo = str(repo.resolve(strict=True))
-    result = subprocess.run(
-        ["git", "-c", f"safe.directory={safe_repo}", "-C", str(repo), *args],
-        input=input_bytes,
-        capture_output=True,
-        check=False,
-        env=env,
-    )
+    command = ["git", "-c", f"safe.directory={safe_repo}", "-C", str(repo), *args]
+    try:
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE if input_bytes is not None else subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, start_new_session=True,
+        )
+        try:
+            stdout, stderr = process.communicate(input=input_bytes, timeout=_GIT_COMMAND_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired as exc:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except (OSError, ProcessLookupError):
+                try:
+                    process.kill()
+                except (OSError, ProcessLookupError):
+                    pass
+            try:
+                process.wait(timeout=5.0)
+            except (OSError, ChildProcessError, subprocess.TimeoutExpired):
+                pass
+            raise SnapshotSetupError(
+                f"Git snapshot command timed out after "
+                f"{_GIT_COMMAND_TIMEOUT_SECONDS:g} seconds ({args[0] if args else '<unknown>'})"
+            ) from exc
+        result = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+    except OSError as exc:
+        raise SnapshotSetupError("could not start Git snapshot command") from exc
     if len(result.stdout) > _MAX_GIT_OUTPUT_BYTES or len(result.stderr) > _MAX_GIT_OUTPUT_BYTES:
         raise SnapshotSetupError("Git snapshot command exceeded its output bound")
-    if result.returncode != 0:
+    if result.returncode not in allowed_returncodes:
         detail = result.stderr.decode("utf-8", errors="replace").strip()
         raise SnapshotSetupError(
             f"Git snapshot command failed ({args[0]}, exit {result.returncode}): {detail[:1000]}"
@@ -262,22 +285,16 @@ def _initial_status(
         ):
             samples[kind].append(path)
             sample_bytes[kind] += encoded_bytes
-    drift = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(repo),
-            "diff",
-            "--quiet",
-            "--ignore-submodules=all",
-            commit,
-            "--",
-        ],
+    drift = _run_git(
+        repo,
+        "diff",
+        "--quiet",
+        "--ignore-submodules=all",
+        commit,
+        "--",
         env=env,
-        check=False,
+        allowed_returncodes=(0, 1),
     ).returncode
-    if drift not in {0, 1}:
-        raise SnapshotSetupError("tracked baseline comparison failed")
     details = {
         kind: {
             "count": counts[kind],
@@ -777,7 +794,5 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(json.dumps(evidence, ensure_ascii=True, sort_keys=True))
     return 0
-
-
 if __name__ == "__main__":
     raise SystemExit(main())

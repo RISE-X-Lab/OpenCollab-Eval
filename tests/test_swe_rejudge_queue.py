@@ -191,18 +191,20 @@ def test_queue_recognizes_a_terminal_in_the_original_parent_report(
     )
 
 
-def test_queue_rejects_conflicting_candidate_identities(tmp_path, monkeypatch):
+def test_queue_rejects_ambiguous_identities_without_the_planned_candidate(
+    tmp_path, monkeypatch
+):
     plan, parent = _plan(tmp_path)
     _terminal_report(
-        parent / "task_25_eval_only_expected.json",
+        parent / "task_25_eval_only_historical_a.json",
         index=25,
-        patch_sha256="a" * 64,
+        patch_sha256="b" * 64,
         resolved=False,
     )
     _terminal_report(
-        parent / "task_25_eval_only_conflict.json",
+        parent / "task_25_eval_only_historical_b.json",
         index=25,
-        patch_sha256="b" * 64,
+        patch_sha256="c" * 64,
         resolved=True,
     )
     monkeypatch.setattr(
@@ -251,14 +253,14 @@ def test_queue_runs_eval_only_with_generation_disabled(tmp_path, monkeypatch):
     )
     seen: list[list[str]] = []
 
-    def fake_run(argv, *, stdout, stderr, text):
-        del stdout, stderr, text
+    def fake_run(argv, *, log, timeout):
+        del log, timeout
         seen.append(argv)
         json_output = Path(argv[argv.index("--json-output") + 1])
         _terminal_report(json_output, index=25, patch_sha256="a" * 64, resolved=True)
         return type("Result", (), {"returncode": 0})()
 
-    monkeypatch.setattr(queue.subprocess, "run", fake_run)
+    monkeypatch.setattr(queue, "_run_bounded_child", fake_run)
     monkeypatch.setattr(
         queue,
         "update_parent_fact_report",
@@ -351,15 +353,15 @@ def test_queue_allows_recovery_after_two_prior_attempts(tmp_path, monkeypatch):
     )
     calls = 0
 
-    def fake_run(argv, *, stdout, stderr, text):
+    def fake_run(argv, *, log, timeout):
         nonlocal calls
-        del stdout, stderr, text
+        del log, timeout
         calls += 1
         json_output = Path(argv[argv.index("--json-output") + 1])
         _terminal_report(json_output, index=25, patch_sha256="a" * 64, resolved=True)
         return SimpleNamespace(returncode=0)
 
-    monkeypatch.setattr(queue.subprocess, "run", fake_run)
+    monkeypatch.setattr(queue, "_run_bounded_child", fake_run)
     monkeypatch.setattr(queue, "update_parent_fact_report", lambda args: {})
 
     result = queue.run_queue(plan, tmp_path / "state", workers=1)
@@ -475,8 +477,8 @@ def test_two_distinct_jobs_run_concurrently_and_persist_both_states(
     )
     barrier = threading.Barrier(2)
 
-    def fake_run(argv, *, stdout, stderr, text):
-        del stdout, stderr, text
+    def fake_run(argv, *, log, timeout):
+        del log, timeout
         barrier.wait(timeout=5)
         index = int(argv[argv.index("--start-index") + 1])
         digest = "a" * 64 if index == 25 else "b" * 64
@@ -489,7 +491,7 @@ def test_two_distinct_jobs_run_concurrently_and_persist_both_states(
             output.write_text(json.dumps(report), encoding="utf-8")
         return SimpleNamespace(returncode=0)
 
-    monkeypatch.setattr(queue.subprocess, "run", fake_run)
+    monkeypatch.setattr(queue, "_run_bounded_child", fake_run)
     monkeypatch.setattr(
         queue,
         "update_parent_fact_report",
@@ -532,16 +534,16 @@ def test_queue_retries_a_pre_eval_command_failure_without_model_generation(
     )
     calls = 0
 
-    def fake_run(argv, *, stdout, stderr, text):
+    def fake_run(argv, *, log, timeout):
         nonlocal calls
-        del stdout, stderr, text
+        del log, timeout
         calls += 1
         if calls == 2:
             output = Path(argv[argv.index("--json-output") + 1])
             _terminal_report(output, index=25, patch_sha256="a" * 64, resolved=False)
         return SimpleNamespace(returncode=1 if calls == 1 else 0)
 
-    monkeypatch.setattr(queue.subprocess, "run", fake_run)
+    monkeypatch.setattr(queue, "_run_bounded_child", fake_run)
     monkeypatch.setattr(
         queue,
         "update_parent_fact_report",
@@ -578,13 +580,13 @@ def test_persisted_launch_budget_prevents_unbounded_restarts(tmp_path, monkeypat
     )
     calls = 0
 
-    def fake_run(argv, *, stdout, stderr, text):
+    def fake_run(argv, *, log, timeout):
         nonlocal calls
-        del argv, stdout, stderr, text
+        del argv, log, timeout
         calls += 1
         return SimpleNamespace(returncode=1)
 
-    monkeypatch.setattr(queue.subprocess, "run", fake_run)
+    monkeypatch.setattr(queue, "_run_bounded_child", fake_run)
     monkeypatch.setattr(queue, "update_parent_fact_report", lambda args: {})
     state_dir = tmp_path / "state"
 

@@ -263,6 +263,13 @@ def build_output_records(
         "patch_sha256": patch_sha256,
         "model_name_or_path": model_name,
     }
+    # EvalTask uses an anonymous solver id; persisted rows use the benchmark
+    # instance id.  Bind the generic task alias to the public identity while
+    # retaining the solver id for diagnostics.
+    solver_task_id = metric_record.get("task_id")
+    if solver_task_id not in (None, "", instance_id):
+        metric_record["solver_task_id"] = solver_task_id
+    metric_record["task_id"] = instance_id
     metric_record["runner_returncode"] = gp.runner_returncode_for_metrics(
         metric_record
     )

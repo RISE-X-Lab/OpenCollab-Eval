@@ -5,12 +5,15 @@ from __future__ import annotations
 import json
 import os
 import select
+import shutil
 import signal
 import subprocess
 import sys
 import threading
 import time
 from pathlib import Path
+
+_PS_EXECUTABLE = shutil.which("ps") or "ps"
 
 
 def _runner():
@@ -111,124 +114,54 @@ def _evaluator_helper_main(
 
 
 class OwnedEvaluatorProcess:
-    """Popen-like handle whose pid owns a recoverable helper process group."""
+    """Popen-like handle with a total wall-clock wait deadline.
 
-    def __init__(
-        self,
-        *,
-        pid: int,
-        read_fd: int,
-        buffer: bytearray,
-        deadline: float,
-    ) -> None:
-        self.pid = pid
-        self._read_fd = read_fd
-        self._buffer = buffer
+    The old implementation represented a Python ``fork`` helper and a pipe
+    carrying child status.  That design is unsafe when the per-instance
+    driver is running in a thread pool: a macOS child can inherit locks held
+    by another thread and never report its status.  The evaluator itself is
+    now spawned directly by :class:`subprocess.Popen`; this small proxy keeps
+    the existing deadline and process-group cleanup contract for callers.
+    """
+
+    def __init__(self, process: subprocess.Popen, *, deadline: float) -> None:
+        self._process = process
+        self.pid = process.pid
         self._deadline = deadline
         self._cleanup_started = False
-        self._returncode: int | None = None
-        self._reaped = False
+
+    def __getattr__(self, name: str):
+        return getattr(self._process, name)
 
     def begin_cleanup(self) -> None:
         self._cleanup_started = True
 
-    def _close_status(self) -> None:
-        if self._read_fd >= 0:
-            os.close(self._read_fd)
-            self._read_fd = -1
-
-    def _wait_reaped(self, deadline: float) -> int:
-        while True:
-            try:
-                waited, status = os.waitpid(self.pid, os.WNOHANG)
-            except ChildProcessError:
-                self._reaped = True
-                self._close_status()
-                return self._returncode or 0
-            if waited == self.pid:
-                self._reaped = True
-                self._close_status()
-                if self._returncode is not None:
-                    return self._returncode
-                return _decode_wait_status(status)
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise subprocess.TimeoutExpired("evaluator-helper", 0)
-            time.sleep(min(0.01, remaining))
-
-    def _message(self, deadline: float) -> dict | None:
-        while True:
-            newline = self._buffer.find(b"\n")
-            if newline >= 0:
-                raw = bytes(self._buffer[:newline])
-                del self._buffer[: newline + 1]
-                try:
-                    value = json.loads(raw.decode("utf-8"))
-                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                    raise OSError("evaluator helper returned malformed status") from exc
-                if not isinstance(value, dict):
-                    raise OSError("evaluator helper returned non-object status")
-                return value
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return None
-            readable, _writable, _exceptional = select.select(
-                [self._read_fd],
-                [],
-                [],
-                min(0.05, remaining),
-            )
-            if not readable:
-                continue
-            chunk = os.read(self._read_fd, 4096)
-            if not chunk:
-                return None
-            self._buffer.extend(chunk)
-            if len(self._buffer) > 64 * 1024:
-                raise OSError("evaluator helper status exceeded its byte bound")
+    def poll(self):
+        return self._process.poll()
 
     def wait(self, timeout: float | None = None) -> int:
+        # During cleanup the caller supplies an independent short reap bound;
+        # never constrain that operation by the evaluator's execution budget.
         if self._cleanup_started:
-            requested_deadline = (
-                time.monotonic() + max(0.0, timeout)
-                if timeout is not None
-                else time.monotonic() + _runner().PROCESS_KILL_REAP_TIMEOUT_SECONDS
-            )
-            return self._wait_reaped(requested_deadline)
-        requested_deadline = self._deadline
+            return self._process.wait(timeout=timeout)
+
+        remaining = self._deadline - time.monotonic()
         if timeout is not None:
-            requested_deadline = min(
-                requested_deadline,
-                time.monotonic() + max(0.0, timeout),
-            )
-        if self._returncode is not None:
-            return self._returncode
-        while True:
-            message = self._message(requested_deadline)
-            if message is None:
-                raise subprocess.TimeoutExpired("evaluator", timeout)
-            status = message.get("status")
-            if status == "completed":
-                self._returncode = int(message.get("returncode", 125))
-                return self._returncode
-            if status == "timeout":
-                raise subprocess.TimeoutExpired("evaluator", timeout)
-            if status == "worker_error":
-                raise OSError(str(message.get("error") or "evaluator helper failed"))
+            remaining = min(remaining, max(0.0, timeout))
+        if remaining <= 0:
+            returncode = self._process.poll()
+            if returncode is not None:
+                return int(returncode)
+            raise subprocess.TimeoutExpired("evaluator", timeout)
+        return int(self._process.wait(timeout=remaining))
 
     def terminate(self) -> None:
         self.begin_cleanup()
-        try:
-            os.killpg(self.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        self._process.terminate()
 
     def kill(self) -> None:
         self.begin_cleanup()
-        try:
-            os.killpg(self.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        self._process.kill()
 
 
 def _cleanup_raw_helper(pid: int, *, ready: bool) -> bool:
@@ -278,61 +211,68 @@ def _spawn_owned_evaluator(
     wall_timeout: float,
     spawn_timeout: float = _runner().PROCESS_SPAWN_TIMEOUT_SECONDS,
 ) -> OwnedEvaluatorProcess:
+    """Start one evaluator in an owned process group.
+
+    This function used to create a Python-level fork helper and then run code
+    in that child before spawning the evaluator.  The per-instance driver invokes it
+    from a ``ThreadPoolExecutor`` when ``--workers`` is greater than one;
+    forking a multi-threaded interpreter is unsafe on macOS (and emits a
+    Python 3.13 deprecation warning).  ``subprocess.Popen`` performs the
+    platform-native spawn path and gives the evaluator itself a fresh process
+    group, which is all the parent needs for bounded wait/termination.
+
+    ``spawn_timeout`` is retained as a post-spawn bound for API compatibility.
+    ``Popen`` itself has no constructor timeout, but its native spawn/exec
+    path does not execute Python callbacks in a forked child.  We therefore
+    check the elapsed launch time and reap the process group if the bound was
+    exceeded; the caller's bounded ``wait`` enforces the remaining execution
+    deadline.
+    """
     started_at = time.monotonic()
-    deadline = started_at + wall_timeout
-    read_fd = -1
-    write_fd = -1
-    try:
-        read_fd, write_fd = os.pipe()
-        pid = os.fork()
-    except BaseException:
-        if read_fd >= 0:
-            os.close(read_fd)
-        if write_fd >= 0:
-            os.close(write_fd)
-        raise
-    if pid == 0:
-        os.close(read_fd)
-        _evaluator_helper_main(
-            write_fd,
-            cmd=cmd,
-            cwd=cwd,
-            env=env,
-            log_fd=log_fd,
-            deadline=deadline,
-        )
-        os._exit(_runner().PROCESS_CLEANUP_FAILED_EXIT_CODE)
-    os.close(write_fd)
-    process = OwnedEvaluatorProcess(
-        pid=pid,
-        read_fd=read_fd,
-        buffer=bytearray(),
-        deadline=deadline,
+    deadline = started_at + max(0.0, float(wall_timeout))
+    spawn_deadline = min(
+        deadline,
+        started_at + max(0.0, float(spawn_timeout)),
     )
-    ready = False
-    try:
-        spawn_deadline = min(deadline, started_at + spawn_timeout)
-        while True:
-            message = process._message(spawn_deadline)
-            if message is None:
-                raise EvaluatorSpawnTimeout("evaluator Popen exceeded its spawn bound")
-            status = message.get("status")
-            if status == "helper_ready":
-                ready = True
-                continue
-            if status == "spawned":
-                return process
-            if status == "spawn_error":
-                raise OSError(str(message.get("error") or "evaluator failed to start"))
-            raise OSError(f"unexpected evaluator helper status: {status}")
-    except BaseException as exc:
-        process._close_status()
-        cleanup_ok = _cleanup_raw_helper(pid, ready=ready)
-        if not cleanup_ok:
-            add_note = getattr(exc, "add_note", None)
+    process = _runner()._EVALUATOR_POPEN(
+        cmd,
+        cwd=cwd,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=log_fd,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    owned = OwnedEvaluatorProcess(process, deadline=deadline)
+    if time.monotonic() > spawn_deadline:
+        try:
+            cleanup_ok, cleanup_messages = _terminate_process_group_owned(
+                owned,
+                # The old helper's spawn-failure cleanup used a fixed 50 ms
+                # gentle phase before SIGKILL.  Do not accidentally turn a
+                # large user-facing spawn timeout into a 30-second cleanup.
+                term_timeout=min(0.05, max(0.0, float(spawn_timeout))),
+                kill_timeout=_runner().PROCESS_KILL_REAP_TIMEOUT_SECONDS,
+            )
+        except BaseException as exc:
+            timeout_error = EvaluatorSpawnTimeout(
+                "evaluator Popen exceeded its spawn bound"
+            )
+            add_note = getattr(timeout_error, "add_note", None)
             if callable(add_note):
-                add_note(f"evaluator spawn helper {pid} did not quiesce after SIGKILL")
-        raise
+                add_note(f"spawn cleanup raised {type(exc).__name__}: {exc}")
+            raise timeout_error from exc
+        if not cleanup_ok:
+            timeout_error = EvaluatorSpawnTimeout(
+                "evaluator Popen exceeded its spawn bound and cleanup was incomplete"
+            )
+            for message in cleanup_messages:
+                add_note = getattr(timeout_error, "add_note", None)
+                if callable(add_note):
+                    add_note(message)
+            raise timeout_error
+        raise EvaluatorSpawnTimeout("evaluator Popen exceeded its spawn bound")
+    return owned
 
 
 def _wait_for_owned_cleanup(
@@ -485,46 +425,78 @@ def _read_identity_helper_message(
             return None
 
 
+def _stop_identity_probe(process: subprocess.Popen) -> None:
+    """Kill and reap a bounded ``ps`` probe after a timeout.
+
+    ``communicate(timeout=...)`` intentionally does not reap a timed-out
+    child.  Always issue ``kill`` and a bounded ``wait`` here so an identity
+    probe cannot accumulate zombies while evaluator workers continue.  If a
+    platform refuses to reap within the bound, the normal background consumer
+    still drains the child eventually without blocking the evaluation worker.
+    """
+    try:
+        process.kill()
+    except (AttributeError, OSError, ProcessLookupError):
+        pass
+    try:
+        process.wait(
+            timeout=max(0.0, float(_runner().PROCESS_KILL_REAP_TIMEOUT_SECONDS))
+        )
+    except (AttributeError, ChildProcessError, OSError, subprocess.TimeoutExpired):
+        _schedule_process_exit_consumer(process)
+
+
 def process_start_identity(pid: int) -> str:
     if Path("/proc").is_dir():
-        return _proc_process_start_identity(pid)
-    if os.name != "posix":
-        return ""
-    deadline = time.monotonic() + _runner().PROCESS_IDENTITY_TIMEOUT_SECONDS
-    read_fd = -1
-    write_fd = -1
+        proc_identity = _proc_process_start_identity(pid)
+        if proc_identity:
+            return proc_identity
+        # A few POSIX systems expose a ``/proc`` directory without Linux's
+        # ``<pid>/stat`` ABI.  Fall through to the bounded ``ps`` probe rather
+        # than silently disabling identity checks on those hosts.
     try:
-        read_fd, write_fd = os.pipe()
-        helper_pid = os.fork()
-    except OSError:
-        if read_fd >= 0:
-            os.close(read_fd)
-        if write_fd >= 0:
-            os.close(write_fd)
+        pid_value = int(pid)
+    except (TypeError, ValueError):
         return ""
-    if helper_pid == 0:
-        os.close(read_fd)
-        _identity_helper_main(write_fd, pid, deadline)
-        os._exit(_runner().PROCESS_CLEANUP_FAILED_EXIT_CODE)
-    os.close(write_fd)
-    ready = False
-    result = ""
-    buffer = bytearray()
+    if os.name != "posix" or pid_value <= 0:
+        return ""
+    process = None
     try:
-        while True:
-            message = _read_identity_helper_message(read_fd, buffer, deadline)
-            if message is None:
-                break
-            if message.get("status") == "helper_ready":
-                ready = True
-                continue
-            if message.get("status") == "result":
-                result = str(message.get("value") or "")
-            break
+        # An absolute executable lets CPython use posix_spawn where the
+        # platform supports it.  Most importantly, no Python ``fork`` child
+        # is created from the evaluator's ThreadPoolExecutor worker.
+        process = _runner()._PROCESS_IDENTITY_POPEN(
+            [_PS_EXECUTABLE, "-o", "lstart=", "-p", str(pid_value)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        stdout, _stderr = process.communicate(
+            timeout=max(0.0, float(_runner().PROCESS_IDENTITY_TIMEOUT_SECONDS))
+        )
+    except subprocess.TimeoutExpired:
+        if process is not None:
+            _stop_identity_probe(process)
+        return ""
+    except Exception:
+        if process is not None:
+            _stop_identity_probe(process)
+        return ""
     finally:
-        os.close(read_fd)
-        _cleanup_raw_helper(helper_pid, ready=ready)
-    return result
+        if process is not None:
+            try:
+                still_running = process.poll() is None
+            except (AttributeError, OSError):
+                still_running = False
+            if still_running:
+                _stop_identity_probe(process)
+    try:
+        value = str(stdout or "").strip()
+    except Exception:
+        return ""
+    # Keep the historical non-/proc representation (the raw ``ps`` lstart)
+    # so claims written by older macOS runs continue to compare equal.
+    return value[:1_024] if getattr(process, "returncode", 1) == 0 and value else ""
 
 
 def _claim_residual_group_is_live(claim: dict) -> bool:
@@ -536,7 +508,11 @@ def _claim_residual_group_is_live(claim: dict) -> bool:
         return False
     expected_start = str(claim.get("evaluator_start_identity") or "")
     current_start = _runner().process_start_identity(pgid)
-    if expected_start and current_start and expected_start != current_start:
+    # A persisted start identity is an ownership assertion, not advisory
+    # metadata.  An empty probe means that ownership could not be verified
+    # (for example, a bounded ``ps`` probe timed out), so retaining/renewing
+    # the lease would be fail-open and could strand a stale claim forever.
+    if expected_start and (not current_start or expected_start != current_start):
         return False
     return True
 
@@ -676,6 +652,10 @@ def ensure_process_group_quiesced_after_wait(
         "evaluator leader exited while process-group descendants remained; terminating residual process group\n"
     )
     if isinstance(process, OwnedEvaluatorProcess):
+        # A normal leader exit means the evaluator's own result is already
+        # available.  Do not spend the full evaluator SIGTERM grace waiting
+        # for a detached descendant that ignores SIGTERM; it could mutate the
+        # report after completion and make the next run nondeterministic.
         return _runner().terminate_process_group(
             process,
             log_file,

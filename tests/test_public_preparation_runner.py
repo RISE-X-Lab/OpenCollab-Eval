@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import ctypes
 import errno
+import os
 import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -108,6 +110,35 @@ def test_public_preparation_quiesces_a_setsid_writer(tmp_path: Path) -> None:
     assert not target.exists()
 
 
+@pytest.mark.skipif(
+    sys.platform.startswith("linux") or os.name != "posix",
+    reason="non-/proc process-tree fallback is only exercised on POSIX hosts",
+)
+def test_public_preparation_ps_tracking_quiesces_a_setsid_writer(
+    tmp_path: Path,
+) -> None:
+    ready = tmp_path / "ready"
+    target = tmp_path / "late.txt"
+    child = (
+        "import os,pathlib,time;"
+        "os.setsid();"
+        f"pathlib.Path({str(ready)!r}).write_text('ready');"
+        "time.sleep(0.3);"
+        f"pathlib.Path({str(target)!r}).write_text('late')"
+    )
+    source = f"python3 -c {child!r} &\nwhile [ ! -e {ready} ]; do sleep 0.01; done\nexit 0\n"
+
+    completed = _run_cli(
+        _script(tmp_path, source),
+        tmp_path / "prepare.log",
+        tmp_path,
+    )
+    time.sleep(0.4)
+
+    assert completed.returncode == 0
+    assert not target.exists()
+
+
 def test_public_preparation_reports_cleanup_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -121,6 +152,104 @@ def test_public_preparation_reports_cleanup_failure(
     )
 
     assert status == 125
+
+
+def test_descendant_inspection_failure_is_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unavailable() -> set[int]:
+        raise runner.ProcessInspectionError("/proc unavailable")
+
+    monkeypatch.setattr(runner, "_descendants", unavailable)
+
+    assert runner._quiesce_descendants() is False
+
+
+def test_proc_stat_read_failure_is_not_silently_skipped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def denied(*_args, **_kwargs):
+        raise PermissionError("hidden process")
+
+    monkeypatch.setattr(Path, "read_text", denied)
+
+    with pytest.raises(runner.ProcessInspectionError):
+        runner._proc_stat(123)
+
+
+def test_zombie_is_not_counted_as_live(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(runner.os, "kill", lambda *_args: None)
+    monkeypatch.setattr(
+        runner,
+        "_process_state_identity",
+        lambda _pid: ("Z+", "proc:42"),
+    )
+
+    assert runner._pid_is_live(42) is False
+
+
+def test_observed_pid_reuse_is_not_signalled(monkeypatch: pytest.MonkeyPatch) -> None:
+    signals: list[tuple[int, int]] = []
+    monkeypatch.setattr(runner, "_descendants", lambda: set())
+    monkeypatch.setattr(runner, "_pid_is_live", lambda _pid: True)
+    monkeypatch.setattr(
+        runner,
+        "_process_state_identity",
+        lambda _pid: ("S", "proc:new"),
+    )
+    monkeypatch.setattr(runner.os, "kill", lambda pid, sig: signals.append((pid, sig)))
+
+    assert runner._quiesce_descendants({42}, {42: "proc:old"}) is True
+    assert signals == []
+
+
+def test_reused_process_group_is_not_signalled(monkeypatch: pytest.MonkeyPatch) -> None:
+    signals: list[tuple[int, int]] = []
+    monkeypatch.setattr(
+        runner,
+        "_process_state_identity",
+        lambda _pid: ("S", "proc:new"),
+    )
+    monkeypatch.setattr(
+        runner.os,
+        "killpg",
+        lambda group, sig: signals.append((group, sig)),
+    )
+
+    assert runner._quiesce_group(42, "proc:old", leader_pid=42) is True
+    assert signals == []
+
+
+def test_ps_descendant_fallback_is_bounded_and_ignores_its_probe_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = 400
+    monkeypatch.setattr(
+        runner.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=(
+                f"{root} 1 S /usr/bin/python\n"
+                "401 400 S /usr/bin/worker\n"
+                "402 400 S /usr/bin/ps\n"
+            ),
+        ),
+    )
+
+    assert runner._ps_descendants(root) == {401}
+
+
+def test_ps_descendant_fallback_timeout_is_not_treated_as_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def timed_out(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    monkeypatch.setattr(runner.subprocess, "run", timed_out)
+
+    with pytest.raises(runner.ProcessInspectionError):
+        runner._ps_descendants(os.getpid())
 
 
 def test_public_preparation_timeout_is_bounded_and_recorded(

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 
 from generation_proof_test_support import (
     candidate_eval_proof_fields,
     candidate_source_projection_fields,
 )
 
+from opencollab_eval.engine.swe_eval_discovery import _reports_from_payload
 from opencollab_eval.engine.swe_eval_records import direct_eval_done_has_execution_proof
 from opencollab_eval.engine.swe_v1_remote_target_proof import jest_test_command
 from opencollab_eval.engine.swe_v1_remote_test_plan import prolite_test_plan
@@ -16,6 +18,7 @@ from opencollab_eval.engine.swe_v1_remote_test_plan import prolite_test_plan
 def _add_candidate_projection(payload: dict) -> None:
     task = payload.setdefault("task", "task-1")
     record_id = payload.setdefault("record_id", "a" * 32)
+    payload.setdefault("eval_image_id", "sha256:" + "9" * 64)
     eval_patch_sha256 = payload["eval_patch_sha256"]
     expectation, projection = candidate_eval_proof_fields(
         task,
@@ -97,7 +100,28 @@ def test_direct_eval_unresolved_accepts_structured_failure_proof() -> None:
     }
     _add_candidate_projection(payload)
 
+    relabelled = dict(payload)
+    relabelled["patch_sha256"] = "b" * 64
+    assert direct_eval_done_has_execution_proof(relabelled) is False
+
     assert direct_eval_done_has_execution_proof(payload) is True
+
+    conflicting_task = json.loads(json.dumps(payload))
+    conflicting_task["instance_id"] = "task-2"
+    assert direct_eval_done_has_execution_proof(conflicting_task) is False
+    assert _reports_from_payload(Path("report.json"), conflicting_task) == []
+
+    nested_mismatch = {"task-2": json.loads(json.dumps(payload))}
+    assert _reports_from_payload(Path("report.json"), nested_mismatch) == []
+    nested_matching = {"task-1": json.loads(json.dumps(payload))}
+    assert len(_reports_from_payload(Path("report.json"), nested_matching)) == 1
+
+    # Discovery is a cache/status boundary and must not accept a done summary
+    # whose evaluator image identity is absent.
+    missing_image = dict(payload)
+    missing_image.pop("eval_image_id")
+    assert direct_eval_done_has_execution_proof(missing_image) is True
+    assert _reports_from_payload(Path("report.json"), missing_image) == []
 
     for section in ("candidate_projection", "source_candidate_projection"):
         for field in tuple(payload[section]):
@@ -110,8 +134,8 @@ def test_direct_eval_unresolved_accepts_structured_failure_proof() -> None:
 
     payload.pop("eval_patch_sha256")
     assert direct_eval_done_has_execution_proof(payload) is False
-    payload["eval_patch_sha256"] = "a" * 64
 
+    payload["eval_patch_sha256"] = "a" * 64
     failure_evidence["target_failure_proof_matches_plan"] = False
     assert direct_eval_done_has_execution_proof(payload) is False
 

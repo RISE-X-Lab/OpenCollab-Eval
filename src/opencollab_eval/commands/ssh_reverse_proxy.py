@@ -150,7 +150,15 @@ def wait_for_remote_socket_release(
                     "timed out while waiting for the remote proxy socket"
                 ) from exc
             print(f"ssh reverse proxy waiting for remote socket release: {exc}", flush=True)
-            time.sleep(delay)
+            if timeout_seconds is not None:
+                remaining = timeout_seconds - (time.monotonic() - started)
+                if remaining <= 0:
+                    raise RuntimeError(
+                        "timed out while waiting for the remote proxy socket"
+                    ) from exc
+                time.sleep(min(delay, remaining))
+            else:
+                time.sleep(delay)
             delay = min(delay * 2.0, maximum_delay_seconds)
 
 

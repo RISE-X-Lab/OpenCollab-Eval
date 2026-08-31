@@ -7,6 +7,8 @@ import argparse
 import concurrent.futures
 import hashlib
 import json
+import math
+import os
 import re
 import stat
 import subprocess
@@ -20,6 +22,11 @@ from opencollab_eval.commands import _swe_eval_layer_integrity, _swe_report_io
 from opencollab_eval.commands.swe_v1_parent_eval_lock import ParentEvalLock
 from opencollab_eval.commands.swe_v1_prolite_common import MAX_TOTAL_EVAL_ATTEMPTS
 from opencollab_eval.commands.swe_v1_prolite_controller import update_parent_fact_report
+from opencollab_eval.commands.swe_v1_prolite_process import (
+    _ensure_local_process_group_quiesced_after_wait,
+    terminate_local_process_group,
+)
+from opencollab_eval.engine.swe_eval_records import strict_integer
 from opencollab_eval.safe_files import write_regular_bytes_atomic
 
 SCHEMA = "opencollab.eval_only_queue.v1"
@@ -39,8 +46,57 @@ _BLOCKED_RUNNER_OPTIONS = {
     "--run-id",
     "--start-index",
 }
+DEFAULT_EVAL_TIMEOUT_SECONDS = 7_200.0
+QUEUE_EVAL_TIMEOUT_GRACE_SECONDS = 120.0
+QUEUE_PROCESS_TERM_GRACE_SECONDS = 5.0
+QUEUE_PROCESS_KILL_REAP_TIMEOUT_SECONDS = 5.0
 _state_lock = threading.Lock()
 
+def _positive_finite_timeout(value: object, *, label: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{label} must be a positive finite number of seconds")
+    try:
+        timeout = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{label} must be a positive finite number of seconds") from exc
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError(f"{label} must be a positive finite number of seconds")
+    return timeout
+
+def _runner_eval_timeout(runner_args: list[str]) -> float | None:
+    values: list[str] = []
+    index = 0
+    while index < len(runner_args):
+        item = runner_args[index]
+        if item == "--eval-timeout":
+            if index + 1 >= len(runner_args):
+                raise ValueError("--eval-timeout requires a value")
+            values.append(runner_args[index + 1])
+            index += 2
+            continue
+        if item.startswith("--eval-timeout="):
+            values.append(item.split("=", 1)[1])
+        index += 1
+    if not values:
+        return None
+    parsed: list[float] = []
+    for value in values:
+        timeout = _positive_finite_timeout(value, label="--eval-timeout")
+        if not timeout.is_integer():
+            raise ValueError("--eval-timeout must be an integer number of seconds")
+    parsed.append(timeout)
+    return parsed[-1]
+
+def _job_eval_timeout(plan: dict[str, Any], job: dict[str, Any]) -> float:
+    if "eval_timeout" in job and job["eval_timeout"] is not None:
+        return _positive_finite_timeout(job["eval_timeout"], label="eval_timeout")
+    runner_timeout = _runner_eval_timeout(plan["runner_args"])
+    if runner_timeout is not None:
+        return runner_timeout
+    environment_timeout = os.environ.get("OPENCOLLAB_EVAL_TIMEOUT_SECONDS")
+    if environment_timeout is not None and environment_timeout.strip():
+        return _positive_finite_timeout(environment_timeout, label="OPENCOLLAB_EVAL_TIMEOUT_SECONDS")
+    return DEFAULT_EVAL_TIMEOUT_SECONDS
 
 def _absolute_directory(value: object, *, label: str) -> Path:
     if not isinstance(value, str) or not value or "\0" in value:
@@ -53,7 +109,6 @@ def _absolute_directory(value: object, *, label: str) -> Path:
         raise ValueError(f"{label} must be a directory")
     return path
 
-
 def _read_plan(path: Path) -> dict[str, Any]:
     value = _swe_report_io.load_json(path)
     if value.get("schema") != SCHEMA:
@@ -61,6 +116,7 @@ def _read_plan(path: Path) -> dict[str, Any]:
     runner_args = value.get("runner_args")
     if not isinstance(runner_args, list) or any(not isinstance(item, str) for item in runner_args):
         raise ValueError("runner_args must be a list of strings")
+    _runner_eval_timeout(runner_args)
     for item in runner_args:
         option = item.split("=", 1)[0]
         if option in _BLOCKED_RUNNER_OPTIONS:
@@ -95,6 +151,12 @@ def _read_plan(path: Path) -> dict[str, Any]:
             or eval_dir_name in {".", ".."}
         ):
             raise ValueError("eval_dir_name must be one path component")
+        eval_timeout = raw.get("eval_timeout")
+        if eval_timeout is not None:
+            eval_timeout_value = _positive_finite_timeout(eval_timeout, label="eval_timeout")
+            if not eval_timeout_value.is_integer():
+                raise ValueError("eval_timeout must be an integer number of seconds")
+            eval_timeout = int(eval_timeout_value)
         task = raw.get("task")
         record_id = raw.get("record_id")
         source_patch_sha256 = raw.get("source_patch_sha256")
@@ -117,22 +179,22 @@ def _read_plan(path: Path) -> dict[str, Any]:
             raise ValueError(f"duplicate candidate identity for task {task}")
         seen_routes.add(route)
         seen_candidates.add(candidate)
-        normalized.append(
-            {
-                "index": index,
-                "parent_output_dir": str(parent),
-                "base_run_dir": base_run_dir,
-                "remote_runtime_repo": remote_runtime_repo,
-                "run_id": run_id,
-                "eval_dir_name": eval_dir_name,
-                "task": task,
-                "record_id": record_id,
-                "source_patch_sha256": source_patch_sha256,
-                "eval_patch_sha256": eval_patch_sha256,
-            }
-        )
+        normalized_job = {
+            "index": index,
+            "parent_output_dir": str(parent),
+            "base_run_dir": base_run_dir,
+            "remote_runtime_repo": remote_runtime_repo,
+            "run_id": run_id,
+            "eval_dir_name": eval_dir_name,
+            "task": task,
+            "record_id": record_id,
+            "source_patch_sha256": source_patch_sha256,
+            "eval_patch_sha256": eval_patch_sha256,
+        }
+        if eval_timeout is not None:
+            normalized_job["eval_timeout"] = eval_timeout
+        normalized.append(normalized_job)
     return {"schema": SCHEMA, "runner_args": runner_args, "jobs": normalized}
-
 
 def _row_identity(row: dict[str, Any]) -> tuple[str, str, str, str] | None:
     generation = row.get("generation")
@@ -159,7 +221,6 @@ def _row_identity(row: dict[str, Any]) -> tuple[str, str, str, str] | None:
         return None
     return task, record_id, source_patch_sha256, eval_patch_sha256
 
-
 def _job_identity(job: dict[str, Any]) -> tuple[str, str, str, str]:
     return (
         job["task"],
@@ -167,7 +228,6 @@ def _job_identity(job: dict[str, Any]) -> tuple[str, str, str, str]:
         job["source_patch_sha256"],
         job["eval_patch_sha256"],
     )
-
 
 def _row_terminal(row: dict[str, Any], *, job: dict[str, Any]) -> bool:
     evaluation = row.get("eval")
@@ -187,7 +247,6 @@ def _row_terminal(row: dict[str, Any], *, job: dict[str, Any]) -> bool:
         and not integrity.reasons
     )
 
-
 def _report_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
     rows = [row for row in report.get("rows") or [] if isinstance(row, dict)]
     for result in report.get("results") or []:
@@ -196,7 +255,6 @@ def _report_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
                 row for row in result.get("rows") or [] if isinstance(row, dict)
             )
     return rows
-
 
 def _candidate_identity_status(job: dict[str, Any]) -> str:
     parent = Path(job["parent_output_dir"])
@@ -213,12 +271,13 @@ def _candidate_identity_status(job: dict[str, Any]) -> str:
         for row in _report_rows(report):
             if row.get("index") == job["index"] and (identity := _row_identity(row)):
                 identities.add(identity)
-    if not identities or _job_identity(job) not in identities:
+    if _job_identity(job) in identities:
+        return "verified"
+    if not identities:
         return "candidate_identity_missing"
-    if len(identities) != 1:
+    if len(identities) > 1:
         return "candidate_identity_conflict"
-    return "verified"
-
+    return "candidate_identity_missing"
 
 def _terminal_report(job: dict[str, Any]) -> tuple[Path | None, str]:
     parent = Path(job["parent_output_dir"])
@@ -244,7 +303,6 @@ def _terminal_report(job: dict[str, Any]) -> tuple[Path | None, str]:
         return None, "terminal_verdict_conflict"
     return (max(matches)[2], "verified") if matches else (None, "missing")
 
-
 def _observed_eval_attempts(job: dict[str, Any]) -> int:
     parent = Path(job["parent_output_dir"])
     counts = []
@@ -256,25 +314,44 @@ def _observed_eval_attempts(job: dict[str, Any]) -> int:
             if not isinstance(result, dict):
                 continue
             for row in result.get("rows") or []:
-                if isinstance(row, dict) and row.get("index") == job["index"]:
+                if (
+                    isinstance(row, dict)
+                    and row.get("index") == job["index"]
+                    and _row_identity(row) == _job_identity(job)
+                ):
                     evaluation = row.get("eval")
                     if isinstance(evaluation, dict):
-                        total += int(evaluation.get("attempt_count") or 0)
+                        count = strict_integer(
+                            evaluation.get("attempt_count", 0), nonnegative=True
+                        )
+                        if count is not None:
+                            total += count
         counts.append(total)
     final_report = parent / "final_eval_layer_report.json"
     if final_report.is_file():
         report = _swe_report_io.load_json(final_report)
         for task in report.get("tasks") or []:
-            if isinstance(task, dict) and task.get("index") == job["index"]:
-                counts.append(
-                    int(
-                        task.get("observed_eval_attempt_count")
-                        or task.get("eval_attempt_count")
-                        or 0
-                    )
-                )
+            if isinstance(task, dict) and _final_task_matches_job(task, job):
+                raw_count = task.get("observed_eval_attempt_count")
+                if raw_count is None:
+                    raw_count = task.get("eval_attempt_count", 0)
+                count = strict_integer(raw_count, nonnegative=True)
+                if count is None:
+                    continue
+                counts.append(count)
     return max(counts, default=0)
 
+def _final_task_matches_job(task: dict[str, Any], job: dict[str, Any]) -> bool:
+    if task.get("index") != job["index"] or task.get("task") != job["task"]:
+        return False
+    record_id = task.get("record_id")
+    source_sha = task.get("source_patch_sha256") or task.get("patch_sha256")
+    eval_sha = task.get("eval_patch_sha256") or task.get("patch_sha256")
+    return (record_id, source_sha, eval_sha) == (
+        job["record_id"],
+        job["source_patch_sha256"],
+        job["eval_patch_sha256"],
+    )
 
 def _write_state_unlocked(path: Path, state: dict[str, Any]) -> None:
     payload = (json.dumps(state, ensure_ascii=False, indent=2) + "\n").encode()
@@ -284,6 +361,18 @@ def _write_state_unlocked(path: Path, state: dict[str, Any]) -> None:
 def _write_state(path: Path, state: dict[str, Any]) -> None:
     with _state_lock:
         _write_state_unlocked(path, state)
+
+
+def _state_launch_count(previous: object) -> int:
+    if not isinstance(previous, dict):
+        return 0
+    raw = previous.get("launch_count")
+    if raw is None:
+        return 0
+    count = strict_integer(raw, nonnegative=True)
+    if count is None:
+        return 2
+    return count
 
 
 def _set_job_state(
@@ -306,7 +395,7 @@ def _reserve_launch(
 ) -> int | None:
     with _state_lock:
         previous = state["jobs"].get(key)
-        launch_count = int(previous.get("launch_count") or 0) if isinstance(previous, dict) else 0
+        launch_count = _state_launch_count(previous)
         if launch_count >= 2:
             return None
         launch_count += 1
@@ -374,7 +463,60 @@ def _child_argv(
         "--markdown-output",
         str(markdown_output),
     ]
+    if job.get("eval_timeout") is not None:
+        timeout = _positive_finite_timeout(job["eval_timeout"], label="eval_timeout")
+        if not timeout.is_integer():
+            raise ValueError("eval_timeout must be an integer number of seconds")
+        argv.extend(["--eval-timeout", str(int(timeout))])
     return argv, json_output, markdown_output
+
+
+def _run_bounded_child(
+    argv: list[str],
+    *,
+    log,
+    timeout: float,
+) -> subprocess.CompletedProcess:
+    timeout_value = _positive_finite_timeout(timeout, label="queue child timeout")
+    popen_kwargs: dict[str, Any] = {
+        "stdout": log,
+        "stderr": subprocess.STDOUT,
+        "text": True,
+    }
+    if os.name == "posix":
+        popen_kwargs["start_new_session"] = True
+    process = subprocess.Popen(argv, **popen_kwargs)
+    returncode: int
+    try:
+        try:
+            returncode = int(process.wait(timeout=timeout_value))
+        except subprocess.TimeoutExpired:
+            log.write(f"\nqueue child timeout after {timeout_value:g}s\n")
+            cleanup_ok = terminate_local_process_group(
+                process,
+                term_timeout=QUEUE_PROCESS_TERM_GRACE_SECONDS,
+                kill_timeout=QUEUE_PROCESS_KILL_REAP_TIMEOUT_SECONDS,
+            )
+            returncode = 124 if cleanup_ok else 125
+        else:
+            if os.name == "posix" and not _ensure_local_process_group_quiesced_after_wait(
+                process,
+                term_timeout=QUEUE_PROCESS_TERM_GRACE_SECONDS,
+                kill_timeout=QUEUE_PROCESS_KILL_REAP_TIMEOUT_SECONDS,
+            ):
+                log.write("\nqueue child cleanup left a residual process group\n")
+                returncode = 125
+    except BaseException:
+        try:
+            terminate_local_process_group(
+                process,
+                term_timeout=QUEUE_PROCESS_TERM_GRACE_SECONDS,
+                kill_timeout=QUEUE_PROCESS_KILL_REAP_TIMEOUT_SECONDS,
+            )
+        except BaseException:
+            pass
+        raise
+    return subprocess.CompletedProcess(argv, returncode)
 
 
 def _run_job(
@@ -392,72 +534,103 @@ def _run_job(
         return _set_job_state(
             state_path, state, key, {"status": identity_status, **job}
         )
-    terminal, terminal_status = _terminal_report(job)
-    if terminal_status == "terminal_verdict_conflict":
-        return _set_job_state(
-            state_path,
-            state,
-            key,
-            {"status": terminal_status, **job},
-        )
-    if terminal is not None:
-        return _set_job_state(
-            state_path,
-            state,
-            key,
-            {"status": "skipped_terminal", "report": str(terminal), **job},
-        )
+    previous_state = state.get("jobs", {}).get(key)
+    previous_failed = isinstance(previous_state, dict) and previous_state.get("status") in {
+        "command_failed", "technical_failed"
+    }
+    if not previous_failed:
+        terminal, terminal_status = _terminal_report(job)
+        if terminal_status == "terminal_verdict_conflict":
+            return _set_job_state(
+                state_path, state, key, {"status": terminal_status, **job}
+            )
+        if terminal is not None:
+            return _set_job_state(
+                state_path, state, key,
+                {"status": "skipped_terminal", "report": str(terminal), **job},
+            )
     if _observed_eval_attempts(job) >= MAX_TOTAL_EVAL_ATTEMPTS:
         return _set_job_state(
             state_path, state, key, {"status": "budget_exhausted", **job}
         )
-    argv, json_output, markdown_output = _child_argv(
-        plan,
-        job,
-        queue_id=queue_id,
-        output_dir=output_dir,
-    )
+    try:
+        child_timeout = _job_eval_timeout(plan, job) + QUEUE_EVAL_TIMEOUT_GRACE_SECONDS
+        argv, json_output, markdown_output = _child_argv(
+            plan,
+            job,
+            queue_id=queue_id,
+            output_dir=output_dir,
+        )
+    except Exception as exc:
+        detail = f"{type(exc).__name__}: {exc}"[:8_192]
+        return _set_job_state(
+            state_path,
+            state,
+            key,
+            {
+                "status": "invalid_timeout",
+                "returncode": 125,
+                "error": detail,
+                **job,
+            },
+        )
     log_path = output_dir / (json_output.stem + ".log")
     launch_count = _reserve_launch(state_path, state, key, job)
     if launch_count is None:
         previous = state["jobs"].get(key)
-        previous_count = (
-            int(previous.get("launch_count") or 0)
-            if isinstance(previous, dict)
-            else 2
-        )
+        previous_count = _state_launch_count(previous)
         return _set_job_state(
             state_path,
             state,
             key,
             {"status": "launch_budget_exhausted", "launch_count": previous_count, **job},
         )
-    with log_path.open("x", encoding="utf-8") as log:
-        proc = subprocess.run(argv, stdout=log, stderr=subprocess.STDOUT, text=True)
-    result: dict[str, Any] = {
-        "status": "command_failed",
-        "returncode": proc.returncode,
-        "log": str(log_path),
-        "json_output": str(json_output),
-        "markdown_output": str(markdown_output),
-        "launch_count": launch_count,
-        **job,
+    child_error: Exception | None = None
+    proc: subprocess.CompletedProcess | None = None
+    try:
+        with log_path.open("x", encoding="utf-8") as log:
+            proc = _run_bounded_child(argv, log=log, timeout=child_timeout)
+    except Exception as exc:
+        child_error = exc
+    if child_error is not None:
+        returncode = 124 if isinstance(child_error, subprocess.TimeoutExpired) else 125
+        error = f"{type(child_error).__name__}: {child_error}"[:8_192]
+    elif proc is None:
+        returncode, error = 125, "child runner returned no process result"
+    else:
+        returncode, error = proc.returncode, ""
+    result = {
+        "status": "command_failed", "returncode": returncode, "error": error,
+        "log": str(log_path), "json_output": str(json_output),
+        "markdown_output": str(markdown_output), "launch_count": launch_count, **job,
     }
+    retryable_result = child_error is not None or proc is None or proc.returncode != 125
     if json_output.is_file():
         report = _swe_report_io.load_json(json_output)
         rows = report.get("rows")
         if isinstance(rows, list) and len(rows) == 1 and isinstance(rows[0], dict):
-            if _row_terminal(
-                rows[0],
-                job=job,
+            if proc is not None and proc.returncode == 0 and _row_terminal(
+                rows[0], job=job
             ):
                 result["status"] = "terminal"
-            elif rows[0].get("eval", {}).get("status") == "technical_eval_failed":
+            elif proc is not None and _row_terminal(rows[0], job=job):
+                failed_path = json_output.with_name(json_output.name + ".command_failed")
+                try:
+                    json_output.replace(failed_path)
+                except OSError as exc:
+                    result["error"] = f"failed to quarantine child report: {exc}"[:8_192]
+                    result["status"] = "technical_failed"
+                else:
+                    result["json_output"] = str(failed_path)
+            elif isinstance(rows[0].get("eval"), dict) and rows[0]["eval"].get(
+                "status"
+            ) == "technical_eval_failed":
                 result["status"] = "technical_failed"
     persisted = _set_job_state(state_path, state, key, result)
     if (
         result["status"] in {"command_failed", "technical_failed"}
         and launch_count < 2
+        and retryable_result
         and _observed_eval_attempts(job) < MAX_TOTAL_EVAL_ATTEMPTS
     ):
         return _run_job(
@@ -479,6 +652,22 @@ def _refresh_parent_report(parent: str, report: Path) -> dict[str, Any]:
                 json_output=report,
                 usd_cny=None,
             )
+        )
+
+
+def _future_result(future: Any, job: dict[str, Any], state_path: Path, state: dict[str, Any]) -> dict[str, Any]:
+    try:
+        result = future.result()
+        if isinstance(result, dict):
+            return result
+        raise RuntimeError("queue job returned a non-object result")
+    except Exception as exc:
+        detail = f"{type(exc).__name__}: {exc}"[:8_192]
+        launch_count = _state_launch_count(state.get("jobs", {}).get(_job_key(job)))
+        return _set_job_state(
+            state_path, state, _job_key(job),
+            {"status": "command_failed", "returncode": 125, "error": detail,
+             "launch_count": launch_count, **job},
         )
 
 
@@ -508,14 +697,11 @@ def _run_queue_locked(
             "jobs": {},
         }
     _write_state(state_path, state)
-    parent_reports = {}
-    for job in plan["jobs"]:
-        parent = job["parent_output_dir"]
-        if parent in parent_reports:
-            continue
-        reports = sorted(Path(parent).glob("task_*_eval_only_*.json"))
-        if reports:
-            parent_reports[parent] = _refresh_parent_report(parent, reports[-1])
+    # Historical task files are untrusted until they pass the exact candidate
+    # identity and terminal-proof checks below.  In particular, a partial or
+    # quarantined ``task_*_eval_only_*.json`` must not abort queue startup by
+    # being fed directly to the parent report reconciler.  Parent refresh is
+    # intentionally deferred to the post-run aggregation below.
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [
             pool.submit(
@@ -529,24 +715,50 @@ def _run_queue_locked(
             )
             for job in plan["jobs"]
         ]
-        results = [future.result() for future in futures]
+        results = [
+            _future_result(future, job, state_path, state)
+            for future, job in zip(futures, plan["jobs"], strict=True)
+        ]
+    result_by_key = {
+        _job_key(job): result for job, result in zip(plan["jobs"], results, strict=True)
+    }
     parent_reports = {}
+    jobs_by_parent: dict[str, list[dict[str, Any]]] = {}
     for job in plan["jobs"]:
-        parent = job["parent_output_dir"]
-        if parent in parent_reports:
+        jobs_by_parent.setdefault(job["parent_output_dir"], []).append(job)
+    for parent, parent_jobs in jobs_by_parent.items():
+        # A parent can contain several independently queued indices.  Do not
+        # let the first failed index suppress a later successful one.
+        eligible = [
+            job for job in parent_jobs
+            if result_by_key[_job_key(job)].get("status") in {
+                "terminal", "skipped_terminal"
+            }
+        ]
+        if not eligible:
+            first = result_by_key[_job_key(parent_jobs[0])]
+            parent_reports[parent] = {"status": first.get("status") or "command_failed"}
             continue
-        report, terminal_status = _terminal_report(job)
+        report = None
+        terminal_status = "missing"
+        for job in eligible:
+            candidate, candidate_status = _terminal_report(job)
+            if candidate_status == "terminal_verdict_conflict":
+                terminal_status = candidate_status
+                break
+            if candidate is not None:
+                report, terminal_status = candidate, candidate_status
+                break
         if terminal_status == "terminal_verdict_conflict":
             parent_reports[parent] = {"status": terminal_status}
             continue
         if report == Path(parent) / "parallel_summary.json":
             parent_reports[parent] = {"status": "unchanged", "source": str(report)}
             continue
-        if report is None:
-            reports = sorted(Path(parent).glob("task_*_eval_only_*.json"))
-            report = reports[-1] if reports else None
         if report is not None:
             parent_reports[parent] = _refresh_parent_report(parent, report)
+        else:
+            parent_reports[parent] = {"status": "terminal_report_missing"}
     counts: dict[str, int] = {}
     for result in results:
         status = result["status"]
@@ -561,20 +773,9 @@ def run_queue(plan_path: Path, output_dir: Path, *, workers: int) -> dict[str, A
         raise ValueError("workers must be between 1 and 4")
     plan = _read_plan(plan_path)
     output_dir.mkdir(parents=True, exist_ok=True)
-    queue_id = hashlib.sha256(
-        json.dumps(plan, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()[:12]
-    with ParentEvalLock(
-        output_dir,
-        f"rejudge-queue-{queue_id}",
-        blocking=False,
-    ):
-        return _run_queue_locked(
-            plan,
-            output_dir,
-            workers=workers,
-            queue_id=queue_id,
-        )
+    queue_id = hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:12]
+    with ParentEvalLock(output_dir, f"rejudge-queue-{queue_id}", blocking=False):
+        return _run_queue_locked(plan, output_dir, workers=workers, queue_id=queue_id)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -591,7 +792,5 @@ def main(argv: list[str] | None = None) -> int:
     print(json.dumps(result, ensure_ascii=False, indent=2))
     completed = {"terminal", "skipped_terminal"}
     return 0 if set(result["counts"]).issubset(completed) else 1
-
-
 if __name__ == "__main__":
     raise SystemExit(main())

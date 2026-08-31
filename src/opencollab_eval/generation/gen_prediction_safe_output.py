@@ -401,6 +401,16 @@ def build_output_records(
         "patch_sha256": patch_sha,
         "model_name_or_path": model_name,
     }
+    # ``EvalResult.task_id`` is an internal (often anonymous) solver task id,
+    # whereas persisted prediction/metric rows are keyed by the public SWE
+    # instance id.  Keeping two different values under the generic
+    # ``task_id``/``instance_id`` aliases makes strict record pairing reject a
+    # perfectly valid provider-failure row.  Preserve the internal value under
+    # an explicit name and bind the public alias to the persisted instance.
+    solver_task_id = metric_record.get("task_id")
+    if solver_task_id not in (None, "", instance_id):
+        metric_record["solver_task_id"] = solver_task_id
+    metric_record["task_id"] = instance_id
     metric_record["runner_returncode"] = runner_returncode_for_metrics(metric_record)
     prediction = {
         "instance_id": instance_id,

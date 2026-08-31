@@ -12,6 +12,7 @@ from typing import Any
 from opencollab_eval.engine.swe_eval_discovery import (
     _direct_eval_done_has_execution_proof,
 )
+from opencollab_eval.engine.swe_eval_records import strict_integer
 from opencollab_eval.engine.swe_generation_proof import (
     current_generation_summary_proof_valid,
 )
@@ -228,13 +229,12 @@ def attempt_integrity(row: dict[str, Any], task: str) -> AttemptIntegrity:
 
 def strict_index(value: Any) -> int | None:
     """Return an integer task index while rejecting booleans and lossy strings."""
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str) and re.fullmatch(r"-?[0-9]+", value.strip()):
-        return int(value)
-    return None
+    return strict_integer(value)
+
+
+def strict_nonnegative_integer(value: Any) -> int | None:
+    """Return a non-negative integer without lossy JSON coercion."""
+    return strict_integer(value, nonnegative=True)
 
 
 def eval_attempt_count(row: dict[str, Any]) -> int:
@@ -242,13 +242,8 @@ def eval_attempt_count(row: dict[str, Any]) -> int:
     evaluation = row.get("eval") if isinstance(row.get("eval"), dict) else {}
     if evaluation.get("executed") is False:
         return 0
-    value = evaluation.get("attempt_count")
-    if isinstance(value, bool):
-        return 0
-    try:
-        return max(0, int(value or 0))
-    except (TypeError, ValueError):
-        return 0
+    count = strict_nonnegative_integer(evaluation.get("attempt_count", 0))
+    return count if count is not None else 0
 
 
 def claims_evidence_only_rejudgement(
@@ -600,4 +595,5 @@ __all__ = [
     "mark_technical",
     "report_census",
     "strict_index",
+    "strict_nonnegative_integer",
 ]

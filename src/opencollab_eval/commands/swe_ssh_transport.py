@@ -82,10 +82,33 @@ def retryable_ssh_transport_failure(error: CheckedCommandError) -> str:
     """Classify failures proven to occur before a remote command can run."""
     if error.returncode != 255:
         return ""
-    detail = f"{error.stderr}\n{error.stdout}".lower()
-    for failure_kind, marker in _RETRYABLE_SSH_TRANSPORT_MARKERS:
-        if marker in detail:
-            return failure_kind
+    # OpenSSH forwards a remote command's stderr/stdout through the same local
+    # process result.  Substring matching either stream therefore turns a
+    # legitimate remote exit 255 (for example, a probe that reports
+    # "connection refused") into a duplicate execution.  Restrict retries to
+    # the distinctive prefixes emitted by the local OpenSSH client and ignore
+    # stdout entirely.
+    lines = [
+        line.strip().lower()
+        for line in str(error.stderr or "").splitlines()
+        if line.strip()
+    ]
+    for line in lines:
+        if line.startswith("ssh: connect to host "):
+            if "connection timed out" in line or "operation timed out" in line:
+                return "connect_timeout"
+            if "connection refused" in line:
+                return "connection_refused"
+            if "no route to host" in line:
+                return "route_unavailable"
+        if line.startswith("ssh: could not resolve hostname "):
+            return "dns_unavailable"
+        if line.startswith("kex_exchange_identification:"):
+            return "key_exchange_reset"
+        if line.startswith("ssh_exchange_identification:"):
+            return "key_exchange_reset"
+        if line.startswith("connection timed out during banner exchange"):
+            return "banner_timeout"
     return ""
 
 
@@ -93,12 +116,22 @@ def idempotent_ssh_disconnect_failure(error: CheckedCommandError) -> str:
     """Classify an ambiguous disconnect that is safe only for read-only commands."""
     if error.returncode != 255:
         return ""
-    detail = f"{error.stderr}\n{error.stdout}".lower()
-    return (
-        "idempotent_disconnect"
-        if any(marker in detail for marker in _IDEMPOTENT_DISCONNECT_MARKERS)
-        else ""
-    )
+    # A remote command can print the same words as an SSH diagnostic.  Keep
+    # this classifier line-oriented and stderr-only so application output
+    # cannot authorize a second execution of an otherwise idempotent probe.
+    lines = [
+        line.strip().lower()
+        for line in str(error.stderr or "").splitlines()
+        if line.strip()
+    ]
+    for line in lines:
+        if line.startswith("connection closed by ") and " port " in line:
+            return "idempotent_disconnect"
+        if line in {"connection reset by peer", "connection reset by peer."}:
+            return "idempotent_disconnect"
+        if line.startswith("client_loop:") and line.endswith("broken pipe"):
+            return "idempotent_disconnect"
+    return ""
 
 
 def run_ssh_checked(

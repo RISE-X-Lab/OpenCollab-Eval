@@ -54,6 +54,7 @@ from opencollab_eval.commands.swe_v1_transport_recovery import (
     wait_for_remote_ownership_fact,
     wait_for_terminal_remote_summary,
 )
+from opencollab_eval.engine.swe_eval_records import strict_integer
 from opencollab_eval.engine.swe_v1_remote_state import (
     DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
 )
@@ -667,22 +668,15 @@ def _row_eval_attempt_count(row: dict[str, Any]) -> int:
     evaluation = row.get("eval") if isinstance(row.get("eval"), dict) else {}
     if evaluation.get("executed") is False:
         return 0
-    value = evaluation.get("attempt_count")
-    if isinstance(value, bool):
-        return 0
-    try:
-        count = int(value or 0)
-    except (TypeError, ValueError):
-        return 0
-    return max(0, count)
+    count = strict_integer(evaluation.get("attempt_count", 0), nonnegative=True)
+    return count if count is not None else 0
 
 
 def _report_task_eval_counts(report: dict[str, Any]) -> dict[int, int]:
     counts: dict[int, int] = {}
     for row in _report_rows(report):
-        try:
-            index = int(row.get("index"))
-        except (TypeError, ValueError):
+        index = strict_integer(row.get("index"))
+        if index is None:
             continue
         counts[index] = counts.get(index, 0) + _row_eval_attempt_count(row)
     return counts
@@ -693,14 +687,12 @@ def _final_report_task_eval_counts(report: dict[str, Any]) -> dict[int, int]:
     for task in report.get("tasks") or []:
         if not isinstance(task, dict):
             continue
-        try:
-            index = int(task.get("index"))
-            count = int(
-                task.get("observed_eval_attempt_count")
-                or task.get("eval_attempt_count")
-                or 0
-            )
-        except (TypeError, ValueError):
+        index = strict_integer(task.get("index"))
+        raw_count = task.get("observed_eval_attempt_count")
+        if raw_count is None:
+            raw_count = task.get("eval_attempt_count", 0)
+        count = strict_integer(raw_count, nonnegative=True)
+        if index is None or count is None:
             continue
         counts[index] = max(counts.get(index, 0), count)
     return counts

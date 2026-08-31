@@ -242,7 +242,11 @@ def _run_openhands(
         "TMPDIR",
         "USER",
         "OPENCOLLAB_OPENHANDS_PYTHON",
-        "OPENCOLLAB_REMOTE_REPO", *ccs.RUNTIME_ENV_KEYS,
+        "OPENCOLLAB_REMOTE_REPO",
+        "OPENCOLLAB_LLM_TIMEOUT",
+        "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT",
+        "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT",
+        *ccs.RUNTIME_ENV_KEYS,
     }
     env = {name: os.environ[name] for name in inherited_names if name in os.environ}
     env.update(

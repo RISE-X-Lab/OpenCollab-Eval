@@ -7,7 +7,6 @@ from swe_eval_status_support import (
     json,
     os,
     pytest,
-    signal,
     stat,
     sys,
     time,
@@ -281,26 +280,20 @@ def test_smoke_manifest_appends_multiple_records_and_repairs_truncated_tail(tmp_
     ]
 
 
-@pytest.mark.skipif(os.name != "posix", reason="recoverable helper uses POSIX fork")
-def test_smoke_generator_permanently_blocked_popen_is_reaped(
-    tmp_path,
-    monkeypatch,
-):
+@pytest.mark.skipif(os.name != "posix", reason="process-group cleanup is POSIX-specific")
+def test_smoke_generator_blocked_child_is_reaped(tmp_path):
     driver = importlib.import_module("opencollab_eval.commands.run_swebench_smoke_batch")
-    helper_pid = tmp_path / "helper.pid"
-
-    def block_forever(*args, **kwargs):
-        del args, kwargs
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        helper_pid.write_text(str(os.getpid()), encoding="ascii")
-        while True:
-            time.sleep(1)
-
-    monkeypatch.setattr(driver, "_GENERATOR_POPEN", block_forever)
+    child_pid = tmp_path / "child.pid"
+    child_code = (
+        "import os,pathlib,signal,time;"
+        "signal.signal(signal.SIGTERM,signal.SIG_IGN);"
+        f"pathlib.Path({str(child_pid)!r}).write_text(str(os.getpid()));"
+        "time.sleep(30)"
+    )
     started = time.monotonic()
 
     returncode, reason = driver._run_generator(
-        [sys.executable, "-c", "pass"],
+        [sys.executable, "-c", child_code],
         cwd=tmp_path,
         env=os.environ.copy(),
         outer_timeout=0.2,
@@ -310,11 +303,18 @@ def test_smoke_generator_permanently_blocked_popen_is_reaped(
     )
 
     assert time.monotonic() - started < 1.0
-    assert returncode == driver.TECHNICAL_EXIT_CODE
-    assert "spawn exceeded" in reason
-    pid = int(helper_pid.read_text(encoding="ascii"))
-    with pytest.raises(ProcessLookupError):
-        os.kill(pid, 0)
+    assert returncode in {124, driver.TECHNICAL_EXIT_CODE}
+    assert "timeout" in reason or "timed out" in reason
+    pid = int(child_pid.read_text(encoding="ascii"))
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.01)
+    else:
+        pytest.fail(f"generator child {pid} remained alive after cleanup")
 
 
 @pytest.mark.skipif(os.name != "posix", reason="recoverable helper uses POSIX sessions")

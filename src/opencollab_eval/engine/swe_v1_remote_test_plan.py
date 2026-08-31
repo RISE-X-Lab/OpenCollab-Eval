@@ -2,6 +2,9 @@
 
 # ruff: noqa: E501, F403, F405, I001
 
+import math
+import shlex
+
 from opencollab_eval.engine.swe_test_plan_contract import (
     NOOP_TEST_COMMANDS as _NOOP_TEST_COMMANDS,
     dynamic_go_targets_supported,
@@ -17,6 +20,128 @@ from opencollab_eval.engine.swe_v1_remote_pytest_proof import *
 from opencollab_eval.engine.swe_v1_remote_records import *
 from opencollab_eval.engine.swe_v1_remote_state import *
 from opencollab_eval.engine.swe_v1_remote_target_proof import *
+
+
+# Keep this helper self-contained: it is embedded in the evaluation container
+# and therefore cannot import the OpenCollab package from the host workspace.
+# ``start_new_session`` gives the command its own process group so a timeout
+# cannot leave a compiler/test descendant running after the shell exits.
+_BOUNDED_COMMAND_RUNNER_SOURCE = r'''import os
+import signal
+import subprocess
+import sys
+import time
+
+
+def _process_group_exists(process):
+    """Return whether the owned process group still has a member."""
+    killpg = getattr(os, "killpg", None)
+    if killpg is None:
+        try:
+            return process.poll() is None
+        except (AttributeError, OSError):
+            return False
+    try:
+        killpg(process.pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        # A permission/error response means that absence was not proven.
+        return True
+    return True
+
+
+def _kill_and_reap(process):
+    """Kill a command group and catch descendants forked during cleanup."""
+    killpg = getattr(os, "killpg", None)
+    deadline = time.monotonic() + 5.0
+    empty_scans = 0
+    while time.monotonic() < deadline:
+        try:
+            if killpg is not None:
+                killpg(process.pid, signal.SIGKILL)
+            else:
+                process.kill()
+        except (OSError, ProcessLookupError):
+            try:
+                process.kill()
+            except (OSError, ProcessLookupError):
+                pass
+        remaining = max(0.0, deadline - time.monotonic())
+        try:
+            process.wait(timeout=min(0.1, remaining))
+        except (OSError, ChildProcessError, subprocess.TimeoutExpired):
+            pass
+        try:
+            leader_alive = process.poll() is None
+        except (AttributeError, OSError):
+            leader_alive = False
+        group_alive = _process_group_exists(process)
+        if not leader_alive and not group_alive:
+            empty_scans += 1
+            if empty_scans >= 2:
+                return True
+        else:
+            empty_scans = 0
+        time.sleep(min(0.02, max(0.0, deadline - time.monotonic())))
+    try:
+        process.wait(timeout=0.1)
+    except (OSError, ChildProcessError, subprocess.TimeoutExpired):
+        pass
+    return not _process_group_exists(process) and process.poll() is not None
+
+
+try:
+    timeout = float(sys.argv[1])
+    command = bytes.fromhex(sys.argv[2]).decode("utf-8")
+except (IndexError, TypeError, ValueError, OverflowError, UnicodeDecodeError):
+    raise SystemExit(124)
+if timeout <= 0 or timeout != timeout or timeout == float("inf") or timeout == float("-inf"):
+    raise SystemExit(124)
+try:
+    process = subprocess.Popen(["bash", "-c", command], start_new_session=True)
+except OSError:
+    raise SystemExit(127)
+try:
+    returncode = process.wait(timeout=timeout)
+except subprocess.TimeoutExpired:
+    if _kill_and_reap(process):
+        raise SystemExit(124)
+    raise SystemExit(125)
+except BaseException:
+    _kill_and_reap(process)
+    raise
+if _process_group_exists(process):
+    # A command that exits successfully while leaving a same-session
+    # descendant behind is not a clean test execution.  Reap the owned group
+    # within the same bounded cleanup window and keep the result technical so
+    # the evaluator cannot record a false pass.
+    if not _kill_and_reap(process):
+        raise SystemExit(125)
+    raise SystemExit(125)
+if returncode < 0:
+    returncode = min(255, 128 - returncode)
+raise SystemExit(min(255, returncode))
+'''
+
+
+def _bounded_command_execution(command: str, timeout_argument: str) -> str:
+    """Build a dependency-free bounded command invocation for the container."""
+
+    return (
+        "python3 -c "
+        + shlex.quote(_BOUNDED_COMMAND_RUNNER_SOURCE)
+        # The first argument after ``-c`` becomes ``sys.argv[1]``; adding a
+        # conventional ``--`` sentinel here would shift both wrapper inputs
+        # and make every invocation fail before launching the child.
+        + " "
+        + timeout_argument
+        + " "
+        # Encode the shell command as hex before crossing the nested
+        # ``bash -c`` boundary.  Quoting the raw command twice would strip
+        # quotes from commands such as ``python3 -c '...'``.
+        + shlex.quote(command.encode("utf-8").hex())
+    )
 
 
 def _plan_log_proof_matches(proof, log_text, proof_text=""):
@@ -391,25 +516,83 @@ def prolite_test_command(row, tests, target_file=""):
 
 
 def prolite_test_plan_script(
-    plan, evidence_prefix, proof_nonce="proof", *, controller_timeout=None
+    plan,
+    evidence_prefix,
+    proof_nonce="proof",
+    *,
+    controller_timeout=None,
+    shared_deadline_env=None,
 ):
     if not re.fullmatch(r"[a-z][a-z0-9_]*", str(evidence_prefix)):
         raise ValueError("invalid test evidence prefix")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", str(proof_nonce)):
         raise ValueError("invalid pytest proof nonce")
+    if shared_deadline_env is not None and not re.fullmatch(
+        r"[A-Za-z_][A-Za-z0-9_]*", str(shared_deadline_env)
+    ):
+        raise ValueError("invalid shared deadline environment variable")
+    timeout_value = None
+    if controller_timeout is not None:
+        if isinstance(controller_timeout, bool):
+            raise ValueError("controller timeout must be finite and positive")
+        try:
+            timeout_value = float(controller_timeout)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("controller timeout must be finite and positive") from exc
+        if not math.isfinite(timeout_value) or timeout_value <= 0:
+            raise ValueError("controller timeout must be finite and positive")
     plan_kind = validated_test_plan_kind(
         plan,
         require_commands=bool(plan.get("commands")) if isinstance(plan, dict) else True,
     )
     if plan_kind is None:
         return "#!/usr/bin/env bash\necho 'untrusted test plan is unsupported' >&2\nexit 86\n"
+    commands = plan.get("commands") or []
+    # A direct evaluation invokes the fail-to-pass and pass-to-pass scripts as
+    # separate processes.  ``shared_deadline_env`` lets that caller provide
+    # one absolute monotonic deadline while retaining the historical behavior
+    # for standalone callers that omit it.
+    shared_deadline = controller_timeout is not None and (
+        len(commands) > 1 or shared_deadline_env is not None
+    )
     lines = ["#!/usr/bin/env bash", "set +e", "overall_status=0"]
-    for index, command in enumerate(plan.get("commands") or [], 1):
+    stop_after_cleanup_failure = shared_deadline and len(commands) > 1
+    if stop_after_cleanup_failure:
+        lines.append("stop_after_cleanup_failure=0")
+    if shared_deadline:
+        if shared_deadline_env is None:
+            lines.extend(
+                [
+                    "controller_deadline=$(python3 -c 'import time,sys; print(time.monotonic()+float(sys.argv[1]))' "
+                    + shlex.quote(str(timeout_value))
+                    + ")",
+                    "if [ -z \"${controller_deadline:-}\" ]; then overall_status=124; fi",
+                ]
+            )
+        else:
+            env_ref = f"${{{shared_deadline_env}:-}}"
+            lines.extend(
+                [
+                    f'if [ -n "{env_ref}" ]; then',
+                    f'  controller_deadline="${shared_deadline_env}"',
+                    "else",
+                    "  controller_deadline=$(python3 -c 'import time,sys; print(time.monotonic()+float(sys.argv[1]))' "
+                    + shlex.quote(str(timeout_value))
+                    + ")",
+                    "fi",
+                    "if [ -z \"${controller_deadline:-}\" ]; then overall_status=124; fi",
+                ]
+            )
+    for index, command in enumerate(commands, 1):
         stem = f"/eval_output/{evidence_prefix}.batch_{index:03d}"
         proofs = plan.get("proofs") or []
         proof = proofs[index - 1] if index <= len(proofs) else None
         execution_command = command
-        if isinstance(proof, dict) and proof.get("kind") == "pytest_structured_reports":
+        is_pytest_controller = (
+            isinstance(proof, dict)
+            and proof.get("kind") == "pytest_structured_reports"
+        )
+        if is_pytest_controller:
             proof_path = f"{stem}.proof.{proof_nonce}.jsonl"
             candidate_path_args = [
                 value
@@ -424,9 +607,13 @@ def prolite_test_plan_script(
                     "--command-sha256",
                     str(proof.get("command_sha256") or ""),
             ]
-            if controller_timeout is not None:
+            if controller_timeout is not None and not shared_deadline:
                 controller_args.extend(
                     ["--event-timeout-seconds", str(controller_timeout)]
+                )
+            elif shared_deadline:
+                controller_args.extend(
+                    ["--event-timeout-seconds", "__OPENCOLLAB_BATCH_TIMEOUT__"]
                 )
             controller_args.extend(
                 [
@@ -436,9 +623,58 @@ def prolite_test_plan_script(
                 ]
             )
             execution_command = shlex.join(controller_args)
+            if shared_deadline:
+                execution_command = execution_command.replace(
+                    "__OPENCOLLAB_BATCH_TIMEOUT__", '"$batch_timeout"', 1
+                )
+        elif timeout_value is not None:
+            execution_command = _bounded_command_execution(
+                command,
+                '"$batch_timeout"'
+                if shared_deadline
+                else shlex.quote(str(timeout_value)),
+            )
+        # The privileged pytest controller has its own event-stream deadline,
+        # but startup (importing pytest, walking the repository, or dropping
+        # privileges) happens before that loop begins.  Keep the same outer
+        # process-group watchdog around it so a wedged image cannot bypass the
+        # generated plan's total budget.
+        if timeout_value is not None and is_pytest_controller:
+            execution_command = _bounded_command_execution(
+                execution_command,
+                '"$batch_timeout"'
+                if shared_deadline
+                else shlex.quote(str(timeout_value)),
+            )
+        batch_prefix = []
+        if stop_after_cleanup_failure:
+            batch_prefix.extend(
+                [
+                    'if [ "${stop_after_cleanup_failure:-0}" -eq 1 ]; then',
+                    "  batch_status=125",
+                    f"  printf '%s\\n' \"$batch_status\" > {stem}.exit",
+                    "else",
+                ]
+            )
+        if shared_deadline:
+            batch_prefix.extend(
+                [
+                'batch_timeout=$(python3 -c \'import math,sys,time; d=float(sys.argv[1]); l=float(sys.argv[2]); r=d-time.monotonic(); sys.exit(124) if (not math.isfinite(d) or not math.isfinite(l) or not math.isfinite(r) or r <= 0) else print(min(l,r))\' "$controller_deadline" '
+                + shlex.quote(str(timeout_value))
+                + ")",
+                "batch_timeout_status=$?",
+                "export batch_timeout",
+                'if [ "$batch_timeout_status" -ne 0 ] || [ -z "${batch_timeout:-}" ]; then',
+                "  batch_status=124",
+                f"  printf '%s\\n' \"$batch_status\" > {stem}.exit",
+                "  if [ \"$overall_status\" -eq 0 ]; then overall_status=$batch_status; fi",
+                "else",
+                ]
+            )
         lines.extend(
             [
                 f"printf '%s\\n' {shlex.quote(command)} > {stem}.command",
+                *batch_prefix,
                 f"bash -c {shlex.quote(execution_command)} > {stem}.log 2>&1",
                 "batch_status=$?",
                 f"printf '%s\\n' \"$batch_status\" > {stem}.exit",
@@ -448,6 +684,17 @@ def prolite_test_plan_script(
                 "fi",
             ]
         )
+        if shared_deadline:
+            lines.append("fi")
+        if stop_after_cleanup_failure:
+            lines.extend(
+                [
+                    'if [ "${batch_status:-0}" -eq 125 ]; then',
+                    "  stop_after_cleanup_failure=1",
+                    "fi",
+                    "fi",
+                ]
+            )
     lines.extend(['exit "$overall_status"', ""])
     return "\n".join(lines)
 

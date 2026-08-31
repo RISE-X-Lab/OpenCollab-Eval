@@ -60,6 +60,11 @@ def eval_for_task_with_retries(row, eval_once, eval_timeout=None, controller_tim
                 eval_spec_sha256=expected_eval_spec_sha256,
                 expected_eval_patch_sha256=expected_eval_patch_sha256,
                 expected_eval_image_id=expected_eval_image_id,
+                expected_candidate_expectation=(
+                    patch_selection.get("candidate_expectation")
+                    if isinstance(patch_selection, dict)
+                    else None
+                ),
             )
             else "technical_eval_failed"
         )

@@ -5,7 +5,6 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -53,12 +52,27 @@ def test_snapshot_git_calls_bind_the_discovered_repository_as_safe(
     repo = tmp_path / "foreign-owner-repo"
     repo.mkdir()
     observed = []
+    processes = []
 
-    def fake_run(command, **kwargs):
+    class FakeProcess:
+        pid = 99999999
+        returncode = 0
+        communicate_kwargs = None
+
+        def communicate(self, **kwargs):
+            self.communicate_kwargs = kwargs
+            return b"", b""
+
+        def wait(self, **kwargs):
+            return self.returncode
+
+    def fake_popen(command, **kwargs):
         observed.append((command, kwargs))
-        return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+        process = FakeProcess()
+        processes.append(process)
+        return process
 
-    monkeypatch.setattr(snapshot_container.subprocess, "run", fake_run)
+    monkeypatch.setattr(snapshot_container.subprocess, "Popen", fake_popen)
 
     snapshot_container._run_git(repo, "status", env={})
 
@@ -69,6 +83,93 @@ def test_snapshot_git_calls_bind_the_discovered_repository_as_safe(
         "-C",
         str(repo),
     ]
+    assert observed[0][1]["start_new_session"] is True
+    assert observed[0][1]["stdin"] is snapshot_container.subprocess.DEVNULL
+    assert observed[0][1]["stdout"] is snapshot_container.subprocess.PIPE
+    assert processes[0].communicate_kwargs["timeout"] == snapshot_container._GIT_COMMAND_TIMEOUT_SECONDS
+
+
+def test_snapshot_git_timeout_is_reported_as_setup_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "hung-git-repo"
+    repo.mkdir()
+
+    class FakeProcess:
+        pid = 99999999
+        returncode = -9
+
+        def communicate(self, **kwargs):
+            del kwargs
+            raise subprocess.TimeoutExpired(
+                "git", snapshot_container._GIT_COMMAND_TIMEOUT_SECONDS
+            )
+
+        def kill(self):
+            return None
+
+        def wait(self, **kwargs):
+            del kwargs
+            return self.returncode
+
+    def fake_popen(*args, **kwargs):
+        del args, kwargs
+        return FakeProcess()
+
+    monkeypatch.setattr(snapshot_container.subprocess, "Popen", fake_popen)
+
+    with pytest.raises(snapshot_container.SnapshotSetupError, match="timed out"):
+        snapshot_container._run_git(repo, "status", env={})
+
+
+def test_initial_status_uses_the_bounded_safe_git_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "status-repo"
+    repo.mkdir()
+    observed: list[tuple[tuple[str, ...], dict[str, object]]] = []
+    processes = []
+
+    class FakeProcess:
+        pid = 99999999
+        returncode = 0
+        communicate_kwargs = None
+
+        def communicate(self, **kwargs):
+            self.communicate_kwargs = kwargs
+            return b"", b""
+
+        def wait(self, **kwargs):
+            return self.returncode
+
+    def fake_popen(command, **kwargs):
+        observed.append((tuple(command), kwargs))
+        process = FakeProcess()
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(snapshot_container.subprocess, "Popen", fake_popen)
+
+    untracked, ignored, drift = snapshot_container._initial_status(
+        repo, "a" * 40, env={}
+    )
+
+    assert untracked == {"count": 0, "sample": [], "truncated": False}
+    assert ignored == {"count": 0, "sample": [], "truncated": False}
+    assert drift is False
+    assert len(observed) == 2
+    assert all(
+        item[0][0:5]
+        == ("git", "-c", f"safe.directory={repo.resolve()}", "-C", str(repo))
+        for item in observed
+    )
+    assert all(
+        process.communicate_kwargs["timeout"]
+        == snapshot_container._GIT_COMMAND_TIMEOUT_SECONDS
+        for process in processes
+    )
 
 
 def test_snapshot_rebuilds_one_disposable_base_and_reports_sanitation(tmp_path: Path) -> None:

@@ -60,6 +60,46 @@ except (IndexError, TypeError, ValueError, OverflowError):
 raise SystemExit(0 if math.isfinite(value) and value > 0 else 1)
 ' "$1"
 }
+
+# macOS ships `shasum` rather than GNU `sha256sum`.  Hashing is part of the
+# evidence contract, so a missing convenience utility must not turn an
+# otherwise valid run into a technical failure.  Keep a Python fallback for
+# minimal hosts (the sidecar interpreter is already required above).
+sha256_stdin() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{print $1}'
+  else
+    "$python_bin" -c '
+import hashlib
+import sys
+h = hashlib.sha256()
+for chunk in iter(lambda: sys.stdin.buffer.read(1024 * 1024), b""):
+    h.update(chunk)
+print(h.hexdigest())
+'
+  fi
+}
+
+sha256_file() {
+  local path="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$path" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$path" | awk '{print $1}'
+  else
+    "$python_bin" -c '
+import hashlib
+import sys
+h = hashlib.sha256()
+with open(sys.argv[1], "rb") as handle:
+    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        h.update(chunk)
+print(h.hexdigest())
+' "$path"
+  fi
+}
 if ! validate_positive_timeout "$docker_control_timeout"; then
   echo "Claude Code Docker control timeout must be finite and positive" >&2
   exit 2
@@ -98,6 +138,37 @@ raise SystemExit(0 if math.isfinite(value) and 0 < value <= 30 else 1)
   echo "Claude Code Docker health retry budget must be at most thirty seconds" >&2
   exit 2
 fi
+# Keep the Claude sidecar's upstream socket deadline aligned with the host
+# relay. The hard cap prevents an untrusted environment value from creating
+# an unbounded socket wait; 21,600 seconds is the largest model timeout
+# accepted by the current runner contract.
+relay_upstream_timeout_max=$((6 * 60 * 60 + 60))
+relay_upstream_timeout="$("$python_bin" - \
+  "${OPENCOLLAB_LLM_TIMEOUT:-600}" \
+  "${OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT:-180}" \
+  "${OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT:-180}" \
+  "$relay_upstream_timeout_max" <<'PY'
+import math
+import sys
+
+try:
+    llm_timeout, first_event, stream_idle, maximum = (
+        float(value) for value in sys.argv[1:5]
+    )
+except (IndexError, TypeError, ValueError, OverflowError):
+    raise SystemExit(1)
+values = (llm_timeout, first_event, stream_idle, maximum)
+if any(not math.isfinite(value) or value <= 0 for value in values):
+    raise SystemExit(1)
+derived = min(llm_timeout, max(first_event, stream_idle)) + 60.0
+if not math.isfinite(derived) or derived > maximum:
+    raise SystemExit(1)
+print(f"{derived:.9f}".rstrip("0").rstrip("."))
+PY
+)" || {
+  echo "Claude relay upstream timeout settings must be finite, positive, and bounded" >&2
+  exit 2
+}
 docker_control_with_timeout() {
   local timeout="$1"
   shift
@@ -115,9 +186,12 @@ if deadline_raw is not None:
     try:
         deadline = float(deadline_raw)
     except (TypeError, ValueError, OverflowError):
-        raise SystemExit(125)
+        # Keep watchdog/launcher failures distinct from Docker CLI status 125.
+        # Docker uses 125 for daemon/runtime errors; the bounded health loop
+        # may safely retry it.
+        raise SystemExit(251)
     if not math.isfinite(deadline):
-        raise SystemExit(125)
+        raise SystemExit(251)
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         # Private status used by the retry loop to distinguish an exhausted
@@ -152,14 +226,14 @@ def forward_signal(signum, _frame) -> None:
     except ProcessLookupError:
         pass
     except OSError:
-        raise SystemExit(125)
+        raise SystemExit(251)
     try:
         process.wait(timeout=1.0)
     except subprocess.TimeoutExpired:
         if not kill_and_reap():
-            raise SystemExit(125)
+            raise SystemExit(251)
     except (OSError, ChildProcessError):
-        raise SystemExit(125)
+        raise SystemExit(251)
     raise SystemExit(128 + signum)
 
 
@@ -170,7 +244,7 @@ try:
 except subprocess.TimeoutExpired:
     if not kill_and_reap():
         print("could not reap timed-out Docker control command", file=sys.stderr)
-        raise SystemExit(125)
+        raise SystemExit(251)
     print("Docker control command timed out", file=sys.stderr)
     raise SystemExit(124)
 if returncode < 0:
@@ -210,7 +284,7 @@ print(time.monotonic() + budget)
       if [[ "$status" -eq 122 ]]; then
         break
       fi
-      if [[ "$status" -eq 125 ]]; then
+      if [[ "$status" -eq 251 ]]; then
         echo "Docker health probe process could not be reaped" >&2
         exit 125
       fi
@@ -228,11 +302,18 @@ actual_runtime_id=""
 network_name=""
 workspace=""
 test_id=""
+test_name=""
 runtime_name=""
 trusted_git_dir=""
 trusted_git_home=""
 gateway_id=""
+gateway_name=""
 relay_id=""
+relay_name=""
+gateway_cidfile=""
+relay_cidfile=""
+test_cidfile=""
+runtime_cidfile=""
 
 mkdir -p "$output_dir"
 actual_runtime_id="$(docker_control image inspect --format '{{.Id}}' "$runtime_image")"
@@ -257,25 +338,62 @@ relay_cidfile="$output_dir/relay-container.id"
 test_cidfile="$output_dir/test-container.id"
 runtime_cidfile="$output_dir/runtime-container.id"
 
+# A daemon may create a named container and write its cidfile before the
+# client-side `docker run -d` call times out or returns an error.  In that
+# case command substitution leaves the ID variable empty, so cleanup must use
+# the freshly-created cidfile or the deterministic name as a fallback.
+cleanup_container_by_id_name_or_cidfile() {
+  local id="$1"
+  local name="$2"
+  local cidfile="$3"
+  local reference=""
+  local cid=""
+  if [[ "$id" =~ ^[0-9a-f]{12,64}$ ]]; then
+    reference="$id"
+  elif [[ -n "$cidfile" && -f "$cidfile" && ! -L "$cidfile" ]]; then
+    cid="$(<"$cidfile")"
+    if [[ "$cid" =~ ^[0-9a-f]{12,64}$ ]]; then
+      reference="$cid"
+    fi
+  fi
+  if [[ -z "$reference" ]]; then
+    reference="$name"
+  fi
+  [[ -n "$reference" ]] || return 0
+  if remove_container_and_prove_absent "$reference"; then
+    return 0
+  fi
+  # If an ID/cidfile was stale or malformed, retry by name.  Names are
+  # generated per invocation and therefore remain the safest final fallback.
+  if [[ -n "$name" && "$reference" != "$name" ]]; then
+    remove_container_and_prove_absent "$name"
+    return $?
+  fi
+  return 1
+}
+
 remove_container_and_prove_absent() {
   local reference="$1"
   local inspect_output
   local inspect_status
+  local attempt
   [[ -n "$reference" ]] || return 0
-  docker_control rm -f "$reference" >/dev/null 2>&1 || true
-  inspect_output="$(docker_control container inspect "$reference" 2>&1)"
-  inspect_status=$?
-  if [[ "$inspect_status" -eq 0 ]]; then
-    return 1
-  fi
-  # A daemon error is not proof of absence.  Accept only Docker's explicit
-  # not-found responses; callers convert every other outcome to 125.
-  if [[ "$inspect_output" == *"No such container"* ||
-        "$inspect_output" == *"No such object"* ||
-        "$inspect_output" == *"no such container"* ||
-        "$inspect_output" == *"no such object"* ]]; then
-    return 0
-  fi
+  # A daemon can briefly reject rm/inspect while it is restarting.
+  for attempt in 1 2 3; do
+    docker_control rm -f "$reference" >/dev/null 2>&1 || true
+    inspect_output="$(docker_control container inspect "$reference" 2>&1)"
+    inspect_status=$?
+    if [[ "$inspect_status" -ne 0 &&
+          ( "$inspect_output" == *"No such container" ||
+            "$inspect_output" == *"No such object" ||
+            "$inspect_output" == *"no such container" ||
+            "$inspect_output" == *"no such object" ) ]]; then
+      return 0
+    fi
+    if [[ "$attempt" -lt 3 ]]; then
+      sleep 0.2
+    fi
+  done
   return 1
 }
 
@@ -283,17 +401,21 @@ remove_network_and_prove_absent() {
   local network="$1"
   local inspect_output
   local inspect_status
+  local attempt
   [[ -n "$network" ]] || return 0
-  docker_control network rm "$network" >/dev/null 2>&1 || true
-  inspect_output="$(docker_control network inspect "$network" 2>&1)"
-  inspect_status=$?
-  if [[ "$inspect_status" -eq 0 ]]; then
-    return 1
-  fi
-  if [[ "$inspect_output" == *"No such network"* ||
-        "$inspect_output" == *"no such network"* ]]; then
-    return 0
-  fi
+  for attempt in 1 2 3; do
+    docker_control network rm "$network" >/dev/null 2>&1 || true
+    inspect_output="$(docker_control network inspect "$network" 2>&1)"
+    inspect_status=$?
+    if [[ "$inspect_status" -ne 0 &&
+          ( "$inspect_output" == *"No such network" ||
+            "$inspect_output" == *"no such network" ) ]]; then
+      return 0
+    fi
+    if [[ "$attempt" -lt 3 ]]; then
+      sleep 0.2
+    fi
+  done
   return 1
 }
 
@@ -303,18 +425,16 @@ cleanup() {
   local container_cleanup_failed=0
   trap - EXIT INT TERM
   set +e
-  if [[ -n "$test_id" ]] && ! remove_container_and_prove_absent "$test_id"; then
+  if ! cleanup_container_by_id_name_or_cidfile "$test_id" "$test_name" "$test_cidfile"; then
     container_cleanup_failed=1
   fi
-  if [[ -n "$runtime_name" ]]; then
-    if ! remove_container_and_prove_absent "$runtime_name"; then
-      container_cleanup_failed=1
-    fi
-  fi
-  if [[ -n "$relay_id" ]] && ! remove_container_and_prove_absent "$relay_id"; then
+  if ! cleanup_container_by_id_name_or_cidfile "" "$runtime_name" "$runtime_cidfile"; then
     container_cleanup_failed=1
   fi
-  if [[ -n "$gateway_id" ]] && ! remove_container_and_prove_absent "$gateway_id"; then
+  if ! cleanup_container_by_id_name_or_cidfile "$relay_id" "$relay_name" "$relay_cidfile"; then
+    container_cleanup_failed=1
+  fi
+  if ! cleanup_container_by_id_name_or_cidfile "$gateway_id" "$gateway_name" "$gateway_cidfile"; then
     container_cleanup_failed=1
   fi
   if ! remove_network_and_prove_absent "$network_name"; then
@@ -372,7 +492,7 @@ run_clean_git() {
 }
 anonymous_head="$(run_clean_git rev-parse HEAD)"
 base_tree="$(run_clean_git rev-parse HEAD^{tree})"
-baseline_sha256="$(run_clean_git archive --format=tar "$anonymous_head" | sha256sum | awk '{print $1}')"
+baseline_sha256="$(run_clean_git archive --format=tar "$anonymous_head" | sha256_stdin)"
 gitlink_repository_dir="$output_dir/claude-gitlink-baselines"
 gitlink_baseline_manifest="$output_dir/claude-gitlink-baseline.json"
 gitlink_projection_manifest="$output_dir/claude-gitlink-projections.json"
@@ -417,6 +537,7 @@ relay_id="$(docker_control run -d --name "$relay_name" --cidfile "$relay_cidfile
   --label "opencollab.solver_task_id=$OPENHANDS_INSTANCE_ID" \
   --network "$network_name" --network-alias claude-api \
   -e CLAUDE_RELAY_UPSTREAM_UNIX=/control/upstream.sock \
+  -e "CLAUDE_RELAY_UPSTREAM_TIMEOUT=$relay_upstream_timeout" \
   --mount "type=bind,src=$relay_socket,dst=/control/upstream.sock" \
   --mount "type=bind,src=$relay_script,dst=/control/claude_api_relay.py,readonly" \
   --entrypoint python3 "$runtime_image" /control/claude_api_relay.py)"
@@ -495,7 +616,7 @@ runtime_identity="$(docker_control run --rm \
   --label opencollab.owner=claude-code-probe \
   --label "opencollab.solver_task_id=$OPENHANDS_INSTANCE_ID" \
   --entrypoint bash "$runtime_image" -lc \
-  'p=$(command -v claude); printf "%s\n" "$p"; sha256sum "$p" | cut -d" " -f1; claude --version')"
+  'p=$(command -v claude); printf "%s\n" "$p"; python3 -c "import hashlib,sys; h=hashlib.sha256(); f=open(sys.argv[1],\"rb\"); [h.update(c) for c in iter(lambda: f.read(1048576), b\"\")]; f.close(); print(h.hexdigest())" "$p"; claude --version')"
 claude_path="$(printf '%s\n' "$runtime_identity" | sed -n '1p')"
 claude_sha256="$(printf '%s\n' "$runtime_identity" | sed -n '2p')"
 cli_version_output="$(printf '%s\n' "$runtime_identity" | sed -n '3,$p')"
@@ -538,17 +659,19 @@ claude_returncode=$?
 set -e
 
 container_cleanup_failed=0
-if remove_container_and_prove_absent "$relay_id"; then
+# The fallback helper subsumes the old remove_container_and_prove_absent "$test_id"
+# call while also recovering IDs from cidfiles/names after a daemon timeout.
+if cleanup_container_by_id_name_or_cidfile "$relay_id" "$relay_name" "$relay_cidfile"; then
   relay_id=""
 else
   container_cleanup_failed=1
 fi
-if remove_container_and_prove_absent "$gateway_id"; then
+if cleanup_container_by_id_name_or_cidfile "$gateway_id" "$gateway_name" "$gateway_cidfile"; then
   gateway_id=""
 else
   container_cleanup_failed=1
 fi
-if remove_container_and_prove_absent "$test_id"; then
+if cleanup_container_by_id_name_or_cidfile "$test_id" "$test_name" "$test_cidfile"; then
   test_id=""
 else
   container_cleanup_failed=1
@@ -563,7 +686,7 @@ if [[ "$claude_returncode" -eq 0 && "$container_cleanup_failed" -ne 0 ]]; then
   exit 125
 fi
 
-prompt_sha256="$(sha256sum "$rendered_prompt" | awk '{print $1}')"
+prompt_sha256="$(sha256_file "$rendered_prompt")"
 build_claude_sidecar() {
   "$python_bin" -m opencollab_eval.generation.claude_code_sidecar build \
     --stream "$stream_file" --settings "$settings_file" \
@@ -608,7 +731,7 @@ candidate_manifest="$output_dir/claude-candidate.json"
 candidate_tree="$("$python_bin" -c \
   'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["candidate_tree"])' \
   "$candidate_manifest")"
-raw_patch_sha256="$(sha256sum "$patch_file" | awk '{print $1}')"
+raw_patch_sha256="$(sha256_file "$patch_file")"
 
 set +e
 build_claude_sidecar "$raw_patch_sha256" "$candidate_tree"

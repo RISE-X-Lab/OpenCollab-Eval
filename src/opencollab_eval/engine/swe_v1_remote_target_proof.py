@@ -10,6 +10,7 @@ import re
 import shlex
 
 from opencollab_eval.engine.swe_v1_remote_nodebb_mocha import (
+    NODEBB_MOCHA_FILE_MARKER,
     nodebb_mocha_runtime_title,
     nodebb_mocha_selector_title,
     nodebb_mocha_target_file_command,
@@ -80,20 +81,30 @@ raise SystemExit(status)
 
 def js_runner_command(binary, package_script, target, extra_args=""):
     local_binary = f"./node_modules/.bin/{binary}"
-    target_part = f" {target}" if target else ""
-    extra_part = f" {extra_args}" if extra_args else ""
+    def quoted_words(value, label):
+        if not value:
+            return []
+        try:
+            words = shlex.split(str(value), comments=False, posix=True)
+        except ValueError as exc:
+            raise ValueError(f"invalid JavaScript {label} arguments") from exc
+        return [shlex.quote(word) for word in words]
+
+    argument_words = quoted_words(extra_args, "runner") + quoted_words(target, "target")
+    argument_part = " " + " ".join(argument_words) if argument_words else ""
+    pnpm_args = f" -- {' '.join(argument_words)}" if argument_words else ""
     package_script = shlex.quote(package_script)
     return "\n".join([
         "if [ -x " + shlex.quote(local_binary) + " ]; then",
-        "  " + shlex.quote(local_binary) + extra_part + target_part,
+        "  " + shlex.quote(local_binary) + argument_part,
         "elif command -v yarn >/dev/null 2>&1; then",
-        f"  yarn {package_script}{extra_part}{target_part}",
+        f"  yarn {package_script}{argument_part}",
         "elif command -v npx >/dev/null 2>&1; then",
-        f"  npx {shlex.quote(binary)}{extra_part}{target_part}",
+        f"  npx {shlex.quote(binary)}{argument_part}",
         "elif command -v pnpm >/dev/null 2>&1; then",
-        f"  pnpm {package_script} --{extra_part}{target_part}",
+        f"  pnpm {package_script}{pnpm_args}",
         "elif command -v corepack >/dev/null 2>&1; then",
-        f"  corepack pnpm {package_script} --{extra_part}{target_part}",
+        f"  corepack pnpm {package_script}{pnpm_args}",
         "else",
         f"  echo 'No supported JS test runner found for {binary}' >&2",
         "  exit 127",
@@ -203,7 +214,9 @@ def jest_test_command(test_files):
     return " &&\n".join(commands)
 
 def mocha_test_command(tests, selected, target_file=""):
-    if not nodebb_mocha_titles_are_unambiguous(tests):
+    if not nodebb_mocha_titles_are_unambiguous(
+        tests, allow_cross_file_duplicates=bool(target_file)
+    ):
         return ""
     if target_file:
         return nodebb_mocha_target_file_command(tests, target_file)
@@ -491,6 +504,7 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
         failed_items = set()
         jest_passed_fragments = set()
         jest_failed_fragments = set()
+        current_mocha_file = ""
 
         def title_part_matches(expected_part, observed_part):
             expected_value = " ".join(str(expected_part).split())
@@ -605,6 +619,15 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
             return ""
 
         for line in text.splitlines():
+            if repo == "nodebb/nodebb" and line.startswith(NODEBB_MOCHA_FILE_MARKER):
+                try:
+                    marker_file = json.loads(
+                        line[len(NODEBB_MOCHA_FILE_MARKER) :].strip()
+                    )
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    marker_file = ""
+                current_mocha_file = marker_file if isinstance(marker_file, str) else ""
+                continue
             try:
                 event = json.loads(line)
             except (TypeError, ValueError):
@@ -614,19 +637,30 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
                     stripped,
                 )
                 if match:
-                    jest_passed_fragments.add(match.group(1).strip())
+                    jest_passed_fragments.add(
+                        (current_mocha_file, match.group(1).strip())
+                        if repo == "nodebb/nodebb"
+                        else match.group(1).strip()
+                    )
                     continue
                 match = re.match(
                     r"^[✕×]\s+(.+?)(?:\s+\(\d+(?:\.\d+)?\s*ms\))?$",
                     stripped,
                 )
                 if match:
-                    jest_failed_fragments.add(match.group(1).strip())
+                    jest_failed_fragments.add(
+                        (current_mocha_file, match.group(1).strip())
+                        if repo == "nodebb/nodebb"
+                        else match.group(1).strip()
+                    )
                     continue
                 match = re.match(r"^●\s+(.+)$", stripped)
                 if match:
+                    fragment = re.sub(r"\s*[›>]\s*", " ", match.group(1)).strip()
                     jest_failed_fragments.add(
-                        re.sub(r"\s*[›>]\s*", " ", match.group(1)).strip()
+                        (current_mocha_file, fragment)
+                        if repo == "nodebb/nodebb"
+                        else fragment
                     )
                 continue
             if isinstance(event, dict) and isinstance(event.get("testResults"), list):
@@ -659,7 +693,14 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
                 continue
             if not isinstance(event, list) or len(event) != 2 or not isinstance(event[1], dict):
                 continue
-            item = canonical_expected_item(event[1].get("fullTitle") or "")
+            item = canonical_expected_item(
+                event[1].get("fullTitle") or "",
+                (
+                    event[1].get("file") or current_mocha_file
+                    if repo == "nodebb/nodebb"
+                    else ""
+                ),
+            )
             if not item:
                 continue
             if event[0] == "pass":
@@ -668,11 +709,17 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
                 failed_items.add(item)
 
         for fragment in jest_passed_fragments:
-            item = canonical_expected_item(fragment)
+            marker_file, fragment_value = (
+                fragment if repo == "nodebb/nodebb" else ("", fragment)
+            )
+            item = canonical_expected_item(fragment_value, marker_file)
             if item:
                 passed_items.add(item)
         for fragment in jest_failed_fragments:
-            item = canonical_expected_item(fragment)
+            marker_file, fragment_value = (
+                fragment if repo == "nodebb/nodebb" else ("", fragment)
+            )
+            item = canonical_expected_item(fragment_value, marker_file)
             if item:
                 failed_items.add(item)
         observed_items = passed_items | failed_items

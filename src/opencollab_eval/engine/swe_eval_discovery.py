@@ -18,13 +18,17 @@ from opencollab_eval.engine.swe_eval_decision import (
 )
 from opencollab_eval.engine.swe_eval_records import (
     direct_eval_done_has_execution_proof,
+    direct_payload_patch_sha,
+    direct_payload_task_id,
     latest_paired_rows,
     patch_sha,
     patch_sha_matches,
     prediction_patch,
     read_bounded_json,
     read_jsonl,
+    row_record_id,
     row_task_id,
+    strict_integer,
     task_ids,
 )
 from opencollab_eval.engine.swe_eval_records import (
@@ -76,7 +80,12 @@ def _status_from_official_payload(task_id: str, payload: dict[str, Any]) -> tupl
     item = payload.get(task_id)
     if not isinstance(item, dict):
         return None
-    patch_sha = str(item.get("patch_sha256") or item.get("patch_sha") or item.get("model_patch_sha256") or "")
+    item_task_id = direct_payload_task_id(item)
+    if item_task_id is None or (item_task_id and item_task_id != task_id):
+        return None
+    patch_sha = direct_payload_patch_sha(item)
+    if patch_sha is None:
+        return None
     status = str(item.get("status") or "")
     if status in TECHNICAL_EVAL_STATUSES or bool(item.get("error")):
         return "technical_eval_failed", 0, 0, patch_sha
@@ -95,12 +104,17 @@ def _summary_count(payload: dict[str, Any], key: str, ids_key: str) -> int:
         return len(value)
     if value is None or value == "":
         return 0
+    # JSON booleans are a distinct type from numeric counts.  Python's
+    # ``bool`` subclasses ``int``, so accepting them here would let a malformed
+    # summary claim one resolved/unresolved task and cross the status boundary
+    # as if it contained a real count.
     if isinstance(value, bool):
-        return int(value)
+        raise ValueError(f"invalid {key}: boolean count")
     if isinstance(value, int) and value >= 0:
         return value
-    if isinstance(value, str) and value.strip().isdigit():
-        return int(value.strip())
+    parsed = strict_integer(value, nonnegative=True)
+    if parsed is not None:
+        return parsed
     raise ValueError(f"invalid {key}: {value!r}")
 
 
@@ -125,11 +139,23 @@ def _status_from_summary_payload(payload: dict[str, Any]) -> tuple[str, int, int
     unresolved = _summary_count(payload, "unresolved_instances", "unresolved_ids")
     if status == "done" and resolved + unresolved == 0:
         raise ValueError("completed evaluation summary has no task outcome")
+    # A per-task direct summary must not expose a verdict that disagrees with
+    # its optional count form.  Otherwise a malformed artifact can inflate or
+    # invert aggregate results while still carrying ``status=done``.
+    verdict = payload.get("resolved")
+    if isinstance(verdict, bool) and (
+        resolved + unresolved != 1 or (resolved == 1) != verdict
+    ):
+        raise ValueError("resolved verdict disagrees with outcome counts")
     return status, resolved, unresolved
 
 
 def _direct_eval_done_has_execution_proof(payload: dict[str, Any]) -> bool:
-    return direct_eval_done_has_execution_proof(payload)
+    # Discovery is the cache/status boundary: a modern done summary must carry
+    # the immutable image identity before it can be reused as an evaluation
+    # result.  The generic proof helper remains usable by producers that bind
+    # the image separately through an explicit expectation.
+    return direct_eval_done_has_execution_proof(payload, require_eval_image_id=True)
 
 
 def _reports_from_payload(path: Path, payload: Any) -> list[EvalReport]:
@@ -141,7 +167,12 @@ def _reports_from_payload(path: Path, payload: Any) -> list[EvalReport]:
     }:
         return []
 
-    task_id = str(payload.get("instance_id") or payload.get("task_id") or payload.get("task") or "")
+    # Canonicalize all compatibility aliases before selecting a report.  A
+    # conflicting alias must never be resolved by field-order luck (different
+    # consumers historically preferred different names).
+    task_id = direct_payload_task_id(payload)
+    if task_id is None:
+        return []
     if task_id:
         if payload.get("schema") != "opencollab.prolite_direct_eval.v2":
             return []
@@ -156,12 +187,9 @@ def _reports_from_payload(path: Path, payload: Any) -> list[EvalReport]:
             status, resolved, unresolved = _status_from_summary_payload(payload)
         except (TypeError, ValueError):
             return []
-        patch_sha = str(
-            payload.get("patch_sha256")
-            or payload.get("patch_sha")
-            or payload.get("model_patch_sha256")
-            or ""
-        )
+        patch_sha = direct_payload_patch_sha(payload)
+        if patch_sha is None:
+            return []
         return [
             EvalReport(
                 task_id=task_id,
@@ -180,10 +208,24 @@ def _reports_from_payload(path: Path, payload: Any) -> list[EvalReport]:
             continue
         schema = str(value.get("schema") or "")
         if schema.startswith("opencollab.prolite_direct_eval."):
+            # Nested direct reports are keyed by task for legacy batch files,
+            # but the value can also carry one or more identity aliases.  Do
+            # not let an outer key relabel a proof generated for another task.
+            value_task_id = direct_payload_task_id(value)
+            if value_task_id is None:
+                continue
             status_value = str(value.get("status") or "")
+            technical_value = (
+                status_value in TECHNICAL_EVAL_STATUSES or bool(value.get("error"))
+            )
+            if value_task_id and value_task_id != str(key):
+                continue
+            # Preserve old technical-failure maps whose inner record omitted
+            # an identity; a successful v2 proof must identify itself.
+            if not value_task_id and not technical_value:
+                continue
             if (
-                status_value not in TECHNICAL_EVAL_STATUSES
-                and not bool(value.get("error"))
+                not technical_value
                 and not _direct_eval_done_has_execution_proof(value)
             ):
                 continue
@@ -191,15 +233,13 @@ def _reports_from_payload(path: Path, payload: Any) -> list[EvalReport]:
                 status, resolved, unresolved = _status_from_summary_payload(value)
             except (TypeError, ValueError):
                 continue
+            patch_sha = direct_payload_patch_sha(value)
+            if patch_sha is None:
+                continue
             reports.append(
                 EvalReport(
                     task_id=str(key),
-                    patch_sha=str(
-                        value.get("patch_sha256")
-                        or value.get("patch_sha")
-                        or value.get("model_patch_sha256")
-                        or ""
-                    ),
+                    patch_sha=patch_sha,
                     status=status,
                     record_id=str(
                         value.get("record_id") or payload.get("record_id") or ""
@@ -231,14 +271,16 @@ def _reports_from_payload(path: Path, payload: Any) -> list[EvalReport]:
 def _attempt_from_payload(path: Path, payload: Any) -> EvalAttempt | None:
     if not isinstance(payload, dict) or payload.get("schema") != "opencollab.swe_eval_attempt.v1":
         return None
-    task_id = str(payload.get("instance_id") or payload.get("task_id") or "")
+    task_id_value = direct_payload_task_id(payload)
+    if task_id_value is None:
+        return None
+    task_id = task_id_value
     record_id = str(payload.get("record_id") or "")
     patch_sha = str(payload.get("patch_sha256") or "")
-    try:
-        started_at_ns = int(payload.get("started_at_ns") or 0)
-        pid = int(payload.get("pid") or 0)
-        evaluator_pgid = int(payload.get("evaluator_pgid") or 0)
-    except (TypeError, ValueError):
+    started_at_ns = strict_integer(payload.get("started_at_ns", 0), nonnegative=True)
+    pid = strict_integer(payload.get("pid", 0), nonnegative=True)
+    evaluator_pgid = strict_integer(payload.get("evaluator_pgid", 0), nonnegative=True)
+    if started_at_ns is None or pid is None or evaluator_pgid is None:
         return None
     if not task_id or not record_id or len(patch_sha) != 64 or started_at_ns <= 0:
         return None
@@ -633,7 +675,11 @@ def build_snapshots(
     for task_id in selected_tasks:
         pair = latest_paired_rows(predictions, metrics, task_id)
         current_sha = patch_sha(prediction_patch(pair.prediction))
-        current_record_id = str((pair.prediction or {}).get("record_id") or "")
+        # Keep the same record-id aliases used by the pairing layer.  Reading
+        # only the modern ``record_id`` key here silently drops legacy
+        # ``attempt_id``/``workflow_record_id`` identities and lets an
+        # unrelated report or active attempt pass the cache boundary.
+        current_record_id = row_record_id(pair.prediction)
         current_attempt = attempts.get(task_id)
         attempt_is_active = bool(
             current_attempt is not None

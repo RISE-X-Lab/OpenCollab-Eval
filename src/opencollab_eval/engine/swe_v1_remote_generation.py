@@ -635,6 +635,7 @@ def eval_summary_matches_prediction(
     p2p_plan=None,
     expected_eval_patch_sha256="",
     expected_eval_image_id="",
+    expected_candidate_expectation=None,
 ):
     expected_eval_image_id = str(expected_eval_image_id or "")
     if re.fullmatch(r"sha256:[0-9a-f]{64}", expected_eval_image_id) is None:
@@ -644,6 +645,10 @@ def eval_summary_matches_prediction(
         expected_eval_spec_sha256=eval_spec_sha256,
         expected_f2p_plan=f2p_plan,
         expected_p2p_plan=p2p_plan,
+    ):
+        return False
+    if not isinstance(expected_candidate_expectation, dict) or (
+        summary.get("candidate_expectation") != expected_candidate_expectation
     ):
         return False
     if not eval_model_patch(prediction).strip():
@@ -790,6 +795,4 @@ def cleanup_eval_container(cidfile, marker_path, container_name):
         "status": "all_references_absent",
         "attempts": attempts,
     }
-
-
 __all__ = [name for name in globals() if not name.startswith("__")]

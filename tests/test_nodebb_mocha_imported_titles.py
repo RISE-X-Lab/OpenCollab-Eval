@@ -142,3 +142,31 @@ def test_nodebb_import_normalization_collision_is_rejected():
     )
     assert proof["observed"] == []
     assert proof["missing"] == targets
+
+
+def test_nodebb_cross_file_duplicate_titles_are_bound_by_file():
+    targets = ["test/a.js | same title", "test/b.js | same title"]
+    row = {
+        "repo_language": "js",
+        "repo": "nodebb/nodebb",
+        "selected_test_files_to_run": ["test/a.js", "test/b.js"],
+    }
+    plan = prolite_test_plan(
+        row,
+        targets,
+        target_file="/eval_input/f2p.targets.json",
+    )
+
+    assert plan["commands"]
+    assert plan["coverage_verified"] is True
+    log = "\n".join(
+        [
+            'OPENCOLLAB_MOCHA_FILE "test/a.js"',
+            '["pass",{"fullTitle":"same title"}]',
+            'OPENCOLLAB_MOCHA_FILE "test/b.js"',
+            '["pass",{"fullTitle":"same title"}]',
+        ]
+    )
+    proof = fail_to_pass_execution_proof(row, targets, 0, log)
+    assert proof["ok"] is True
+    assert proof["passed"] == targets

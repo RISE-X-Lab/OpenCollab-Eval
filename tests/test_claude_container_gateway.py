@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import socket
 import subprocess
 import sys
@@ -188,3 +189,49 @@ def test_gateway_timeout_kills_the_docker_exec_process_group(
         "stderr": "command timed out",
     }
     assert marker.exists() is False
+
+
+def test_gateway_stop_process_repeats_kill_for_a_late_group_fork(monkeypatch) -> None:
+    """A group member appearing after the first signal is killed as well."""
+
+    clock = [100.0]
+    signals: list[int] = []
+
+    class FakeProcess:
+        pid = 4242
+        returncode: int | None = None
+
+        def wait(self, timeout: float | None = None) -> int:
+            self.returncode = 137
+            return self.returncode
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def kill(self) -> None:
+            self.returncode = 137
+
+    process = FakeProcess()
+
+    def fake_monotonic() -> float:
+        return clock[0]
+
+    def fake_sleep(delay: float) -> None:
+        clock[0] += delay
+
+    def fake_killpg(_group_id: int, sent_signal: int) -> None:
+        signals.append(sent_signal)
+        if sent_signal == 0 and signals.count(signal.SIGKILL) >= 2:
+            raise ProcessLookupError
+
+    monkeypatch.setattr(gateway.time, "monotonic", fake_monotonic)
+    monkeypatch.setattr(gateway.time, "sleep", fake_sleep)
+    monkeypatch.setattr(gateway.os, "killpg", fake_killpg)
+    monkeypatch.setattr(gateway, "PROCESS_STOP_TIMEOUT_SECONDS", 0.2)
+    monkeypatch.setattr(gateway, "PROCESS_STOP_POLL_SECONDS", 0.01)
+
+    gateway._stop_process(process)
+
+    assert signals.count(signal.SIGKILL) >= 2
+    assert signals.count(0) >= 2
+    assert process.returncode == 137

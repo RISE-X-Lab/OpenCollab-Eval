@@ -54,6 +54,7 @@ def _direct_summary(task: str, resolved: bool) -> dict:
         "record_id": f"record-{task}",
         "patch_sha256": _sha(task),
         "eval_patch_sha256": _sha(task),
+        "eval_image_id": "sha256:" + "9" * 64,
         "filtered_patch_paths": [],
         "eval_spec_sha256": "e" * 64,
         "technical_reasons": [],

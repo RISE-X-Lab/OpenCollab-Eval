@@ -13,6 +13,7 @@ from opencollab_eval.engine.swe_v1_remote_eval_retry import *
 from opencollab_eval.engine.swe_v1_remote_eval_script import direct_eval_script, eval_workspace_helper_sources
 from opencollab_eval.engine.swe_v1_remote_generation import *
 from opencollab_eval.engine.swe_v1_remote_gitlink_probe import *
+from opencollab_eval.engine.swe_v1_remote_health import http_health
 from opencollab_eval.engine.swe_v1_remote_pytest_controller import prolite_pytest_controller_source
 from opencollab_eval.engine.swe_v1_remote_records import *
 from opencollab_eval.engine.swe_v1_remote_runtime_dependencies import *
@@ -148,6 +149,7 @@ def eval_for_task_once(row, patch_selection=None):
             p2p_plan=p2p_plan,
             expected_eval_patch_sha256=patch_selection["eval_patch_sha256"],
             expected_eval_image_id=str(patch_selection.get("image_id") or ""),
+            expected_candidate_expectation=patch_selection.get("candidate_expectation"),
         )
     ):
         return {
@@ -213,8 +215,8 @@ def eval_for_task_once(row, patch_selection=None):
     atomic_write_bytes(input_dir / "opencollab_pytest_proof.py", prolite_pytest_proof_plugin_source().encode("utf-8"))
     atomic_write_bytes(controller_path, prolite_pytest_controller_source().encode("utf-8"))
     atomic_write_bytes(input_dir / "proof.nonce", (proof_nonce + "\n").encode("ascii"))
-    atomic_write_bytes(input_dir / "f2p.sh", prolite_test_plan_script(f2p_plan, "f2p", proof_nonce, controller_timeout=configured_eval_timeout).encode("utf-8"))
-    atomic_write_bytes(input_dir / "p2p.sh", prolite_test_plan_script(p2p_plan, "p2p", proof_nonce, controller_timeout=configured_eval_timeout).encode("utf-8"))
+    atomic_write_bytes(input_dir / "f2p.sh", prolite_test_plan_script(f2p_plan, "f2p", proof_nonce, controller_timeout=configured_eval_timeout, shared_deadline_env="OPENCOLLAB_EVAL_DEADLINE").encode("utf-8"))
+    atomic_write_bytes(input_dir / "p2p.sh", prolite_test_plan_script(p2p_plan, "p2p", proof_nonce, controller_timeout=configured_eval_timeout, shared_deadline_env="OPENCOLLAB_EVAL_DEADLINE").encode("utf-8"))
     write_json(input_dir / "f2p.plan.json", f2p_plan)
     write_json(input_dir / "p2p.plan.json", p2p_plan)
     inner = direct_eval_script()
@@ -310,6 +312,8 @@ def eval_for_task_once(row, patch_selection=None):
         f"{input_dir}:/eval_input:ro",
         "-v",
         f"{container_output_dir}:/eval_output",
+        "--env",
+        f"OPENCOLLAB_EVAL_TIMEOUT_SECONDS={configured_eval_timeout}",
         *_public_preparation_docker_env(),
         image,
         "/eval_input/run_prolite_direct_eval.sh",
@@ -549,12 +553,8 @@ def eval_for_task_once(row, patch_selection=None):
         "executed": True,
         "eval_patch_sha256": patch_selection["eval_patch_sha256"],
     }
-
-
 def eval_for_task(row):
     return eval_for_task_with_retries(row, eval_for_task_once, resolve_eval_timeout(globals().get("eval_timeout") or None), resolve_eval_timeout(globals().get("eval_timeout") or None))
-
-
 def write_markdown(summary):
     lines = [
         f"# SWE G1.1 Pro-Lite {summary.get('slice', slice_label())} Report",

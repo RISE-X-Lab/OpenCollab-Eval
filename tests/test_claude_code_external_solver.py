@@ -297,6 +297,9 @@ def test_claude_launcher_has_fixed_identity_permissions_and_empty_patch_gate() -
     assert "docker_control network create --internal" in script
     assert 'docker run --rm -i --name "$runtime_name"' in script
     assert "CLAUDE_RELAY_UPSTREAM_UNIX=/control/upstream.sock" in script
+    assert "CLAUDE_RELAY_UPSTREAM_TIMEOUT" in script
+    assert "relay_upstream_timeout_max" in script
+    assert "timeout=300" not in script
     assert "src=$relay_socket,dst=/control/upstream.sock" in script
     assert '--network "$network_name" --network-alias claude-api' in script
     assert "host.docker.internal" not in script
@@ -310,8 +313,10 @@ def test_claude_launcher_has_fixed_identity_permissions_and_empty_patch_gate() -
     assert "GIT_NO_REPLACE_OBJECTS=1" in script
     assert 'env -i PATH="$PATH"' in script
     assert '--git-dir="$trusted_git_dir" --work-tree="$workspace"' in script
-    assert 'sha256sum "$rendered_prompt"' in script
-    assert "shasum -a 256" not in script
+    assert 'sha256_file "$rendered_prompt"' in script
+    assert "sha256_stdin" in script
+    assert "shasum -a 256" in script
+    assert 'python3 -c "import hashlib,sys;' in script
     assert '--entrypoint find "$actual_runtime_id" /cleanup -mindepth 1 -delete' in script
     assert 'if [[ -e "$workspace" ]]' in script
     assert "workspace_cleanup_failed=125" in script
@@ -399,7 +404,10 @@ def test_claude_launcher_bounds_control_docker_hang_without_wrapping_runtime(
             "OPENCOLLAB_CLAUDE_RUNTIME_IMAGE": RUNTIME_IMAGE,
             "OPENCOLLAB_CLAUDE_RUNTIME_IMAGE_ID": RUNTIME_IMAGE_ID,
             "OPENCOLLAB_CLAUDE_SIDECAR_PYTHON": sys.executable,
-            "OPENCOLLAB_CLAUDE_DOCKER_CONTROL_TIMEOUT_SECONDS": "0.2",
+            # Keep enough startup headroom for a loaded CI/macOS host while
+            # still exercising the bounded control path well below the test's
+            # outer five-second guard.
+            "OPENCOLLAB_CLAUDE_DOCKER_CONTROL_TIMEOUT_SECONDS": "1",
             "OPENHANDS_INSTANCE_ID": "solver-" + "1" * 32,
         }
     )

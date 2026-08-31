@@ -24,6 +24,20 @@ from swe_v1_prolite_runner_test_support import *
 from test_swe_eval_layer_report import _row
 
 
+def test_eval_attempt_count_helpers_reject_lossy_integer_coercion():
+    from opencollab_eval.commands import _swe_eval_layer_integrity as integrity
+    from opencollab_eval.commands import swe_v1_prolite_controller as controller
+
+    for value in (True, False, 1.9, "1.9", "not-a-count", -1):
+        row = {"eval": {"attempt_count": value}}
+        assert integrity.eval_attempt_count(row) == 0
+        assert controller._row_eval_attempt_count(row) == 0
+
+    row = {"eval": {"attempt_count": "2"}}
+    assert integrity.eval_attempt_count(row) == 2
+    assert controller._row_eval_attempt_count(row) == 2
+
+
 def test_eval_only_reconciles_the_parent_final_report(tmp_path):
     parent = tmp_path / "parent"
     parent.mkdir()

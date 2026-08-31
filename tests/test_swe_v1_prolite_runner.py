@@ -234,6 +234,7 @@ def test_remote_proxy_health_url_accepts_openai_v1_base() -> None:
         "http://127.0.0.1:18788/healthz"
     )
 
+
 @pytest.mark.parametrize(
     ("runner_alive", "status", "expected"),
     [

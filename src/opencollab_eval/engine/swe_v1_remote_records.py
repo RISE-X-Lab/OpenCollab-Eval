@@ -7,6 +7,7 @@ import shutil
 from opencollab_eval.engine.swe_eval_records import SUBMISSION_INTEGRITY_PROVEN
 from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid
 from opencollab_eval.engine.swe_v1_remote_core import *
+from opencollab_eval.engine.swe_v1_remote_health import http_health  # noqa: F401
 from opencollab_eval.engine.swe_v1_remote_state import *
 from opencollab_eval.patch_diff import *
 
@@ -126,15 +127,6 @@ def run(args, timeout=60):
         "stdout": result.stdout.strip(),
         "stderr": result.stderr.strip(),
     }
-
-
-def http_health(url, timeout=15):
-    try:
-        with urllib.request.urlopen(url, timeout=timeout) as response:
-            body = response.read(200).decode("utf-8", errors="replace")
-            return {"ok": 200 <= response.status < 400, "status": response.status, "body": body}
-    except Exception as exc:
-        return {"ok": False, "error": str(exc)[:500]}
 
 
 def load_dataset(selected_start, selected_limit):
@@ -261,6 +253,13 @@ def latest_pair(run_dir, task):
             metric_sha = row_patch_sha(metric)
             if metric_sha and patch_sha_matches(metric_sha, current_sha):
                 return prediction, metric, "patch_sha"
+        embedded_metric = embedded_workflow_metric(prediction)
+        if embedded_metric is not None:
+            return prediction, embedded_metric, "embedded_metric"
+        # Once the prediction exposes a patch identity, an unrelated latest
+        # metric is not a safe legacy fallback.  Reusing it can mark a new
+        # candidate as completed with evidence from an older patch.
+        return prediction, None, "missing_metric_for_patch_sha"
     return prediction, metrics[-1] if metrics else None, "legacy_latest"
 
 def generation_runtime_identity():
