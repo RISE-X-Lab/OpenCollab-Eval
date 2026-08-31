@@ -372,6 +372,12 @@ def complete_single_agent_integrity(
     metrics["submission_eligible"] = (
         metrics.get("submission_eligible") is True and proof_valid
     )
+    if patch.strip() and proof_valid and metrics.get("workflow_status") in {
+        "budget_exceeded",
+        "step_limit_exceeded",
+        "context_overflow",
+    }:
+        metrics["workflow_status"] = "done_with_timeout_patch"
 
 
 def normalize_trusted_extraction_status(metrics: dict, patch: str) -> None:

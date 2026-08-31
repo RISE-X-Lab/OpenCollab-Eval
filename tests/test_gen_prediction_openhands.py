@@ -523,8 +523,16 @@ def test_openhands_usage_is_written_in_eval_layer_ledger_shape(tmp_path: Path) -
     assert record["usage"] == payload
 
 
+@pytest.mark.parametrize(
+    ("openhands_status", "returncode", "expected_workflow_status"),
+    [("done", 0, "done"), ("openhands_timeout", 124, "done_with_timeout_patch")],
+)
 def test_main_writes_generation_contract_for_nonempty_patch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    openhands_status: str,
+    returncode: int,
+    expected_workflow_status: str,
 ) -> None:
     instance_file = tmp_path / "instance.json"
     output = tmp_path / "predictions.jsonl"
@@ -640,8 +648,8 @@ def test_main_writes_generation_contract_for_nonempty_patch(
     def fake_run_openhands(**kwargs):
         openhands_call.update(kwargs)
         return {
-            "status": "done",
-            "returncode": 0,
+            "status": openhands_status,
+            "returncode": returncode,
             "duration_s": 1.0,
             "execution_quiesced": True,
             "host_execution_quiesced": True,
@@ -682,7 +690,7 @@ def test_main_writes_generation_contract_for_nonempty_patch(
     assert prediction["workflow"] == "openhands-external"
     assert prediction["model_patch"].strip()
     assert metric["workflow"] == "openhands-external"
-    assert metric["workflow_status"] == "done"
+    assert metric["workflow_status"] == expected_workflow_status
     assert metric["llm_model"] == "anthropic/glm-5.2"
     assert metric["context_window"] == 400000
     assert metric["budget"] == 16000000

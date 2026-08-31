@@ -143,7 +143,8 @@ def _complete_openhands_integrity(
         and harness_artifact_exclusion_proven
     )
     submission_eligible = (
-        metrics.get("workflow_status") == "done"
+        metrics.get("workflow_status")
+        in {"done", "done_with_timeout_patch"}
         and patch_produced
         and process_quiesced
         and worktree_integrity_proven
@@ -186,7 +187,7 @@ def _quiesce_openhands_container(container_id: str, python_bin: str) -> dict[str
 
 def _openhands_patch_extraction_allowed(metrics: dict) -> bool:
     return (
-        metrics.get("status") == "done"
+        metrics.get("status") in {"done", "openhands_timeout"}
         and metrics.get("execution_quiesced") is True
         and metrics.get("host_execution_quiesced") is True
         and metrics.get("container_execution_quiesced") is True
@@ -466,7 +467,6 @@ def main() -> None:
     pending_required = False
     generation_error: BaseException | None = None
     trusted_baseline = None
-
     name = gp.unique_container_name("oc-oh-", solver_task_id)
     cid = gp.start_container_with_marker(image, name, run_dir)
     openhands_dir = Path(tempfile.mkdtemp(prefix="opencollab-openhands-"))
@@ -627,12 +627,18 @@ def main() -> None:
                 )
             metrics["submitted_patch_chars"] = len(patch)
             generation_error = generation_error or openhands_events.apply_empty_patch_failure(metrics, patch)
-            if "workflow_status" not in metrics and metrics.get("status") == "done":
-                metrics["workflow_status"] = (
-                    "done" if patch.strip() else "empty_patch_after_done"
-                )
-            elif "workflow_status" not in metrics:
-                metrics["workflow_status"] = "error"
+            if "workflow_status" not in metrics:
+                status = metrics.get("status")
+                if status == "done":
+                    metrics["workflow_status"] = (
+                        "done" if patch.strip() else "empty_patch_after_done"
+                    )
+                elif status == "openhands_timeout" and patch.strip():
+                    metrics["workflow_status"] = "done_with_timeout_patch"
+                else:
+                    if status == "openhands_timeout":
+                        generation_error = generation_error or RuntimeError("OpenHands timeout produced no patch")
+                    metrics["workflow_status"] = "error"
             usage_values = _external_solver_usage(
                 metrics.get("external_solver_evidence")
                 or metrics.get("external_solver_usage_evidence")
@@ -768,7 +774,6 @@ def main() -> None:
             generation_error=generation_error,
             keep_container=args.keep_container,
         )
-
     if generation_error is not None:
         gp.raise_generation_failure_metrics(run_dir, instance_id, "openhands_generation", generation_error, metrics)
     if record is None or metric_record is None:
