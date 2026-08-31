@@ -32,6 +32,12 @@ class EvalResult:
     task_stage_integrity_proven: bool = True
     submission_eligible: bool = True
     agent_failures: tuple[dict[str, Any], ...] = ()
+    #: The graded tree's diff at each seat boundary, for the arms that record
+    #: one (today: the team). ``None`` means "this arm records no boundaries",
+    #: which is why it is absent from the metrics row rather than written as
+    #: null: an arm that records nothing and an arm whose recorder broke must
+    #: not read the same.
+    tree_snapshots: Any | None = None
 
 
 @dataclass

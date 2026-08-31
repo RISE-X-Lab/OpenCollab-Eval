@@ -105,6 +105,15 @@ class _EvalRunRecord:
         return self.result.output
 
     @property
+    def tree_snapshots(self) -> Any:
+        """The graded tree at each seat boundary, when the run recorded them.
+
+        Only a team run asks for these (``record_delivery_tree`` below), so the
+        key is absent for every other regime and this answers ``None`` there.
+        """
+        return self.result.metrics.get("tree_snapshots")
+
+    @property
     def runtime_status(self) -> str:
         return self.result.status
 
@@ -372,6 +381,14 @@ async def _run_team_mode(
         prebuild_team=True,
         max_steps=max_steps,
         serialize_turns=True,
+        # Fourth setting fixed rather than exposed, and for the same reason as
+        # the other three: the run records the tree it is graded on at every
+        # seat boundary. Turns are serialized, so two consecutive rows bracket
+        # one seat's working period and a line in the delivered patch can be
+        # attributed to the seat that was working when it arrived. Without it
+        # the arm produces a patch nobody can attribute, which is the one
+        # quantity the comparison against a scripted twin is for.
+        record_delivery_tree=True,
     )
     if artifacts is not None:
         tracer.bind_artifacts(artifacts, filename=TRAJECTORY_FILENAME)

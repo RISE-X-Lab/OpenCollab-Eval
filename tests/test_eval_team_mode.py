@@ -276,3 +276,53 @@ def test_setup_and_run_agree_on_where_a_team_run_writes_its_trace(tmp_path):
     from pathlib import Path
 
     assert Path(tracer.path).name == "trajectory.jsonl"
+
+
+async def test_a_team_run_records_the_tree_it_is_graded_on(team_calls, tmp_path):
+    """The fourth fixed setting, and the one the arm's claim rests on.
+
+    A team run's patch is extracted from agent 0's tree; every teammate works in
+    a worktree cut somewhere else. Without a record of that tree at each seat
+    boundary the run delivers a patch nobody can attribute, and the sentence the
+    arm exists to test -- whether the work moved between seats -- cannot be
+    written from its own data. Turns are already serialized here, so two
+    consecutive rows bracket exactly one seat's working period.
+    """
+    await _run_team(team_calls, tmp_path)
+
+    assert team_calls[0]["record_delivery_tree"] is True
+
+
+async def test_a_team_run_record_hands_on_the_seat_boundaries(monkeypatch, tmp_path):
+    """What the scheduler recorded has to survive the trip to the metrics row."""
+    boundaries = [
+        {"at": "turn_start", "aid": 0, "role": "analyst", "diff": ""},
+        {"at": "message_sent", "aid": 0, "to_aid": 1, "to_role": "coder"},
+    ]
+
+    class _Client(_RecordingClient):
+        async def team(self, prompt, **kwargs):
+            await super().team(prompt, **kwargs)
+            return RunResult(
+                output="done",
+                status="completed",
+                tokens=1234,
+                metrics={"steps": 7, "sessions": 3, "tree_snapshots": boundaries},
+            )
+
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        evaluator_sessions, "_client", lambda **_kwargs: _Client(calls)
+    )
+    record, _tracer = await _run_team(calls, tmp_path)
+
+    assert record.tree_snapshots == boundaries
+
+
+async def test_a_run_that_recorded_no_boundaries_says_none_rather_than_empty(
+    team_calls, tmp_path
+):
+    """``None`` is "this arm records none"; ``[]`` would be "and none happened"."""
+    record, _tracer = await _run_team(team_calls, tmp_path)
+
+    assert record.tree_snapshots is None

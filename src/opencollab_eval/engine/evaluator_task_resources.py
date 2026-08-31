@@ -254,6 +254,9 @@ def build_eval_result(
         workflow_result=(
             getattr(workflow_ctx, "workflow_result", None) if workflow_ctx else None
         ),
+        # The team's run record holds these; a workflow context and a solo
+        # session have no such attribute and answer None.
+        tree_snapshots=getattr(workflow_ctx or session, "tree_snapshots", None),
         runtime_status=getattr(workflow_ctx or session, "runtime_status", None),
         runtime_reason=getattr(workflow_ctx or session, "runtime_reason", None),
         checkpoint_result=state.checkpoint_result,

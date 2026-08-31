@@ -156,12 +156,26 @@ def _patch_sha256(patch: str) -> str:
     return hashlib.sha256(patch.encode("utf-8", errors="surrogatepass")).hexdigest()
 
 
+#: Fields the flat dump skips. ``patch`` is written separately (it is the
+#: prediction, not a metric); ``tree_snapshots`` is written only when the arm
+#: recorded any, so that a run of an arm that records no seat boundaries has no
+#: key rather than a null one -- "this arm does not record boundaries" and "the
+#: recorder produced nothing" would otherwise be the same row.
+_METRICS_FLAT_DUMP_SKIPS = frozenset({"patch", "tree_snapshots"})
+
+
 def _result_metrics(result) -> dict:
     metrics = {
         field.name: _json_safe(getattr(result, field.name))
         for field in fields(result)
-        if field.name != "patch"
+        if field.name not in _METRICS_FLAT_DUMP_SKIPS
     }
+    # The graded tree at each seat boundary, for the arms that record them.
+    # A workflow arm carries its own equivalent inside ``workflow_result``
+    # (``self_collaboration`` writes ``tree_snapshots`` there), so a reader that
+    # wants either takes this key first and falls back to that one.
+    if result.tree_snapshots is not None:
+        metrics["tree_snapshots"] = _json_safe(result.tree_snapshots)
     # The same quantities again, under the names the single-agent path also
     # writes them under. Without this the two arms' records can only be read
     # one arm at a time; see ``gen_prediction_run_summary``.
