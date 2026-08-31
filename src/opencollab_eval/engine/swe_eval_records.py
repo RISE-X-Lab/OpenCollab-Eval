@@ -369,7 +369,10 @@ def patch_sha_matches(left: str | None, right: str | None) -> bool:
     return (
         _SHA256_RE.fullmatch(left_value) is not None
         and _SHA256_RE.fullmatch(right_value) is not None
-        and left_value == right_value
+        # Hexadecimal digests are case-insensitive.  Keep the strict
+        # 64-character validation above while accepting legacy reports that
+        # serialized an otherwise identical digest with upper-case letters.
+        and left_value.lower() == right_value.lower()
     )
 
 

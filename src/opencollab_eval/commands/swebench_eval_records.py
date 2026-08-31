@@ -634,7 +634,10 @@ def report_is_done(path: Path, instance_id: str, expected_identity: dict) -> boo
         return False
     embedded_sha = str(item.get("patch_sha256") or item.get("patch_sha") or item.get("model_patch_sha256") or "")
     if embedded_sha:
-        return embedded_sha == expected_identity.get("patch_sha256")
+        return swe_records.patch_sha_matches(
+            embedded_sha,
+            str(expected_identity.get("patch_sha256") or ""),
+        )
     sidecar = _runner().identity_path(path)
     sidecar_document = _runner()._read_bounded_json_safe(sidecar)
     if sidecar_document is None:

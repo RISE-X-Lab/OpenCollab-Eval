@@ -34,7 +34,7 @@ from opencollab_eval.engine.swe_eval_records import strict_integer
 from opencollab_eval.safe_files import write_regular_bytes_atomic
 
 SCHEMA = "opencollab.eval_only_queue.v1"
-_SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
+_SHA256_RE = re.compile(r"[0-9a-fA-F]{64}\Z")
 _RUN_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _BLOCKED_RUNNER_OPTIONS = set(
     "--base-run-dir --eval-dir-name --eval-only --json-output --limit "
@@ -178,8 +178,9 @@ def _read_plan(path: Path) -> dict[str, Any]:
             "eval_dir_name": eval_dir_name,
             "task": task,
             "record_id": record_id,
-            "source_patch_sha256": source_patch_sha256,
-            "eval_patch_sha256": eval_patch_sha256,
+            # Canonicalize case-insensitive SHA-256 spellings.
+            "source_patch_sha256": source_patch_sha256.lower(),
+            "eval_patch_sha256": eval_patch_sha256.lower(),
         }
         if eval_timeout is not None:
             normalized_job["eval_timeout"] = eval_timeout
@@ -206,7 +207,7 @@ def _row_identity(row: dict[str, Any]) -> tuple[str, str, str, str] | None:
         or _SHA256_RE.fullmatch(eval_patch_sha256) is None
     ):
         return None
-    return task, record_id, source_patch_sha256, eval_patch_sha256
+    return task, record_id, source_patch_sha256.lower(), eval_patch_sha256.lower()
 def _row_index_matches(row: dict[str, Any], job: dict[str, Any]) -> bool:
     """Match legacy numeric-string indices without accepting lossy values."""
     return strict_integer(row.get("index")) == job["index"]
@@ -214,8 +215,8 @@ def _job_identity(job: dict[str, Any]) -> tuple[str, str, str, str]:
     return (
         job["task"],
         job["record_id"],
-        job["source_patch_sha256"],
-        job["eval_patch_sha256"],
+        str(job["source_patch_sha256"]).lower(),
+        str(job["eval_patch_sha256"]).lower(),
     )
 def _row_matches_job(row: dict[str, Any], job: dict[str, Any]) -> bool:
     """Match a report row to a job's immutable candidate binding.
@@ -342,9 +343,8 @@ def _final_task_matches_job(task: dict[str, Any], job: dict[str, Any]) -> bool:
         return False
     record_id = task.get("record_id")
     source_sha = task.get("source_patch_sha256") or task.get("patch_sha256")
-    return (record_id, source_sha) == (
-        job["record_id"],
-        job["source_patch_sha256"],
+    return record_id == job["record_id"] and isinstance(source_sha, str) and (
+        source_sha.lower() == job["source_patch_sha256"].lower()
     )
 def _write_state_unlocked(path: Path, state: dict[str, Any]) -> None:
     payload = (json.dumps(state, ensure_ascii=False, indent=2) + "\n").encode()

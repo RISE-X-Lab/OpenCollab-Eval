@@ -125,6 +125,12 @@ def test_record_alias_conflicts_are_not_resolved_by_field_order():
     assert swe_eval_records.row_task_id(
         {"instance_id": "task-a", "task_id": "task-b"}
     ) == ""
+
+
+def test_patch_sha_matching_accepts_hex_case_but_keeps_strict_shape():
+    assert swe_eval_records.patch_sha_matches("ab" * 32, ("ab" * 32).upper())
+    assert not swe_eval_records.patch_sha_matches("ab" * 31, ("ab" * 31).upper())
+    assert not swe_eval_records.patch_sha_matches("g" * 64, "g" * 64)
     assert swe_eval_records.row_record_id(
         {"record_id": "record-a", "attempt_id": "record-b"}
     ) == ""

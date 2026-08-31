@@ -323,6 +323,38 @@ def test_queue_accepts_legacy_task_identity_aliases(tmp_path, monkeypatch, alias
     assert queue._terminal_report(job) == (report, "verified")
 
 
+def test_queue_accepts_uppercase_legacy_report_hashes(tmp_path, monkeypatch):
+    """Hex digest casing must not make a valid terminal candidate disappear."""
+    _accept_terminal(monkeypatch)
+    plan, parent = _plan(tmp_path)
+    job = queue._read_plan(plan)["jobs"][0]
+    report = parent / "parallel_summary.json"
+    _terminal_report(
+        report,
+        index=job["index"],
+        patch_sha256=job["source_patch_sha256"].upper(),
+        resolved=True,
+    )
+    payload = json.loads(report.read_text(encoding="utf-8"))
+    row = payload["rows"][0]
+    row["generation"]["source_patch_sha256"] = job["source_patch_sha256"].upper()
+    row["generation"]["patch_sha256"] = job["source_patch_sha256"].upper()
+    row["generation"]["eval_patch_sha256"] = job["eval_patch_sha256"].upper()
+    report.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert queue._candidate_identity_status(job) == "verified"
+    assert queue._terminal_report(job) == (report, "verified")
+
+
+def test_queue_canonicalizes_uppercase_plan_hashes(tmp_path):
+    plan, _parent = _plan(tmp_path, patch_sha256=("ab" * 32).upper())
+
+    job = queue._read_plan(plan)["jobs"][0]
+
+    assert job["source_patch_sha256"] == ("ab" * 32)
+    assert job["eval_patch_sha256"] == ("ab" * 32)
+
+
 def test_queue_rejects_conflicting_legacy_task_aliases(tmp_path):
     """Conflicting task aliases must not silently choose one identity."""
     plan, parent = _plan(tmp_path)

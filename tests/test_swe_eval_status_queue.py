@@ -92,6 +92,34 @@ def test_per_instance_report_accepts_matching_embedded_record_with_same_patch(tm
     assert runner.report_is_done(report, "task-1", identity) is True
 
 
+def test_per_instance_report_accepts_uppercase_embedded_patch_sha(tmp_path):
+    runner = importlib.import_module("opencollab_eval.commands.run_swebench_eval_per_instance")
+    patch_sha = "ab" * 32
+    report = tmp_path / "report.json"
+    report.write_text(
+        json.dumps(
+            {
+                "task-1": {
+                    "resolved": True,
+                    "record_id": "current-record",
+                    "patch_sha256": patch_sha.upper(),
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert runner.report_is_done(
+        report,
+        "task-1",
+        {
+            "instance_id": "task-1",
+            "record_id": "current-record",
+            "patch_sha256": patch_sha,
+        },
+    ) is True
+
+
 def test_per_instance_queue_accepts_sidecar_for_exact_candidate(tmp_path):
     runner = importlib.import_module("opencollab_eval.commands.run_swebench_eval_per_instance")
     dataset_path = tmp_path / "dataset.json"
