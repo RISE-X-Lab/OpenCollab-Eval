@@ -563,7 +563,10 @@ def test_container_guard_signal_cleans_owned_session(tmp_path):
 
     runner.terminate()
 
-    assert runner.wait(timeout=5) == 143
+    # The fake process-table commands each spend 350 ms per probe; bounded
+    # teardown legitimately needs several probes before the session is proven
+    # empty, so leave room for that deliberate slow-enumeration fixture.
+    assert runner.wait(timeout=10) == 143
     time.sleep(0.7)
     assert not finished.exists()
     assert not pidfile.exists()
