@@ -13,6 +13,132 @@ from opencollab_eval.commands import _swe_eval_layer_integrity as _integrity
 from opencollab_eval.commands import _swe_report_io
 from opencollab_eval.safe_files import write_regular_bytes_atomic
 
+_QUARANTINE_SUFFIXES = (".invalid", ".command_failed")
+_QUARANTINE_MARKER_BYTES = 512
+
+
+def _regular_identity(path: Path) -> tuple[int, int] | None:
+    try:
+        info = path.lstat()
+    except OSError:
+        return None
+    if not stat.S_ISREG(info.st_mode):
+        return None
+    return info.st_dev, info.st_ino
+
+
+def _metadata_marker_identity(path: Path) -> tuple[int, int] | None:
+    try:
+        value = json.loads(
+            _swe_report_io.read_text(path, max_bytes=_QUARANTINE_MARKER_BYTES)
+        )
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return None
+    identity = value.get("source_identity") if isinstance(value, dict) else None
+    if (
+        not isinstance(identity, list)
+        or len(identity) != 2
+        or any(isinstance(item, bool) or not isinstance(item, int) for item in identity)
+    ):
+        return None
+    return identity[0], identity[1]
+
+
+def _has_quarantine_marker(path: Path) -> bool:
+    """Return whether a same-identity queue quarantine marker remains."""
+    identity = _regular_identity(path)
+    if identity is None:
+        return False
+    for suffix in _QUARANTINE_SUFFIXES:
+        for marker in path.parent.glob(path.name + suffix + "*"):
+            if _regular_identity(marker) == identity or _metadata_marker_identity(marker) == identity:
+                return True
+    return False
+
+
+def _create_marker(path: Path, payload: bytes) -> bool:
+    try:
+        fd = os.open(
+            path,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+    except OSError:
+        return False
+    try:
+        view = memoryview(payload)
+        while view:
+            written = os.write(fd, view)
+            if written <= 0:
+                raise OSError("quarantine marker write made no progress")
+            view = view[written:]
+        os.fsync(fd)
+    except OSError:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        return False
+    finally:
+        os.close(fd)
+    return True
+
+
+def quarantine_report(
+    path: Path, suffix: str, *, replace_first: bool = False
+) -> Path | None:
+    """Quarantine a report while retaining a marker if source retirement races."""
+    if suffix not in _QUARANTINE_SUFFIXES:
+        raise ValueError(f"unsupported quarantine suffix: {suffix}")
+    identity = _regular_identity(path)
+    if identity is None:
+        return None
+    if replace_first:
+        target = path.with_name(path.name + suffix)
+        try:
+            path.replace(target)
+            return target
+        except OSError:
+            pass
+    for ordinal in range(100):
+        tag = suffix if ordinal == 0 else f"{suffix}.{ordinal}"
+        target = path.with_name(path.name + tag)
+        try:
+            os.link(path, target, follow_symlinks=False)
+        except FileExistsError:
+            continue
+        except OSError:
+            break
+        current = _regular_identity(path)
+        linked = _regular_identity(target)
+        if current != identity or linked != identity:
+            try:
+                target.unlink()
+            except OSError:
+                pass
+            continue
+        try:
+            path.unlink()
+        except OSError:
+            # Keep the same-identity hard link as a durable exclusion marker.
+            return target
+        return target
+    marker_payload = json.dumps({"source_identity": list(identity)}).encode("ascii")
+    for ordinal in range(100):
+        tag = suffix if ordinal == 0 else f"{suffix}.{ordinal}"
+        target = path.with_name(path.name + tag)
+        try:
+            if not _create_marker(target, marker_payload):
+                continue
+        except FileExistsError:
+            continue
+        return target
+    return None
+
 
 def _local_report_target_expectation(path: Path) -> dict[str, object]:
     try:
@@ -51,8 +177,12 @@ def write_local_report(summary: dict[str, Any], json_path: Path, md_path: Path) 
 def eval_only_reconciliation_reports(
     parent_output_dir: Path,
     current_report: Path,
+    *,
+    ignored_paths: tuple[Path, ...] | list[Path] = (),
 ) -> list[Path]:
     """Select cumulative execution evidence and the newest verdict per task."""
+    current = current_report.absolute()
+    ignored = {Path(path).absolute() for path in ignored_paths}
     candidates = set(parent_output_dir.glob("task_*_eval_only_*.json"))
     final_report_path = parent_output_dir / "final_eval_layer_report.json"
     try:
@@ -80,11 +210,13 @@ def eval_only_reconciliation_reports(
             historical_path = Path(value).absolute()
             if historical_path != parent_summary:
                 candidates.add(historical_path)
-    candidates.add(current_report.absolute())
+    candidates.add(current)
     selected_execution: set[Path] = set()
     selected_verdict: dict[int, tuple[tuple[int, str], Path]] = {}
     for path in candidates:
         path = path.absolute()
+        if path != current and (path in ignored or _has_quarantine_marker(path)):
+            continue
         info = path.lstat()
         if not stat.S_ISREG(info.st_mode):
             raise RuntimeError(f"eval-only report must be a regular file: {path}")

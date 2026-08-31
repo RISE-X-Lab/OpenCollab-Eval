@@ -26,6 +26,10 @@ from opencollab_eval.commands.swe_v1_prolite_process import (
     _ensure_local_process_group_quiesced_after_wait,
     terminate_local_process_group,
 )
+from opencollab_eval.commands.swe_v1_prolite_report import (
+    _has_quarantine_marker,
+    quarantine_report,
+)
 from opencollab_eval.engine.swe_eval_records import strict_integer
 from opencollab_eval.safe_files import write_regular_bytes_atomic
 
@@ -255,6 +259,8 @@ def _candidate_identity_status(job: dict[str, Any]) -> str:
             info = path.lstat()
         except FileNotFoundError:
             continue
+        if _has_quarantine_marker(path):
+            continue
         if not stat.S_ISREG(info.st_mode):
             raise RuntimeError(f"queue report must be a regular file: {path}")
         report = _swe_report_io.load_json(path)
@@ -281,6 +287,8 @@ def _terminal_report(job: dict[str, Any]) -> tuple[Path | None, str]:
         try:
             info = path.lstat()
         except FileNotFoundError:
+            continue
+        if _has_quarantine_marker(path):
             continue
         if not stat.S_ISREG(info.st_mode):
             raise RuntimeError(f"queue report must be a regular file: {path}")
@@ -588,11 +596,11 @@ def _run_job(
             ):
                 result["status"] = "terminal"
             elif proc is not None and _row_terminal(rows[0], job=job):
-                failed_path = json_output.with_name(json_output.name + ".command_failed")
-                try:
-                    json_output.replace(failed_path)
-                except OSError as exc:
-                    result["error"] = f"failed to quarantine child report: {exc}"[:8_192]
+                failed_path = quarantine_report(
+                    json_output, ".command_failed", replace_first=True
+                )
+                if failed_path is None:
+                    result["error"] = "failed to quarantine child report"
                     result["status"] = "technical_failed"
                 else:
                     result["json_output"] = str(failed_path)
@@ -618,17 +626,21 @@ def _run_job(
     return persisted
 def _refresh_parent_report(parent: str, report: Path) -> dict[str, Any]:
     with ParentEvalLock(Path(parent), "report"):
-        _quarantine_invalid_reports(Path(parent), report)
+        ignored_reports = _quarantine_invalid_reports(Path(parent), report)
         return update_parent_fact_report(
             SimpleNamespace(
                 parent_output_dir=Path(parent),
                 json_output=report,
                 usd_cny=None,
+                ignored_reports=tuple(ignored_reports),
             )
         )
-def _quarantine_invalid_reports(parent: Path, current_report: Path) -> None:
+
+
+def _quarantine_invalid_reports(parent: Path, current_report: Path) -> list[Path]:
     """Move stale malformed task reports aside without replacing backups."""
     current = current_report.absolute()
+    ignored: list[Path] = []
     for path in parent.glob("task_*_eval_only_*.json"):
         if path.absolute() == current:
             continue
@@ -636,28 +648,17 @@ def _quarantine_invalid_reports(parent: Path, current_report: Path) -> None:
             info = path.lstat()
             if not stat.S_ISREG(info.st_mode):
                 continue
+            if _has_quarantine_marker(path):
+                continue
             report, error = _swe_report_io.load_json_with_error(path)
             rows = [row for row in report.get("rows") or [] if isinstance(row, dict)]
             if not error and len(rows) == 1 and strict_integer(rows[0].get("index")) is not None:
                 continue
-            for suffix in range(100):
-                tag = ".invalid" if suffix == 0 else f".invalid.{suffix}"
-                target = path.with_name(path.name + tag)
-                try:
-                    os.link(path, target, follow_symlinks=False)
-                except FileExistsError:
-                    continue
-                try:
-                    now = path.lstat()
-                    if (now.st_dev, now.st_ino) == (info.st_dev, info.st_ino):
-                        path.unlink()
-                    else:
-                        target.unlink(missing_ok=True)
-                except OSError:
-                    target.unlink(missing_ok=True)
-                break
+            if quarantine_report(path, ".invalid") is None:
+                ignored.append(path.absolute())
         except (FileNotFoundError, OSError):
             continue
+    return ignored
 def _future_result(future: Any, job: dict[str, Any], state_path: Path, state: dict[str, Any]) -> dict[str, Any]:
     try:
         result = future.result()

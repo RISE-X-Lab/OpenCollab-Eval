@@ -766,7 +766,11 @@ def update_parent_fact_report(args: argparse.Namespace) -> dict[str, Any]:
         "--markdown-output",
         str(parent_output_dir / "final_eval_layer_report.md"),
     ]
-    for report_path in eval_only_reconciliation_reports(parent_output_dir, args.json_output):
+    for report_path in eval_only_reconciliation_reports(
+        parent_output_dir,
+        args.json_output,
+        ignored_paths=getattr(args, "ignored_reports", ()),
+    ):
         command.extend(["--report-json", str(report_path)])
     token_cost = parent_output_dir / "parallel_token_cost_summary.json"
     if token_cost.exists():
