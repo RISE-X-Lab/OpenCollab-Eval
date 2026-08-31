@@ -623,6 +623,15 @@ def report_is_done(path: Path, instance_id: str, expected_identity: dict) -> boo
         return False
     if str(item.get("status") or "") in _runner().TECHNICAL_REPORT_STATUSES or bool(item.get("error")):
         return False
+    embedded_record_id = item.get("record_id")
+    if embedded_record_id not in (None, "") and embedded_record_id != expected_identity.get(
+        "record_id"
+    ):
+        # A report may carry its candidate record identity directly.  Do not
+        # let a same-patch result from another generation satisfy the current
+        # queue item; legacy reports that omit the field continue through the
+        # sidecar binding path below.
+        return False
     embedded_sha = str(item.get("patch_sha256") or item.get("patch_sha") or item.get("model_patch_sha256") or "")
     if embedded_sha:
         return embedded_sha == expected_identity.get("patch_sha256")

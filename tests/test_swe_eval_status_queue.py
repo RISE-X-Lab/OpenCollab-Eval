@@ -41,6 +41,57 @@ def test_per_instance_queue_rejects_stale_standard_report(tmp_path):
     assert [item[0] for item in queue] == ["task-1"]
 
 
+@pytest.mark.parametrize("embedded_record_id", ["old-record", 123])
+def test_per_instance_report_rejects_embedded_record_drift_with_same_patch(
+    tmp_path, embedded_record_id
+):
+    runner = importlib.import_module("opencollab_eval.commands.run_swebench_eval_per_instance")
+    report = tmp_path / "report.json"
+    report.write_text(
+        json.dumps(
+            {
+                "task-1": {
+                    "resolved": True,
+                    "record_id": embedded_record_id,
+                    "patch_sha256": "a" * 64,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    identity = {
+        "instance_id": "task-1",
+        "record_id": "current-record",
+        "patch_sha256": "a" * 64,
+    }
+
+    assert runner.report_is_done(report, "task-1", identity) is False
+
+
+def test_per_instance_report_accepts_matching_embedded_record_with_same_patch(tmp_path):
+    runner = importlib.import_module("opencollab_eval.commands.run_swebench_eval_per_instance")
+    report = tmp_path / "report.json"
+    report.write_text(
+        json.dumps(
+            {
+                "task-1": {
+                    "resolved": True,
+                    "record_id": "current-record",
+                    "patch_sha256": "a" * 64,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    identity = {
+        "instance_id": "task-1",
+        "record_id": "current-record",
+        "patch_sha256": "a" * 64,
+    }
+
+    assert runner.report_is_done(report, "task-1", identity) is True
+
+
 def test_per_instance_queue_accepts_sidecar_for_exact_candidate(tmp_path):
     runner = importlib.import_module("opencollab_eval.commands.run_swebench_eval_per_instance")
     dataset_path = tmp_path / "dataset.json"
