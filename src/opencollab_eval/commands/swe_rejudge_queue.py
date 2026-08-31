@@ -308,22 +308,22 @@ def _observed_eval_attempts(job: dict[str, Any]) -> int:
     if parent_summary.is_file():
         report = _swe_report_io.load_json(parent_summary)
         total = 0
-        for result in report.get("results") or []:
-            if not isinstance(result, dict):
+        seen_rows: set[str] = set()
+        for row in _report_rows(report):
+            if not _row_index_matches(row, job) or not _row_matches_job(row, job):
                 continue
-            for row in result.get("rows") or []:
-                if (
-                    isinstance(row, dict)
-                    and _row_index_matches(row, job)
-                    and _row_matches_job(row, job)
-                ):
-                    evaluation = row.get("eval")
-                    if isinstance(evaluation, dict):
-                        count = strict_integer(
-                            evaluation.get("attempt_count", 0), nonnegative=True
-                        )
-                        if count is not None:
-                            total += count
+            # Legacy summaries may mirror this row at top level and in results.
+            row_key = json.dumps(row, sort_keys=True, separators=(",", ":"))
+            if row_key in seen_rows:
+                continue
+            seen_rows.add(row_key)
+            evaluation = row.get("eval")
+            if isinstance(evaluation, dict):
+                count = strict_integer(
+                    evaluation.get("attempt_count", 0), nonnegative=True
+                )
+                if count is not None:
+                    total += count
         counts.append(total)
     final_report = parent / "final_eval_layer_report.json"
     if final_report.is_file():

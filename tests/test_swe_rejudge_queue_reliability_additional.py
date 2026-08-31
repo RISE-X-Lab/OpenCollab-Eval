@@ -416,3 +416,55 @@ def test_queue_normalizes_legacy_numeric_string_indices(tmp_path, monkeypatch, l
         encoding="utf-8",
     )
     assert queue._observed_eval_attempts(job) == 3
+
+
+def test_queue_counts_legacy_top_level_attempts_before_retry(tmp_path, monkeypatch):
+    """A legacy top-level row must consume its persisted retry budget."""
+    plan, parent = _plan(tmp_path)
+    job = queue._read_plan(plan)["jobs"][0]
+    row = {
+        "index": job["index"],
+        "task": job["task"],
+        "generation": {
+            "record_id": job["record_id"],
+            "patch_sha256": job["source_patch_sha256"],
+            "source_patch_sha256": job["source_patch_sha256"],
+            "eval_patch_sha256": job["eval_patch_sha256"],
+        },
+        "eval": {"status": "technical_eval_failed", "attempt_count": 10},
+    }
+    (parent / "parallel_summary.json").write_text(
+        json.dumps({"rows": [row]}), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        queue,
+        "_run_bounded_child",
+        lambda *args, **kwargs: pytest.fail("budget-exhausted candidate must not relaunch"),
+    )
+
+    result = queue.run_queue(plan, tmp_path / "state", workers=1)
+
+    assert result["counts"] == {"budget_exhausted": 1}
+
+
+def test_queue_counts_a_mirrored_top_level_row_only_once(tmp_path):
+    """A top-level/``results`` mirror is one cumulative ledger, not two."""
+    plan, parent = _plan(tmp_path)
+    job = queue._read_plan(plan)["jobs"][0]
+    row = {
+        "index": job["index"],
+        "task": job["task"],
+        "generation": {
+            "record_id": job["record_id"],
+            "patch_sha256": job["source_patch_sha256"],
+            "source_patch_sha256": job["source_patch_sha256"],
+            "eval_patch_sha256": job["eval_patch_sha256"],
+        },
+        "eval": {"status": "technical_eval_failed", "attempt_count": 3},
+    }
+    (parent / "parallel_summary.json").write_text(
+        json.dumps({"rows": [row], "results": [{"rows": [row]}]}),
+        encoding="utf-8",
+    )
+
+    assert queue._observed_eval_attempts(job) == 3
