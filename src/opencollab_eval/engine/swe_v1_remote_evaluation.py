@@ -367,15 +367,19 @@ def eval_for_task_once(row, patch_selection=None):
             raise
         else:
             ACTIVE_CHILD_PGIDS.add(proc.pid)
-            # Treat publication errors like explicit binding failures so cleanup runs.
             try:
                 binding = bind_eval_container_marker(cidfile, marker_path, container_name, proc, timeout=eval_container_bind_timeout)
             except Exception as exc:
                 binding = {"ok": False, "status": "container_identity_binding_exception", "details": f"{type(exc).__name__}: {exc}"}
+            except BaseException:
+                cleanup_eval_binding_interruption(proc, cidfile, marker_path, container_name, temporary_output, spawn_signal_state, cleanup_eval_container, clear_pending_eval_marker, cleanup_temporary_output)
+                raise
             if not binding.get("ok"):
                 try:
                     cleanup_quiesced = terminate_process_group_bounded(proc)
                     cleanup = cleanup_eval_container(cidfile, marker_path, container_name)
+                    pending_cleanup = clear_pending_eval_marker(cidfile, marker_path, container_name) if cleanup_quiesced and not cleanup.get("ok") else None
+                    cleanup = pending_cleanup if isinstance(pending_cleanup, dict) and pending_cleanup.get("ok") else cleanup
                     if cleanup_quiesced:
                         ACTIVE_CHILD_PGIDS.discard(proc.pid)
                     summary = {
@@ -397,7 +401,6 @@ def eval_for_task_once(row, patch_selection=None):
                     write_json(summary_path, summary)
                     return {"status": "technical_eval_failed", "task": task, "summary": summary}
                 finally:
-                    # Restore caller handlers after every binding-failure teardown.
                     restore_spawn_signals(spawn_signal_state)
             try:
                 try:
@@ -435,7 +438,6 @@ def eval_for_task_once(row, patch_selection=None):
             marker_path,
             container_name,
         )
-
     artifacts = publish_and_read_eval_output_artifacts(
         container_output_dir, output_dir, f2p_plan, p2p_plan, proof_nonce, temporary_output,
         str(row.get("base_commit") or row.get("commit") or ""),
@@ -595,7 +597,6 @@ def write_markdown(summary):
             )
         )
     summary["markdown"] = "\n".join(lines) + "\n"
-
 def main():
     config_errors = validate_runner_config()
     if config_errors:
@@ -669,7 +670,6 @@ def main():
         write_json(base_run_dir / "summary.json", summary)
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 2
-
     selected = load_dataset(start_index, limit)
     base_run_dir.mkdir(parents=True, exist_ok=True)
     result_rows = []

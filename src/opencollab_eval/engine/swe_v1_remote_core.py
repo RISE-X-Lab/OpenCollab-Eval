@@ -2,6 +2,8 @@
 
 # ruff: noqa: F403, F405
 
+from contextlib import suppress
+
 from opencollab_eval.engine.swe_v1_remote_state import *
 from opencollab_eval.engine.swe_v1_runner_claim import runner_claim_sha256
 from opencollab_eval.safe_files import write_regular_bytes_atomic
@@ -222,6 +224,27 @@ def ensure_process_group_quiesced_after_wait(
         term_timeout=term_timeout,
         kill_timeout=kill_timeout,
     )
+
+
+def cleanup_eval_binding_interruption(
+    proc, cidfile, marker_path, container_name, temporary_output, spawn_signal_state,
+    cleanup_container, clear_pending, cleanup_temp
+):
+    try:
+        quiesced = terminate_process_group_bounded(proc)
+    except BaseException:
+        quiesced = False
+    try:
+        cleanup = cleanup_container(cidfile, marker_path, container_name)
+    except BaseException:
+        cleanup = None
+    if quiesced and (not isinstance(cleanup, dict) or not cleanup.get("ok")):
+        with suppress(BaseException):
+            clear_pending(cidfile, marker_path, container_name)
+    for action, value in ((cleanup_temp, temporary_output), (restore_spawn_signals, spawn_signal_state)):
+        with suppress(BaseException):
+            action(value)
+    ACTIVE_CHILD_PGIDS.difference_update({proc.pid} if quiesced else set())
 
 
 def slice_label():
