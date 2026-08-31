@@ -20,13 +20,7 @@ def _now() -> str:
 
 
 def _iter_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    if isinstance(report.get("rows"), list):
-        rows.extend(row for row in report["rows"] if isinstance(row, dict))
-    for result in report.get("results") or []:
-        if isinstance(result, dict) and isinstance(result.get("rows"), list):
-            rows.extend(row for row in result["rows"] if isinstance(row, dict))
-    return rows
+    return _prolite_report._report_rows_for_attempt_count(report)
 
 def _patch_sha(row: dict[str, Any]) -> str:
     generation = row.get("generation") if isinstance(row.get("generation"), dict) else {}
