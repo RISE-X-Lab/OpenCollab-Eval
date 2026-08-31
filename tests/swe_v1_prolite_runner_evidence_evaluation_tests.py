@@ -48,7 +48,8 @@ def test_remote_patch_sha_match_requires_exact_hex_digest(tmp_path):
     assert namespace["patch_sha_matches"](digest, digest) is True
     assert namespace["patch_sha_matches"](digest[:12], digest) is False
     assert namespace["patch_sha_matches"]("g" * 64, "g" * 64) is False
-    assert namespace["patch_sha_matches"](digest.upper(), digest) is False
+    # Hexadecimal digests are case-insensitive, but length and alphabet remain strict.
+    assert namespace["patch_sha_matches"](digest.upper(), digest) is True
 
 
 def test_prolite_python_plan_reaches_external_boundary_before_image_execution(tmp_path):
