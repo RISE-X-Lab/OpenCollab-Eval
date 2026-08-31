@@ -226,6 +226,16 @@ def test_proc_stat_read_failure_is_not_silently_skipped(
         runner._proc_stat(123)
 
 
+def test_ps_identity_normalizes_bsd_date_padding(monkeypatch: pytest.MonkeyPatch) -> None:
+    result = SimpleNamespace(returncode=0, stdout=" Ss   Tue Sep  1 01:06:49 2026\n")
+    monkeypatch.setattr(runner.subprocess, "run", lambda *args, **kwargs: result)
+
+    assert runner._ps_process_state_identity(123) == (
+        "Ss",
+        "ps:Tue Sep 1 01:06:49 2026",
+    )
+
+
 def test_zombie_is_not_counted_as_live(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(runner.os, "kill", lambda *_args: None)
     monkeypatch.setattr(

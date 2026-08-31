@@ -103,7 +103,10 @@ def _ps_process_state_identity(pid: int) -> tuple[str, str] | None:
     fields = rows[0].split(maxsplit=1)
     if len(fields) != 2 or not fields[0] or not fields[1].strip():
         raise ProcessInspectionError("ps process inspection returned malformed data")
-    return fields[0], f"ps:{fields[1].strip()}"
+    # BSD ``ps`` pads single-digit days differently across invocation forms
+    # (for example ``Sep 1`` versus ``Sep  1``).  Collapse that presentation
+    # whitespace so one process has the same identity in both scans.
+    return fields[0], f"ps:{' '.join(fields[1].split())}"
 
 
 def _process_state_identity(pid: int) -> tuple[str, str] | None:
