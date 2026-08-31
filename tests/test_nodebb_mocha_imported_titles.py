@@ -92,6 +92,59 @@ def test_nodebb_target_file_selector_preserves_significant_trailing_space(tmp_pa
     assert re.fullmatch(selector, runtime_title.rstrip()) is None
 
 
+def test_nodebb_target_file_falls_back_when_local_mocha_is_not_executable(
+    tmp_path: Path,
+):
+    """A present but non-executable shim must not mask a usable yarn runner."""
+
+    local_mocha = tmp_path / "node_modules" / ".bin" / "mocha"
+    local_mocha.parent.mkdir(parents=True)
+    local_mocha.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' local-mocha-was-used > \"$LOCAL_MOCHA_CALLED\"\n"
+        "exit 97\n",
+        encoding="utf-8",
+    )
+    local_mocha.chmod(0o644)
+
+    yarn = tmp_path / "bin" / "yarn"
+    yarn.parent.mkdir()
+    yarn.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" > \"$YARN_CALLS\"\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    yarn.chmod(0o755)
+
+    target_file = tmp_path / "targets.json"
+    target_file.write_text(json.dumps(["test/a.js | works"]), encoding="utf-8")
+    calls = tmp_path / "yarn-call.txt"
+    local_called = tmp_path / "local-call.txt"
+    result = subprocess.run(
+        mocha_test_command(
+            ["test/a.js | works"],
+            ["test/a.js"],
+            str(target_file),
+        ),
+        shell=True,
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": f"{yarn.parent}:{os.environ['PATH']}",
+            "YARN_CALLS": str(calls),
+            "LOCAL_MOCHA_CALLED": str(local_called),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert calls.read_text(encoding="utf-8").startswith("test ")
+    assert not local_called.exists()
+
+
 def test_nodebb_structured_proof_maps_runtime_titles_to_imported_targets():
     expected = [
         "test/database.js | Test database should work",

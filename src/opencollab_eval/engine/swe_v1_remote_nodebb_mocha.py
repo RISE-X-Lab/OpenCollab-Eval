@@ -44,6 +44,7 @@ def nodebb_mocha_titles_are_unambiguous(
 def nodebb_mocha_target_file_command(tests: object, target_file: str) -> str:
     launcher = """import hashlib
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -79,7 +80,8 @@ status = 0
 for test_file in sorted(grouped):
     print("OPENCOLLAB_MOCHA_FILE " + json.dumps(test_file, ensure_ascii=True), flush=True)
     selector = "^(?:" + "|".join(re.escape(title) for title in grouped[test_file]) + ")$"
-    if pathlib.Path("./node_modules/.bin/mocha").is_file():
+    local_mocha = pathlib.Path("./node_modules/.bin/mocha")
+    if local_mocha.is_file() and os.access(local_mocha, os.X_OK):
         command = ["./node_modules/.bin/mocha", "--timeout", "30000", "--reporter", "json-stream", "--grep", selector, test_file]
     elif shutil.which("yarn"):
         command = ["yarn", "test", "--timeout", "30000", "--reporter", "json-stream", "--grep", selector, test_file]
