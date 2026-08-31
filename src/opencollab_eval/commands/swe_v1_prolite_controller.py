@@ -62,31 +62,24 @@ from opencollab_eval.engine.swe_v1_remote_state import (
 _SSH_LIVENESS_OPTIONS = (
     "-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "ServerAliveInterval=30",
     "-o", "ServerAliveCountMax=3", "-o", "TCPKeepAlive=yes",)
-
 def _ssh_with_liveness_options(command: list[str]) -> list[str]:
     if not command or Path(command[0]).name != "ssh":
         return command
     return [*command, *_SSH_LIVENESS_OPTIONS]
-
-
 def _install_local_abort_handlers() -> dict[signal.Signals, Any]:
     previous: dict[signal.Signals, Any] = {}
-
     def abort(signum: int, _frame: object) -> None:
         if signum == signal.SIGINT:
             raise KeyboardInterrupt
         raise SystemExit(128 + signum)
-
     for signum in LOCAL_SPAWN_SIGNALS:
         previous[signum] = signal.getsignal(signum)
         signal.signal(signum, abort)
     return previous
 
-
 def _restore_local_abort_handlers(previous: dict[signal.Signals, Any]) -> None:
     for signum, handler in previous.items():
         signal.signal(signum, handler)
-
 
 def run_remote(args: argparse.Namespace) -> dict[str, Any]:
     abort_signal_state = _install_local_abort_handlers()
@@ -94,8 +87,6 @@ def run_remote(args: argparse.Namespace) -> dict[str, Any]:
         return _run_remote(args)
     finally:
         _restore_local_abort_handlers(abort_signal_state)
-
-
 def prepare_runtime_summary(
     args: argparse.Namespace,
     ssh_command: list[str],
@@ -137,7 +128,6 @@ def prepare_runtime_summary(
             "verified": True,
         }
     }
-
 
 def _remote_payload(
     args: argparse.Namespace,
@@ -200,22 +190,18 @@ def _remote_payload(
         "dry_run": args.dry_run,
     }
 
-
 def _recovery_runtime_tree(observed: dict[str, Any]) -> str:
     owner = observed.get("runner_owner")
     if not isinstance(owner, dict):
         return ""
     value = str(owner.get("runtime_tree_sha256") or "")
     return value if re.fullmatch(r"[0-9a-f]{64}", value) else ""
-
-
 def _recovery_invocation_id(observed: dict[str, Any]) -> str:
     owner = observed.get("runner_owner")
     if not isinstance(owner, dict):
         return ""
     value = str(owner.get("invocation_id") or "")
     return value if re.fullmatch(r"[0-9a-f]{32}", value) else ""
-
 
 def _validate_total_timeout(value: object) -> float:
     if isinstance(value, bool):
@@ -228,7 +214,6 @@ def _validate_total_timeout(value: object) -> float:
         raise ValueError("total_timeout must be finite and positive")
     return timeout
 
-
 def _remaining_timeout(deadline: float) -> float:
     """Return remaining time in the controller's end-to-end wall-clock budget."""
     if not math.isfinite(deadline):
@@ -237,8 +222,6 @@ def _remaining_timeout(deadline: float) -> float:
     if remaining <= 0:
         raise subprocess.TimeoutExpired("remote runner", 0)
     return remaining
-
-
 def _remote_preflight_timeout_summary(
     args: argparse.Namespace,
     phase: str,
@@ -258,10 +241,8 @@ def _remote_preflight_timeout_summary(
         "remote_proxy": remote_proxy or {"status": "not_started"},
     }
 
-
 def probe_preexisting_remote_execution(**kwargs: Any) -> dict[str, Any] | None:
     return wait_for_remote_ownership_fact(**kwargs)
-
 
 def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
     defaults = {
@@ -500,7 +481,6 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             summary["runtime_sync"] = sync_summary
             summary["remote_proxy"] = proxy_summary
             return summary
-
         def poll_remote_runner() -> None:
             observed = probe_remote_execution_state(
                 ssh_command=ssh_command,
@@ -516,7 +496,6 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             )
             if observed is not None and observed.get("runner_state") != "alive":
                 raise RemoteRunnerUnavailable(observed)
-
         stdout, stderr = _bounded_remote_communicate(
             proc,
             json.dumps(payload),
@@ -662,15 +641,12 @@ def _report_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
         if isinstance(result, dict):
             rows.extend(row for row in result.get("rows") or [] if isinstance(row, dict))
     return rows
-
-
 def _row_eval_attempt_count(row: dict[str, Any]) -> int:
     evaluation = row.get("eval") if isinstance(row.get("eval"), dict) else {}
     if evaluation.get("executed") is False:
         return 0
     count = strict_integer(evaluation.get("attempt_count", 0), nonnegative=True)
     return count if count is not None else 0
-
 
 def _report_task_eval_counts(report: dict[str, Any]) -> dict[int, int]:
     counts: dict[int, int] = {}
@@ -680,7 +656,6 @@ def _report_task_eval_counts(report: dict[str, Any]) -> dict[int, int]:
             continue
         counts[index] = counts.get(index, 0) + _row_eval_attempt_count(row)
     return counts
-
 
 def _final_report_task_eval_counts(report: dict[str, Any]) -> dict[int, int]:
     counts: dict[int, int] = {}
@@ -696,8 +671,6 @@ def _final_report_task_eval_counts(report: dict[str, Any]) -> dict[int, int]:
             continue
         counts[index] = max(counts.get(index, 0), count)
     return counts
-
-
 def apply_parent_eval_budget(args: argparse.Namespace) -> dict[str, Any] | None:
     if not (args.eval_only and args.parent_output_dir):
         return None
@@ -745,7 +718,6 @@ def apply_parent_eval_budget(args: argparse.Namespace) -> dict[str, Any] | None:
         "effective_max_eval_attempts": effective_additional_attempts,
         "projected_total_eval_attempts": projected_total_attempts,
     }
-
 
 def update_parent_fact_report(args: argparse.Namespace) -> dict[str, Any]:
     parent_output_dir = args.parent_output_dir.resolve()
@@ -823,6 +795,5 @@ def update_parent_fact_report(args: argparse.Namespace) -> dict[str, Any]:
         "report_markdown": str(parent_output_dir / "final_eval_layer_report.md"),
         "counts": report.get("counts") if isinstance(report, dict) else {},
     }
-
 
 __all__ = [name for name in globals() if not name.startswith("__")]

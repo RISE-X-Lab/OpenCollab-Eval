@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Resume an evidence-bound queue of existing candidates without model calls."""
-
 from __future__ import annotations
 
 import argparse
@@ -36,20 +35,11 @@ from opencollab_eval.safe_files import write_regular_bytes_atomic
 SCHEMA = "opencollab.eval_only_queue.v1"
 _SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 _RUN_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
-_BLOCKED_RUNNER_OPTIONS = {
-    "--base-run-dir",
-    "--eval-dir-name",
-    "--eval-only",
-    "--json-output",
-    "--limit",
-    "--markdown-output",
-    "--max-empty-patch-retries",
-    "--max-task-starts",
-    "--parent-output-dir",
-    "--remote-runtime-repo",
-    "--run-id",
-    "--start-index",
-}
+_BLOCKED_RUNNER_OPTIONS = set(
+    "--base-run-dir --eval-dir-name --eval-only --json-output --limit "
+    "--markdown-output --max-empty-patch-retries --max-task-starts "
+    "--parent-output-dir --remote-runtime-repo --run-id --start-index".split()
+)
 DEFAULT_EVAL_TIMEOUT_SECONDS = 7_200.0
 QUEUE_EVAL_TIMEOUT_GRACE_SECONDS = 120.0
 QUEUE_PROCESS_TERM_GRACE_SECONDS = 5.0
@@ -200,9 +190,7 @@ def _row_identity(row: dict[str, Any]) -> tuple[str, str, str, str] | None:
         return None
     task = row.get("task")
     record_id = generation.get("record_id")
-    source_patch_sha256 = generation.get("source_patch_sha256") or generation.get(
-        "patch_sha256"
-    )
+    source_patch_sha256 = generation.get("source_patch_sha256") or generation.get("patch_sha256")
     eval_patch_sha256 = generation.get("eval_patch_sha256") or generation.get(
         "patch_sha256"
     )
@@ -225,8 +213,6 @@ def _job_identity(job: dict[str, Any]) -> tuple[str, str, str, str]:
         job["source_patch_sha256"],
         job["eval_patch_sha256"],
     )
-
-
 def _row_matches_job(row: dict[str, Any], job: dict[str, Any]) -> bool:
     """Match a report row to a job's immutable candidate binding.
 
@@ -237,8 +223,6 @@ def _row_matches_job(row: dict[str, Any], job: dict[str, Any]) -> bool:
     """
     identity = _row_identity(row)
     return identity is not None and identity[:3] == _job_identity(job)[:3]
-
-
 def _row_terminal(row: dict[str, Any], *, job: dict[str, Any]) -> bool:
     evaluation = row.get("eval")
     if (
@@ -288,7 +272,6 @@ def _candidate_identity_status(job: dict[str, Any]) -> str:
     if len(identities) > 1:
         return "candidate_identity_conflict"
     return "candidate_identity_missing"
-
 def _terminal_report(job: dict[str, Any]) -> tuple[Path | None, str]:
     parent = Path(job["parent_output_dir"])
     matches: list[tuple[int, str, Path, bool]] = []
@@ -314,7 +297,6 @@ def _terminal_report(job: dict[str, Any]) -> tuple[Path | None, str]:
     if len({match[3] for match in matches}) > 1:
         return None, "terminal_verdict_conflict"
     return (max(matches)[2], "verified") if matches else (None, "missing")
-
 def _observed_eval_attempts(job: dict[str, Any]) -> int:
     parent = Path(job["parent_output_dir"])
     counts = []
@@ -352,7 +334,6 @@ def _observed_eval_attempts(job: dict[str, Any]) -> int:
                     continue
                 counts.append(count)
     return max(counts, default=0)
-
 def _final_task_matches_job(task: dict[str, Any], job: dict[str, Any]) -> bool:
     if task.get("index") != job["index"] or task.get("task") != job["task"]:
         return False
@@ -362,7 +343,6 @@ def _final_task_matches_job(task: dict[str, Any], job: dict[str, Any]) -> bool:
         job["record_id"],
         job["source_patch_sha256"],
     )
-
 def _write_state_unlocked(path: Path, state: dict[str, Any]) -> None:
     payload = (json.dumps(state, ensure_ascii=False, indent=2) + "\n").encode()
     write_regular_bytes_atomic(path, payload)
@@ -653,8 +633,6 @@ def _refresh_parent_report(
                 candidate_identities=candidate_identities,
             )
         )
-
-
 def _quarantine_invalid_reports(parent: Path, current_report: Path) -> list[Path]:
     """Move stale malformed task reports aside without replacing backups."""
     current = current_report.absolute()
@@ -691,7 +669,6 @@ def _future_result(future: Any, job: dict[str, Any], state_path: Path, state: di
             {"status": "command_failed", "returncode": 125, "error": detail,
              "launch_count": launch_count, **job},
         )
-
 def _run_queue_locked(
     plan: dict[str, Any],
     output_dir: Path,
@@ -718,11 +695,6 @@ def _run_queue_locked(
             "jobs": {},
         }
     _write_state(state_path, state)
-    # Historical task files are untrusted until they pass the exact candidate
-    # identity and terminal-proof checks below.  In particular, a partial or
-    # quarantined ``task_*_eval_only_*.json`` must not abort queue startup by
-    # being fed directly to the parent report reconciler.  Parent refresh is
-    # intentionally deferred to the post-run aggregation below.
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [
             pool.submit(
@@ -748,8 +720,6 @@ def _run_queue_locked(
     for job in plan["jobs"]:
         jobs_by_parent.setdefault(job["parent_output_dir"], []).append(job)
     for parent, parent_jobs in jobs_by_parent.items():
-        # A parent can contain several independently queued indices.  Do not
-        # let the first failed index suppress a later successful one.
         eligible = [
             job for job in parent_jobs
             if result_by_key[_job_key(job)].get("status") in {
@@ -813,14 +783,12 @@ def run_queue(plan_path: Path, output_dir: Path, *, workers: int) -> dict[str, A
     queue_id = hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:12]
     with ParentEvalLock(output_dir, f"rejudge-queue-{queue_id}", blocking=False):
         return _run_queue_locked(plan, output_dir, workers=workers, queue_id=queue_id)
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--workers", type=int, default=2)
     return parser
-
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     result = run_queue(args.plan, args.output_dir, workers=args.workers)
