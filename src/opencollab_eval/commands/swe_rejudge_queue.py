@@ -189,9 +189,6 @@ def _row_identity(row: dict[str, Any]) -> tuple[str, str, str, str] | None:
     generation = row.get("generation")
     if not isinstance(generation, dict):
         return None
-    # Historical reports use ``task``, ``instance_id`` or ``task_id``.  Keep
-    # the alias handling centralized so conflicting copies fail closed rather
-    # than silently binding a report to the wrong queue job.
     task = direct_payload_task_id(row)
     record_id = generation.get("record_id")
     source_patch_sha256 = generation.get("source_patch_sha256") or generation.get("patch_sha256")
@@ -210,13 +207,9 @@ def _row_identity(row: dict[str, Any]) -> tuple[str, str, str, str] | None:
     ):
         return None
     return task, record_id, source_patch_sha256, eval_patch_sha256
-
-
 def _row_index_matches(row: dict[str, Any], job: dict[str, Any]) -> bool:
     """Match legacy numeric-string indices without accepting lossy values."""
     return strict_integer(row.get("index")) == job["index"]
-
-
 def _job_identity(job: dict[str, Any]) -> tuple[str, str, str, str]:
     return (
         job["task"],
@@ -226,7 +219,6 @@ def _job_identity(job: dict[str, Any]) -> tuple[str, str, str, str]:
     )
 def _row_matches_job(row: dict[str, Any], job: dict[str, Any]) -> bool:
     """Match a report row to a job's immutable candidate binding.
-
     The evaluation patch is derived from the source patch and may be
     recomputed by an eval-only runner.  It is retained in the job identity for
     provenance and queue keys, but must not make an otherwise exact candidate
@@ -750,9 +742,6 @@ def _run_queue_locked(
                 terminal_status = candidate_status
                 break
             if candidate is not None and candidate != parent_summary:
-                # A task report is the queue's new evidence.  Prefer it over
-                # the cumulative parent summary even when the latter is also
-                # terminal for an earlier index.
                 report, terminal_status = candidate, candidate_status
             elif candidate is not None and report is None:
                 report, terminal_status = candidate, candidate_status
