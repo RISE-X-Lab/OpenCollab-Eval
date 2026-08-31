@@ -367,49 +367,38 @@ def eval_for_task_once(row, patch_selection=None):
             raise
         else:
             ACTIVE_CHILD_PGIDS.add(proc.pid)
-            # Binding normally reports a structured failure, but marker/cidfile
-            # publication can also raise (for example, a transient I/O error).
-            # Convert that exception into the same cleanup path as an explicit
-            # binding failure; otherwise the already-started docker process can
-            # survive while this task is recorded as a technical failure.
+            # Treat publication errors like explicit binding failures so cleanup runs.
             try:
-                binding = bind_eval_container_marker(
-                    cidfile, marker_path, container_name, proc,
-                    timeout=eval_container_bind_timeout,
-                )
+                binding = bind_eval_container_marker(cidfile, marker_path, container_name, proc, timeout=eval_container_bind_timeout)
             except Exception as exc:
-                binding = {
-                    "ok": False,
-                    "status": "container_identity_binding_exception",
-                    "details": f"{type(exc).__name__}: {exc}",
-                }
+                binding = {"ok": False, "status": "container_identity_binding_exception", "details": f"{type(exc).__name__}: {exc}"}
             if not binding.get("ok"):
-                cleanup_quiesced = terminate_process_group_bounded(proc)
-                cleanup = cleanup_eval_container(
-                    cidfile,
-                    marker_path,
-                    container_name,
-                )
-                if cleanup_quiesced:
-                    ACTIVE_CHILD_PGIDS.discard(proc.pid)
-                summary = {
-                    "schema": "opencollab.prolite_direct_eval.v2",
-                    "status": "technical_eval_failed",
-                    "task": task,
-                    "resolved": False,
-                    "patch_sha256": row_patch_sha(prediction),
-                    "record_id": row_record_id(prediction),
-                    "technical_reasons": ["container_identity_binding"],
-                    "container_binding": binding,
-                    "container_cleanup": cleanup,
-                    "cleanup_quiesced": cleanup_quiesced,
-                }
-                cleanup_errors = cleanup_temporary_output(temporary_output)
-                if cleanup_errors:
-                    summary["technical_reasons"].append("temporary_output_cleanup")
-                    summary["output_artifact_errors"] = cleanup_errors
-                write_json(summary_path, summary)
-                return {"status": "technical_eval_failed", "task": task, "summary": summary}
+                try:
+                    cleanup_quiesced = terminate_process_group_bounded(proc)
+                    cleanup = cleanup_eval_container(cidfile, marker_path, container_name)
+                    if cleanup_quiesced:
+                        ACTIVE_CHILD_PGIDS.discard(proc.pid)
+                    summary = {
+                        "schema": "opencollab.prolite_direct_eval.v2",
+                        "status": "technical_eval_failed",
+                        "task": task,
+                        "resolved": False,
+                        "patch_sha256": row_patch_sha(prediction),
+                        "record_id": row_record_id(prediction),
+                        "technical_reasons": ["container_identity_binding"],
+                        "container_binding": binding,
+                        "container_cleanup": cleanup,
+                        "cleanup_quiesced": cleanup_quiesced,
+                    }
+                    cleanup_errors = cleanup_temporary_output(temporary_output)
+                    if cleanup_errors:
+                        summary["technical_reasons"].append("temporary_output_cleanup")
+                        summary["output_artifact_errors"] = cleanup_errors
+                    write_json(summary_path, summary)
+                    return {"status": "technical_eval_failed", "task": task, "summary": summary}
+                finally:
+                    # Restore caller handlers after every binding-failure teardown.
+                    restore_spawn_signals(spawn_signal_state)
             try:
                 try:
                     restore_spawn_signals(spawn_signal_state)
