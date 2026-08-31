@@ -280,6 +280,48 @@ def test_eval_popen_failure_clears_only_verified_pending_marker(monkeypatch, tmp
     assert not (eval_dir / "container.cid").exists()
 
 
+def test_eval_binding_exception_runs_owned_process_and_container_cleanup(
+    monkeypatch, tmp_path
+):
+    """A marker I/O exception after Popen must not leak the eval container."""
+    namespace = _remote_namespace(tmp_path)
+    task = "task-binding-exception"
+    _seed_remote_completed_generation(namespace, task)
+
+    class RunningProcess:
+        pid = 424273
+
+        def wait(self, timeout=None):
+            return 1
+
+    calls = []
+
+    monkeypatch.setattr(
+        namespace["subprocess"],
+        "Popen",
+        lambda *args, **kwargs: RunningProcess(),
+    )
+    namespace["ensure_image"] = lambda image: {"ok": True}
+    namespace["bind_eval_container_marker"] = lambda *args, **kwargs: (_ for _ in ()).throw(
+        OSError("marker write failed")
+    )
+    namespace["terminate_process_group_bounded"] = (
+        lambda proc: calls.append(("process", proc.pid)) or True
+    )
+    namespace["cleanup_eval_container"] = (
+        lambda *args: calls.append(("container", args[2])) or {"ok": True}
+    )
+
+    result = namespace["eval_for_task"](_go_eval_row(task))
+
+    assert result["status"] == "technical_eval_failed"
+    assert result["summary"]["container_binding"]["status"] == (
+        "container_identity_binding_exception"
+    )
+    assert calls[0] == ("process", 424273)
+    assert len([kind for kind, _name in calls if kind == "container"]) >= 1
+
+
 def test_pending_marker_with_wrong_owner_is_preserved(tmp_path):
     namespace = _remote_namespace(tmp_path)
     marker = tmp_path / "container.marker.json"
