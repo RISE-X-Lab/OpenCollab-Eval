@@ -766,10 +766,43 @@ def update_parent_fact_report(args: argparse.Namespace) -> dict[str, Any]:
         "--markdown-output",
         str(parent_output_dir / "final_eval_layer_report.md"),
     ]
+    candidate_identities = getattr(args, "candidate_identities", None)
+    if candidate_identities is None and getattr(args, "eval_only", False):
+        expected_task = str(getattr(args, "expected_task", "") or "")
+        expected_record_id = str(getattr(args, "expected_record_id", "") or "")
+        expected_source_sha = str(
+            getattr(args, "expected_source_patch_sha256", "") or ""
+        )
+        expected_eval_sha = str(
+            getattr(args, "expected_eval_patch_sha256", "") or ""
+        )
+        expected_index = getattr(args, "start_index", None)
+        if (
+            isinstance(expected_index, int)
+            and not isinstance(expected_index, bool)
+            and expected_task
+            and expected_record_id
+            and expected_source_sha
+        ):
+            candidate_identities = {
+                expected_index: (
+                    expected_task,
+                    expected_record_id,
+                    expected_source_sha,
+                    # The eval hash is derived and optional in legacy
+                    # eval-only invocations; source remains the safe fallback.
+                    expected_eval_sha or expected_source_sha,
+                )
+            }
+    reconciliation_kwargs = {
+        "ignored_paths": getattr(args, "ignored_reports", ()),
+    }
+    if candidate_identities is not None:
+        reconciliation_kwargs["candidate_identities"] = candidate_identities
     for report_path in eval_only_reconciliation_reports(
         parent_output_dir,
         args.json_output,
-        ignored_paths=getattr(args, "ignored_reports", ()),
+        **reconciliation_kwargs,
     ):
         command.extend(["--report-json", str(report_path)])
     token_cost = parent_output_dir / "parallel_token_cost_summary.json"

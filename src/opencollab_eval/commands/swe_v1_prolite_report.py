@@ -6,6 +6,7 @@ import json
 import os
 import stat
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,108 @@ from opencollab_eval.safe_files import write_regular_bytes_atomic
 
 _QUARANTINE_SUFFIXES = (".invalid", ".command_failed")
 _QUARANTINE_MARKER_BYTES = 512
+_SHA256_LENGTH = 64
+
+
+def _report_candidate_identity(
+    row: dict[str, Any],
+) -> tuple[str, str, str, str] | None:
+    """Extract one unambiguous candidate identity from an eval-only row.
+
+    Queue reconciliation may see reports from several attempts for the same
+    task index.  The task, record, and source-patch fields must agree across
+    the row's copies; the evaluation-patch hash is derived and may be stale or
+    omitted.  Silently choosing conflicting immutable aliases would let a late
+    report from another candidate replace the planned verdict.
+    """
+    generation = row.get("generation") if isinstance(row.get("generation"), dict) else {}
+    evaluation = row.get("eval") if isinstance(row.get("eval"), dict) else {}
+    summary = evaluation.get("summary") if isinstance(evaluation.get("summary"), dict) else {}
+
+    def one_text(*values: object) -> str | None:
+        present = [str(value) for value in values if value not in (None, "")]
+        if not present or len(set(present)) != 1:
+            return None
+        return present[0]
+
+    task = one_text(row.get("task"), row.get("instance_id"))
+    generation_task = one_text(generation.get("task"))
+    evaluation_task = one_text(evaluation.get("task"), summary.get("task"))
+    if task is None:
+        return None
+    if generation_task is not None and generation_task != task:
+        return None
+    if evaluation_task is not None and evaluation_task != task:
+        return None
+
+    record_id = one_text(generation.get("record_id"), summary.get("record_id"))
+    source_values = (
+        generation.get("source_patch_sha256"),
+        generation.get("patch_sha256"),
+        summary.get("patch_sha256"),
+    )
+    source_sha = one_text(*source_values)
+    eval_sha = one_text(
+        generation.get("eval_patch_sha256"),
+        summary.get("eval_patch_sha256"),
+    )
+    # Older eval-only rows carried one generation patch hash only.  In that
+    # format the evaluated patch is necessarily the source patch.
+    if eval_sha is None and source_sha is not None and not generation.get(
+        "eval_patch_sha256"
+    ) and not summary.get("eval_patch_sha256"):
+        eval_sha = source_sha
+    if (
+        record_id is None
+        or source_sha is None
+        or eval_sha is None
+        or len(source_sha) != _SHA256_LENGTH
+        or len(eval_sha) != _SHA256_LENGTH
+        or any(character not in "0123456789abcdefABCDEF" for character in source_sha)
+        or any(character not in "0123456789abcdefABCDEF" for character in eval_sha)
+    ):
+        return None
+    return task, record_id, source_sha.lower(), eval_sha.lower()
+
+
+def _normalized_candidate_identities(
+    values: Mapping[object, object] | None,
+) -> dict[int, tuple[str, str, str, str]]:
+    """Normalize the internal index-to-candidate filter, ignoring bad hints."""
+    if not isinstance(values, Mapping) or not values:
+        return {}
+    normalized: dict[int, tuple[str, str, str, str]] = {}
+    for raw_index, raw_identity in values.items():
+        if isinstance(raw_index, bool) or not isinstance(raw_index, int):
+            continue
+        if not isinstance(raw_identity, (tuple, list)) or len(raw_identity) != 4:
+            continue
+        task, record_id, source_sha, eval_sha = (str(item) for item in raw_identity)
+        if (
+            not task
+            or not record_id
+            or len(source_sha) != _SHA256_LENGTH
+            or len(eval_sha) != _SHA256_LENGTH
+            or any(character not in "0123456789abcdefABCDEF" for character in source_sha)
+            or any(character not in "0123456789abcdefABCDEF" for character in eval_sha)
+        ):
+            continue
+        normalized[raw_index] = (task, record_id, source_sha.lower(), eval_sha.lower())
+    return normalized
+
+
+def _candidate_identity_matches(
+    observed: tuple[str, str, str, str],
+    expected: tuple[str, str, str, str],
+) -> bool:
+    """Match the immutable candidate binding, not its derived eval hash.
+
+    ``eval_patch_sha256`` is recomputed from the source patch by eval-only
+    runs and can legitimately change when the filtering/runtime code is
+    refreshed.  Task, record, and source-patch hashes remain the immutable
+    candidate identity that protects reconciliation from another candidate.
+    """
+    return observed[:3] == expected[:3]
 
 
 def _regular_identity(path: Path) -> tuple[int, int] | None:
@@ -179,10 +282,18 @@ def eval_only_reconciliation_reports(
     current_report: Path,
     *,
     ignored_paths: tuple[Path, ...] | list[Path] = (),
+    candidate_identities: Mapping[object, object] | None = None,
 ) -> list[Path]:
-    """Select cumulative execution evidence and the newest verdict per task."""
+    """Select execution evidence and the newest verdict per task.
+
+    When ``candidate_identities`` is supplied by the queue, reports for a
+    known index are admitted only when they carry that exact candidate
+    identity.  This keeps a late report from an older candidate from winning
+    the mtime race while preserving same-candidate historical attempts.
+    """
     current = current_report.absolute()
     ignored = {Path(path).absolute() for path in ignored_paths}
+    expected_identities = _normalized_candidate_identities(candidate_identities)
     candidates = set(parent_output_dir.glob("task_*_eval_only_*.json"))
     final_report_path = parent_output_dir / "final_eval_layer_report.json"
     try:
@@ -227,6 +338,13 @@ def eval_only_reconciliation_reports(
         if len(rows) != 1 or len(indices) != 1:
             raise RuntimeError(f"eval-only report must contain one indexed row: {path}")
         index = next(iter(indices))
+        expected_identity = expected_identities.get(index)
+        observed_identity = _report_candidate_identity(rows[0])
+        if expected_identity is not None and (
+            observed_identity is None
+            or not _candidate_identity_matches(observed_identity, expected_identity)
+        ):
+            continue
         verdict_score = (info.st_mtime_ns, str(path))
         if index not in selected_verdict or verdict_score > selected_verdict[index][0]:
             selected_verdict[index] = (verdict_score, path)

@@ -225,11 +225,25 @@ def _job_identity(job: dict[str, Any]) -> tuple[str, str, str, str]:
         job["source_patch_sha256"],
         job["eval_patch_sha256"],
     )
+
+
+def _row_matches_job(row: dict[str, Any], job: dict[str, Any]) -> bool:
+    """Match a report row to a job's immutable candidate binding.
+
+    The evaluation patch is derived from the source patch and may be
+    recomputed by an eval-only runner.  It is retained in the job identity for
+    provenance and queue keys, but must not make an otherwise exact candidate
+    look missing.
+    """
+    identity = _row_identity(row)
+    return identity is not None and identity[:3] == _job_identity(job)[:3]
+
+
 def _row_terminal(row: dict[str, Any], *, job: dict[str, Any]) -> bool:
     evaluation = row.get("eval")
     if (
         row.get("index") != job["index"]
-        or _row_identity(row) != _job_identity(job)
+        or not _row_matches_job(row, job)
         or not isinstance(evaluation, dict)
         or evaluation.get("status") != "eval_done"
     ):
@@ -253,7 +267,7 @@ def _report_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
 def _candidate_identity_status(job: dict[str, Any]) -> str:
     parent = Path(job["parent_output_dir"])
     paths = [parent / "parallel_summary.json", *parent.glob("task_*_eval_only_*.json")]
-    identities = set()
+    identities: set[tuple[str, str, str]] = set()
     for path in paths:
         try:
             info = path.lstat()
@@ -266,8 +280,8 @@ def _candidate_identity_status(job: dict[str, Any]) -> str:
         report = _swe_report_io.load_json(path)
         for row in _report_rows(report):
             if row.get("index") == job["index"] and (identity := _row_identity(row)):
-                identities.add(identity)
-    if _job_identity(job) in identities:
+                identities.add(identity[:3])
+    if _job_identity(job)[:3] in identities:
         return "verified"
     if not identities:
         return "candidate_identity_missing"
@@ -315,7 +329,7 @@ def _observed_eval_attempts(job: dict[str, Any]) -> int:
                 if (
                     isinstance(row, dict)
                     and row.get("index") == job["index"]
-                    and _row_identity(row) == _job_identity(job)
+                    and _row_matches_job(row, job)
                 ):
                     evaluation = row.get("eval")
                     if isinstance(evaluation, dict):
@@ -344,11 +358,9 @@ def _final_task_matches_job(task: dict[str, Any], job: dict[str, Any]) -> bool:
         return False
     record_id = task.get("record_id")
     source_sha = task.get("source_patch_sha256") or task.get("patch_sha256")
-    eval_sha = task.get("eval_patch_sha256") or task.get("patch_sha256")
-    return (record_id, source_sha, eval_sha) == (
+    return (record_id, source_sha) == (
         job["record_id"],
         job["source_patch_sha256"],
-        job["eval_patch_sha256"],
     )
 
 def _write_state_unlocked(path: Path, state: dict[str, Any]) -> None:
@@ -624,7 +636,12 @@ def _run_job(
             state=state,
         )
     return persisted
-def _refresh_parent_report(parent: str, report: Path) -> dict[str, Any]:
+def _refresh_parent_report(
+    parent: str,
+    report: Path,
+    *,
+    candidate_identities: dict[int, tuple[str, str, str, str]] | None = None,
+) -> dict[str, Any]:
     with ParentEvalLock(Path(parent), "report"):
         ignored_reports = _quarantine_invalid_reports(Path(parent), report)
         return update_parent_fact_report(
@@ -633,6 +650,7 @@ def _refresh_parent_report(parent: str, report: Path) -> dict[str, Any]:
                 json_output=report,
                 usd_cny=None,
                 ignored_reports=tuple(ignored_reports),
+                candidate_identities=candidate_identities,
             )
         )
 
@@ -764,7 +782,20 @@ def _run_queue_locked(
             parent_reports[parent] = {"status": "unchanged", "source": str(report)}
             continue
         if report is not None:
-            parent_reports[parent] = _refresh_parent_report(parent, report)
+            candidate_identities = {
+                job["index"]: (
+                    job["task"],
+                    job["record_id"],
+                    job["source_patch_sha256"],
+                    job["eval_patch_sha256"],
+                )
+                for job in eligible
+            }
+            parent_reports[parent] = _refresh_parent_report(
+                parent,
+                report,
+                candidate_identities=candidate_identities,
+            )
         else:
             parent_reports[parent] = {"status": "terminal_report_missing"}
     counts: dict[str, int] = {}

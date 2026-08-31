@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -265,6 +266,127 @@ def test_queue_prefers_the_planned_identity_over_historical_rows(
 
     assert calls == 1
     assert result["counts"] == {"terminal": 1}
+
+
+def test_queue_refresh_filters_late_other_candidate_verdict(
+    tmp_path, monkeypatch
+):
+    """Parent refresh must bind same-index history to the planned candidate."""
+    _accept_terminal(monkeypatch)
+    plan, parent = _plan(tmp_path)
+    job = queue._read_plan(plan)["jobs"][0]
+    (parent / "parallel_summary.json").write_text(
+        json.dumps(
+            {
+                "rows": [
+                    {
+                        "index": job["index"],
+                        "task": job["task"],
+                        "generation": {
+                            "record_id": job["record_id"],
+                            "patch_sha256": job["source_patch_sha256"],
+                            "source_patch_sha256": job["source_patch_sha256"],
+                            "eval_patch_sha256": job["eval_patch_sha256"],
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    late_other = parent / "task_25_eval_only_late_other.json"
+    _terminal_report(
+        late_other,
+        index=25,
+        patch_sha256="b" * 64,
+        resolved=False,
+    )
+    os.utime(late_other, ns=(9, 9))
+    child_reports: list[Path] = []
+
+    def fake_run(argv, *, log, timeout):
+        del log, timeout
+        output = Path(argv[argv.index("--json-output") + 1])
+        _terminal_report(
+            output,
+            index=25,
+            patch_sha256=job["source_patch_sha256"],
+            resolved=True,
+        )
+        child_reports.append(output)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(queue, "_run_bounded_child", fake_run)
+    refreshes: list[SimpleNamespace] = []
+    monkeypatch.setattr(
+        queue,
+        "update_parent_fact_report",
+        lambda args: refreshes.append(args) or {"status": "done"},
+    )
+
+    result = queue.run_queue(plan, tmp_path / "state", workers=1)
+
+    assert result["counts"] == {"terminal": 1}
+    assert len(refreshes) == 1
+    identities = refreshes[0].candidate_identities
+    assert identities == {
+        25: (
+            job["task"],
+            job["record_id"],
+            job["source_patch_sha256"],
+            job["eval_patch_sha256"],
+        )
+    }
+    from opencollab_eval.commands.swe_v1_prolite_report import (
+        eval_only_reconciliation_reports,
+    )
+
+    assert eval_only_reconciliation_reports(
+        parent,
+        child_reports[0],
+        candidate_identities=identities,
+    ) == child_reports
+
+
+def test_queue_accepts_recomputed_eval_hash_for_same_candidate(tmp_path, monkeypatch):
+    """A derived eval-hash change must not force a duplicate official run."""
+    _accept_terminal(monkeypatch)
+    plan, parent = _plan(tmp_path)
+    value = json.loads(plan.read_text(encoding="utf-8"))
+    job = value["jobs"][0]
+    job["eval_patch_sha256"] = "b" * 64
+    plan.write_text(json.dumps(value), encoding="utf-8")
+
+    existing = parent / "task_25_eval_only_recomputed.json"
+    _terminal_report(existing, index=25, patch_sha256=job["source_patch_sha256"], resolved=True)
+    payload = json.loads(existing.read_text(encoding="utf-8"))
+    payload["rows"][0]["generation"]["eval_patch_sha256"] = "c" * 64
+    existing.write_text(json.dumps(payload), encoding="utf-8")
+
+    monkeypatch.setattr(
+        queue,
+        "_run_bounded_child",
+        lambda *args, **kwargs: pytest.fail("recomputed candidate should be terminal"),
+    )
+    refreshes: list[SimpleNamespace] = []
+    monkeypatch.setattr(
+        queue,
+        "update_parent_fact_report",
+        lambda args: refreshes.append(args) or {"status": "done"},
+    )
+
+    result = queue.run_queue(plan, tmp_path / "state", workers=1)
+
+    assert result["counts"] == {"skipped_terminal": 1}
+    assert len(refreshes) == 1
+    assert refreshes[0].candidate_identities == {
+        25: (
+            job["task"],
+            job["record_id"],
+            job["source_patch_sha256"],
+            job["eval_patch_sha256"],
+        )
+    }
 
 
 def test_queue_does_not_promote_a_cleanup_failure_to_terminal(
