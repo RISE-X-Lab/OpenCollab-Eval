@@ -7,6 +7,7 @@ import json
 from opencollab_eval.engine.swe_v1_go_failure_proof import (
     GO_TARGET_DISCOVERY_PREFIX,
     go_failure_proof_matches,
+    go_pass_proof_matches,
 )
 
 
@@ -45,6 +46,40 @@ for path in pathlib.Path(".").rglob("*_test.go"):
 print("unable to map Go tests to packages: " + "")
 subprocess.run(["go", "test", "-count=1", "-json", package, "-run", pattern])
 ' '''
+
+
+def test_module_download_progress_does_not_hide_a_successful_target() -> None:
+    """Go may write dependency-download progress outside its JSON stream."""
+    proof = {
+        "kind": "go_json_test_pass",
+        "test": "TestEvaluate",
+        "package": "./internal/server",
+        "test_file": "internal/server/evaluator_test.go",
+    }
+    package = "example.invalid/project/internal/server"
+    log = "\n".join(
+        (
+            "go: downloading golang.org/x/sync v0.7.0",
+            json.dumps({"Action": "start", "Package": package}),
+            json.dumps(
+                {"Action": "run", "Package": package, "Test": "TestEvaluate"}
+            ),
+            json.dumps(
+                {
+                    "Action": "output",
+                    "Package": package,
+                    "Test": "TestEvaluate",
+                    "Output": "ok\n",
+                }
+            ),
+            json.dumps(
+                {"Action": "pass", "Package": package, "Test": "TestEvaluate"}
+            ),
+            json.dumps({"Action": "pass", "Package": package}),
+        )
+    )
+
+    assert go_pass_proof_matches(proof, log)
 
 
 def test_external_test_package_plain_build_failure_proves_target_failure():

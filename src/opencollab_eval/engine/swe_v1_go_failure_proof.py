@@ -75,6 +75,13 @@ def _parse_go_log(
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
+            # The Go tool emits module-cache progress on stderr even when the
+            # targeted test command eventually succeeds.  stderr is merged
+            # into the proof log, so this known informational line must not
+            # turn an otherwise complete JSON event stream into an unknown
+            # protocol.  Other non-JSON output remains fail-closed below.
+            if _GO_DOWNLOAD_RE.fullmatch(line):
+                continue
             diagnostic = _PLAIN_GO_DIAGNOSTIC_RE.fullmatch(line)
             header = _GO_BUILD_HEADER_RE.fullmatch(line)
             dependency_header = _GO_DEPENDENCY_BUILD_HEADER_RE.fullmatch(line)
