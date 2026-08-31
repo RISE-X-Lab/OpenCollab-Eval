@@ -9,6 +9,7 @@ generator derived.
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import subprocess
 from pathlib import Path
@@ -310,3 +311,123 @@ def test_staging_an_instance_swaps_the_file_instead_of_rewriting_it(
     # The new record is what anyone opening it now gets, with no debris left.
     assert json.loads(path.read_text(encoding="utf-8"))["problem_statement"] == "second"
     assert [entry.name for entry in staging.iterdir()] == ["a-1.json"]
+
+
+def test_a_workflow_arm_is_selected_by_name_and_never_handed_the_team_file(
+    tmp_path: Path,
+) -> None:
+    # A workflow is sequenced by its own code, so the team's configuration has
+    # nothing to say about it. Passing it anyway would make the two arms differ
+    # by a file neither of them reads the same way.
+    command = batch.build_command(
+        arm="self-collaboration",
+        instance_path=tmp_path / "a-1.json",
+        predictions=tmp_path / "preds.jsonl",
+        team_config=tmp_path / "team.yaml",
+        budget_per_seat=1000,
+        max_steps=5,
+        timeout=60.0,
+        image=None,
+    )
+
+    assert "--team-config" not in command
+    assert command[command.index("--workflow") + 1] == "self-collaboration"
+    assert command[2] == batch.ARM_MODULES["self-collaboration"]
+
+
+def test_a_workflow_arm_is_funded_per_seat_from_the_count_its_own_module_declares() -> (
+    None
+):
+    # The seat count is read off the workflow rather than tabulated here, so a
+    # workflow cannot end up funded for a different number of seats than the
+    # number it caps each call against.
+    # `from ... import self_collaboration` binds the decorated function, not
+    # the module it lives in, so ask the import system for the module.
+    module = importlib.import_module("opencollab_eval.workflows.self_collaboration")
+
+    assert batch.workflow_seats("self-collaboration") == module.SEATS
+    assert batch.pool_for("self-collaboration", 1000, None) == 1000 * module.SEATS
+
+
+def test_an_unknown_workflow_is_refused_rather_than_funded_for_one_seat() -> None:
+    with pytest.raises(ValueError, match="unknown workflow"):
+        batch.workflow_seats("no-such-workflow")
+
+
+def _batch_args(tmp_path: Path, **overrides: object) -> argparse.Namespace:
+    instances = tmp_path / "instances.jsonl"
+    instances.write_text(
+        json.dumps({"instance_id": "a__b-1", "image": "img", "problem_statement": "x"})
+        + "\n",
+        encoding="utf-8",
+    )
+    defaults = dict(
+        instances=str(instances),
+        out_dir=str(tmp_path / "out"),
+        arm=["single"],
+        team_config=None,
+        image=None,
+        budget_per_seat=1000,
+        max_steps=5,
+        timeout=60.0,
+        limit=None,
+        dry_run=True,
+        pass_through=[],
+        concurrency=1,
+    )
+    defaults.update(overrides)
+    return argparse.Namespace(**defaults)
+
+
+@pytest.mark.parametrize("bad", [0, -1, True, 1.5, "2"])
+def test_a_concurrency_that_is_not_a_positive_count_is_refused(
+    tmp_path: Path, bad: object
+) -> None:
+    # Zero would run nothing while reporting success, and a float or a bool
+    # would reach ThreadPoolExecutor as something it does not mean.
+    with pytest.raises(ValueError, match="concurrency"):
+        batch.run_batch(_batch_args(tmp_path, concurrency=bad))
+
+
+def test_runs_go_out_in_the_planned_order_so_whole_tasks_are_in_flight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # With three arms and a concurrency of three, the three jobs in flight are
+    # the three arms of one task -- which is what makes an interrupted batch
+    # usable, and is a property of the submission order, not of the pool.
+    monkeypatch.setattr(batch, "declared_role_names", lambda path: ("a", "b", "c"))
+    instances = tmp_path / "two-instances.jsonl"
+    instances.write_text(
+        "\n".join(
+            json.dumps({"instance_id": f"a__b-{n}", "image": "img"}) for n in (1, 2)
+        ),
+        encoding="utf-8",
+    )
+    submitted: list[tuple[str, str]] = []
+
+    def fake_run_one(*, command, log_dir):
+        submitted.append((Path(log_dir).parent.name, Path(log_dir).name))
+        return 0, 0.1
+
+    monkeypatch.setattr(batch, "_run_one", fake_run_one)
+    args = _batch_args(
+        tmp_path,
+        instances=str(instances),
+        arm=["single", "team", "self-collaboration"],
+        team_config=str(tmp_path / "team.yaml"),
+        dry_run=False,
+        concurrency=3,
+    )
+
+    batch.run_batch(args)
+
+    # The pool takes jobs off a FIFO queue, so the first three it starts are
+    # the first three submitted: all three arms of task 1.
+    order = [iid for _arm, iid in submitted]
+    assert set(order[:3]) == {"a__b-1"}
+    assert set(order[3:]) == {"a__b-2"}
+    assert sorted(arm for arm, _iid in submitted[:3]) == [
+        "logs-self-collaboration",
+        "logs-single",
+        "logs-team",
+    ]

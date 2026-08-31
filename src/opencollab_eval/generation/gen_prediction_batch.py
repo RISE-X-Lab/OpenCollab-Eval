@@ -1,4 +1,4 @@
-"""Run every arm over a list of instances, one container at a time.
+"""Run every arm over a list of instances.
 
 The single-instance generators each solve one task with one arm. A comparison
 needs the same tasks put to every arm, and a pilot of ten or twenty tasks is
@@ -19,6 +19,14 @@ batch quietly produces something that cannot be compared:
   that exited non-zero -- a generator exits non-zero whenever a run did not
   finish normally, and a run stopped at its token budget still writes the patch
   it had made.
+* **How many run at once is the caller's decision, and one is the default.**
+  A task container is heavy and the machine running it is usually shared, so
+  the driver does not help itself to it. ``--concurrency`` raises the number in
+  flight; nothing else changes, because everything a run touches is already its
+  own -- its log directory, its container name, and a predictions file every
+  generator appends to under an exclusive lock. Jobs are submitted in the
+  planned order, so at a concurrency of three whole tasks are in flight rather
+  than one arm of three different tasks.
 * **A finished (instance, arm) is never re-run.** Resumption reads the
   predictions file each arm already has and skips what is in it, so an
   interrupted batch is continued by re-issuing the same command.
@@ -42,6 +50,7 @@ import json
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from collections.abc import Iterable, Sequence
 from datetime import datetime, timezone
@@ -61,12 +70,24 @@ from .gen_prediction_constants import (
 ARM_MODULES: dict[str, str] = {
     "single": "opencollab_eval.generation.gen_prediction",
     "team": "opencollab_eval.generation.gen_prediction_workflow",
+    "self-collaboration": "opencollab_eval.generation.gen_prediction_workflow",
+    "self-collaboration-reading-analyst": (
+        "opencollab_eval.generation.gen_prediction_workflow"
+    ),
 }
 
 #: Arms whose generator is the workflow entry point and therefore takes
 #: ``--team-config``. Kept separate from ``ARM_MODULES`` so adding a workflow
 #: arm that is not the team does not silently inherit the team's configuration.
 TEAM_ARMS: frozenset[str] = frozenset({"team"})
+
+#: Arms that select a bundled workflow by name instead of a team file. They
+#: share the team's generator and none of its configuration: a workflow is
+#: sequenced by its own code, so what it needs is ``--workflow``.
+WORKFLOW_ARMS: dict[str, str] = {
+    "self-collaboration": "self-collaboration",
+    "self-collaboration-reading-analyst": "self-collaboration-reading-analyst",
+}
 
 MANIFEST_NAME = "manifest.jsonl"
 
@@ -137,13 +158,35 @@ def completed_instance_ids(predictions: Path) -> set[str]:
     return done
 
 
+def workflow_seats(workflow_name: str) -> int:
+    """How many seats a bundled workflow divides its pool between.
+
+    Read off the workflow's own module rather than tabulated here, so a
+    workflow that changes how many roles it seats cannot end up funded for a
+    different number than it caps. A workflow that declares nothing seats one.
+    """
+    from opencollab_eval.generation.gen_prediction_workflow import _BUNDLED_WORKFLOWS
+
+    function = _BUNDLED_WORKFLOWS.get(workflow_name)
+    if function is None:
+        raise ValueError(f"unknown workflow {workflow_name!r}")
+    module = sys.modules.get(getattr(function, "__module__", ""))
+    seats = getattr(module, "SEATS", 1)
+    if not isinstance(seats, int) or isinstance(seats, bool) or seats < 1:
+        raise ValueError(f"workflow {workflow_name!r} declares an unusable seat count")
+    return seats
+
+
 def pool_for(arm: str, budget_per_seat: int, team_config: Path | None) -> int:
     """The token pool one run of ``arm`` is started with.
 
     One seat, one solo agent's budget. A single-agent run has one seat and is
     given the figure itself; a team is given it once per role its file
-    declares, because the scheduler divides the pool by that same count.
+    declares, because the scheduler divides the pool by that same count, and a
+    workflow arm once per seat its own module declares, for the same reason.
     """
+    if arm in WORKFLOW_ARMS:
+        return budget_per_seat * workflow_seats(WORKFLOW_ARMS[arm])
     if arm not in TEAM_ARMS:
         return budget_per_seat
     if team_config is None:
@@ -188,7 +231,9 @@ def build_command(
     ]
     if image:
         command += ["--image", image]
-    if arm in TEAM_ARMS:
+    if arm in WORKFLOW_ARMS:
+        command += ["--workflow", WORKFLOW_ARMS[arm]]
+    elif arm in TEAM_ARMS:
         if team_config is None:
             raise ValueError(f"arm {arm!r} needs --team-config")
         command += ["--team-config", str(team_config)]
@@ -235,7 +280,39 @@ def plan_batch(
     return work
 
 
+def _run_one(
+    *,
+    command: Sequence[str],
+    log_dir: Path,
+) -> tuple[int, float]:
+    """Run one (instance, arm) and return its return code and wall time.
+
+    Everything a run touches is already per-run: its own log directory, its own
+    container name, and a predictions file each generator appends to under an
+    exclusive lock. That is what makes running several at once a scheduling
+    decision rather than a change to what any run does.
+    """
+    started = time.monotonic()
+    with (log_dir / "driver.log").open("wb") as sink:
+        completed = subprocess.run(
+            command,
+            stdout=sink,
+            stderr=subprocess.STDOUT,
+            env={**os.environ, "OPENCOLLAB_EVAL_WORKFLOW_LOG_DIR": str(log_dir)},
+            check=False,
+        )
+    return completed.returncode, round(time.monotonic() - started, 1)
+
+
 def run_batch(args: argparse.Namespace) -> int:
+    concurrency = getattr(args, "concurrency", 1)
+    if (
+        isinstance(concurrency, bool)
+        or not isinstance(concurrency, int)
+        or concurrency < 1
+    ):
+        raise ValueError("concurrency must be a positive integer")
+    args.concurrency = concurrency
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     instances = load_instances(Path(args.instances))
@@ -255,14 +332,19 @@ def run_batch(args: argparse.Namespace) -> int:
 
     manifest = out_dir / MANIFEST_NAME
     failures = 0
+
+    # Prepared in the planned order whether or not they are run in it: with a
+    # concurrency of N the first N jobs are submitted first, and because the
+    # order is instance-major that means whole tasks are in flight rather than
+    # one arm of many tasks. A batch stopped halfway still has complete sets.
+    jobs = []
     for index, (instance, arm) in enumerate(work, start=1):
         iid = instance["instance_id"]
         log_dir = out_dir / f"logs-{arm}" / iid
         log_dir.mkdir(parents=True, exist_ok=True)
-        instance_path = _instance_path(instance, out_dir / "instances")
         command = build_command(
             arm=arm,
-            instance_path=instance_path,
+            instance_path=_instance_path(instance, out_dir / "instances"),
             predictions=predictions[arm],
             team_config=Path(args.team_config) if args.team_config else None,
             budget_per_seat=args.budget_per_seat,
@@ -271,34 +353,24 @@ def run_batch(args: argparse.Namespace) -> int:
             image=instance.get("image") or args.image,
             extra=args.pass_through,
         )
-        print(f"[{index}/{len(work)}] {arm} {iid}", flush=True)
-        if args.dry_run:
-            print("  " + " ".join(command))
-            continue
+        jobs.append((index, iid, arm, log_dir, command))
 
-        # The workflow log directory is how a run's trajectory is found again,
-        # and it is set per run so two arms of one task cannot overwrite each
-        # other's evidence.
-        env_note = {"OPENCOLLAB_EVAL_WORKFLOW_LOG_DIR": str(log_dir)}
-        started = time.monotonic()
-        with (log_dir / "driver.log").open("wb") as sink:
-            completed = subprocess.run(
-                command,
-                stdout=sink,
-                stderr=subprocess.STDOUT,
-                env={**os.environ, **env_note},
-                check=False,
-            )
-        elapsed = round(time.monotonic() - started, 1)
-        ok = completed.returncode == 0
-        failures += 0 if ok else 1
+    if args.dry_run:
+        for index, iid, arm, _log_dir, command in jobs:
+            print(f"[{index}/{len(work)}] {arm} {iid}")
+            print("  " + " ".join(command))
+        return 0
+
+    def record(index, iid, arm, log_dir, command, returncode, elapsed) -> None:
+        nonlocal failures
+        failures += 0 if returncode == 0 else 1
         with manifest.open("a", encoding="utf-8") as handle:
             handle.write(
                 json.dumps(
                     {
                         "instance_id": iid,
                         "arm": arm,
-                        "returncode": completed.returncode,
+                        "returncode": returncode,
                         "seconds": elapsed,
                         "finished_at": _now(),
                         "log_dir": str(log_dir),
@@ -307,7 +379,24 @@ def run_batch(args: argparse.Namespace) -> int:
                 )
                 + "\n"
             )
-        print(f"  rc={completed.returncode} in {elapsed}s", flush=True)
+        print(f"[{index}/{len(work)}] {arm} {iid} rc={returncode} in {elapsed}s", flush=True)
+
+    if args.concurrency == 1:
+        for index, iid, arm, log_dir, command in jobs:
+            print(f"[{index}/{len(work)}] {arm} {iid}", flush=True)
+            returncode, elapsed = _run_one(command=command, log_dir=log_dir)
+            record(index, iid, arm, log_dir, command, returncode, elapsed)
+    else:
+        print(f"running {args.concurrency} at a time", flush=True)
+        with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
+            futures = {
+                pool.submit(_run_one, command=job[4], log_dir=job[3]): job
+                for job in jobs
+            }
+            for future in as_completed(futures):
+                index, iid, arm, log_dir, command = futures[future]
+                returncode, elapsed = future.result()
+                record(index, iid, arm, log_dir, command, returncode, elapsed)
 
     missing = [
         (instance["instance_id"], arm)
@@ -355,6 +444,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--max-steps", type=int, default=DEFAULT_MAX_STEPS)
     ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
     ap.add_argument("--limit", type=int, default=None, help="Run only the first N instances")
+    ap.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help=(
+            "How many runs to have in flight at once. One by default: the task "
+            "containers are heavy and the machine is usually shared, so this is "
+            "a decision about somebody's machine and is not made for them."
+        ),
+    )
     ap.add_argument("--dry-run", action="store_true", help="Print the commands and stop")
     ap.add_argument(
         "--pass-through",
