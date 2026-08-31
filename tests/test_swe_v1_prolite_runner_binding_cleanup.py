@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from swe_v1_prolite_runner_test_support import (
+    Path,
     _remote_namespace,
     _seed_remote_completed_generation,
     json,
@@ -239,3 +240,78 @@ def test_eval_binding_failure_removes_verified_pending_marker(
     )
     assert len(calls) == 1
     assert not calls[0][1].exists()
+
+
+def test_eval_binding_cleanup_exception_becomes_retryable_technical_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """Cleanup failures after a bind error must not abort the whole task run."""
+    namespace = _remote_namespace(tmp_path)
+    task = "task-binding-cleanup-exception"
+    _seed_remote_completed_generation(namespace, task)
+
+    class RunningProcess:
+        pid = 424277
+
+        def wait(self, timeout=None):
+            return 1
+
+    def fake_popen(command, *args, **kwargs):
+        cidfile = command[command.index("--cidfile") + 1]
+        Path(cidfile).write_text("unverified", encoding="ascii")
+        return RunningProcess()
+
+    monkeypatch.setattr(namespace["subprocess"], "Popen", fake_popen)
+    namespace["ensure_image"] = lambda image: {"ok": True}
+    namespace["bind_eval_container_marker"] = lambda *args, **kwargs: (
+        (_ for _ in ()).throw(OSError("marker write failed"))
+    )
+    namespace["terminate_process_group_bounded"] = lambda _proc: True
+
+    def cleanup_raises(*args):
+        raise RuntimeError("docker cleanup transport failed")
+
+    namespace["cleanup_eval_container"] = cleanup_raises
+
+    result = namespace["eval_for_task"](_go_eval_row(task))
+
+    assert result["status"] == "technical_eval_failed"
+    assert result["summary"]["container_binding"]["status"] == (
+        "container_identity_binding_exception"
+    )
+    assert result["summary"]["container_cleanup"]["status"] == (
+        "cleanup_exception"
+    )
+
+
+def test_eval_binding_non_object_cleanup_result_does_not_abort_batch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """A malformed cleanup return is recorded instead of dereferenced."""
+    namespace = _remote_namespace(tmp_path)
+    task = "task-binding-cleanup-non-object"
+    _seed_remote_completed_generation(namespace, task)
+
+    class RunningProcess:
+        pid = 424278
+
+    def fake_popen(command, *args, **kwargs):
+        cidfile = command[command.index("--cidfile") + 1]
+        Path(cidfile).write_text("unverified", encoding="ascii")
+        return RunningProcess()
+
+    monkeypatch.setattr(namespace["subprocess"], "Popen", fake_popen)
+    namespace["ensure_image"] = lambda image: {"ok": True}
+    namespace["bind_eval_container_marker"] = lambda *args, **kwargs: {
+        "ok": False,
+        "status": "container_identity_unavailable",
+    }
+    namespace["terminate_process_group_bounded"] = lambda _proc: True
+    namespace["cleanup_eval_container"] = lambda *args: None
+
+    result = namespace["eval_for_task"](_go_eval_row(task))
+
+    assert result["status"] == "technical_eval_failed"
+    assert result["summary"]["container_cleanup"]["status"] == (
+        "cleanup_invalid_result"
+    )

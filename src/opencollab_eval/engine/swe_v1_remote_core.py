@@ -234,10 +234,9 @@ def cleanup_eval_binding_interruption(
         quiesced = terminate_process_group_bounded(proc)
     except BaseException:
         quiesced = False
-    try:
-        cleanup = cleanup_container(cidfile, marker_path, container_name)
-    except BaseException:
-        cleanup = None
+    cleanup = safe_eval_container_cleanup(
+        cleanup_container, cidfile, marker_path, container_name
+    )
     if quiesced and (not isinstance(cleanup, dict) or not cleanup.get("ok")):
         with suppress(BaseException):
             clear_pending(cidfile, marker_path, container_name)
@@ -245,6 +244,25 @@ def cleanup_eval_binding_interruption(
         with suppress(BaseException):
             action(value)
     ACTIVE_CHILD_PGIDS.difference_update({proc.pid} if quiesced else set())
+
+
+def safe_eval_container_cleanup(cleanup_container, cidfile, marker_path, container_name):
+    """Turn cleanup transport failures into structured, non-throwing results."""
+    try:
+        result = cleanup_container(cidfile, marker_path, container_name)
+    except BaseException as exc:
+        return {
+            "ok": False,
+            "status": "cleanup_exception",
+            "details": f"{type(exc).__name__}: {exc}"[:8192],
+        }
+    if isinstance(result, dict):
+        return result
+    return {
+        "ok": False,
+        "status": "cleanup_invalid_result",
+        "details": f"expected object, got {type(result).__name__}",
+    }
 
 
 def slice_label():

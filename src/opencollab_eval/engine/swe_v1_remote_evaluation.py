@@ -377,7 +377,7 @@ def eval_for_task_once(row, patch_selection=None):
             if not binding.get("ok"):
                 try:
                     cleanup_quiesced = terminate_process_group_bounded(proc)
-                    cleanup = cleanup_eval_container(cidfile, marker_path, container_name)
+                    cleanup = safe_eval_container_cleanup(cleanup_eval_container, cidfile, marker_path, container_name)
                     pending_cleanup = clear_pending_eval_marker(cidfile, marker_path, container_name) if cleanup_quiesced and not cleanup.get("ok") else None
                     cleanup = pending_cleanup if isinstance(pending_cleanup, dict) and pending_cleanup.get("ok") else cleanup
                     if cleanup_quiesced:
