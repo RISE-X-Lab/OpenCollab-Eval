@@ -92,11 +92,16 @@ def _result_metrics(result: RunResult[str]) -> dict[str, Any]:
         workflow_status = str(result.reason or phase)
     else:
         workflow_status = "error"
-    candidate_probe_eligible = (
-        session_quiesced
-        and result.status in {"completed", "stopped"}
-        and workflow_status in {"done", "done_with_timeout_patch"}
-    )
+    # A controlled stop can happen after the agent has already edited the
+    # workspace.  Once the session is quiescent, the workspace probe and
+    # trusted extraction below are safe regardless of whether the stop was
+    # caused by the token budget, step ceiling, context overflow, or timeout.
+    # Unhandled failures remain excluded because they provide no workspace
+    # integrity guarantee.
+    candidate_probe_eligible = session_quiesced and result.status in {
+        "completed",
+        "stopped",
+    }
     metrics = {
         "workflow_status": workflow_status,
         "session_phase": phase,
