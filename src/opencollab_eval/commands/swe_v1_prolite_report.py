@@ -176,6 +176,68 @@ def remove_candidate_identities_file(path: Path | None) -> None:
         return
 
 
+def candidate_eval_attempt_counts(
+    report: dict[str, Any],
+    *,
+    expected_index: int | None = None,
+    expected_candidate: tuple[str, str, str, str] | None = None,
+) -> dict[int, int]:
+    """Count attempts while excluding stale rows for a bound candidate."""
+    counts: dict[int, int] = {}
+    rows = [row for row in report.get("rows") or [] if isinstance(row, dict)]
+    for result in report.get("results") or []:
+        if isinstance(result, dict):
+            rows.extend(row for row in result.get("rows") or [] if isinstance(row, dict))
+    for row in rows:
+        index = _integrity.strict_index(row.get("index"))
+        if index is None:
+            continue
+        if (
+            expected_candidate is not None
+            and index == expected_index
+            and not candidate_row_is_admitted(row, expected_candidate)
+        ):
+            continue
+        evaluation = row.get("eval") if isinstance(row.get("eval"), dict) else {}
+        if evaluation.get("executed") is False:
+            attempt_count = 0
+        else:
+            attempt_count = _integrity.strict_nonnegative_integer(
+                evaluation.get("attempt_count", 0)
+            )
+            attempt_count = attempt_count if attempt_count is not None else 0
+        counts[index] = counts.get(index, 0) + attempt_count
+    return counts
+
+
+def final_candidate_eval_attempt_counts(
+    report: dict[str, Any],
+    *,
+    expected_index: int | None = None,
+    expected_candidate: tuple[str, str, str, str] | None = None,
+) -> dict[int, int]:
+    """Count final-report attempts only for the bound candidate."""
+    counts: dict[int, int] = {}
+    for task in report.get("tasks") or []:
+        if not isinstance(task, dict):
+            continue
+        index = _integrity.strict_index(task.get("index"))
+        if expected_candidate is not None and index == expected_index:
+            observed = tuple(
+                str(task.get(field) or "")
+                for field in ("task", "record_id", "patch_sha256", "eval_patch_sha256")
+            )
+            if not _candidate_identity_matches(observed, expected_candidate):
+                continue
+        raw_count = task.get("observed_eval_attempt_count")
+        if raw_count is None:
+            raw_count = task.get("eval_attempt_count", 0)
+        count = _integrity.strict_nonnegative_integer(raw_count)
+        if index is not None and count is not None:
+            counts[index] = max(counts.get(index, 0), count)
+    return counts
+
+
 def _has_reconciliation_verdict(row: dict[str, Any]) -> bool:
     """Return whether a row carries a terminal eval verdict, not just evidence."""
     evaluation = row.get("eval") if isinstance(row.get("eval"), dict) else {}

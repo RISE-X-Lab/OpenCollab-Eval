@@ -482,6 +482,42 @@ def test_eval_only_parent_budget_rejects_after_ten_attempts(tmp_path):
         runner.apply_parent_eval_budget(args)
 
 
+def test_eval_only_parent_budget_ignores_stale_candidate_attempts(tmp_path):
+    """A prior candidate at the same index must not consume this retry budget."""
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    stale = {
+        "index": 82,
+        "task": "instance_owner__repo-82-old",
+        "generation": {
+            "task": "instance_owner__repo-82-old",
+            "record_id": "record-old",
+            "patch_sha256": "a" * 64,
+        },
+        "eval": {"status": "technical_eval_failed", "attempt_count": 10},
+    }
+    (parent / "parallel_summary.json").write_text(
+        json.dumps({"results": [{"index": 82, "rows": [stale]}]}),
+        encoding="utf-8",
+    )
+    args = SimpleNamespace(
+        eval_only=True,
+        parent_output_dir=parent,
+        start_index=82,
+        limit=1,
+        max_eval_attempts=1,
+        expected_task="instance_owner__repo-82-new",
+        expected_record_id="record-new",
+        expected_source_patch_sha256="b" * 64,
+        expected_eval_patch_sha256="c" * 64,
+    )
+
+    budget = runner.apply_parent_eval_budget(args)
+
+    assert budget["previous_eval_attempts"].get(82, 0) == 0
+    assert budget["effective_additional_eval_attempts"] == 1
+
+
 def test_eval_only_parent_budget_does_not_count_a_dry_run(tmp_path):
     parent = tmp_path / "parent"
     parent.mkdir()

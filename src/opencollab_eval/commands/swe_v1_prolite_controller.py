@@ -15,6 +15,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from opencollab_eval.commands import _swe_eval_layer_integrity as _integrity
 from opencollab_eval.commands import swe_v1_prolite_report as _p
 from opencollab_eval.commands.swe_v1_parent_eval_lock import (
     ParentEvalLock,  # noqa: F401
@@ -54,12 +55,19 @@ from opencollab_eval.commands.swe_v1_transport_recovery import (
     wait_for_remote_ownership_fact,
     wait_for_terminal_remote_summary,
 )
-from opencollab_eval.engine.swe_eval_records import strict_integer
 from opencollab_eval.engine.swe_v1_remote_state import (
     DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
 )
 
 eval_only_reconciliation_reports = _p.eval_only_reconciliation_reports
+
+
+def _row_eval_attempt_count(row: dict[str, Any]) -> int:
+    evaluation = row.get("eval") if isinstance(row.get("eval"), dict) else {}
+    if evaluation.get("executed") is False:
+        return 0
+    count = _integrity.strict_nonnegative_integer(evaluation.get("attempt_count", 0))
+    return count if count is not None else 0
 
 _SSH_LIVENESS_OPTIONS = (
     "-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "ServerAliveInterval=30",
@@ -630,41 +638,6 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
         )
         raise
 
-def _report_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
-    rows = [row for row in report.get("rows") or [] if isinstance(row, dict)]
-    for result in report.get("results") or []:
-        if isinstance(result, dict):
-            rows.extend(row for row in result.get("rows") or [] if isinstance(row, dict))
-    return rows
-def _row_eval_attempt_count(row: dict[str, Any]) -> int:
-    evaluation = row.get("eval") if isinstance(row.get("eval"), dict) else {}
-    if evaluation.get("executed") is False:
-        return 0
-    count = strict_integer(evaluation.get("attempt_count", 0), nonnegative=True)
-    return count if count is not None else 0
-
-def _report_task_eval_counts(report: dict[str, Any]) -> dict[int, int]:
-    counts: dict[int, int] = {}
-    for row in _report_rows(report):
-        index = strict_integer(row.get("index"))
-        if index is None:
-            continue
-        counts[index] = counts.get(index, 0) + _row_eval_attempt_count(row)
-    return counts
-def _final_report_task_eval_counts(report: dict[str, Any]) -> dict[int, int]:
-    counts: dict[int, int] = {}
-    for task in report.get("tasks") or []:
-        if not isinstance(task, dict):
-            continue
-        index = strict_integer(task.get("index"))
-        raw_count = task.get("observed_eval_attempt_count")
-        if raw_count is None:
-            raw_count = task.get("eval_attempt_count", 0)
-        count = strict_integer(raw_count, nonnegative=True)
-        if index is None or count is None:
-            continue
-        counts[index] = max(counts.get(index, 0), count)
-    return counts
 def apply_parent_eval_budget(args: argparse.Namespace) -> dict[str, Any] | None:
     if not (args.eval_only and args.parent_output_dir):
         return None
@@ -672,14 +645,35 @@ def apply_parent_eval_budget(args: argparse.Namespace) -> dict[str, Any] | None:
     if not parent_summary.exists():
         raise RuntimeError(f"missing parent parallel summary: {parent_summary}")
     report = json.loads(parent_summary.read_text(encoding="utf-8", errors="replace"))
-    counts_by_index = _report_task_eval_counts(report)
+    expected_index = args.start_index if isinstance(args.start_index, int) else None
+    expected_task = str(getattr(args, "expected_task", "") or "")
+    expected_record_id = str(getattr(args, "expected_record_id", "") or "")
+    expected_source_sha = str(getattr(args, "expected_source_patch_sha256", "") or "")
+    expected_eval_sha = str(getattr(args, "expected_eval_patch_sha256", "") or "")
+    expected_candidate = None
+    if expected_task and expected_record_id and expected_source_sha:
+        expected_candidate = (
+            expected_task,
+            expected_record_id,
+            expected_source_sha,
+            expected_eval_sha or expected_source_sha,
+        )
+    counts_by_index = _p.candidate_eval_attempt_counts(
+        report,
+        expected_index=expected_index,
+        expected_candidate=expected_candidate,
+    )
     final_report_path = args.parent_output_dir.resolve() / "final_eval_layer_report.json"
     final_report_counts: dict[int, int] = {}
     if final_report_path.exists():
         final_report = json.loads(
             final_report_path.read_text(encoding="utf-8", errors="replace")
         )
-        final_report_counts = _final_report_task_eval_counts(final_report)
+        final_report_counts = _p.final_candidate_eval_attempt_counts(
+            final_report,
+            expected_index=expected_index,
+            expected_candidate=expected_candidate,
+        )
         for index, count in final_report_counts.items():
             counts_by_index[index] = max(counts_by_index.get(index, 0), count)
     selected = range(args.start_index, args.start_index + max(args.limit, 0))
