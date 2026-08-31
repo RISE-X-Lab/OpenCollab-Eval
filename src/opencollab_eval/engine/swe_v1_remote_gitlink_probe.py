@@ -68,6 +68,8 @@ def _legacy_audited_removed_gitlinks(row, prediction, metric, source_patch_sha25
     audit = metric.get("audited_legacy_gitlink_evidence") if isinstance(metric, dict) else None
     task = str(row.get("instance_id") or "")
     base_commit = str(row.get("base_commit") or row.get("commit") or "").strip().lower()
+    audit_source_sha = audit.get("source_patch_sha256") if isinstance(audit, dict) else None
+    prediction_source_sha = row_patch_sha(prediction)
     if (
         not isinstance(audit, dict)
         or set(audit)
@@ -85,8 +87,11 @@ def _legacy_audited_removed_gitlinks(row, prediction, metric, source_patch_sha25
         or len(audit["audit_id"].encode("utf-8", errors="surrogatepass")) > 256
         or audit.get("task") != task
         or audit.get("base_commit") != base_commit
-        or audit.get("source_patch_sha256") != source_patch_sha256
-        or row_patch_sha(prediction) != source_patch_sha256
+        # SHA-256 hex is case-insensitive, but retain the central strict
+        # length/alphabet validation and reject non-string aliases.
+        or not isinstance(audit_source_sha, str)
+        or not patch_sha_matches(audit_source_sha, source_patch_sha256)
+        or not patch_sha_matches(prediction_source_sha, source_patch_sha256)
     ):
         return None
     return _removed_gitlinks(audit.get("removed_gitlinks"))

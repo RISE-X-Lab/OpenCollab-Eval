@@ -454,3 +454,39 @@ def test_legacy_gitlink_filter_requires_explicit_bound_audit(monkeypatch) -> Non
         source,
         source_sha,
     ) is None
+
+
+def test_legacy_gitlink_filter_accepts_uppercase_bound_sha_but_rejects_invalid(
+    monkeypatch,
+) -> None:
+    oid = "1" * 40
+    source = _gitlink_delete("vendor/infogami", oid)
+    source_sha = probe.patch_sha(source)
+    row = {"instance_id": "instance_org__repo-1", "base_commit": "2" * 40}
+    prediction = {"instance_id": row["instance_id"], "model_patch": source}
+    audit = {
+        "schema": probe.LEGACY_GITLINK_AUDIT_SCHEMA,
+        "audit_id": "task41-manual-audit-20260713",
+        "task": row["instance_id"],
+        "base_commit": row["base_commit"],
+        "source_patch_sha256": source_sha.upper(),
+        "removed_gitlinks": [{"path": "vendor/infogami", "old_oid": oid}],
+    }
+    monkeypatch.setattr(probe, "current_generation_proof_valid", lambda *args: False)
+
+    assert probe._trusted_removed_gitlinks(
+        row,
+        prediction,
+        {"audited_legacy_gitlink_evidence": audit},
+        source,
+        source_sha,
+    ) == {("vendor/infogami", oid)}
+
+    invalid = {**audit, "source_patch_sha256": "g" * 64}
+    assert probe._trusted_removed_gitlinks(
+        row,
+        prediction,
+        {"audited_legacy_gitlink_evidence": invalid},
+        source,
+        source_sha,
+    ) is None
