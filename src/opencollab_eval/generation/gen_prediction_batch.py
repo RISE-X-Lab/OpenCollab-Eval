@@ -69,6 +69,7 @@ from .gen_prediction_constants import (
 #: Which module runs an arm, and whether it needs a team configuration.
 ARM_MODULES: dict[str, str] = {
     "single": "opencollab_eval.generation.gen_prediction",
+    "best-of-n": "opencollab_eval.generation.gen_prediction_best_of_n",
     "team": "opencollab_eval.generation.gen_prediction_workflow",
     "self-collaboration": "opencollab_eval.generation.gen_prediction_workflow",
     "self-collaboration-reading-analyst": (
@@ -281,6 +282,21 @@ def workflow_seats(workflow_name: str) -> int:
     return seats
 
 
+def best_of_n_candidates() -> int:
+    """How many candidates the Best-of-N arm's generator opens.
+
+    Read off that module's own constant, the same way ``workflow_seats`` reads
+    a workflow's ``SEATS``: the number the arm runs at and the number anything
+    else states about it then cannot come apart.
+    """
+    from opencollab_eval.generation import gen_prediction_best_of_n
+
+    candidates = gen_prediction_best_of_n.CANDIDATES
+    if not isinstance(candidates, int) or isinstance(candidates, bool) or candidates < 1:
+        raise ValueError("the Best-of-N arm declares an unusable candidate count")
+    return candidates
+
+
 def pool_for(arm: str, budget_per_seat: int, team_config: Path | None) -> int:
     """The token pool one run of ``arm`` is started with.
 
@@ -288,6 +304,13 @@ def pool_for(arm: str, budget_per_seat: int, team_config: Path | None) -> int:
     given the figure itself; a team is given it once per role its file
     declares, because the scheduler divides the pool by that same count, and a
     workflow arm once per seat its own module declares, for the same reason.
+
+    Best-of-N takes the figure itself, and this is the arm where getting it
+    wrong is easiest. Its N candidates are not N seats: they are N samplings of
+    one seat, and the paper's definition gives them ``1/N`` of one seat's
+    budget each. Multiplying here -- the obvious thing to do, given that it
+    opens N sessions -- would give the arm N times the compute of the arm it is
+    compared against, and the whole finding would be an allocation artifact.
     """
     _arm_module(arm)
     if arm in WORKFLOW_ARMS:

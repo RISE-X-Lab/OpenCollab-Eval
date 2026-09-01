@@ -15,7 +15,6 @@ import pytest
 
 from opencollab_eval.generation import gen_prediction_batch as batch
 
-
 # --------------------------------------------------------------------------
 # an arm that is not wired up has to fail loudly
 

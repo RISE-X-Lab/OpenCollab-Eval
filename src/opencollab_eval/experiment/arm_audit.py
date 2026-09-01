@@ -25,6 +25,7 @@ from __future__ import annotations
 import ast
 import inspect
 import os
+import textwrap
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -40,11 +41,17 @@ from opencollab_eval.experiment.arm_registry import (
     EQUAL,
     INTENDED,
     REGISTRY,
+    WINDOW_REMAINING,
+    WINDOW_SHARED,
+    WINDOW_WHOLE,
     Factor,
     freeze,
 )
 from opencollab_eval.generation import gen_prediction as _single_generator
+from opencollab_eval.generation import gen_prediction_agent as _agent
 from opencollab_eval.generation import gen_prediction_batch as _batch
+from opencollab_eval.generation import gen_prediction_best_of_n as _best_of_n_generator
+from opencollab_eval.generation import gen_prediction_config as _config
 from opencollab_eval.generation import gen_prediction_constants as _constants
 from opencollab_eval.generation import gen_prediction_workflow as _workflow_generator
 from opencollab_eval.runtime_config import resolve_runtime_config
@@ -101,11 +108,82 @@ def _argv_max_steps(arm: str, team_config: str) -> int:
 
 
 def _seat_count(arm: str, team_config: str) -> int:
+    # Seats, not sessions. Best-of-N opens N sessions and holds one seat: its
+    # candidates take 1/N of one seat's budget each, so counting its sessions
+    # here would fund it at N times the arm it is compared against.
     if arm in _batch.WORKFLOW_ARMS:
         return _batch.workflow_seats(_batch.WORKFLOW_ARMS[arm])
     if arm in _batch.TEAM_ARMS:
         return len(declared_role_names(team_config))
     return 1
+
+
+def _wall_clock_window(function: Any, source: str | None = None) -> str:
+    """How much of ``--timeout`` this code path hands to the model layer.
+
+    Read off the one call that passes a ``timeout``, and reported as which
+    construction supplies it rather than as a number: the number of seconds a
+    run actually gets is a property of that run -- of how long its container
+    took to start -- so a check that stated one would be pinned to whichever
+    machine it was written on and would say nothing about the arms.
+    """
+    text = source if source is not None else inspect.getsource(function)
+    tree = ast.parse(textwrap.dedent(text))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        for keyword in node.keywords:
+            if keyword.arg != "timeout":
+                continue
+            value = keyword.value
+            if isinstance(value, ast.Name):
+                return WINDOW_WHOLE
+            if isinstance(value, ast.BinOp) and isinstance(value.op, ast.Div):
+                return WINDOW_SHARED
+            if (
+                isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Attribute)
+                and value.func.attr == "remaining_time"
+            ):
+                return WINDOW_REMAINING
+            return "unrecognised construction"
+    return "no wall-clock window found"
+
+
+def _transport_metric_keys(module: Any, source: str | None = None) -> tuple[str, ...]:
+    """Which provider-transport keys this generator writes into its metrics.
+
+    Answered by asking whether the module splices in the shared block, and
+    falling back to the string keys it writes into ``metrics`` itself. Both
+    halves are needed: the defect this factor exists for was a generator that
+    wrote the keys inline and another that wrote none of them, and the fix was
+    to give both the same function -- so a generator that goes back to writing
+    its own is still read correctly rather than reported as writing nothing.
+    """
+    text = source if source is not None else inspect.getsource(module)
+    tree = ast.parse(text)
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "llm_transport_metrics"
+        ):
+            return tuple(sorted(_config.LLM_TRANSPORT_METRIC_KEYS))
+    written: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Dict):
+            written.update(
+                key.value
+                for key in node.keys
+                if isinstance(key, ast.Constant) and isinstance(key.value, str)
+            )
+        elif (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.slice, ast.Constant)
+            and isinstance(node.slice.value, str)
+        ):
+            written.add(node.slice.value)
+    return tuple(sorted(written & set(_config.LLM_TRANSPORT_METRIC_KEYS)))
 
 
 def _image_expression(module: Any, source: str | None = None) -> str:
@@ -228,11 +306,18 @@ def observe(team_config: str | None = None) -> dict[str, dict[str, Any]]:
     steps = {arm: _argv_max_steps(arm, team_config) for arm in ARMS}
     seats = {arm: _seat_count(arm, team_config) for arm in ARMS}
 
+    candidates = _batch.best_of_n_candidates()
     observations: dict[str, arm_probe.ArmObservation] = {
         "single": arm_probe.probe_single_arm(
             budget=pools["single"],
             max_steps=steps["single"],
             timeout=_constants.DEFAULT_TIMEOUT,
+        ),
+        "best-of-n": arm_probe.probe_best_of_n_arm(
+            budget=pools["best-of-n"],
+            max_steps=steps["best-of-n"],
+            timeout=_constants.DEFAULT_TIMEOUT,
+            candidates=candidates,
         ),
         "team": arm_probe.probe_orchestrated_arm(
             "team",
@@ -253,12 +338,27 @@ def observe(team_config: str | None = None) -> dict[str, dict[str, Any]]:
             timeout=_constants.DEFAULT_TIMEOUT,
         )
 
+    generators = {
+        "single": _single_generator,
+        "best-of-n": _best_of_n_generator,
+        **{arm: _workflow_generator for arm in ARMS if arm not in {"single", "best-of-n"}},
+    }
     image_expressions = {
-        "single": _image_expression(_single_generator),
+        arm: _image_expression(module) for arm, module in generators.items()
+    }
+    # Where each arm's solver clock is set. The single arm's own runner passes
+    # ``--timeout`` on; Best-of-N's candidate runner divides it; every
+    # orchestrated arm reaches the model through ``run_session_or_workflow``,
+    # which passes on what the deadline has left.
+    from opencollab_eval.engine import evaluator_task_execution as _task_execution
+
+    window_sources = {
+        "single": _agent.run_agent,
+        "best-of-n": _best_of_n_generator.run_candidate,
         **{
-            arm: _image_expression(_workflow_generator)
+            arm: _task_execution.run_session_or_workflow
             for arm in ARMS
-            if arm != "single"
+            if arm not in {"single", "best-of-n"}
         },
     }
     temperature = _sampling_temperature()
@@ -270,6 +370,7 @@ def observe(team_config: str | None = None) -> dict[str, dict[str, Any]]:
     # builds every seat with the same ceiling.
     sessions = {
         "single": len(observations["single"].seat_calls),
+        "best-of-n": len(observations["best-of-n"].seat_calls),
         "team": seats["team"],
         **{arm: len(observations[arm].seat_calls) for arm in workflows},
     }
@@ -306,6 +407,14 @@ def observe(team_config: str | None = None) -> dict[str, dict[str, Any]]:
             for arm in ARMS
         },
         "container_image_expression": image_expressions,
+        "wall_clock_window": {
+            arm: _wall_clock_window(function)
+            for arm, function in window_sources.items()
+        },
+        "metrics_key_set": {
+            arm: _transport_metric_keys(module)
+            for arm, module in generators.items()
+        },
         "sampling_temperature": {arm: temperature for arm in ARMS},
     }
     return {factor: {arm: freeze(value) for arm, value in per_arm.items()}

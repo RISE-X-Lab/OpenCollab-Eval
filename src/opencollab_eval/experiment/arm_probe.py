@@ -305,6 +305,56 @@ def probe_single_arm(*, budget: int, max_steps: int, timeout: float) -> ArmObser
     return observation
 
 
+def probe_best_of_n_arm(
+    *, budget: int, max_steps: int, timeout: float, candidates: int
+) -> ArmObservation:
+    """Drive the Best-of-N generator's own candidate runner, once per candidate.
+
+    Through ``gen_prediction_best_of_n.run_candidate`` rather than through
+    ``run_agent`` directly, even though that function is what it delegates to.
+    The claim this arm rests on is that it *is* the single agent with the pool
+    split N ways, and the only way that claim can be checked instead of
+    restated is to reach the model layer through the code the arm actually
+    runs -- so a candidate that gained a tool, a prompt or a different builder
+    shows up here as a difference and not as a comment.
+    """
+    from opencollab_eval.generation import gen_prediction_best_of_n as _best_of_n
+
+    observation = ArmObservation(arm="best-of-n")
+    client = _RecordingClient(observation)
+    task = _best_of_n.build_task(PROBE_INSTANCE)
+    seats: list[SeatCall] = []
+
+    async def main(artifact_root: Path) -> None:
+        with _swapped(_agent, "attach_container", lambda **_: _ProbeEnvironment()):
+            for _index in range(candidates):
+                await _best_of_n.run_candidate(
+                    task=task,
+                    cid="probe-container",
+                    cfg={
+                        "model": "probe-model",
+                        "provider": "probe-provider",
+                        "temperature": 0.2,
+                    },
+                    max_steps=max_steps,
+                    budget=budget,
+                    timeout=timeout,
+                    candidates=candidates,
+                    artifact_root=artifact_root,
+                    runtime=client,
+                )
+                # The recorder keeps the last call; a run of this arm is N of
+                # them, and how many seats it opened is one of the audited
+                # quantities.
+                seats.extend(observation.seat_calls)
+
+    with _scratch_root() as root:
+        _run(main(root))
+    observation.seat_calls = tuple(seats)
+    observation.system_prompt = observation.system_prompt or AGENT_PROMPT.strip()
+    return observation
+
+
 def probe_orchestrated_arm(
     arm: str,
     *,
@@ -420,6 +470,7 @@ __all__ = [
     "PROBE_TREE",
     "ArmObservation",
     "SeatCall",
+    "probe_best_of_n_arm",
     "probe_orchestrated_arm",
     "probe_single_arm",
 ]

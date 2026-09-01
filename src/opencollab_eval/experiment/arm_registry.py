@@ -30,9 +30,15 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-#: The four arms the batch driver runs, in ``ARM_MODULES`` order.
+from opencollab_eval.generation.gen_prediction_config import LLM_TRANSPORT_METRIC_KEYS
+
+#: The arms the batch driver runs, in ``ARM_MODULES`` order. ``arm_audit``
+#: checks the two lists against each other before it observes anything: this
+#: list is what it iterates, so an arm the driver runs and this list omits is
+#: not checked at all, and the audit would report a clean run.
 ARMS: tuple[str, ...] = (
     "single",
+    "best-of-n",
     "team",
     "self-collaboration",
     "self-collaboration-reading-analyst",
@@ -128,6 +134,19 @@ _SCRIPTED_TESTER_BUNDLE = (
 )
 _READING_ANALYST_BUNDLE = ("bash", "file_read", "grep", "run_tests", "submit")
 
+#: The transport keys every generator writes, in the order ``freeze`` sorts
+#: them into. Imported rather than restated: the point of the factor is that
+#: one function supplies them to every arm.
+_TRANSPORT_METRIC_KEYS = tuple(sorted(LLM_TRANSPORT_METRIC_KEYS))
+
+#: How much of ``--timeout`` reaches the solver, as three constructions rather
+#: than as a number of seconds -- the seconds are a property of one run.
+WINDOW_WHOLE = "the --timeout flag, in full"
+WINDOW_SHARED = "the --timeout flag divided among the candidates"
+WINDOW_REMAINING = (
+    "what --timeout has left after container start and repo-map preparation"
+)
+
 
 _FACTORS: tuple[Factor, ...] = (
     Factor(
@@ -151,17 +170,20 @@ _FACTORS: tuple[Factor, ...] = (
         verdict=INTENDED,
         values={
             "single": 1,
+            "best-of-n": 3,
             "team": 3,
             "self-collaboration": 4,
             "self-collaboration-reading-analyst": 4,
         },
         reason=(
             "How many sessions a run opens is what the arms are *for*: one agent "
-            "working alone, three seats a model may hand work to, and a script "
-            "that opens analyse/implement/verify/adjudicate in order. A team "
-            "seats every declared role before the first model call, so its count "
-            "is its roster; a workflow's is the number of seats its own script "
-            "opened on a clean round (a rejected round opens three more)."
+            "working alone, three independent tries at the same task, three seats "
+            "a model may hand work to, and a script that opens "
+            "analyse/implement/verify/adjudicate in order. A team seats every "
+            "declared role before the first model call, so its count is its "
+            "roster; a workflow's is the number of seats its own script opened on "
+            "a clean round (a rejected round opens three more); Best-of-N's is "
+            "its declared candidate count."
         ),
         evidence=(
             "OpenCollab/opencollab/bootstrap/scheduler_factory.py:170",
@@ -173,6 +195,7 @@ _FACTORS: tuple[Factor, ...] = (
         verdict=DEFECT,
         values={
             "single": 100,
+            "best-of-n": 300,
             "team": 300,
             "self-collaboration": 400,
             "self-collaboration-reading-analyst": 400,
@@ -186,7 +209,10 @@ _FACTORS: tuple[Factor, ...] = (
             "different numbers of sessions, so the same flag buys a solo agent a "
             "hundred steps and a three-seat arm three or four hundred -- four being "
             "the scripted arms' clean round; a rejected round opens three more "
-            "seats and takes them to seven hundred. The "
+            "seats and takes them to seven hundred. Best-of-N pays it three times "
+            "over for the same reason and is not exempt: its candidates share one "
+            "token pool and one wall clock, and the step flag alone is not "
+            "divided. The "
             "constant says so in a trailing comment and nothing enforces it; the "
             "paper declares no step ceiling at all. It has bound before: at a 2M "
             "budget two single runs stopped on the step limit rather than on the "
@@ -207,6 +233,7 @@ _FACTORS: tuple[Factor, ...] = (
         verdict=INTENDED,
         values={
             "single": 2_000_000,
+            "best-of-n": 2_000_000,
             "team": 6_000_000,
             "self-collaboration": 6_000_000,
             "self-collaboration-reading-analyst": 6_000_000,
@@ -216,11 +243,13 @@ _FACTORS: tuple[Factor, ...] = (
             "team caps each of its N seats at 1/N of the pool, so passing a team "
             "the same pool as a solo agent would give every seat a third of what "
             "that agent gets alone -- and the shortfall would then be read off "
-            "the results as something about working in a team."
+            "the results as something about working in a team. Best-of-N takes "
+            "one seat's budget and no more: its N candidates are N samplings of "
+            "one seat, not N seats, and the paper gives them 1/N of a seat each."
         ),
         evidence=(
             "OpenCollab-Eval/src/opencollab_eval/generation/"
-            "gen_prediction_batch.py:180",
+            "gen_prediction_batch.py:250",
             "OpenCollab/opencollab/domain/scheduler.py:42",
         ),
     ),
@@ -229,15 +258,21 @@ _FACTORS: tuple[Factor, ...] = (
         verdict=INTENDED,
         values={
             "single": 1,
+            "best-of-n": 1,
             "team": 3,
             "self-collaboration": 3,
             "self-collaboration-reading-analyst": 3,
         },
         reason=(
-            "The number of agents an arm may put to work is the axis under "
-            "study. It is read off each arm's own declaration -- the team file's "
-            "roster, the workflow module's ``SEATS`` -- so the pool cannot be "
-            "sized for a different number than the arm caps."
+            "A seat is a share of the pool that one agent may spend, and the "
+            "number of them is the axis under study. It is read off each arm's "
+            "own declaration -- the team file's roster, the workflow module's "
+            "``SEATS`` -- so the pool cannot be sized for a different number than "
+            "the arm caps. It is deliberately *not* 'how many agent sessions the "
+            "arm opens': Best-of-N opens three and holds one seat, because its "
+            "three candidates take 1/N of one seat's budget each rather than a "
+            "budget each. Reading it the other way is what would fund that arm at "
+            "three times the compute of the arm it is compared against."
         ),
         evidence=(
             "OpenCollab-Eval/src/opencollab_eval/generation/"
@@ -265,6 +300,7 @@ _FACTORS: tuple[Factor, ...] = (
         verdict=INTENDED,
         values={
             "single": (("swe_agent", _SINGLE_BUNDLE),),
+            "best-of-n": (("swe_agent", _SINGLE_BUNDLE),) * 3,
             "team": (
                 ("analyst", _TEAM_WORKING_BUNDLE),
                 ("coder", _TEAM_WORKING_BUNDLE),
@@ -284,7 +320,9 @@ _FACTORS: tuple[Factor, ...] = (
             ),
         },
         reason=(
-            "Three declared differences and nothing else. (1) The team's roles "
+            "Four declared differences and nothing else. (0) Best-of-N is the "
+            "single agent's bundle, once per candidate: the arm is an allocation "
+            "of compute and not a change of capability. (1) The team's roles "
             "carry ``message_agent`` and ``team_status``: that channel is the "
             "treatment. (2) A tester holds no tool that writes a file and carries "
             "``git_diff`` instead -- a declared role boundary, kept identical on "
@@ -344,6 +382,7 @@ _FACTORS: tuple[Factor, ...] = (
         verdict=INTENDED,
         values={
             "single": "AGENT_PROMPT",
+            "best-of-n": "AGENT_PROMPT",
             "team": "team role cards (the harness supplies no system prompt)",
             "self-collaboration": "WORKFLOW_AGENT_PROMPT",
             "self-collaboration-reading-analyst": "WORKFLOW_AGENT_PROMPT",
@@ -367,6 +406,7 @@ _FACTORS: tuple[Factor, ...] = (
         verdict=DEFECT,
         values={
             "single": False,
+            "best-of-n": False,
             "team": False,
             "self-collaboration": True,
             "self-collaboration-reading-analyst": True,
@@ -381,7 +421,9 @@ _FACTORS: tuple[Factor, ...] = (
             "(up to 512 bytes of ``git ls-files``) to "
             "the system prompt for session and workflow modes and does not pass "
             "one to team mode at all. The single arm never reaches that function "
-            "-- it runs through ``gen_prediction_agent.run_agent`` -- so the two "
+            "-- it runs through ``gen_prediction_agent.run_agent``, and neither "
+            "does Best-of-N, whose candidates run through the same function -- so "
+            "the two "
             "scripted arms carry a listing in their system prefix that neither of "
             "the two confirmatory arms has. It is a different listing from the "
             "one already in the task description, built by a different function "
@@ -401,6 +443,7 @@ _FACTORS: tuple[Factor, ...] = (
         verdict=DEFECT,
         values={
             "single": "default_container_image(arch, instance_id)",
+            "best-of-n": "default_container_image(arch, instance_id)",
             "team": "inline f-string, no shared helper",
             "self-collaboration": "inline f-string, no shared helper",
             "self-collaboration-reading-analyst": "inline f-string, no shared helper",
@@ -428,6 +471,70 @@ _FACTORS: tuple[Factor, ...] = (
             "gen_prediction_workflow.py:705",
             "OpenCollab-Eval/src/opencollab_eval/generation/"
             "gen_prediction_config.py:66",
+        ),
+    ),
+    Factor(
+        name="wall_clock_window",
+        verdict=DEFECT,
+        values={
+            "single": WINDOW_WHOLE,
+            "best-of-n": WINDOW_SHARED,
+            "team": WINDOW_REMAINING,
+            "self-collaboration": WINDOW_REMAINING,
+            "self-collaboration-reading-analyst": WINDOW_REMAINING,
+        },
+        outcome=(
+            "``done_with_timeout_patch`` and the completeness of the delivered "
+            "patch: a run cut off on its wall clock stops mid-edit, and whether "
+            "it was cut off depends on how much of the flag it was given"
+        ),
+        reason=(
+            "``--timeout`` is 5400 seconds on every arm, and the arms do not all "
+            "get 5400 seconds of work out of it. The single-agent generator hands "
+            "the flag whole to ``client.agent``. The three orchestrated arms go "
+            "through ``run_session_or_workflow``, which sets the solver's timeout "
+            "to what the deadline has *left* -- container acquisition, test-patch "
+            "injection and the repository map are already spent by then -- so "
+            "their real working window is shorter by however long that "
+            "preparation took, which is a property of the machine and of the "
+            "image, not of the arm. Best-of-N is short in a third way and on "
+            "purpose: its candidates divide the flag, because ``--timeout`` bounds "
+            "one run everywhere else and N candidates each given it whole would "
+            "hand that arm N times the wall clock. Recorded as the construction "
+            "and not as a number of seconds: the seconds are a property of one "
+            "run, so a check that stated them would be pinned to whichever run it "
+            "was written from."
+        ),
+        evidence=(
+            "OpenCollab-Eval/src/opencollab_eval/engine/"
+            "evaluator_task_execution.py:249",
+            "OpenCollab-Eval/src/opencollab_eval/generation/"
+            "gen_prediction_agent.py:226",
+            "OpenCollab-Eval/src/opencollab_eval/generation/"
+            "gen_prediction_best_of_n.py:131",
+        ),
+    ),
+    Factor(
+        name="metrics_key_set",
+        verdict=EQUAL,
+        values=_every_arm(_TRANSPORT_METRIC_KEYS),
+        reason=(
+            "How a run reached the provider -- which wire protocol, which "
+            "reasoning effort, which endpoint digest, which environment switches "
+            "-- is an input to every per-run reading and appears nowhere in the "
+            "prediction itself. It was written by the workflow/team generator and "
+            "by no other, so three arms could answer those questions and one "
+            "could not, on an axis the arms are supposed to be identical on. One "
+            "function now supplies the block to every generator, which is what "
+            "this factor checks: not that the values match, but that each arm's "
+            "generator writes the same key set."
+        ),
+        evidence=(
+            "OpenCollab-Eval/src/opencollab_eval/generation/"
+            "gen_prediction_config.py:161",
+            "OpenCollab-Eval/src/opencollab_eval/generation/gen_prediction.py:302",
+            "OpenCollab-Eval/src/opencollab_eval/generation/"
+            "gen_prediction_workflow.py:495",
         ),
     ),
     Factor(
@@ -509,6 +616,9 @@ RUNTIME_ONLY: tuple[tuple[str, str], ...] = (
 
 __all__ = [
     "ARMS",
+    "WINDOW_REMAINING",
+    "WINDOW_SHARED",
+    "WINDOW_WHOLE",
     "DEFECT",
     "EQUAL",
     "INTENDED",

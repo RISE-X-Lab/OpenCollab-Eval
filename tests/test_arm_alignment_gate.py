@@ -41,7 +41,12 @@ from opencollab_eval.experiment.arm_registry import (
     REGISTRY,
     Factor,
 )
-from opencollab_eval.generation import gen_prediction_agent, gen_prediction_batch, gen_prediction_workflow_inputs
+from opencollab_eval.generation import (
+    gen_prediction_agent,
+    gen_prediction_batch,
+    gen_prediction_best_of_n,
+    gen_prediction_workflow_inputs,
+)
 from opencollab_eval.generation import gen_prediction_constants as constants
 
 _evaluator = importlib.import_module("opencollab_eval.engine.evaluator")
@@ -491,6 +496,14 @@ def _break_repository_listing(monkeypatch, tmp_path) -> tuple[str, dict[str, Any
     return "system_prompt_carries_repository_listing", {}
 
 
+def _break_best_of_n_candidates(monkeypatch, tmp_path) -> tuple[str, dict[str, Any]]:
+    # N is frozen by preregistration. Changing it changes what the arm is, and
+    # the number is read off the generator's own constant, so this is the shape
+    # a real drift would have.
+    monkeypatch.setattr(gen_prediction_best_of_n, "CANDIDATES", 4)
+    return "sessions_per_run", {}
+
+
 def _break_temperature(monkeypatch, tmp_path) -> tuple[str, dict[str, Any]]:
     # The driver pins the temperature in the environment it starts each
     # generator with, so the value to perturb is that one and not this
@@ -522,6 +535,7 @@ _CONTROLS = (
     _break_task_text,
     _break_system_prompt_origin,
     _break_repository_listing,
+    _break_best_of_n_candidates,
     _break_temperature,
 )
 
@@ -574,3 +588,111 @@ def test_breaking_the_container_image_construction_turns_the_check_red(
 
     assert not report.ok
     assert "container_image_expression" in _failing_factors(report)
+
+
+def test_the_wall_clock_construction_is_read_off_the_source() -> None:
+    # Like the container image, this factor is evaluated by reading the code
+    # that sets the value, so the control feeds it source rather than patching
+    # a number. Three constructions, one per arm family.
+    whole = "def run(timeout):\n    client.agent(task, timeout=timeout)\n"
+    shared = "def run(timeout, n):\n    run_agent(task, timeout=timeout / n)\n"
+    remaining = (
+        "def run(controller):\n"
+        "    replace(task, timeout=controller.remaining_time())\n"
+    )
+
+    assert arm_audit._wall_clock_window(None, source=whole) == arm_registry.WINDOW_WHOLE
+    assert arm_audit._wall_clock_window(None, source=shared) == arm_registry.WINDOW_SHARED
+    assert (
+        arm_audit._wall_clock_window(None, source=remaining)
+        == arm_registry.WINDOW_REMAINING
+    )
+    assert arm_audit._wall_clock_window(None, source="def run():\n    pass\n") == (
+        "no wall-clock window found"
+    )
+
+
+def test_the_wall_clock_classifier_ignores_the_other_timeouts_around_it() -> None:
+    # ``run_agent`` also passes llm_connect_timeout, llm_stream_idle_timeout and
+    # cleanup_timeout. A classifier that matched on a substring would answer
+    # from whichever of those it walked into first.
+    source = (
+        "def run(timeout, controller):\n"
+        "    attach_container(timeout_returncode=124)\n"
+        "    client.agent(cleanup_timeout=2.0, llm_connect_timeout=30.0,"
+        " timeout=controller.remaining_time())\n"
+    )
+
+    assert arm_audit._wall_clock_window(None, source=source) == (
+        arm_registry.WINDOW_REMAINING
+    )
+
+
+def test_giving_one_arm_the_whole_wall_clock_turns_the_check_red(monkeypatch) -> None:
+    async def run_candidate(
+        *,
+        task,
+        cid,
+        cfg,
+        max_steps,
+        budget,
+        timeout,
+        candidates,
+        artifact_root,
+        runtime=None,
+    ):
+        # The defect this control stands for: N candidates each handed the
+        # whole --timeout, which gives the arm N times the wall clock of the
+        # arm it is compared against. Everything else is left as it is, so the
+        # only thing the audit can be reacting to is the window.
+        return await gen_prediction_agent.run_agent(
+            task,
+            cid,
+            cfg,
+            max_steps=max_steps,
+            budget=budget // candidates,
+            timeout=timeout,
+            artifact_root=artifact_root,
+            runtime=runtime,
+        )
+
+    monkeypatch.setattr(gen_prediction_best_of_n, "run_candidate", run_candidate)
+
+    report = arm_audit.audit(arm_audit.observe())
+
+    assert not report.ok
+    assert "wall_clock_window" in _failing_factors(report)
+
+
+def test_the_transport_key_set_is_read_off_each_generator_s_source() -> None:
+    spliced = "metrics.update({'llm_model': m, **llm_transport_metrics(cfg)})\n"
+    inline = "metrics.update({'wire_protocol': p})\nmetrics['workflow_env'] = e\n"
+    silent = "metrics.update({'llm_model': m})\n"
+
+    assert arm_audit._transport_metric_keys(None, source=spliced) == (
+        "llm_base_url_sha256",
+        "reasoning_effort",
+        "wire_protocol",
+        "workflow_env",
+    )
+    # The historical shape: one generator wrote them out itself. Read correctly
+    # rather than reported as writing nothing, or the check could not tell a
+    # generator that has its own copy from one that has none.
+    assert arm_audit._transport_metric_keys(None, source=inline) == (
+        "wire_protocol",
+        "workflow_env",
+    )
+    assert arm_audit._transport_metric_keys(None, source=silent) == ()
+
+
+def test_an_arm_that_stops_recording_its_transport_turns_the_check_red(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        arm_audit, "_transport_metric_keys", lambda module, source=None: ()
+    )
+
+    report = arm_audit.audit(arm_audit.observe())
+
+    assert not report.ok
+    assert "metrics_key_set" in _failing_factors(report)

@@ -37,6 +37,7 @@ _SOURCE = Path(config.__file__).resolve().parent
 #: somebody remembered to extend.
 GENERATOR_MODULES: tuple[str, ...] = (
     "gen_prediction",
+    "gen_prediction_best_of_n",
     "gen_prediction_workflow",
 )
 
