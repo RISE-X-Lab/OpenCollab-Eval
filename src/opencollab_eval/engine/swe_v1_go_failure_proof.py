@@ -415,27 +415,19 @@ def _build_output_for_package(events: list[dict[str, Any]], package: str) -> str
     )
 
 
-def _target_timeout_matches(
-    proof: dict[str, Any],
+def _target_timeout_failure_packages(
     events: list[dict[str, Any]],
-    discoveries: list[dict[str, Any]],
-    declared_tests: list[str],
-    *,
-    expected_command: str,
-    observed_command: str,
-) -> bool:
-    if proof.get("dynamic_discovery") is True and (
-        not expected_command or expected_command != observed_command
-    ):
-        return False
-    bindings = _proof_bindings(proof, discoveries, declared_tests)
-    if not bindings or not _events_match_bindings(events, bindings):
-        return False
+    bindings: list[dict[str, Any]],
+) -> set[str]:
+    """Return packages with a strictly attributed target timeout."""
     failed_packages = {
         str(event.get("Package") or "")
         for event in events
-        if event.get("Action") == "fail" and event.get("Package")
+        if event.get("Action") == "fail"
+        and event.get("Package")
+        and not event.get("Test")
     }
+    proven: set[str] = set()
     for binding in bindings:
         matching_packages = [
             package
@@ -472,8 +464,59 @@ def _target_timeout_matches(
                 and event.get("Test") == test
             )
             if ran and actions.isdisjoint({"pass", "fail", "skip"}) and test in target_output:
-                return True
-    return False
+                proven.add(package)
+    return proven
+
+
+def _target_panic_failure_packages(
+    events: list[dict[str, Any]],
+    bindings: list[dict[str, Any]],
+) -> set[str]:
+    """Return packages with an unterminated declared target that emitted a panic."""
+    failed_packages = {
+        str(event.get("Package") or "")
+        for event in events
+        if event.get("Action") == "fail"
+        and event.get("Package")
+        and not event.get("Test")
+    }
+    proven: set[str] = set()
+    for binding in bindings:
+        matching_packages = [
+            package
+            for package in failed_packages
+            if _package_matches(binding["package"], package)
+        ]
+        if len(matching_packages) != 1:
+            continue
+        package = matching_packages[0]
+        for test in binding["tests"]:
+            target_events = [
+                event
+                for event in events
+                if event.get("Package") == package and event.get("Test") == test
+            ]
+            actions = {str(event.get("Action") or "") for event in target_events}
+            target_output = "".join(
+                str(event.get("Output") or "")
+                for event in target_events
+                if event.get("Action") == "output"
+            )
+            panic_lines = [
+                line.strip()
+                for line in target_output.splitlines()
+                if line.strip().startswith("panic: ")
+            ]
+            if (
+                "run" in actions
+                and actions.isdisjoint({"pass", "fail", "skip"})
+                and any(
+                    not line.startswith("panic: test timed out after ")
+                    for line in panic_lines
+                )
+            ):
+                proven.add(package)
+    return proven
 
 
 def go_pass_proof_matches(proof: dict[str, Any], log_text: str) -> bool:
@@ -541,50 +584,18 @@ def go_failure_proof_matches(
         for event in events
         if event.get("Action") == "fail" and event.get("Test") in expected
     ]
-    if exact_failures:
-        if plain_diagnostics or build_headers:
-            return False
-        if proof.get("dynamic_discovery") is not True:
-            if discoveries:
-                return False
-            if not proof.get("package"):
-                return True
-            bindings = _proof_bindings(proof, discoveries, declared_tests)
-            return bool(
-                bindings
-                and all(
-                    event.get("Package")
-                    and any(
-                        _package_matches(binding["package"], event["Package"])
-                        for binding in bindings
-                    )
-                    for event in exact_failures
-                )
-            )
-        bindings = _dynamic_bindings(discoveries, declared_tests)
-        return bool(
-            bindings
-            and _events_match_bindings(events, bindings)
-            and _dynamic_test_events_match_owners(events, bindings)
-        )
-    if _target_timeout_matches(
-        proof,
-        events,
-        discoveries,
-        declared_tests,
-        expected_command=expected_command,
-        observed_command=observed_command,
+    if (
+        exact_failures
+        and proof.get("dynamic_discovery") is not True
+        and not discoveries
+        and not proof.get("package")
     ):
-        return True
+        return not plain_diagnostics and not build_headers
     legacy_dynamic = _legacy_dynamic_command_matches(
         proof,
         expected_command,
         observed_command,
     )
-    if proof.get("dynamic_discovery") is True and (
-        not expected_command or expected_command != observed_command
-    ):
-        return False
     bindings = _proof_bindings(proof, discoveries, declared_tests)
     if not bindings:
         if not legacy_dynamic or discoveries:
@@ -592,11 +603,38 @@ def go_failure_proof_matches(
         bindings = []
     elif not _events_match_bindings(events, bindings):
         return False
+    exact_failure_packages: set[str] = set()
+    for event in exact_failures:
+        package = event.get("Package")
+        binding = _matching_binding(bindings, package) if isinstance(package, str) else None
+        if binding is None or event.get("Test") not in binding["tests"]:
+            return False
+        exact_failure_packages.add(package)
+    timeout_failure_packages = _target_timeout_failure_packages(events, bindings)
+    panic_failure_packages = _target_panic_failure_packages(events, bindings)
+    runtime_failure_packages = (
+        exact_failure_packages | timeout_failure_packages | panic_failure_packages
+    )
+    if (
+        proof.get("dynamic_discovery") is True
+        and runtime_failure_packages
+        and not _dynamic_test_events_match_owners(events, bindings)
+    ):
+        return False
     failed_packages = {
         str(event.get("Package") or "")
         for event in events
         if event.get("Action") == "fail" and event.get("Package")
     }
+    build_failed_packages = failed_packages - runtime_failure_packages
+    if proof.get("dynamic_discovery") is True and (
+        timeout_failure_packages
+        or panic_failure_packages
+        or build_failed_packages
+        or plain_diagnostics
+        or build_headers
+    ) and (not expected_command or expected_command != observed_command):
+        return False
     if plain_diagnostics and (
         not expected_command
         or expected_command != observed_command
@@ -604,11 +642,15 @@ def go_failure_proof_matches(
         return False
     if build_headers:
         unique_headers = set(build_headers)
-        if len(unique_headers) != len(failed_packages) or any(
+        if len(unique_headers) != len(build_failed_packages) or any(
             sum(_package_matches(failed_package, header) for header in unique_headers) != 1
-            for failed_package in failed_packages
+            for failed_package in build_failed_packages
         ) or any(
-            sum(_package_matches(failed_package, header) for failed_package in failed_packages) != 1
+            sum(
+                _package_matches(failed_package, header)
+                for failed_package in build_failed_packages
+            )
+            != 1
             for header in unique_headers
         ):
             return False
@@ -646,8 +688,11 @@ def go_failure_proof_matches(
                 for path in diagnostics
             )
         )
-    proven_packages = []
+    proven_packages = list(runtime_failure_packages)
     for failed_package in failed_packages:
+        if failed_package in runtime_failure_packages:
+            proven_packages.append(failed_package)
+            continue
         matching_bindings = [
             binding
             for binding in bindings
@@ -710,7 +755,8 @@ def go_failure_proof_matches(
         ):
             return False
         proven_packages.append(failed_package)
-    return bool(proven_packages)
+    expected_failure_packages = failed_packages | runtime_failure_packages
+    return bool(proven_packages) and set(proven_packages) == expected_failure_packages
 
 
 __all__ = [
