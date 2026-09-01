@@ -55,6 +55,7 @@ from opencollab_eval.usage import DEFAULT_MAX_OUTPUT_TOKENS, model_context_windo
 
 from . import gen_prediction as gp  # noqa: E402 — shared container plumbing
 from .container_quiescence import require_container_quiescence  # noqa: E402
+from .gen_prediction_config import llm_transport_metrics  # noqa: E402
 from .gen_prediction_constants import (  # noqa: E402
     DEFAULT_BUDGET,
     DEFAULT_MAX_STEPS,
@@ -483,8 +484,6 @@ async def generate(
                 "provider_models": provider_models,
                 "trajectory_sha256": trajectory_sha256,
                 "llm_provider": cfg["provider"],
-                "wire_protocol": cfg.get("wire_protocol", "chat_completions"),
-                "reasoning_effort": cfg.get("reasoning_effort"),
                 "context_window": model_context_window(cfg["model"]),
                 "temperature": cfg["temperature"],
                 "top_p": cfg.get("top_p"),
@@ -493,27 +492,7 @@ async def generate(
                 ),
                 "budget": args.budget,
                 "max_steps": args.max_steps,
-                "llm_base_url_sha256": cfg.get("base_url_sha256"),
-                "workflow_env": {
-                    key: os.environ[key]
-                    for key in (
-                        "OPENCOLLAB_MAX_OUTPUT_TOKENS",
-                        "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY",
-                        "OPENCOLLAB_TEMPERATURE",
-                        "OPENCOLLAB_THINKING",
-                        "OPENCOLLAB_THINKING_PARAMS",
-                        "OPENCOLLAB_TOP_P",
-                        "OPENCOLLAB_WIRE_PROTOCOL",
-                        "OPENCOLLAB_REASONING_EFFORT",
-                        "OPENCOLLAB_LLM_MAX_RETRIES",
-                        "OPENCOLLAB_LLM_CONNECT_TIMEOUT",
-                        "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT",
-                        "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT",
-                        "OPENCOLLAB_LLM_USER_AGENT",
-                        "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT",
-                    )
-                    if key in os.environ
-                },
+                **llm_transport_metrics(cfg),
             }
         )
         gp.bind_llm_transport(metrics)

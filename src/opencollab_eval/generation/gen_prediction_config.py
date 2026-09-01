@@ -158,3 +158,73 @@ def bind_llm_transport(metrics: dict) -> None:
             value = workflow_env.get(env_key)
             if value:
                 metrics[metric_key] = value
+
+
+#: The environment switches that decide how a run talks to its provider.
+#:
+#: Recorded rather than assumed, because none of them is visible in the
+#: prediction a run produces and several of them change what the run *is*.
+#: ``OPENCOLLAB_LLM_STREAM_CHAT`` is the sharpest case: the reasoning body of a
+#: response cannot be retrieved from a non-streaming chat completion at all, so
+#: a batch run with it off has paid for reasoning it did not keep -- and with
+#: the switch unrecorded, "was it on?" is not answerable afterwards from the
+#: run's own record.
+LLM_ENV_KEYS: tuple[str, ...] = (
+    "OPENCOLLAB_MAX_OUTPUT_TOKENS",
+    "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY",
+    "OPENCOLLAB_TEMPERATURE",
+    "OPENCOLLAB_THINKING",
+    "OPENCOLLAB_THINKING_PARAMS",
+    "OPENCOLLAB_TOP_P",
+    "OPENCOLLAB_WIRE_PROTOCOL",
+    "OPENCOLLAB_REASONING_EFFORT",
+    "OPENCOLLAB_LLM_MAX_RETRIES",
+    "OPENCOLLAB_LLM_CONNECT_TIMEOUT",
+    "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT",
+    "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT",
+    "OPENCOLLAB_LLM_STREAM_CHAT",
+    "OPENCOLLAB_LLM_USER_AGENT",
+    "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT",
+)
+
+#: The metric keys ``llm_transport_metrics`` writes. Named so the cross-arm
+#: alignment check can ask each generator whether it writes them without
+#: tabulating the answer.
+LLM_TRANSPORT_METRIC_KEYS: tuple[str, ...] = (
+    "llm_base_url_sha256",
+    "reasoning_effort",
+    "wire_protocol",
+    "workflow_env",
+)
+
+
+def observed_llm_env() -> dict[str, str]:
+    """The provider-transport environment this process was started with.
+
+    Only the keys that are set: an absent key and an empty one are different
+    facts, and writing ``""`` for "not set" would make them read the same.
+    """
+    return {key: os.environ[key] for key in LLM_ENV_KEYS if key in os.environ}
+
+
+def llm_transport_metrics(cfg: dict) -> dict:
+    """How this run reached the provider, in the four keys every arm records.
+
+    One function rather than one block per generator. These four keys were
+    written by the workflow/team generator and by no other: the single-agent
+    path recorded the model and the sampling settings but nothing about the
+    wire, so of the arms a comparison is made between, three could answer "which
+    protocol, which reasoning effort, which endpoint, which switches" and one
+    could not. That is a difference in an input to every per-run analysis, on an
+    axis the arms are supposed to be identical on, and it is invisible in the
+    predictions themselves.
+
+    ``bind_llm_transport`` may overwrite any of these afterwards from the
+    environment a harness exported; the order is the same on every arm.
+    """
+    return {
+        "wire_protocol": cfg.get("wire_protocol", "chat_completions"),
+        "reasoning_effort": cfg.get("reasoning_effort"),
+        "llm_base_url_sha256": cfg.get("base_url_sha256"),
+        "workflow_env": observed_llm_env(),
+    }

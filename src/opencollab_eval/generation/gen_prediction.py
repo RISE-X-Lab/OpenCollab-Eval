@@ -79,6 +79,7 @@ from .gen_prediction_config import (
     _workspace_archive_timeout_from_env,
     bind_llm_transport,
     default_container_image,
+    llm_transport_metrics,
     unique_container_name,
     validate_generation_limits,
     validate_instance_id,
@@ -298,6 +299,7 @@ def main() -> None:
                 ),
                 "budget": args.budget,
                 "max_steps": args.max_steps,
+                **llm_transport_metrics(cfg),
             }
         )
         bind_llm_transport(metrics)
