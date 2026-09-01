@@ -35,6 +35,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from opencollab_eval.engine.swe_fail_to_pass_fraction import fail_to_pass_outcome
+
 __all__ = [
     "instance_has_parsed_grading",
     "load_instance_reports_for_arm",
@@ -52,21 +54,8 @@ def instance_has_parsed_grading(instance_report: dict[str, Any] | None) -> bool:
     holds, any keyword the arm-level scan finds elsewhere in the same raw log is
     noise, not evidence of an environment fault that prevented evaluation.
     """
-    if not isinstance(instance_report, dict):
-        return False
-    if instance_report.get("patch_successfully_applied") is not True:
-        return False
-    tests_status = instance_report.get("tests_status")
-    if not isinstance(tests_status, dict):
-        return False
-    fail_to_pass = tests_status.get("FAIL_TO_PASS")
-    if not isinstance(fail_to_pass, dict):
-        return False
-    success = fail_to_pass.get("success")
-    failure = fail_to_pass.get("failure")
-    total = len(success) if isinstance(success, list) else 0
-    total += len(failure) if isinstance(failure, list) else 0
-    return total > 0
+    outcome = fail_to_pass_outcome(instance_report)
+    return outcome.patch_successfully_applied and outcome.graded
 
 
 def recompute_arm_failure_reasons(
@@ -96,12 +85,12 @@ def recompute_arm_failure_reasons(
         was_infra_tier = instance_id in infra_failure_ids
         infra_failure_ids.discard(instance_id)
         ambiguous_failure_ids.discard(instance_id)
-        fail_to_pass = instance_report["tests_status"]["FAIL_TO_PASS"]  # type: ignore[index]
+        outcome = fail_to_pass_outcome(instance_report)
         corrected_false_infra_flags[instance_id] = {
             "original_reason": reason,
             "original_tier": "environment" if was_infra_tier else "ambiguous",
-            "f2p_failure_count": len(fail_to_pass.get("failure") or []),
-            "f2p_success_count": len(fail_to_pass.get("success") or []),
+            "f2p_failure_count": outcome.f2p_failure_count,
+            "f2p_success_count": outcome.f2p_success_count,
         }
 
     result = dict(arm_report)
