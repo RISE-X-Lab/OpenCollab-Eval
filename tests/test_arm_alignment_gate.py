@@ -129,6 +129,59 @@ def test_the_registry_covers_exactly_the_arms_the_batch_driver_runs() -> None:
     assert ARMS == tuple(gen_prediction_batch.ARM_MODULES)
 
 
+def test_an_arm_the_registry_has_not_caught_up_with_turns_the_audit_red(
+    monkeypatch,
+) -> None:
+    # The check above is a test; this one is the audit's own. They are not the
+    # same guarantee: ``observe`` iterates ARMS, so a driver arm the registry
+    # has never heard of is not observed, every factor agrees on the arms that
+    # *are* observed, and the audit reports ok. Whoever runs `python -m
+    # arm_audit` before a batch gets a green light for an arm nothing checked.
+    monkeypatch.setattr(
+        gen_prediction_batch,
+        "ARM_MODULES",
+        {**gen_prediction_batch.ARM_MODULES, "phantom": "does.not.matter"},
+    )
+
+    report = arm_audit.audit()
+
+    assert not report.ok
+    assert report.unevaluated_arms == ("phantom",)
+    assert "UNEVALUATED ARM" in report.describe()
+
+
+def test_an_arm_the_driver_can_no_longer_run_turns_the_audit_red(monkeypatch) -> None:
+    monkeypatch.setattr(
+        gen_prediction_batch,
+        "ARM_MODULES",
+        {
+            name: module
+            for name, module in gen_prediction_batch.ARM_MODULES.items()
+            if name != "team"
+        },
+    )
+
+    report = arm_audit.audit()
+
+    assert not report.ok
+    assert report.phantom_arms == ("team",)
+
+
+def test_the_two_arm_lists_have_to_agree_on_order_as_well(monkeypatch) -> None:
+    # The order is what makes the registry readable next to the driver, and a
+    # silent reordering is how a per-arm column ends up describing another arm.
+    monkeypatch.setattr(
+        gen_prediction_batch,
+        "ARM_MODULES",
+        dict(reversed(list(gen_prediction_batch.ARM_MODULES.items()))),
+    )
+
+    report = arm_audit.audit()
+
+    assert not report.ok
+    assert report.arm_order_mismatch
+
+
 def test_every_factor_the_audit_evaluates_is_declared_and_the_reverse() -> None:
     observed = arm_audit.observe()
 

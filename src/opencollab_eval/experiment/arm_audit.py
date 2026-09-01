@@ -333,6 +333,12 @@ class AlignmentReport:
     mismatches: tuple[tuple[str, str, Any, Any], ...] = ()
     unregistered_differences: tuple[str, ...] = ()
     vanished_differences: tuple[str, ...] = ()
+    #: Arms the batch driver runs that the registry does not evaluate at all.
+    unevaluated_arms: tuple[str, ...] = ()
+    #: Arms the registry evaluates that the batch driver does not run.
+    phantom_arms: tuple[str, ...] = ()
+    #: Same arms on both sides, listed in a different order.
+    arm_order_mismatch: bool = False
     notes: tuple[str, ...] = field(default=())
 
     @property
@@ -345,12 +351,32 @@ class AlignmentReport:
             or self.mismatches
             or self.unregistered_differences
             or self.vanished_differences
+            or self.unevaluated_arms
+            or self.phantom_arms
+            or self.arm_order_mismatch
         )
 
     def describe(self) -> str:
         if self.ok:
             return "every arm difference is declared in the registry"
         lines: list[str] = []
+        for arm in self.unevaluated_arms:
+            lines.append(
+                f"UNEVALUATED ARM          {arm}: the batch driver runs it and "
+                "arm_registry.ARMS does not list it, so nothing below says "
+                "anything about it"
+            )
+        for arm in self.phantom_arms:
+            lines.append(
+                f"PHANTOM ARM              {arm}: the registry evaluates it and "
+                "the batch driver cannot run it"
+            )
+        if self.arm_order_mismatch:
+            lines.append(
+                "ARM ORDER                arm_registry.ARMS and "
+                "gen_prediction_batch.ARM_MODULES list the same arms in "
+                "different orders"
+            )
         for factor in self.unregistered_differences:
             lines.append(
                 f"UNREGISTERED DIFFERENCE  {factor}: the arms differ on a factor "
@@ -377,11 +403,41 @@ class AlignmentReport:
         return "\n".join(lines)
 
 
+def _arm_roster() -> tuple[tuple[str, ...], tuple[str, ...], bool]:
+    """Arms the driver runs but the registry does not, and the reverse.
+
+    Checked by the audit itself and not only by the test that asserts the two
+    lists are equal. ``observe`` iterates ``ARMS``, so a fifth arm added to the
+    driver and not to the registry is simply never looked at: every factor
+    still agrees on the four arms it does evaluate, and the audit reports
+    ``ok``. A check that goes quiet exactly when a new arm arrives is the
+    opposite of what this is for.
+    """
+    driver = tuple(_batch.ARM_MODULES)
+    unevaluated = tuple(sorted(set(driver) - set(ARMS)))
+    phantom = tuple(sorted(set(ARMS) - set(driver)))
+    order_differs = not unevaluated and not phantom and ARMS != driver
+    return unevaluated, phantom, order_differs
+
+
 def audit(
     observed: Mapping[str, Mapping[str, Any]] | None = None,
     registry: Mapping[str, Factor] = REGISTRY,
 ) -> AlignmentReport:
     """Compare the observed values against the registry's declarations."""
+    unevaluated_arms, phantom_arms, arm_order_mismatch = _arm_roster()
+    if unevaluated_arms or phantom_arms or arm_order_mismatch:
+        # Reported on its own and before anything is observed. ``observe``
+        # evaluates the arms in ``ARMS``, so with the two lists out of step its
+        # answers are about a set of arms that is not the one being run -- and
+        # for a registry arm the driver dropped it cannot answer at all. The
+        # roster is the finding; the factor-by-factor comparison comes after it
+        # has been fixed.
+        return AlignmentReport(
+            unevaluated_arms=unevaluated_arms,
+            phantom_arms=phantom_arms,
+            arm_order_mismatch=arm_order_mismatch,
+        )
     observed = observed if observed is not None else observe()
     unregistered_factors = tuple(sorted(set(observed) - set(registry)))
     stale_factors = tuple(sorted(set(registry) - set(observed)))
@@ -415,6 +471,9 @@ def audit(
         mismatches=tuple(mismatches),
         unregistered_differences=tuple(unregistered_differences),
         vanished_differences=tuple(vanished_differences),
+        unevaluated_arms=unevaluated_arms,
+        phantom_arms=phantom_arms,
+        arm_order_mismatch=arm_order_mismatch,
     )
 
 
