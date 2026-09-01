@@ -39,7 +39,14 @@ dependencies = ["opencollab"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.5"]
-swebench = ["swebench>=4,<5", "docker>=7"]
+# Pinned exactly, because the harness version decides the value of the paper's
+# outcome variable rather than merely how it is computed. swebench 5.x puts a
+# SKIPPED fail-to-pass test in `tests_status.FAIL_TO_PASS.failure`, so it counts
+# against the run; 4.x puts it in neither list, silently shrinking the
+# denominator of the very fraction we report. The batches on record were graded
+# by 5.0.2, and only 5.x matches the paper's stated rule that skipped tests count
+# as unresolved.
+swebench = ["swebench==5.0.2", "docker>=7"]
 openhands = ["openhands==1.16.0; python_version == '3.12'"]
 
 [project.urls]
