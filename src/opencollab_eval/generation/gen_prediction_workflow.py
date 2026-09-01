@@ -36,6 +36,7 @@ from dataclasses import fields
 from pathlib import Path
 
 from opencollab.environments import attach_container, build_repo_map_via_env
+from opencollab.teams import declared_role_prompt_digests
 
 from opencollab_eval import workflows as bundled_workflows
 from opencollab_eval.engine.evaluator import EvalTask, run_eval_task  # noqa: E402
@@ -516,6 +517,18 @@ async def generate(
             }
         )
         gp.bind_llm_transport(metrics)
+        if team_config is not None:
+            # Which cards this run was seated with. The handoff experiment's
+            # treatment IS the wording of the analyst card, so this is the
+            # grouping key of its estimand -- and without it a finished batch
+            # cannot be split back into its conditions. The path alone will not
+            # do: cards have been moved (a first generation now lives under
+            # ``legacy/``), so a path identifies a location and the digest
+            # identifies the card. Written only for the team regime, which is
+            # the only one seated from a team file; an arm that has no cards and
+            # an arm whose recorder broke must not read the same.
+            metrics["team_config_path"] = team_config
+            metrics["role_prompt_sha256"] = declared_role_prompt_digests(team_config)
         metrics["generation_image_id"] = generation_image_id
         metrics["solver_git_snapshot"] = snapshot.as_dict()
         if extraction_proof is not None:

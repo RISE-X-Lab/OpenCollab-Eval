@@ -47,6 +47,11 @@ _PUBLIC_NAMES = {
             # agent's, and reading them out of the YAML instead would key them
             # on names the loader normalizes.
             "declared_role_tools",
+            # Which cards a team run was seated with. The handoff experiment's
+            # treatment is the wording of the analyst card, so a finished batch
+            # can only be split back into its conditions if every run recorded
+            # the card it ran -- and by content, since cards have been moved.
+            "declared_role_prompt_digests",
         }
     ),
     "opencollab.tools": frozenset(
