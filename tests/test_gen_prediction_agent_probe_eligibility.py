@@ -57,6 +57,7 @@ def test_failed_result_remains_ineligible_even_when_session_is_quiescent() -> No
     "reason",
     [
         "budget exceeded: 100 tokens used",
+        "budget exceeded after model call: 100 tokens used",
         "budget exhausted before model call: conservative input reservation",
         "team budget exceeded: aggregate spend reached the global cap",
         "step limit reached: 4 steps",

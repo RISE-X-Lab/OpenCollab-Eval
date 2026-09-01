@@ -28,6 +28,7 @@ _CONTROLLED_STOP_REASONS = frozenset(
 )
 _CONTROLLED_STOP_REASON_PREFIXES = (
     "budget exceeded:",
+    "budget exceeded after model call:",
     "budget exhausted before model call:",
     "team budget exceeded:",
     "step limit reached:",

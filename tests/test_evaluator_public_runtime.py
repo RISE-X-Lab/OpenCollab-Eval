@@ -182,6 +182,7 @@ def test_failed_or_uncontrolled_agent_result_keeps_patch_but_blocks_submission(
     [
         "budget_exceeded",
         "budget exceeded: 100 tokens used",
+        "budget exceeded after model call: 100 tokens used",
         "budget exhausted before model call: no output headroom",
         "team budget exceeded: aggregate spend reached the global cap",
         "step limit reached: 4 steps",
@@ -272,6 +273,7 @@ def test_nonquiescent_controlled_stop_blocks_submission(monkeypatch, tmp_path):
     [
         "budget_exceeded",
         "budget exceeded: 100 tokens used",
+        "budget exceeded after model call: 100 tokens used",
         "budget exhausted before model call: no output headroom",
         "team budget exceeded: aggregate spend reached the global cap",
         "step limit reached: 4 steps",

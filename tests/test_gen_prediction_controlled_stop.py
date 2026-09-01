@@ -10,6 +10,7 @@ from opencollab_eval.generation import gen_prediction_safe_output as safe_output
     [
         "budget_exceeded",
         "budget exceeded: 100 tokens used",
+        "budget exceeded after model call: 100 tokens used",
         "budget exhausted before model call: no output headroom",
         "team budget exceeded: aggregate spend reached the global cap",
         "step_limit_exceeded",
