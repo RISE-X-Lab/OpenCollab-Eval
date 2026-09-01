@@ -42,6 +42,11 @@ _PUBLIC_NAMES = {
             # scheduler caps each seat at pool/N -- so a caller that cannot
             # read the count cannot state the budget correctly.
             "declared_role_names",
+            # What each of those seats is given to work with. The cross-arm
+            # alignment check compares a team's bundles against the solo
+            # agent's, and reading them out of the YAML instead would key them
+            # on names the loader normalizes.
+            "declared_role_tools",
         }
     ),
     "opencollab.tools": frozenset(
