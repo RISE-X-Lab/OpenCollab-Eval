@@ -24,7 +24,9 @@ from __future__ import annotations
 
 import ast
 import inspect
-from collections.abc import Mapping
+import os
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -140,6 +142,32 @@ def _image_expression(module: Any, source: str | None = None) -> str:
     return "no image assignment found"
 
 
+@contextmanager
+def _environment(values: Mapping[str, str]) -> Iterator[None]:
+    """Run a block with ``os.environ`` replaced by ``values``."""
+    original = dict(os.environ)
+    os.environ.clear()
+    os.environ.update(values)
+    try:
+        yield
+    finally:
+        os.environ.clear()
+        os.environ.update(original)
+
+
+def _sampling_temperature() -> float:
+    """The temperature a run is actually started with.
+
+    Resolved under the environment the batch driver hands a generator process,
+    not under this process's own. The driver pins ``OPENCOLLAB_TEMPERATURE``
+    there, so reading it here would report whatever the machine the audit runs
+    on happens to export -- which is not what any run would see, and would make
+    this factor pass or fail for reasons outside the experiment.
+    """
+    with _environment(_batch.generator_environment(Path("logs"))):
+        return float(resolve_runtime_config(str(Path.cwd()))["temperature"])
+
+
 def _carries_repository_listing(system_prompt: str | None) -> bool:
     """Is a repository listing pasted into this arm's system prefix?
 
@@ -233,7 +261,7 @@ def observe(team_config: str | None = None) -> dict[str, dict[str, Any]]:
             if arm != "single"
         },
     }
-    temperature = float(resolve_runtime_config(str(Path.cwd()))["temperature"])
+    temperature = _sampling_temperature()
 
     # ``sessions_per_run`` is the number of independent sessions one run opens,
     # because ``--max-steps`` is a ceiling on each of them and not on the run.

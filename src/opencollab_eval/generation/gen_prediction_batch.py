@@ -91,6 +91,36 @@ WORKFLOW_ARMS: dict[str, str] = {
 
 MANIFEST_NAME = "manifest.jsonl"
 
+#: The sampling temperature every arm's generator process is started with.
+#:
+#: Pinned here rather than by changing OpenCollab's ``DEFAULT_TEMPERATURE``,
+#: which is a framework-wide default every other user of that library gets.
+#:
+#: 1.0 because of what the Best-of-N arm is: N independent samples of one
+#: seat, from which a fixed selector keeps one. At a temperature low enough to
+#: make the model near-deterministic those N candidates are one candidate drawn
+#: N times, and the arm would be measuring nothing but its own selector. The
+#: other arms are given the same value because a sampling difference between
+#: arms would sit exactly on the axis they are supposed to be equal on.
+ARM_SAMPLING_TEMPERATURE = "1.0"
+
+
+def generator_environment(log_dir: Path) -> dict[str, str]:
+    """The environment one ``(instance, arm)`` generator process is started with.
+
+    A function rather than a literal at the call site because it is also the
+    honest answer to "what temperature does a run use?": the value reaches the
+    generator through the environment, so a check that reads this process's own
+    ``OPENCOLLAB_TEMPERATURE`` is reading the wrong machine's setting. The
+    cross-arm alignment audit resolves the configuration under exactly this
+    mapping.
+    """
+    return {
+        **os.environ,
+        "OPENCOLLAB_EVAL_WORKFLOW_LOG_DIR": str(log_dir),
+        "OPENCOLLAB_TEMPERATURE": ARM_SAMPLING_TEMPERATURE,
+    }
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -298,7 +328,7 @@ def _run_one(
             command,
             stdout=sink,
             stderr=subprocess.STDOUT,
-            env={**os.environ, "OPENCOLLAB_EVAL_WORKFLOW_LOG_DIR": str(log_dir)},
+            env=generator_environment(log_dir),
             check=False,
         )
     return completed.returncode, round(time.monotonic() - started, 1)

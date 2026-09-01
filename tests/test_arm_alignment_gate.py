@@ -439,8 +439,22 @@ def _break_repository_listing(monkeypatch, tmp_path) -> tuple[str, dict[str, Any
 
 
 def _break_temperature(monkeypatch, tmp_path) -> tuple[str, dict[str, Any]]:
-    monkeypatch.setenv("OPENCOLLAB_TEMPERATURE", "0.9")
+    # The driver pins the temperature in the environment it starts each
+    # generator with, so the value to perturb is that one and not this
+    # process's own OPENCOLLAB_TEMPERATURE -- which a run never sees.
+    monkeypatch.setattr(gen_prediction_batch, "ARM_SAMPLING_TEMPERATURE", "0.9")
     return "sampling_temperature", {}
+
+
+def test_an_ambient_temperature_does_not_reach_a_run(monkeypatch) -> None:
+    # The other half of the control above, and the reason the driver pins it:
+    # whatever the machine running a batch exports is overridden, so the audit
+    # must not read it either.
+    monkeypatch.setenv("OPENCOLLAB_TEMPERATURE", "0.9")
+
+    assert arm_audit._sampling_temperature() == float(
+        gen_prediction_batch.ARM_SAMPLING_TEMPERATURE
+    )
 
 
 _CONTROLS = (

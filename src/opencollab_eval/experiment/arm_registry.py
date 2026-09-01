@@ -433,16 +433,23 @@ _FACTORS: tuple[Factor, ...] = (
     Factor(
         name="sampling_temperature",
         verdict=EQUAL,
-        values=_every_arm(0.2),
+        values=_every_arm(1.0),
         reason=(
-            "Both generators resolve their sampling settings through the same "
-            "``resolve_runtime_config`` view of OpenCollab's configuration, so "
-            "there is one authoritative default and one place an override can "
-            "come from. A per-arm temperature would put a sampling difference on "
-            "the axis the arms are supposed to be equal on."
+            "Every generator resolves its sampling settings through the same "
+            "``resolve_runtime_config`` view of OpenCollab's configuration, and "
+            "the batch driver pins the value in the environment it starts each "
+            "generator with, so there is one place it comes from. It is 1.0 "
+            "because of what the Best-of-N arm is: N independent samples of one "
+            "seat. At a temperature low enough to make the model "
+            "near-deterministic those N candidates are one candidate drawn N "
+            "times and that arm measures nothing. Pinned in the driver rather "
+            "than by changing OpenCollab's own default, which every other user "
+            "of that library would get."
         ),
         evidence=(
             "OpenCollab/opencollab/bootstrap/config.py:55",
+            "OpenCollab-Eval/src/opencollab_eval/generation/"
+            "gen_prediction_batch.py:105",
             "OpenCollab-Eval/src/opencollab_eval/runtime_config.py:12",
         ),
     ),
