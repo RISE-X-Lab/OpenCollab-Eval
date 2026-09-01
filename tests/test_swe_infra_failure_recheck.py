@@ -131,7 +131,12 @@ def test_recompute_treats_missing_instance_report_as_unresolved_evidence() -> No
 
 def test_load_instance_reports_for_arm_reads_real_harness_layout(tmp_path: Path) -> None:
     logs_root = tmp_path / "logs" / "run_evaluation"
-    instance_dir = logs_root / "tri15-self-collaboration" / "opencollab-self-collaboration-deepseek-v4-flash" / "marshmallow-code__marshmallow-1702"
+    instance_dir = (
+        logs_root
+        / "tri15-self-collaboration"
+        / "opencollab-self-collaboration-deepseek-v4-flash"
+        / "marshmallow-code__marshmallow-1702"
+    )
     instance_dir.mkdir(parents=True)
     (instance_dir / "report.json").write_text(
         json.dumps({"marshmallow-code__marshmallow-1702": _REAL_F2P_FAILURE_INSTANCE}),
