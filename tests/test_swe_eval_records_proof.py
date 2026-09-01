@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from pathlib import Path
 
+import pytest
 from generation_proof_test_support import (
     candidate_eval_proof_fields,
     candidate_source_projection_fields,
@@ -34,6 +36,105 @@ def _add_candidate_projection(payload: dict) -> None:
         candidate_projection=projection,
         source_candidate_projection=candidate_source_projection_fields(expectation),
     )
+
+
+def _valid_direct_eval_pass_payload() -> dict:
+    evidence = {
+        "status": 0,
+        "command_matches_plan": True,
+        "log_artifact_safe": True,
+        "target_proof_matches_plan": True,
+        "target_failure_proof_matches_plan": False,
+        "artifact_safe": True,
+    }
+    payload = {
+        "schema": "opencollab.prolite_direct_eval.v2",
+        "status": "done",
+        "resolved": True,
+        "eval_spec_sha256": "e" * 64,
+        "eval_patch_sha256": "a" * 64,
+        "technical_reasons": [],
+        "output_artifact_errors": [],
+        "docker_exit": 0,
+        "cleanup_quiesced": True,
+        "container_cleanup": {"ok": True},
+        "tests_status": {
+            "base_commit_status": 0,
+            "service_bootstrap_status": 0,
+            "before_repo_status": 0,
+            "post_before_base_status": 0,
+            "model_patch_status": 0,
+            "test_patch_status": 0,
+            "fail_to_pass_status": 0,
+            "pass_to_pass_status": 0,
+            "fail_to_pass_plan": prolite_test_plan(
+                {"repo_language": "go"}, ["pkg/widget_test.go::TestWidget"]
+            ),
+            "pass_to_pass_plan": prolite_test_plan({"repo_language": "go"}, []),
+            "fail_to_pass_evidence": [evidence],
+            "pass_to_pass_evidence": [],
+        },
+    }
+    _add_candidate_projection(payload)
+    return payload
+
+
+@pytest.mark.parametrize("alias", ["patch_sha256", "patch_sha", "model_patch_sha256"])
+def test_direct_eval_accepts_mixed_case_sha256_aliases(alias: str) -> None:
+    """Equivalent SHA-256 spellings must not hide a valid direct result."""
+    payload = _valid_direct_eval_pass_payload()
+    source_sha = payload["candidate_expectation"]["source_patch_sha256"]
+    payload[alias] = source_sha.upper()
+    payload["eval_patch_sha256"] = payload["eval_patch_sha256"].upper()
+
+    assert direct_eval_done_has_execution_proof(payload) is True
+
+
+def test_direct_eval_rejects_invalid_or_different_sha256_aliases() -> None:
+    payload = _valid_direct_eval_pass_payload()
+    source_sha = payload["candidate_expectation"]["source_patch_sha256"]
+    payload["patch_sha"] = source_sha.upper()
+    payload["patch_sha256"] = source_sha
+    payload["eval_patch_sha256"] = payload["eval_patch_sha256"].upper()
+    assert direct_eval_done_has_execution_proof(payload) is True
+
+    different = deepcopy(payload)
+    different["patch_sha"] = "b" * 64
+    assert direct_eval_done_has_execution_proof(different) is False
+
+    invalid = deepcopy(payload)
+    invalid["eval_patch_sha256"] = "a" * 63
+    assert direct_eval_done_has_execution_proof(invalid) is False
+
+    assert (
+        direct_eval_done_has_execution_proof(
+            payload,
+            expected_eval_spec_sha256=("e" * 63),
+        )
+        is False
+    )
+
+
+def test_direct_eval_accepts_mixed_case_nested_sha256_identity() -> None:
+    """Nested candidate proof digests use the same case-insensitive contract."""
+    from opencollab_eval.engine.eval_candidate_projection import source_projection_sha256
+
+    payload = _valid_direct_eval_pass_payload()
+    for container in (
+        payload["candidate_expectation"],
+        payload["candidate_projection"],
+        payload["source_candidate_projection"],
+    ):
+        for field in ("run_identity_sha256", "source_patch_sha256", "eval_patch_sha256"):
+            container[field] = container[field].upper()
+    source_projection = payload["source_candidate_projection"]
+    payload["candidate_projection"]["source_projection_sha256"] = (
+        source_projection_sha256(source_projection).upper()
+    )
+    payload["eval_patch_sha256"] = payload["eval_patch_sha256"].upper()
+    payload["patch_sha256"] = payload["candidate_expectation"]["source_patch_sha256"]
+
+    assert direct_eval_done_has_execution_proof(payload) is True
 
 
 def test_direct_eval_unresolved_accepts_structured_failure_proof() -> None:

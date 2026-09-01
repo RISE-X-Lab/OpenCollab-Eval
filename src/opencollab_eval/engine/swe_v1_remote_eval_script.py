@@ -6,7 +6,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from opencollab_eval.engine import eval_candidate_projection, eval_runtime_dependencies
+from opencollab_eval.engine import (
+    eval_candidate_projection,
+    eval_runtime_dependencies,
+    swe_eval_record_identity,
+)
 from opencollab_eval.engine import workspace_integrity as workspace_integrity_policy
 from opencollab_eval.generation import (
     gen_prediction_snapshot_container,
@@ -281,6 +285,7 @@ def eval_workspace_helper_sources() -> dict[str, bytes]:
         "public_preparation_runner.py": Path(public_preparation_runner.__file__).read_bytes(),
         "eval_runtime_dependencies.py": Path(eval_runtime_dependencies.__file__).read_bytes(),
         "eval_candidate_projection.py": Path(eval_candidate_projection.__file__).read_bytes(),
+        "swe_eval_record_identity.py": Path(swe_eval_record_identity.__file__).read_bytes(),
     }
 
 

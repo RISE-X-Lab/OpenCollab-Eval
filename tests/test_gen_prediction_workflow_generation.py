@@ -666,6 +666,26 @@ def test_workflow_status_does_not_relabel_provider_failure_as_timeout_patch():
     assert status == "error"
 
 
+@pytest.mark.parametrize(
+    "reason",
+    ["budget_exceeded", "context_overflow", "step_limit_exceeded", "budget exceeded: 123 tokens used"],
+)
+def test_workflow_status_maps_controlled_stop_patch_to_timeout_contract(reason):
+    patch = "diff --git a/pkg/a.py b/pkg/a.py\n+fixed\n"
+    result = EvalResult(
+        task_id="task-1",
+        patch=patch,
+        patch_produced=True,
+        tokens_used=1,
+        steps=1,
+        duration=1.0,
+        runtime_reason=reason,
+        workflow_result={"status": reason},
+    )
+
+    assert gpw._workflow_status_for_result(result, patch) == "done_with_timeout_patch"
+
+
 def test_workflow_status_preserves_structured_advisory_gap():
     result = EvalResult(
         task_id="task-1",

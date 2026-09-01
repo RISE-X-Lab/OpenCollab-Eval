@@ -20,9 +20,11 @@ from opencollab_eval.engine.eval_candidate_projection import (
     candidate_rejection_is_conclusive,
 )
 from opencollab_eval.engine.swe_eval_record_identity import (
+    canonical_sha256,
     direct_payload_alias_value,
     direct_payload_patch_sha,  # noqa: F401
     direct_payload_task_id,  # noqa: F401
+    sha256_equal,
     strict_integer,  # noqa: F401
 )
 from opencollab_eval.engine.swe_test_evidence import target_evidence_passed
@@ -369,9 +371,7 @@ def patch_sha_matches(left: str | None, right: str | None) -> bool:
     return (
         _SHA256_RE.fullmatch(left_value) is not None
         and _SHA256_RE.fullmatch(right_value) is not None
-        # Hexadecimal digests are case-insensitive.  Keep the strict
-        # 64-character validation above while accepting legacy reports that
-        # serialized an otherwise identical digest with upper-case letters.
+        # Hexadecimal digests are case-insensitive; accept legacy upper-case values.
         and left_value.lower() == right_value.lower()
     )
 
@@ -479,30 +479,33 @@ def _runtime_file_dependency_proof(
         or runtime.get("solver_visible") is not False
         or not isinstance(runtime_entries, list)
         or len(runtime_entries) > 16
-        or runtime.get("spec_sha256")
-        != hashlib.sha256(
-            json.dumps(specs, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()
+        or not sha256_equal(
+            runtime.get("spec_sha256"),
+            hashlib.sha256(
+                json.dumps(specs, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            ).hexdigest(),
+        )
     ):
         return False
     identity_hashes = {
-        item.get("root"): item.get("content_sha256")
+        item.get("root"): canonical_sha256(item.get("content_sha256"))
         for item in identity_entries
         if isinstance(item, dict)
         and set(item) == {"root", "content_sha256"}
         and item.get("root") in file_roots
-        and _SHA256_RE.fullmatch(str(item.get("content_sha256") or ""))
+        and canonical_sha256(item.get("content_sha256")) is not None
     }
     if len(identity_hashes) != len(identity_entries):
         return False
     runtime_files = {
-        item.get("root"): item.get("content_sha256")
+        item.get("root"): canonical_sha256(item.get("content_sha256"))
         for item in runtime_entries
         if isinstance(item, dict)
         and item.get("kind") == "file"
         and item.get("candidate_protected") is False
         and item.get("root") in file_roots
         and item.get("required_paths") == [item.get("root")]
+        and canonical_sha256(item.get("content_sha256")) is not None
     }
     return len(runtime_files) == len(
         [item for item in runtime_entries if isinstance(item, dict) and item.get("kind") == "file"]
@@ -518,8 +521,9 @@ def direct_eval_done_has_execution_proof(
     require_eval_image_id: bool = False,
 ) -> bool:
     """Validate the common direct-evaluation execution proof."""
-    eval_spec_sha256 = str(payload.get("eval_spec_sha256") or "")
-    eval_patch_sha256 = str(payload.get("eval_patch_sha256") or "")
+    eval_spec_sha256 = canonical_sha256(payload.get("eval_spec_sha256")) or ""
+    eval_patch_sha256 = canonical_sha256(payload.get("eval_patch_sha256")) or ""
+    expected_eval_spec = canonical_sha256(expected_eval_spec_sha256)
     if (
         payload.get("schema") != "opencollab.prolite_direct_eval.v2"
         or payload.get("status") != "done"
@@ -533,7 +537,10 @@ def direct_eval_done_has_execution_proof(
         or _SHA256_RE.fullmatch(eval_spec_sha256) is None
         or _SHA256_RE.fullmatch(eval_patch_sha256) is None
         or expected_eval_spec_sha256
-        and eval_spec_sha256 != expected_eval_spec_sha256
+        and (
+            expected_eval_spec is None
+            or not sha256_equal(eval_spec_sha256, expected_eval_spec)
+        )
     ):
         return False
     if require_eval_image_id and re.fullmatch(
@@ -573,9 +580,11 @@ def direct_eval_done_has_execution_proof(
     # different candidate after the evaluator has finished.  Keep omission
     # compatible with older producer fixtures, while rejecting every explicit
     # alias that disagrees with the immutable expectation.
-    expected_source_sha = str(expectation.get("source_patch_sha256") or "")
-    expected_eval_sha = str(expectation.get("eval_patch_sha256") or "")
-    if public_patch_sha and public_patch_sha != expected_source_sha:
+    expected_source_sha = canonical_sha256(expectation.get("source_patch_sha256")) or ""
+    expected_eval_sha = canonical_sha256(expectation.get("eval_patch_sha256")) or ""
+    if public_patch_sha and canonical_sha256(public_patch_sha) is None:
+        return False
+    if public_patch_sha and not sha256_equal(public_patch_sha, expected_source_sha):
         return False
     # ``candidate_projection`` and its source projection repeat the source
     # patch identity.  Keep the public alias bound to those copies as well;
@@ -590,7 +599,9 @@ def direct_eval_done_has_execution_proof(
             public_patch_sha
             and isinstance(projection_value, dict)
             and projection_value.get("source_patch_sha256") not in (None, "")
-            and projection_value.get("source_patch_sha256") != public_patch_sha
+            and not sha256_equal(
+                projection_value.get("source_patch_sha256"), public_patch_sha
+            )
         ):
             return False
     for field, expected_sha in (
@@ -598,7 +609,7 @@ def direct_eval_done_has_execution_proof(
         ("eval_patch_sha256", expected_eval_sha),
     ):
         if field in payload and payload.get(field) not in (None, ""):
-            if str(payload.get(field)) != expected_sha:
+            if not sha256_equal(payload.get(field), expected_sha):
                 return False
     base_snapshot = payload.get("base_snapshot_integrity")
     preparation = (
@@ -634,7 +645,7 @@ def direct_eval_done_has_execution_proof(
         )
         and projection_failure.get("instance_id") == task
         and projection_failure.get("record_id") == payload.get("record_id")
-        and projection_failure.get("eval_patch_sha256") == eval_patch_sha256
+        and sha256_equal(projection_failure.get("eval_patch_sha256"), eval_patch_sha256)
     )
     if candidate_rejected:
         required_zero = (
@@ -661,7 +672,7 @@ def direct_eval_done_has_execution_proof(
         not isinstance(projection, dict)
         or projection.get("instance_id") != task
         or projection.get("record_id") != payload.get("record_id")
-        or projection.get("eval_patch_sha256") != eval_patch_sha256
+        or not sha256_equal(projection.get("eval_patch_sha256"), eval_patch_sha256)
         or not candidate_projection_valid(
             projection,
             expectation,
@@ -778,10 +789,8 @@ def latest_paired_rows(
         embedded_metric = embedded_workflow_metric(prediction)
         if embedded_metric is not None:
             return PairedRows(prediction, embedded_metric, "embedded_metric")
-        # A patch body is itself an identity even when legacy producers did
-        # not persist an explicit ``patch_sha256`` field.  Once that identity
-        # is available, an unbound legacy metric is not safe to reuse: it may
-        # belong to an older candidate for the same task.
+        # A patch body is an identity even when legacy producers omitted ``patch_sha256``;
+        # an unbound legacy metric may belong to an older candidate for this task.
         return PairedRows(prediction, None, "missing_metric_for_patch_sha")
 
     legacy_metrics = [row for row in matched_metrics if not row_record_id(row) and not row_explicit_patch_sha(row)]

@@ -91,6 +91,16 @@ def _bundled_workflow_registry() -> dict[str, object]:
 
 
 _BUNDLED_WORKFLOWS = _bundled_workflow_registry()
+_CONTROLLED_STOP_REASON_NAMES = frozenset(
+    {"budget_exceeded", "context_overflow", "step_limit_exceeded", "timeout"}
+)
+_CONTROLLED_STOP_REASON_PREFIXES = (
+    "budget exceeded:",
+    "budget exhausted before model call:",
+    "team budget exceeded:",
+    "step limit reached:",
+    "context overflow:",
+)
 
 
 def validate_workflow_limits(
@@ -237,11 +247,22 @@ def _workflow_status_for_result(result, patch: str) -> str:
         return "error"
     if not patch.strip():
         return "empty_patch_after_done"
-    if getattr(result, "runtime_reason", None) == "timeout":
+    def is_controlled_stop(reason: object) -> bool:
+        if not isinstance(reason, str):
+            return False
+        normalized = reason.strip().lower()
+        return normalized in _CONTROLLED_STOP_REASON_NAMES or normalized.startswith(
+            _CONTROLLED_STOP_REASON_PREFIXES
+        )
+
+    if is_controlled_stop(getattr(result, "runtime_reason", None)):
         return "done_with_timeout_patch"
     workflow_result = getattr(result, "workflow_result", None)
     if isinstance(workflow_result, dict) and workflow_result.get("status"):
-        return str(workflow_result["status"])
+        status = str(workflow_result["status"])
+        if is_controlled_stop(status):
+            return "done_with_timeout_patch"
+        return status
     return "done" if patch.strip() else ""
 
 

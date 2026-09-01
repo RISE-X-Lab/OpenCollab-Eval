@@ -7,6 +7,21 @@ from typing import Any
 
 _DIRECT_TASK_ID_FIELDS = ("task", "instance_id", "task_id")
 _DIRECT_PATCH_SHA_FIELDS = ("patch_sha256", "patch_sha", "model_patch_sha256")
+_SHA256_RE = re.compile(r"[0-9a-fA-F]{64}\Z")
+
+
+def canonical_sha256(value: Any) -> str | None:
+    """Return a strict, lower-case SHA-256 digest or ``None``."""
+    if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
+        return None
+    return value.lower()
+
+
+def sha256_equal(left: Any, right: Any) -> bool:
+    """Compare two strict SHA-256 digests without treating hex case as identity."""
+    left_value = canonical_sha256(left)
+    right_value = canonical_sha256(right)
+    return left_value is not None and left_value == right_value
 
 
 def direct_payload_alias_value(
@@ -37,7 +52,22 @@ def direct_payload_task_id(payload: dict[str, Any] | None) -> str | None:
 
 def direct_payload_patch_sha(payload: dict[str, Any] | None) -> str | None:
     """Canonicalize public patch-SHA aliases in a direct-eval payload."""
-    return direct_payload_alias_value(payload, _DIRECT_PATCH_SHA_FIELDS)
+    if not isinstance(payload, dict):
+        return None
+    values: list[str] = []
+    for field in _DIRECT_PATCH_SHA_FIELDS:
+        value = payload.get(field)
+        if value in (None, ""):
+            continue
+        if not isinstance(value, str):
+            return None
+        # Valid SHA-256 aliases are equivalent regardless of hexadecimal case;
+        # preserve malformed text so the proof boundary can reject it.
+        values.append(canonical_sha256(value) or value)
+    if not values:
+        return ""
+    first = values[0]
+    return first if all(value == first for value in values[1:]) else None
 
 
 def strict_integer(value: Any, *, nonnegative: bool = False) -> int | None:
@@ -57,8 +87,10 @@ def strict_integer(value: Any, *, nonnegative: bool = False) -> int | None:
 
 
 __all__ = [
+    "canonical_sha256",
     "direct_payload_alias_value",
     "direct_payload_patch_sha",
     "direct_payload_task_id",
+    "sha256_equal",
     "strict_integer",
 ]

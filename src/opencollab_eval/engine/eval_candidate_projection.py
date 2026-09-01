@@ -14,6 +14,14 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 if __package__:
+    from opencollab_eval.engine.swe_eval_record_identity import (
+        canonical_sha256,
+        sha256_equal,
+    )
+else:
+    from swe_eval_record_identity import canonical_sha256, sha256_equal
+
+if __package__:
     from opencollab_eval.generation.gen_prediction_snapshot_support import anonymous_commit_oid
 else:
     from opencollab_snapshot_support import anonymous_commit_oid
@@ -23,11 +31,11 @@ SOURCE_PROJECTION_SCHEMA = "opencollab.eval_candidate_source_projection.v1"
 PROJECTION_SCHEMA = "opencollab.eval_candidate_projection.v2"
 PROJECTION_FAILURE_SCHEMA = "opencollab.eval_candidate_projection_failure.v1"
 _OID_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
-_SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
+_SHA256_IDENTITY_KEYS = frozenset({"run_identity_sha256", "source_patch_sha256", "eval_patch_sha256"})
 _IDENTITY_KEYS = (
     "instance_id", "record_id", "run_identity_sha256", "source_patch_sha256",
-    "eval_patch_sha256", "source_base_commit", "source_anonymous_base",
-    "source_base_tree", "source_candidate_tree", "expected_candidate_tree",
+    "eval_patch_sha256", "source_base_commit", "source_anonymous_base", "source_base_tree",
+    "source_candidate_tree", "expected_candidate_tree",
 )
 _EXPECTATION_KEYS = {"schema", *_IDENTITY_KEYS}
 _SOURCE_KEYS = {
@@ -53,6 +61,21 @@ _FAILURE_KEYS = {
     "source_candidate_tree", "expected_candidate_tree",
     "verified_base_commit", "verified_base_tree", "source_projection_sha256",
 }
+
+
+def _identity_value_equal(key: str, left: object, right: object) -> bool:
+    if key in _SHA256_IDENTITY_KEYS:
+        return sha256_equal(left, right)
+    return left == right
+
+
+def _identity_values_match(left: object, right: object) -> bool:
+    if not isinstance(left, dict) or not isinstance(right, dict):
+        return False
+    return all(
+        _identity_value_equal(key, left.get(key), right.get(key))
+        for key in _IDENTITY_KEYS
+    )
 
 
 class CandidateProjectionError(RuntimeError):
@@ -87,7 +110,7 @@ def candidate_projection_failure_valid(
         or report.get("status") != "failed"
         or report.get("error_kind") != "patch_not_applicable"
         or report.get("phase") not in {"source", "prepared"}
-        or any(report.get(key) != expectation.get(key) for key in _IDENTITY_KEYS)
+        or not _identity_values_match(report, expectation)
     ):
         return False
     verified_commit = str(report.get("verified_base_commit") or "")
@@ -116,8 +139,10 @@ def candidate_projection_failure_valid(
         )
     return bool(
         source_projection_valid(source_projection, expectation)
-        and report.get("source_projection_sha256")
-        == source_projection_sha256(source_projection)
+        and sha256_equal(
+            report.get("source_projection_sha256"),
+            source_projection_sha256(source_projection),
+        )
         and (not base_commit or verified_commit == base_commit)
         and (not base_tree or verified_tree == base_tree)
     )
@@ -161,9 +186,7 @@ def _expectation_valid(value: object) -> bool:
         and all(isinstance(value.get(key), str) for key in _IDENTITY_KEYS)
         and value.get("instance_id")
         and value.get("record_id")
-        and _SHA256_RE.fullmatch(str(value.get("run_identity_sha256") or ""))
-        and _SHA256_RE.fullmatch(str(value.get("source_patch_sha256") or ""))
-        and _SHA256_RE.fullmatch(str(value.get("eval_patch_sha256") or ""))
+        and all(canonical_sha256(value.get(key)) is not None for key in _SHA256_IDENTITY_KEYS)
         and all(not oid or _OID_RE.fullmatch(oid) for oid in optional_oids)
         and len({bool(value.get(key)) for key in (
             "source_base_commit", "source_anonymous_base", "source_base_tree"
@@ -190,7 +213,7 @@ def source_projection_valid(report: object, expectation: object) -> bool:
         set(report) == _SOURCE_KEYS
         and report.get("schema") == SOURCE_PROJECTION_SCHEMA
         and report.get("status") == "verified"
-        and all(report.get(key) == expectation.get(key) for key in _IDENTITY_KEYS)
+        and _identity_values_match(report, expectation)
         and all(_OID_RE.fullmatch(oid) for oid in (
             source_commit, source_anonymous, source_base, source_candidate
         ))
@@ -221,8 +244,8 @@ def candidate_projection_valid(
     """Validate a complete v1 or v2 projection without external base evidence."""
     if not isinstance(report, dict) or not _expectation_valid(expectation):
         return False
-    if report.get("status") != "verified" or any(
-        report.get(key) != expectation.get(key) for key in _IDENTITY_KEYS
+    if report.get("status") != "verified" or not _identity_values_match(
+        report, expectation
     ):
         return False
     expected_tree = str(expectation.get("expected_candidate_tree") or "")
@@ -260,16 +283,15 @@ def candidate_projection_valid(
     prepared_candidate = str(report.get("prepared_candidate_tree") or "")
     return bool(
         set(report) == _V2_KEYS
-        and report.get("source_projection_sha256") == source_projection_sha256(source_projection)
-        and all(
-            _OID_RE.fullmatch(str(report.get(key) or ""))
-            for key in (
-                "verified_source_base_commit", "verified_source_anonymous_base",
-                "verified_source_base_tree", "verified_source_candidate_tree",
-                "prepared_base_commit", "prepared_base_tree", "prepared_candidate_tree",
-                "worktree_candidate_tree",
-            )
+        and sha256_equal(
+            report.get("source_projection_sha256"),
+            source_projection_sha256(source_projection),
         )
+        and all(_OID_RE.fullmatch(str(report.get(key) or "")) for key in (
+            "verified_source_base_commit", "verified_source_anonymous_base",
+            "verified_source_base_tree", "verified_source_candidate_tree", "prepared_base_commit",
+            "prepared_base_tree", "prepared_candidate_tree", "worktree_candidate_tree",
+        ))
         and len(source_candidate) == len(source_base)
         and len(prepared_candidate) == len(prepared_base)
         and source_candidate != source_base
@@ -320,9 +342,11 @@ def prepared_candidate_projection_valid(
         or set(report) != _V2_KEYS
         or report.get("schema") != PROJECTION_SCHEMA
         or report.get("status") != "prepared"
-        or any(report.get(key) != expectation.get(key) for key in _IDENTITY_KEYS)
-        or report.get("source_projection_sha256")
-        != source_projection_sha256(source_projection)
+        or not _identity_values_match(report, expectation)
+        or not sha256_equal(
+            report.get("source_projection_sha256"),
+            source_projection_sha256(source_projection),
+        )
         or report.get("worktree_candidate_tree") != ""
         or report.get("official_worktree_matches") is not None
     ):
@@ -332,18 +356,11 @@ def prepared_candidate_projection_valid(
     prepared_base = str(report.get("prepared_base_tree") or "")
     prepared_candidate = str(report.get("prepared_candidate_tree") or "")
     return bool(
-        all(
-            _OID_RE.fullmatch(str(report.get(key) or ""))
-            for key in (
-                "verified_source_base_commit",
-                "verified_source_anonymous_base",
-                "verified_source_base_tree",
-                "verified_source_candidate_tree",
-                "prepared_base_commit",
-                "prepared_base_tree",
-                "prepared_candidate_tree",
-            )
-        )
+        all(_OID_RE.fullmatch(str(report.get(key) or "")) for key in (
+            "verified_source_base_commit", "verified_source_anonymous_base", "verified_source_base_tree",
+            "verified_source_candidate_tree", "prepared_base_commit", "prepared_base_tree",
+            "prepared_candidate_tree",
+        ))
         and len(source_candidate) == len(source_base)
         and len(prepared_candidate) == len(prepared_base)
         and source_candidate != source_base
@@ -505,7 +522,7 @@ def build_source_projection(
     """Verify the candidate against the dataset source tree before public setup."""
     expectation = _read_expectation(expectation_path)
     patch_sha256 = _patch_sha256(patch_path)
-    if patch_sha256 != expectation["eval_patch_sha256"]:
+    if not sha256_equal(patch_sha256, expectation["eval_patch_sha256"]):
         raise CandidateProjectionError("evaluation patch SHA-256 does not match its expectation")
     try:
         resolved_source_base, base_tree, candidate_tree = project_candidate(
@@ -568,7 +585,7 @@ def build_prepared_projection(
     """Project the verified patch onto the public-prepared official base."""
     expectation = _read_expectation(expectation_path)
     patch_sha256 = _patch_sha256(patch_path)
-    if patch_sha256 != expectation["eval_patch_sha256"]:
+    if not sha256_equal(patch_sha256, expectation["eval_patch_sha256"]):
         raise CandidateProjectionError("evaluation patch SHA-256 does not match its expectation")
     source = _read_source_projection(source_projection_path, expectation)
     try:
@@ -686,7 +703,9 @@ def verify_prepared_worktree(
         not isinstance(value, dict)
         or value.get("schema") != PROJECTION_SCHEMA
         or value.get("status") != "prepared"
-        or _patch_sha256(patch_path) != value.get("eval_patch_sha256")
+        or not sha256_equal(
+            _patch_sha256(patch_path), value.get("eval_patch_sha256")
+        )
         or _OID_RE.fullmatch(str(value.get("prepared_base_tree") or "")) is None
         or _OID_RE.fullmatch(str(value.get("prepared_candidate_tree") or "")) is None
     ):

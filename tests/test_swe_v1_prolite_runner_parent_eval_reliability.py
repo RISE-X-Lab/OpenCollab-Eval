@@ -170,6 +170,65 @@ def test_task_id_only_legacy_row_survives_layer_build_report(tmp_path):
     assert result["counts"]["resolved"] == 1
     assert result["counts"]["technical_failed_final"] == 0
 
+
+def test_parent_report_deduplicates_mirrors_with_different_task_aliases(tmp_path):
+    """Equivalent legacy and modern mirror rows count as one attempt."""
+    from opencollab_eval.commands import swe_eval_layer_report
+
+    task = "instance_owner__repo-82"
+    modern = _row(82, task, "/run/task-82.log", 10, "eval_done", True)
+    legacy = json.loads(json.dumps(modern))
+    # Legacy JSON may serialize the same lossless index as a numeric string.
+    modern["index"] = "82"
+    for container in (legacy, legacy["generation"], legacy["eval"], legacy["eval"]["summary"]):
+        container["task_id"] = container.pop("task")
+    # A legacy producer may add the equivalent source alias with different
+    # hexadecimal casing while the trusted extraction proof stays canonical.
+    modern["generation"]["source_patch_sha256"] = modern["generation"]["patch_sha256"]
+    legacy["generation"]["source_patch_sha256"] = (
+        legacy["generation"]["patch_sha256"].upper()
+    )
+    report = tmp_path / "task_82_eval_only_hybrid.json"
+    report.write_text(
+        json.dumps(
+            {
+                "rows": [legacy],
+                "results": [
+                    {
+                        "index": 82,
+                        "completed": True,
+                        "runner_status": "done",
+                        "rows": [modern],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    source_sha = modern["generation"]["patch_sha256"]
+    identity = (task, modern["generation"]["record_id"], source_sha, source_sha)
+
+    result = swe_eval_layer_report.build_report(
+        [report], expected_indices=[82], candidate_identities={82: identity}
+    )
+
+    assert result["counts"]["eval_success"] == 1
+    assert result["counts"]["attempts"] == 1
+    assert result["counts"]["technical_failed_final"] == 0
+
+
+def test_reconciliation_accepts_case_insensitive_hash_aliases():
+    """Equivalent SHA aliases differing only in hex case remain one candidate."""
+    from opencollab_eval.commands.swe_v1_prolite_report import _report_candidate_identity
+
+    task = "instance_owner__repo-82"
+    row = _row(82, task, "/run/task-82.log", 10, "eval_done", True)
+    source_sha = row["generation"]["patch_sha256"]
+    row["generation"]["source_patch_sha256"] = source_sha.upper()
+    identity = (task, row["generation"]["record_id"], source_sha, source_sha)
+
+    assert _report_candidate_identity(row) == identity
+
 def test_eval_only_reconciliation_accepts_recomputed_eval_hash_and_execution_history(
     tmp_path,
 ):

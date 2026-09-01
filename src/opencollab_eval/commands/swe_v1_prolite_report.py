@@ -12,11 +12,27 @@ from typing import Any
 
 from opencollab_eval.commands import _swe_eval_layer_integrity as _integrity
 from opencollab_eval.commands import _swe_report_io
+from opencollab_eval.engine.swe_eval_record_identity import canonical_sha256
 from opencollab_eval.safe_files import write_regular_bytes_atomic
 
 _QUARANTINE_SUFFIXES = (".invalid", ".command_failed")
 _QUARANTINE_MARKER_BYTES = 512
 _SHA256_LENGTH = 64
+_SHA256_ROW_FIELDS = frozenset(
+    {
+        "patch_sha",
+        "patch_sha256",
+        "model_patch_sha256",
+        "source_patch_sha256",
+        "eval_patch_sha256",
+        "run_identity_sha256",
+        "source_projection_sha256",
+        "trajectory_sha256",
+        "llm_base_url_sha256",
+        "eval_spec_sha256",
+        "content_sha256",
+    }
+)
 
 
 def _report_candidate_identity(
@@ -68,8 +84,14 @@ def _report_candidate_identity(
         generation.get("patch_sha256"),
         summary.get("patch_sha256"),
     )
-    source_sha = one_text(*source_values)
-    eval_sha = one_text(
+    def one_sha(*values: object) -> str | None:
+        present = [str(value).lower() for value in values if value not in (None, "")]
+        if not present or len(set(present)) != 1:
+            return None
+        return present[0]
+
+    source_sha = one_sha(*source_values)
+    eval_sha = one_sha(
         generation.get("eval_patch_sha256"),
         summary.get("eval_patch_sha256"),
     )
@@ -235,11 +257,65 @@ def remove_candidate_identities_file(path: Path | None) -> None:
         return
 
 
+def _canonical_task_alias_row_key(row: dict[str, Any]) -> str:
+    """Key equivalent rows that use different task compatibility aliases."""
+    normalized = json.loads(json.dumps(row))
+    # ``strict_index`` is the report contract's lossless compatibility parser:
+    # numeric JSON strings and integers identify the same task.  Normalize only
+    # valid values; retain malformed input so an integrity failure cannot be
+    # hidden by the mirror census.
+    if isinstance(normalized, dict):
+        index = _integrity.strict_index(normalized.get("index"))
+        if index is not None:
+            normalized["index"] = index
+
+    def normalize_sha(value: object) -> object:
+        return canonical_sha256(value) or value
+
+    def normalize_nested(value: object) -> None:
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                if key in _SHA256_ROW_FIELDS:
+                    value[key] = normalize_sha(nested)
+                else:
+                    normalize_nested(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                normalize_nested(nested)
+
+    normalize_nested(normalized)
+    containers = [normalized]
+    generation = normalized.get("generation")
+    evaluation = normalized.get("eval")
+    if isinstance(generation, dict):
+        containers.append(generation)
+    if isinstance(evaluation, dict):
+        containers.append(evaluation)
+        summary = evaluation.get("summary")
+        if isinstance(summary, dict):
+            containers.append(summary)
+    for container in containers:
+        aliases = {field for field in ("task", "instance_id", "task_id") if field in container}
+        if not aliases:
+            continue
+        task = _integrity._task_alias(container)
+        if not task:
+            # Conflicting aliases must remain distinct and fail integrity.
+            return json.dumps(row, sort_keys=True, separators=(",", ":"))
+        for field in aliases:
+            del container[field]
+        container["task"] = task
+    return json.dumps(normalized, sort_keys=True, separators=(",", ":"))
+
+
 def _report_rows_for_attempt_count(report: dict[str, Any]) -> list[dict[str, Any]]:
     """Return report rows without duplicating top-level compatibility mirrors."""
     top_rows = [row for row in report.get("rows") or [] if isinstance(row, dict)]
     top_row_keys = {
         json.dumps(row, sort_keys=True, separators=(",", ":")) for row in top_rows
+    }
+    top_row_mirror_keys = {
+        _canonical_task_alias_row_key(row) for row in top_rows
     }
     nested_rows = [
         row
@@ -253,6 +329,7 @@ def _report_rows_for_attempt_count(report: dict[str, Any]) -> list[dict[str, Any
         for row in nested_rows
         if json.dumps(row, sort_keys=True, separators=(",", ":"))
         not in top_row_keys
+        and _canonical_task_alias_row_key(row) not in top_row_mirror_keys
     ]
 
 
