@@ -28,25 +28,139 @@ def test_per_instance_decodes_wait_status_without_python39_helper(monkeypatch):
     assert process._decode_wait_status(signal.SIGTERM) == -signal.SIGTERM
 
 
-@pytest.mark.skipif(os.name != "posix", reason="recoverable helper uses POSIX fork")
-def test_per_instance_permanently_blocked_popen_helper_is_reaped(
+@pytest.mark.skipif(not hasattr(os, "killpg"), reason="identity claims use POSIX process groups")
+def test_residual_group_with_unavailable_identity_probe_is_retained(monkeypatch):
+    process = importlib.import_module("opencollab_eval.commands.swebench_eval_process")
+    monkeypatch.setattr(process, "_runner", lambda: process)
+    monkeypatch.setattr(process, "_process_group_exists", lambda _pgid: True)
+    monkeypatch.setattr(process, "process_start_identity", lambda _pgid: "")
+
+    assert process._claim_residual_group_is_live(
+        {
+            "evaluator_pgid": 424242,
+            "evaluator_start_identity": "proc:expected",
+        }
+    ) is True
+
+
+@pytest.mark.skipif(not hasattr(os, "killpg"), reason="identity claims use POSIX process groups")
+def test_residual_group_with_identity_mismatch_is_reclaimable(monkeypatch):
+    process = importlib.import_module("opencollab_eval.commands.swebench_eval_process")
+    monkeypatch.setattr(process, "_runner", lambda: process)
+    monkeypatch.setattr(process, "_process_group_exists", lambda _pgid: True)
+    monkeypatch.setattr(process, "process_start_identity", lambda _pgid: "proc:actual")
+
+    assert process._claim_residual_group_is_live(
+        {
+            "evaluator_pgid": 424242,
+            "evaluator_start_identity": "proc:expected",
+        }
+    ) is False
+
+
+@pytest.mark.skipif(not hasattr(os, "killpg"), reason="identity claims use POSIX process groups")
+def test_residual_group_absence_is_reclaimable(monkeypatch):
+    process = importlib.import_module("opencollab_eval.commands.swebench_eval_process")
+    monkeypatch.setattr(process, "_runner", lambda: process)
+    monkeypatch.setattr(process, "_process_group_exists", lambda _pgid: False)
+
+    assert process._claim_residual_group_is_live(
+        {
+            "evaluator_pgid": 424242,
+            "evaluator_start_identity": "proc:expected",
+        }
+    ) is False
+
+
+@pytest.mark.skipif(os.name != "posix", reason="owned evaluator uses POSIX process groups")
+def test_per_instance_owned_evaluator_uses_popen_without_python_fork(
     monkeypatch,
     tmp_path,
 ):
     runner = importlib.import_module("opencollab_eval.commands.run_swebench_eval_per_instance")
-    helper_pid = tmp_path / "helper.pid"
+    calls = []
 
-    def block_forever(*args, **kwargs):
-        del args, kwargs
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        helper_pid.write_text(str(os.getpid()), encoding="ascii")
-        while True:
-            time.sleep(1)
+    class FakeProcess:
+        pid = 424240
+        returncode = 0
 
-    monkeypatch.setattr(runner, "_EVALUATOR_POPEN", block_forever)
-    monkeypatch.setattr(runner, "PROCESS_KILL_REAP_TIMEOUT_SECONDS", 0.2)
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout=None):
+            del timeout
+            return self.returncode
+
+        def terminate(self):
+            self.returncode = -signal.SIGTERM
+
+        def kill(self):
+            self.returncode = -signal.SIGKILL
+
+    def fake_popen(command, **popen_kwargs):
+        calls.append((command, popen_kwargs))
+        return FakeProcess()
+
+    monkeypatch.setattr(runner, "_EVALUATOR_POPEN", fake_popen)
+    monkeypatch.setattr(
+        runner.os,
+        "fork",
+        lambda: pytest.fail("owned evaluator must not call Python os.fork"),
+    )
     log = tmp_path / "eval.log"
-    started = time.monotonic()
+    with log.open("a", encoding="utf-8") as handle:
+        process = runner._spawn_owned_evaluator(
+            [sys.executable, "-c", "pass"],
+            cwd=tmp_path,
+            env=os.environ.copy(),
+            log_fd=handle.fileno(),
+            wall_timeout=0.2,
+            spawn_timeout=1.0,
+        )
+
+    assert isinstance(process, runner.OwnedEvaluatorProcess)
+    assert len(calls) == 1
+    assert calls[0][1]["start_new_session"] is True
+    assert process.wait(timeout=0.2) == 0
+
+
+@pytest.mark.skipif(os.name != "posix", reason="owned evaluator uses POSIX process groups")
+def test_per_instance_owned_evaluator_preserves_spawn_timeout_bound(
+    monkeypatch,
+    tmp_path,
+):
+    runner = importlib.import_module("opencollab_eval.commands.run_swebench_eval_per_instance")
+    process_mod = importlib.import_module("opencollab_eval.commands.swebench_eval_process")
+
+    class FakeProcess:
+        pid = 424241
+        returncode = None
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout=None):
+            del timeout
+            self.returncode = -signal.SIGTERM
+            return self.returncode
+
+        def terminate(self):
+            self.returncode = -signal.SIGTERM
+
+        def kill(self):
+            self.returncode = -signal.SIGKILL
+
+    monkeypatch.setattr(runner, "_EVALUATOR_POPEN", lambda *args, **kwargs: FakeProcess())
+    clock = iter((1.0, 1.1, 1.1))
+    monkeypatch.setattr(runner.time, "monotonic", lambda: next(clock))
+    cleanup_calls = []
+
+    def fake_cleanup(process, *, term_timeout, kill_timeout):
+        cleanup_calls.append((process.pid, term_timeout, kill_timeout))
+        return True, []
+
+    monkeypatch.setattr(process_mod, "_terminate_process_group_owned", fake_cleanup)
+    log = tmp_path / "eval.log"
     with log.open("a", encoding="utf-8") as handle:
         with pytest.raises(runner.EvaluatorSpawnTimeout):
             runner._spawn_owned_evaluator(
@@ -58,41 +172,112 @@ def test_per_instance_permanently_blocked_popen_helper_is_reaped(
                 spawn_timeout=0.05,
             )
 
-    assert time.monotonic() - started < 1.0
-    pid = int(helper_pid.read_text(encoding="ascii"))
-    with pytest.raises(ProcessLookupError):
-        os.kill(pid, 0)
+    assert cleanup_calls == [(424241, 0.05, runner.PROCESS_KILL_REAP_TIMEOUT_SECONDS)]
 
 
-@pytest.mark.skipif(
-    os.name != "posix" or Path("/proc").is_dir(),
-    reason="non-Linux identity helper path",
-)
-def test_per_instance_identity_popen_block_is_bounded_and_reaped(
+@pytest.mark.skipif(os.name != "posix", reason="identity probe uses POSIX subprocess")
+def test_per_instance_identity_probe_popen_timeout_is_reaped(
     monkeypatch,
     tmp_path,
 ):
     runner = importlib.import_module("opencollab_eval.commands.run_swebench_eval_per_instance")
-    helper_pid = tmp_path / "identity-helper.pid"
+    calls = []
 
-    def block_forever(*args, **kwargs):
+    class FakeProbe:
+        returncode = None
+
+        def communicate(self, timeout=None):
+            calls.append(timeout)
+            raise subprocess.TimeoutExpired("ps", timeout)
+
+        def kill(self):
+            self.returncode = -signal.SIGKILL
+
+        def wait(self, timeout=None):
+            assert timeout is not None
+            self.returncode = -signal.SIGKILL
+            return self.returncode
+
+        def poll(self):
+            return self.returncode
+
+    probe = FakeProbe()
+
+    def fake_popen(*args, **kwargs):
         del args, kwargs
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        helper_pid.write_text(str(os.getpid()), encoding="ascii")
-        while True:
-            time.sleep(1)
+        return probe
 
-    monkeypatch.setattr(runner, "_PROCESS_IDENTITY_POPEN", block_forever)
+    original_is_dir = runner.Path.is_dir
+
+    def no_proc(path):
+        return False if str(path) == "/proc" else original_is_dir(path)
+
+    monkeypatch.setattr(runner.Path, "is_dir", no_proc)
+    monkeypatch.setattr(runner, "_PROCESS_IDENTITY_POPEN", fake_popen)
     monkeypatch.setattr(runner, "PROCESS_IDENTITY_TIMEOUT_SECONDS", 0.05)
     monkeypatch.setattr(runner, "PROCESS_KILL_REAP_TIMEOUT_SECONDS", 0.2)
-    started = time.monotonic()
+    monkeypatch.setattr(
+        runner.os,
+        "fork",
+        lambda: pytest.fail("identity probe must not call Python os.fork"),
+    )
 
     assert runner.process_start_identity(os.getpid()) == ""
+    assert calls == [0.05]
+    assert probe.returncode == -signal.SIGKILL
 
-    assert time.monotonic() - started < 1.0
-    pid = int(helper_pid.read_text(encoding="ascii"))
-    with pytest.raises(ProcessLookupError):
-        os.kill(pid, 0)
+
+@pytest.mark.skipif(os.name != "posix", reason="identity probe uses POSIX subprocess")
+def test_per_instance_identity_probe_preserves_legacy_ps_value(
+    monkeypatch,
+):
+    runner = importlib.import_module("opencollab_eval.commands.run_swebench_eval_per_instance")
+
+    class FakeProbe:
+        returncode = 0
+
+        def communicate(self, timeout=None):
+            assert timeout == runner.PROCESS_IDENTITY_TIMEOUT_SECONDS
+            return "Mon Jan  1 00:00:00 2024\n", ""
+
+        def poll(self):
+            return self.returncode
+
+    monkeypatch.setattr(runner.Path, "is_dir", lambda _path: False)
+    monkeypatch.setattr(runner, "_PROCESS_IDENTITY_POPEN", lambda *args, **kwargs: FakeProbe())
+
+    assert runner.process_start_identity(os.getpid()) == "Mon Jan  1 00:00:00 2024"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="identity probe uses POSIX subprocess")
+def test_per_instance_identity_probe_falls_back_when_proc_abi_missing(
+    monkeypatch,
+):
+    runner = importlib.import_module("opencollab_eval.commands.run_swebench_eval_per_instance")
+
+    class FakeProbe:
+        returncode = 0
+
+        def communicate(self, timeout=None):
+            return "Tue Jan  2 00:00:00 2024\n", ""
+
+        def poll(self):
+            return self.returncode
+
+    monkeypatch.setattr(runner.Path, "is_dir", lambda _path: True)
+    monkeypatch.setattr(runner, "_proc_process_start_identity", lambda _pid: "")
+    monkeypatch.setattr(runner, "_PROCESS_IDENTITY_POPEN", lambda *args, **kwargs: FakeProbe())
+
+    assert runner.process_start_identity(os.getpid()) == "Tue Jan  2 00:00:00 2024"
+
+
+def test_per_instance_identity_probe_rejects_malformed_pid_without_spawning(monkeypatch):
+    runner = importlib.import_module("opencollab_eval.commands.run_swebench_eval_per_instance")
+    calls = []
+    monkeypatch.setattr(runner, "_PROCESS_IDENTITY_POPEN", lambda *args, **kwargs: calls.append(args))
+
+    assert runner.process_start_identity("not-a-pid") == ""
+    assert calls == []
 
 
 @pytest.mark.skipif(os.name != "posix", reason="recoverable helper uses POSIX sessions")
@@ -138,7 +323,9 @@ def test_per_instance_helper_wait_uses_total_wall_deadline(tmp_path):
             env=os.environ.copy(),
             log_fd=handle.fileno(),
             wall_timeout=0.15,
-            spawn_timeout=0.1,
+            # Keep enough launch slack for a loaded CI/macOS host; the
+            # assertion below targets the total wall deadline, not spawn.
+            spawn_timeout=1.0,
         )
         with pytest.raises(subprocess.TimeoutExpired):
             process.wait(timeout=10)

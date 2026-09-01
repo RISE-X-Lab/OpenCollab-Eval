@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import shlex
 import subprocess
@@ -27,6 +28,11 @@ class RemoteRunnerUnavailable(RuntimeError):
         self.observed = observed
 
 
+def _probe_timeout_for_remaining(remaining: float) -> float:
+    """Keep each recovery probe bounded while honoring the caller deadline."""
+    return min(remaining, REMOTE_COMPLETION_PROBE_TIMEOUT_SECONDS)
+
+
 def probe_remote_execution_state(
     *,
     ssh_command: list[str],
@@ -35,6 +41,7 @@ def probe_remote_execution_state(
     remote_runtime_repo: str = "",
     remote_python: str = "python3",
     owner_nonce: str = "",
+    timeout: float | None = None,
 ) -> dict[str, Any] | None:
     probe = r'''import json,os,pathlib,re,stat,subprocess,sys
 base = pathlib.Path(sys.argv[1])
@@ -124,6 +131,17 @@ except (FileNotFoundError, OSError, UnicodeDecodeError, json.JSONDecodeError, Va
     summary = None
 print(json.dumps({"runner_state": runner_state, "runner_owner": owner, "summary": summary}, ensure_ascii=False))
 '''
+    probe_timeout = (
+        REMOTE_COMPLETION_PROBE_TIMEOUT_SECONDS if timeout is None else timeout
+    )
+    if isinstance(probe_timeout, bool):
+        raise ValueError("remote probe timeout must be finite and positive")
+    try:
+        probe_timeout = float(probe_timeout)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("remote probe timeout must be finite and positive") from exc
+    if not math.isfinite(probe_timeout) or probe_timeout <= 0:
+        raise ValueError("remote probe timeout must be finite and positive")
     remote_interpreter = shlex.quote(remote_python)
     command = [
         *ssh_command,
@@ -136,7 +154,7 @@ print(json.dumps({"runner_state": runner_state, "runner_owner": owner, "summary"
             command,
             text=True,
             capture_output=True,
-            timeout=REMOTE_COMPLETION_PROBE_TIMEOUT_SECONDS,
+            timeout=probe_timeout,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -194,12 +212,18 @@ def wait_for_remote_ownership_fact(
 ) -> dict[str, Any]:
     """Retain the caller's worker slot until remote ownership is observable."""
     while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(
+                "remote ownership remained unknown until the task deadline"
+            )
         observed = probe_remote_execution_state(
             ssh_command=ssh_command,
             host=host,
             base_run_dir=base_run_dir,
             remote_runtime_repo=remote_runtime_repo,
             remote_python=remote_python,
+            timeout=_probe_timeout_for_remaining(remaining),
         )
         if observed is not None:
             return observed
@@ -345,6 +369,9 @@ def wait_for_terminal_remote_summary(
 ) -> dict[str, Any] | None:
     """Keep task ownership while transport is unavailable and await one terminal fact."""
     while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
         observed = probe_remote_execution_state(
             ssh_command=ssh_command,
             host=host,
@@ -352,6 +379,7 @@ def wait_for_terminal_remote_summary(
             remote_runtime_repo=remote_runtime_repo,
             remote_python=remote_python,
             owner_nonce=owner_nonce,
+            timeout=_probe_timeout_for_remaining(remaining),
         )
         if observed is not None:
             state = observed.get("runner_state")
@@ -398,12 +426,18 @@ def recover_existing_remote_summary(
 ) -> dict[str, Any] | None:
     """Adopt a matching runner from a lost controller before any new launch."""
     while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(
+                "remote ownership remained unknown until the task deadline"
+            )
         observed = probe_remote_execution_state(
             ssh_command=ssh_command,
             host=host,
             base_run_dir=base_run_dir,
             remote_runtime_repo=remote_runtime_repo,
             remote_python=remote_python,
+            timeout=_probe_timeout_for_remaining(remaining),
         )
         if observed is not None:
             state = observed.get("runner_state")

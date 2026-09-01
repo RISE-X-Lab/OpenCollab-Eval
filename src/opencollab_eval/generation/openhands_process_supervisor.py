@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import math
 import os
 import re
 import signal
@@ -34,6 +35,21 @@ def _decode_wait_status(status: int) -> int:
     if os.WIFSIGNALED(status):
         return -os.WTERMSIG(status)
     raise SupervisorError("child returned an unsupported wait status")
+
+
+def _validate_timeout_seconds(timeout_seconds: float | None) -> float | None:
+    """Validate the programmatic timeout before forking any supervised work."""
+    if timeout_seconds is None:
+        return None
+    if isinstance(timeout_seconds, bool):
+        raise SupervisorError("timeout_seconds must be finite and positive")
+    try:
+        value = float(timeout_seconds)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise SupervisorError("timeout_seconds must be finite and positive") from exc
+    if not math.isfinite(value) or value <= 0:
+        raise SupervisorError("timeout_seconds must be finite and positive")
+    return value
 
 
 def enable_subreaper() -> None:
@@ -318,6 +334,7 @@ def prepare_guard_root(path: Path) -> None:
 def run(command: Sequence[str], *, timeout_seconds: float | None = None) -> int:
     if not command:
         raise SupervisorError("supervised command is empty")
+    timeout_seconds = _validate_timeout_seconds(timeout_seconds)
     enable_subreaper()
     interrupted = 0
 
@@ -396,8 +413,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ValueError:
             print("invalid --timeout-seconds value", file=sys.stderr)
             return TECHNICAL_FAILURE
-        if timeout_seconds <= 0:
-            print("--timeout-seconds must be positive", file=sys.stderr)
+        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+            print("--timeout-seconds must be finite and positive", file=sys.stderr)
             return TECHNICAL_FAILURE
         args = args[2:]
     if args[:1] == ["--"]:

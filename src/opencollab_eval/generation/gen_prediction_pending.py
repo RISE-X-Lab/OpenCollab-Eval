@@ -111,8 +111,6 @@ def persist_pending_output(
     owner = _read_owner(owner_path)
     if owner is None or owner.get("container_id") != cid or owner.get("state") != "active":
         raise RuntimeError("active container ownership is missing before output staging")
-    preserving_owner = {**owner, "state": "preservation_required"}
-    _replace_owner(owner_path, owner, preserving_owner)
     candidate = {
         "schema_version": PENDING_OUTPUT_SCHEMA_VERSION,
         "container_id": cid,
@@ -129,7 +127,15 @@ def persist_pending_output(
     payload = _encode_owner(candidate)
     if len(payload) > MAX_PENDING_OUTPUT_BYTES:
         raise ValueError("pending output exceeds its byte limit")
+
+    # Validate and durably create the candidate before changing the owner state.
+    # If validation, size checks, or the atomic create fail, leaving the owner
+    # ``active`` lets the normal teardown remove the container.  Marking
+    # ``preservation_required`` first used to strand a container forever when
+    # no pending record had actually been written.
     _atomic_create_bytes(path, payload)
+    preserving_owner = {**owner, "state": "preservation_required"}
+    _replace_owner(owner_path, owner, preserving_owner)
     _replace_owner(
         owner_path,
         preserving_owner,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from types import SimpleNamespace
 
@@ -190,7 +191,7 @@ def test_wait_for_terminal_summary_stops_only_at_the_task_deadline(monkeypatch):
 
 
 def test_prelaunch_probe_keeps_the_worker_slot_until_ownership_is_known(monkeypatch):
-    observations = iter([None, None, None, {"runner_state": "missing", "summary": None}])
+    observations = iter([None, None, {"runner_state": "missing", "summary": None}])
     clock = [0.0]
     monkeypatch.setattr(
         recovery,
@@ -214,7 +215,7 @@ def test_prelaunch_probe_keeps_the_worker_slot_until_ownership_is_known(monkeypa
     )
 
     assert observed == {"runner_state": "missing", "summary": None}
-    assert clock[0] == 300
+    assert clock[0] == 240
 
 
 def test_prelaunch_probe_handles_a_missing_remote_runtime_on_first_run(tmp_path):
@@ -240,6 +241,94 @@ def test_prelaunch_probe_handles_a_missing_remote_runtime_on_first_run(tmp_path)
         "runner_owner": None,
         "summary": None,
     }
+
+
+def test_probe_remote_execution_state_honors_caller_timeout(monkeypatch):
+    calls = []
+
+    def fake_run(*args, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                {"runner_state": "missing", "runner_owner": None, "summary": None}
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(recovery.subprocess, "run", fake_run)
+
+    observed = recovery.probe_remote_execution_state(
+        ssh_command=["ssh"],
+        host="example",
+        base_run_dir="/remote/run",
+        timeout=0.25,
+    )
+
+    assert observed is not None
+    assert calls[0]["timeout"] == pytest.approx(0.25)
+
+
+@pytest.mark.parametrize("timeout", [float("nan"), float("inf"), float("-inf"), 0.0])
+def test_probe_remote_execution_state_rejects_invalid_timeout(timeout):
+    with pytest.raises(ValueError, match="finite and positive"):
+        recovery.probe_remote_execution_state(
+            ssh_command=["ssh"],
+            host="example",
+            base_run_dir="/remote/run",
+            timeout=timeout,
+        )
+
+
+def test_prelaunch_probe_clamps_subprocess_timeout_to_remaining_deadline(monkeypatch):
+    calls = []
+    clock = [10.0]
+
+    def probe(**kwargs):
+        calls.append(kwargs["timeout"])
+        return None
+
+    monkeypatch.setattr(recovery, "probe_remote_execution_state", probe)
+    monkeypatch.setattr(recovery.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        recovery.time,
+        "sleep",
+        lambda seconds: clock.__setitem__(0, clock[0] + seconds),
+    )
+
+    with pytest.raises(TimeoutError):
+        recovery.wait_for_remote_ownership_fact(
+            ssh_command=["ssh"],
+            host="example",
+            base_run_dir="/remote/run",
+            remote_runtime_repo="/remote/runtime",
+            remote_python="python3",
+            deadline=12.0,
+        )
+
+    assert calls == [pytest.approx(2.0)]
+
+
+def test_prelaunch_probe_caps_timeout_for_large_remaining_budget(monkeypatch):
+    calls = []
+
+    def probe(**kwargs):
+        calls.append(kwargs["timeout"])
+        return {"runner_state": "missing", "summary": None}
+
+    monkeypatch.setattr(recovery, "probe_remote_execution_state", probe)
+
+    observed = recovery.wait_for_remote_ownership_fact(
+        ssh_command=["ssh"],
+        host="example",
+        base_run_dir="/remote/run",
+        remote_runtime_repo="/remote/runtime",
+        remote_python="python3",
+        deadline=10**9,
+    )
+
+    assert observed == {"runner_state": "missing", "summary": None}
+    assert calls == [pytest.approx(recovery.REMOTE_COMPLETION_PROBE_TIMEOUT_SECONDS)]
 
 
 def test_run_remote_recovers_after_primary_ssh_transport_loss(monkeypatch):
@@ -280,7 +369,13 @@ def test_run_remote_keeps_primary_transport_during_side_probe_outage(monkeypatch
         returncode = 0
 
     monkeypatch.setattr(runner.subprocess, "Popen", lambda *args, **kwargs: ExitedProcess())
-    monkeypatch.setattr(runner, "probe_remote_execution_state", lambda **kwargs: None)
+    probe_timeouts = []
+
+    def probe(**kwargs):
+        probe_timeouts.append(kwargs["timeout"])
+        return None
+
+    monkeypatch.setattr(runner, "probe_remote_execution_state", probe)
 
     def unavailable_side_probes(*args, poll_callback, **kwargs):
         for _ in range(4):
@@ -293,6 +388,8 @@ def test_run_remote_keeps_primary_transport_during_side_probe_outage(monkeypatch
     summary = runner.run_remote(_eval_only_args())
 
     assert summary["status"] == "done"
+    assert probe_timeouts
+    assert all(0 < timeout <= 30 for timeout in probe_timeouts)
 
 
 def test_existing_live_runner_is_adopted_by_its_full_owner_identity(monkeypatch):
@@ -329,7 +426,7 @@ def test_existing_live_runner_is_adopted_by_its_full_owner_identity(monkeypatch)
         remote_runtime_repo="/remote/runtime",
         remote_python="python3",
         payload=payload,
-        deadline=300,
+        deadline=10**9,
     )
 
     assert summary == {"status": "done"}
@@ -371,7 +468,7 @@ def test_existing_live_runner_must_match_the_task_claim(monkeypatch):
             remote_runtime_repo="/remote/runtime",
             remote_python="python3",
             payload={"start_index": 51, "limit": 1, "invocation_id": "c" * 32},
-            deadline=300,
+            deadline=10**9,
         )
 
 
@@ -422,7 +519,7 @@ def test_existing_live_runner_rejects_execution_semantic_claim_mismatch(
             remote_runtime_repo="/remote/runtime",
             remote_python="python3",
             payload=changed,
-            deadline=300,
+            deadline=10**9,
         )
 
 
@@ -482,7 +579,7 @@ def test_existing_runner_rejects_a_terminal_summary_from_another_invocation(
             remote_runtime_repo="/remote/runtime",
             remote_python="python3",
             payload=payload,
-            deadline=300,
+            deadline=10**9,
         )
 
 

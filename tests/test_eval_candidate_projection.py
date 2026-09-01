@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,7 @@ from opencollab_eval.engine.eval_candidate_projection import (
     verify_prepared_worktree,
 )
 from opencollab_eval.engine.swe_v1_remote_artifacts import _read_candidate_projection
+from opencollab_eval.engine.swe_v1_remote_eval_script import eval_workspace_helper_sources
 from opencollab_eval.generation.gen_prediction_snapshot_support import anonymous_commit_oid
 
 
@@ -78,6 +80,30 @@ def _write_inputs(tmp_path: Path, patch: str, expectation: dict[str, str]) -> tu
     patch_path.write_text(patch)
     expectation_path.write_text(json.dumps(expectation))
     return patch_path, expectation_path
+
+
+def test_projection_standalone_bundle_has_identity_helper(tmp_path: Path) -> None:
+    """The copied container helper must run without the host package installed."""
+    sources = eval_workspace_helper_sources()
+    for name in ("eval_candidate_projection.py", "swe_eval_record_identity.py", "opencollab_snapshot_support.py"):
+        (tmp_path / name).write_bytes(sources[name])
+    runner = (
+        "import os,sys;"
+        "os.execv(sys.executable,[sys.executable,'-S','eval_candidate_projection.py','--help'])"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", runner],
+        cwd=tmp_path,
+        env={
+            "PATH": os.environ.get("PATH", ""),
+            "PYTHONNOUSERSITE": "1",
+            "PYTHONPATH": "",
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_projection_binds_patch_to_fresh_base_tree(tmp_path: Path) -> None:

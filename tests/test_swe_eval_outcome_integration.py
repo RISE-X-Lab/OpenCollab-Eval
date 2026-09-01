@@ -52,6 +52,7 @@ def _summary_from_verdict(
         "eval_spec_sha256": "e" * 64,
         "eval_patch_sha256": "c" * 64,
         "patch_sha256": "a" * 64,
+        "eval_image_id": "sha256:" + "9" * 64,
         "candidate_expectation": candidate_expectation or _DEFAULT_CANDIDATE_EXPECTATION,
         "candidate_projection_failure": artifacts["candidate_projection_failure"],
         "candidate_projection": artifacts["candidate_projection"],

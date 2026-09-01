@@ -91,6 +91,17 @@ def _bundled_workflow_registry() -> dict[str, object]:
 
 
 _BUNDLED_WORKFLOWS = _bundled_workflow_registry()
+_CONTROLLED_STOP_REASON_NAMES = frozenset(
+    {"budget_exceeded", "context_overflow", "step_limit_exceeded", "timeout"}
+)
+_CONTROLLED_STOP_REASON_PREFIXES = (
+    "budget exceeded:",
+    "budget exceeded after model call:",
+    "budget exhausted before model call:",
+    "team budget exceeded:",
+    "step limit reached:",
+    "context overflow:",
+)
 
 
 def validate_workflow_limits(
@@ -237,11 +248,22 @@ def _workflow_status_for_result(result, patch: str) -> str:
         return "error"
     if not patch.strip():
         return "empty_patch_after_done"
-    if getattr(result, "runtime_reason", None) == "timeout":
+    def is_controlled_stop(reason: object) -> bool:
+        if not isinstance(reason, str):
+            return False
+        normalized = reason.strip().lower()
+        return normalized in _CONTROLLED_STOP_REASON_NAMES or normalized.startswith(
+            _CONTROLLED_STOP_REASON_PREFIXES
+        )
+
+    if is_controlled_stop(getattr(result, "runtime_reason", None)):
         return "done_with_timeout_patch"
     workflow_result = getattr(result, "workflow_result", None)
     if isinstance(workflow_result, dict) and workflow_result.get("status"):
-        return str(workflow_result["status"])
+        status = str(workflow_result["status"])
+        if is_controlled_stop(status):
+            return "done_with_timeout_patch"
+        return status
     return "done" if patch.strip() else ""
 
 
@@ -263,6 +285,13 @@ def build_output_records(
         "patch_sha256": patch_sha256,
         "model_name_or_path": model_name,
     }
+    # EvalTask uses an anonymous solver id; persisted rows use the benchmark
+    # instance id.  Bind the generic task alias to the public identity while
+    # retaining the solver id for diagnostics.
+    solver_task_id = metric_record.get("task_id")
+    if solver_task_id not in (None, "", instance_id):
+        metric_record["solver_task_id"] = solver_task_id
+    metric_record["task_id"] = instance_id
     metric_record["runner_returncode"] = gp.runner_returncode_for_metrics(
         metric_record
     )
@@ -462,6 +491,7 @@ async def generate(
                         "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT",
                         "OPENCOLLAB_LLM_USER_AGENT",
                         "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT",
+                        "OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS",
                     )
                     if key in os.environ
                 },
@@ -528,42 +558,19 @@ async def generate(
         )
         raise
     finally:
-        if trusted_baseline is not None:
-            trusted_baseline.cleanup()
-        preserve_container = (
-            pending_required
-            and pending_path is None
-            and gp.output_staging_requires_container_preservation(
-                run_dir,
-                cid=cid,
-                name=name,
-            )
+        cleanup_failures = gp._cleanup_generation_attempt(
+            trusted_baseline=trusted_baseline,
+            run_dir=run_dir,
+            cid=cid,
+            name=name,
+            args=args,
+            metrics=metrics,
+            patch=patch,
+            pending_required=pending_required,
+            pending_path=pending_path,
+            generation_error=generation_error,
         )
-        if preserve_container:
-            metrics["container_preservation_required"] = True
-        else:
-            completed = generation_error is None and gp.metrics_have_completed_identity(
-                metrics,
-                patch,
-            )
-            try:
-                gp.finalize_container_ownership(
-                    run_dir=run_dir,
-                    cid=cid,
-                    name=name,
-                    keep_container=args.keep_container if generation_error is None else False,
-                    completed=completed,
-                    metrics=metrics,
-                )
-            except BaseException as cleanup_error:
-                if generation_error is None:
-                    raise
-                add_note = getattr(generation_error, "add_note", None)
-                if callable(add_note):
-                    add_note(
-                        "container cleanup failed after generation error: "
-                        f"{type(cleanup_error).__name__}: {cleanup_error}"
-                    )
+        gp._raise_or_note_cleanup_failures(cleanup_failures, generation_error)
 
     if getattr(args, "_persist_output_after_cleanup", False):
         if (

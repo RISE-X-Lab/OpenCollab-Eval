@@ -31,9 +31,7 @@ from opencollab_eval.usage import model_context_window
 
 from ._launchd import bootstrap_launch_agent
 from ._launchd import launchctl as _launchctl
-from ._swe_eval_relay_health import (
-    local_relay_healthy as _local_relay_healthy,
-)
+from ._swe_eval_relay_health import local_relay_healthy as _local_relay_healthy
 from ._swe_eval_relay_health import relay_mode_flags as _relay_mode_flags
 from ._swe_eval_relay_health import remote_proxy_healthy as _remote_proxy_healthy
 from ._swe_eval_relay_health import (

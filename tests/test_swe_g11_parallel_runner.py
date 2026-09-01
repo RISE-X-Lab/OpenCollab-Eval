@@ -97,7 +97,7 @@ def _direct_eval_summary(task: str, patch_sha: str, record_id: str) -> dict:
         "patch_sha256": patch_sha,
         "eval_patch_sha256": patch_sha,
         "filtered_patch_paths": [],
-        "record_id": record_id,
+        "record_id": record_id, "eval_image_id": "sha256:" + "d" * 64,
         "eval_spec_sha256": "e" * 64,
         "technical_reasons": [],
         "output_artifact_errors": [],

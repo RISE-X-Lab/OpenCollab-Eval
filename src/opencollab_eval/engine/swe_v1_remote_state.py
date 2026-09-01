@@ -95,6 +95,22 @@ expected_source_patch_sha256 = ""
 expected_eval_patch_sha256 = ""
 dry_run = False
 
+
+def resolve_eval_timeout(value: Any = None) -> Any:
+    """Resolve an evaluation timeout from the active runner configuration.
+
+    Runtime modules historically imported state values with ``from ... import
+    *``.  Those copied globals remain at their import-time value when a caller
+    configures the state module later (notably the direct module/retry path).
+    Reading ``cfg`` here keeps omitted arguments compatible while ensuring all
+    callers observe the currently configured timeout.
+    """
+    if value is not None:
+        return value
+    if isinstance(cfg, dict) and "eval_timeout" in cfg:
+        return cfg["eval_timeout"]
+    return eval_timeout
+
 ACTIVE_CHILD_PGIDS: set[int] = set()
 ACTIVE_FIFO_PATHS: set[pathlib.Path] = set()
 RUNNER_LOCK_FD: int | None = None
@@ -278,6 +294,7 @@ def configure(config: dict[str, Any]) -> None:
         "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT",
         "OPENCOLLAB_LLM_USER_AGENT",
         "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT",
+        "OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS",
         "OPENCOLLAB_CLAUDE_EXPECTED_MODEL",
         "OPENCOLLAB_CLAUDE_EXPECTED_VERSION",
         "OPENCOLLAB_CLAUDE_RUNTIME_IMAGE",

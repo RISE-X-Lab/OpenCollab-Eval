@@ -253,6 +253,74 @@ def test_daemon_helper_exit_zero_still_requires_empty_docker_top(
     assert "def quiesce_container()" in captured["input"]
 
 
+def test_helper_cleanup_requires_inspect_proof_of_absence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[list[str], dict]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        if command[1] == "rm":
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        return SimpleNamespace(
+            returncode=1,
+            stdout="",
+            stderr="Error: No such object: oc-quiesce-random",
+        )
+
+    monkeypatch.setattr(guard, "container_control_timeout", lambda: 17.0)
+    monkeypatch.setattr(guard.subprocess, "run", fake_run)
+
+    guard._remove_helper_container("oc-quiesce-random")
+
+    assert [command[1] for command, _kwargs in calls] == ["rm", "inspect"]
+    assert all(kwargs["timeout"] == 17.0 for _command, kwargs in calls)
+    assert calls[1][0][0:5] == [
+        "docker",
+        "inspect",
+        "--type",
+        "container",
+        "--format",
+    ]
+
+
+def test_helper_cleanup_rejects_inspect_daemon_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(command, **kwargs):
+        del kwargs
+        if command[1] == "rm":
+            return SimpleNamespace(returncode=1, stdout="", stderr="daemon unavailable")
+        return SimpleNamespace(returncode=1, stdout="", stderr="Cannot connect to the Docker daemon")
+
+    monkeypatch.setattr(guard.subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="could not prove"):
+        guard._remove_helper_container("oc-quiesce-random")
+
+
+def test_helper_cleanup_inspects_after_rm_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+        if command[1] == "rm":
+            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        return SimpleNamespace(
+            returncode=1,
+            stdout="",
+            stderr="Error: No such container: oc-quiesce-random",
+        )
+
+    monkeypatch.setattr(guard.subprocess, "run", fake_run)
+
+    guard._remove_helper_container("oc-quiesce-random")
+
+    assert [command[1] for command in commands] == ["rm", "inspect"]
+
+
 def test_forged_container_helper_success_cannot_override_docker_top_evidence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

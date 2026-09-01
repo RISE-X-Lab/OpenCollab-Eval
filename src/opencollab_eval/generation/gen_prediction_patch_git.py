@@ -22,6 +22,23 @@ class GitlinkContentChanged(RuntimeError):
     """The visible source state of a materialized Gitlink changed."""
 
 
+_PROCESS_KILL_REAP_TIMEOUT_SECONDS = 5.0
+
+
+def _kill_and_reap(process, *, label: str) -> None:
+    """Kill a child and reap it without allowing cleanup to hang forever."""
+    try:
+        process.kill()
+    except ProcessLookupError:
+        # It may have exited in the poll/kill race; still reap the child so a
+        # short-lived generation attempt cannot leave a zombie behind.
+        pass
+    try:
+        process.wait(timeout=_PROCESS_KILL_REAP_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"{label} did not exit after SIGKILL") from exc
+
+
 def run_git(
     git: str,
     args: list[str],
@@ -72,25 +89,50 @@ def bounded_git_output(
             input_file.close()
         raise
     if process.stdout is None:
-        process.kill()
-        if input_file is not None:
-            input_file.close()
+        try:
+            _kill_and_reap(process, label="trusted host git")
+        finally:
+            if input_file is not None:
+                input_file.close()
         raise RuntimeError("trusted host git did not expose patch output")
-    timer = threading.Timer(timeout, process.kill)
+    timer_cleanup_errors: list[BaseException] = []
+
+    def kill_on_timeout() -> None:
+        try:
+            _kill_and_reap(process, label=f"trusted host {label} timeout cleanup")
+        except BaseException as exc:
+            # The caller owns the exception path; retain the bounded cleanup
+            # failure so it can be raised on the caller thread.
+            timer_cleanup_errors.append(exc)
+
+    timer = threading.Timer(timeout, kill_on_timeout)
     chunks: list[bytes] = []
     total = 0
+    cleanup_complete = False
     timer.start()
     try:
         while chunk := process.stdout.read(64 * 1024):
             total += len(chunk)
             if total > max_bytes:
-                process.kill()
+                _kill_and_reap(process, label=f"trusted host {label} cleanup")
+                cleanup_complete = True
                 raise RuntimeError(f"trusted host {label} exceeded its byte limit")
             chunks.append(chunk)
-        returncode = process.wait(timeout=5)
-    except BaseException:
-        process.kill()
-        process.wait()
+        if timer_cleanup_errors:
+            raise timer_cleanup_errors[0]
+        returncode = process.wait(timeout=_PROCESS_KILL_REAP_TIMEOUT_SECONDS)
+    except BaseException as exc:
+        if not cleanup_complete:
+            try:
+                _kill_and_reap(process, label=f"trusted host {label} cleanup")
+            except BaseException as cleanup_error:
+                add_note = getattr(exc, "add_note", None)
+                if callable(add_note):
+                    add_note(
+                        "process cleanup failed after generation error: "
+                        f"{type(cleanup_error).__name__}: {cleanup_error}"
+                    )
+                raise cleanup_error from exc
         raise
     finally:
         timer.cancel()

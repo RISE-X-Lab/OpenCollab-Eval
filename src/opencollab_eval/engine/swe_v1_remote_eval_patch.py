@@ -62,7 +62,9 @@ def _candidate_expectation_valid(expectation, row, prediction, patch_selection):
     )
 
 
-def verified_plan_patch_selection(row, prediction, metric):
+def verified_plan_patch_selection(
+    row, prediction, metric, eval_timeout=None, controller_timeout=None
+):
     fail_to_pass = parse_literal_list(row.get("fail_to_pass") or row.get("FAIL_TO_PASS"))
     if not fail_to_pass:
         return None
@@ -96,7 +98,16 @@ def verified_plan_patch_selection(row, prediction, metric):
             plan_runtime_dependency_specs(f2p_plan, p2p_plan),
         ),
     )
-    selection["eval_spec_sha256"] = prolite_eval_spec_sha256(row, f2p_plan, p2p_plan)
+    eval_timeout = resolve_eval_timeout(eval_timeout)
+    if controller_timeout is None:
+        controller_timeout = eval_timeout
+    selection["eval_spec_sha256"] = prolite_eval_spec_sha256(
+        row,
+        f2p_plan,
+        p2p_plan,
+        eval_timeout=eval_timeout,
+        controller_timeout=controller_timeout,
+    )
     return selection
 
 

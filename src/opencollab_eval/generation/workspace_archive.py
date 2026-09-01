@@ -80,6 +80,21 @@ class _WorkspaceArchiveTimeout(RuntimeError):
 
 
 _MAX_DOCKER_STDERR_BYTES = 16 * 1024
+_PROCESS_KILL_REAP_TIMEOUT_SECONDS = 5.0
+
+
+def _kill_and_reap(process) -> None:
+    """Kill a Docker child and reap it with a finite deadline."""
+    try:
+        process.kill()
+    except ProcessLookupError:
+        # The process may have exited between poll() and kill(); always reap
+        # the Popen handle even in that race.
+        pass
+    try:
+        process.wait(timeout=_PROCESS_KILL_REAP_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("docker cp process did not exit after SIGKILL") from exc
 
 
 def _bounded_docker_stderr(stderr_file) -> str:
@@ -236,9 +251,10 @@ def _copy_workspace_archive(container_id: str, root: Path) -> tuple[str, int, in
     with tempfile.TemporaryFile() as stderr_file:
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=stderr_file)
         if process.stdout is None:
-            process.kill()
+            _kill_and_reap(process)
             raise RuntimeError("docker cp did not expose its archive stream")
         timed_out = threading.Event()
+        timer_cleanup_errors: list[BaseException] = []
 
         def timeout_error() -> _WorkspaceArchiveTimeout:
             return _WorkspaceArchiveTimeout(
@@ -252,20 +268,29 @@ def _copy_workspace_archive(container_id: str, root: Path) -> tuple[str, int, in
 
         def kill_on_timeout() -> None:
             timed_out.set()
-            if process.poll() is not None:
-                return
             try:
-                process.kill()
-            except ProcessLookupError:
-                pass
+                if process.poll() is None:
+                    _kill_and_reap(process)
+                else:
+                    # The child may have exited while its pipe is still being
+                    # drained; reap it with the same finite bound.
+                    process.wait(timeout=_PROCESS_KILL_REAP_TIMEOUT_SECONDS)
+            except BaseException as exc:
+                # Propagate on the owner thread after the stream operation;
+                # exceptions raised by Timer threads are otherwise lost.
+                timer_cleanup_errors.append(exc)
 
         def stop_process() -> None:
             if process.poll() is None:
-                try:
-                    process.kill()
-                except ProcessLookupError:
-                    pass
-            process.wait()
+                _kill_and_reap(process)
+                return
+            # Reap an already-exited child with the same finite bound.  A
+            # stubborn fake or platform process must become a technical error,
+            # never leave generation blocked in an unbounded wait().
+            try:
+                process.wait(timeout=_PROCESS_KILL_REAP_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired as exc:
+                raise RuntimeError("docker cp process did not exit after SIGKILL") from exc
 
         timer = threading.Timer(timeout_seconds, kill_on_timeout)
         reader = _BoundedHashReader(process.stdout, MAX_WORKSPACE_ARCHIVE_BYTES)
@@ -292,7 +317,9 @@ def _copy_workspace_archive(container_id: str, root: Path) -> tuple[str, int, in
             _restore_directory_modes(root, directory_modes)
             while reader.read(1024 * 1024):
                 pass
-            returncode = process.wait(timeout=5)
+            if timer_cleanup_errors:
+                raise timer_cleanup_errors[0]
+            returncode = process.wait(timeout=_PROCESS_KILL_REAP_TIMEOUT_SECONDS)
             if timed_out.is_set():
                 raise timeout_error()
             if returncode != 0:

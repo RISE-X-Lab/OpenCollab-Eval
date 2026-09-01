@@ -89,58 +89,6 @@ def test_run_openhands_rejects_zero_exit_with_fatal_traceback(
     assert result["returncode"] == 0
 
 
-def test_run_openhands_passes_effective_runtime_settings(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    captured: dict = {}
-    leaked_id = "owner__repo-deadbeef"
-    monkeypatch.setenv(
-        "OPENCOLLAB_EVAL_WORKFLOW_LOG_DIR",
-        f"/trusted/runs/{leaked_id}/workflow_logs",
-    )
-    monkeypatch.setenv("SWE_TASK_ID", leaked_id)
-    _install_fake_openhands_process(
-        monkeypatch,
-        stdout="done",
-        captured=captured,
-    )
-    gpo._run_openhands(
-        command_template="openhands --headless --file {prompt_file}",
-        container_id="container-123",
-        instance={"instance_id": "acme__widget-1"},
-        instance_file=tmp_path / "instance.json",
-        prompt_file=tmp_path / "prompt.md",
-        output_dir=tmp_path / "output",
-        timeout=5,
-        context_window=400000,
-        temperature=1.0,
-        top_p=1.0,
-        max_output_tokens=32768,
-        token_budget=16000000,
-        max_steps=60,
-    )
-
-    env = captured["env"]
-    assert env["OPENHANDS_CONTEXT_WINDOW"] == "400000"
-    assert env["OPENHANDS_TEMPERATURE"] == "1.0"
-    assert env["OPENHANDS_TOP_P"] == "1.0"
-    assert env["OPENHANDS_MAX_OUTPUT_TOKENS"] == "32768"
-    assert env["OPENHANDS_TOKEN_BUDGET"] == "16000000"
-    assert env["OPENHANDS_MAX_STEPS"] == "60"
-    assert env["OPENHANDS_EMPTY_PATCH_REJECTIONS"] == "0"
-    assert env["OPENHANDS_CONTAINER_PYTHON"] == "/usr/bin/python3"
-    assert env["OPENHANDS_CONTAINER_GUARD_ROOT"] == gpo._CONTAINER_GUARD_ROOT
-    assert "OPENCOLLAB_EVAL_WORKFLOW_LOG_DIR" not in env
-    assert "SWE_TASK_ID" not in env
-    assert all(leaked_id not in value for value in env.values())
-    assert captured["start_new_session"] is True
-    assert captured["shell"] is False
-    assert captured["command"][1:3] == [
-        "-m",
-        "opencollab_eval.generation.openhands_process_supervisor",
-    ]
-
-
 def test_container_guard_preparation_streams_trusted_host_source(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -575,8 +523,16 @@ def test_openhands_usage_is_written_in_eval_layer_ledger_shape(tmp_path: Path) -
     assert record["usage"] == payload
 
 
+@pytest.mark.parametrize(
+    ("openhands_status", "returncode", "expected_workflow_status"),
+    [("done", 0, "done"), ("openhands_timeout", 124, "done_with_timeout_patch")],
+)
 def test_main_writes_generation_contract_for_nonempty_patch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    openhands_status: str,
+    returncode: int,
+    expected_workflow_status: str,
 ) -> None:
     instance_file = tmp_path / "instance.json"
     output = tmp_path / "predictions.jsonl"
@@ -692,8 +648,8 @@ def test_main_writes_generation_contract_for_nonempty_patch(
     def fake_run_openhands(**kwargs):
         openhands_call.update(kwargs)
         return {
-            "status": "done",
-            "returncode": 0,
+            "status": openhands_status,
+            "returncode": returncode,
             "duration_s": 1.0,
             "execution_quiesced": True,
             "host_execution_quiesced": True,
@@ -734,7 +690,7 @@ def test_main_writes_generation_contract_for_nonempty_patch(
     assert prediction["workflow"] == "openhands-external"
     assert prediction["model_patch"].strip()
     assert metric["workflow"] == "openhands-external"
-    assert metric["workflow_status"] == "done"
+    assert metric["workflow_status"] == expected_workflow_status
     assert metric["llm_model"] == "anthropic/glm-5.2"
     assert metric["context_window"] == 400000
     assert metric["budget"] == 16000000

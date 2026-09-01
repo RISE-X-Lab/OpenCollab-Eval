@@ -24,6 +24,20 @@ from swe_v1_prolite_runner_test_support import *
 from test_swe_eval_layer_report import _row
 
 
+def test_eval_attempt_count_helpers_reject_lossy_integer_coercion():
+    from opencollab_eval.commands import _swe_eval_layer_integrity as integrity
+    from opencollab_eval.commands import swe_v1_prolite_controller as controller
+
+    for value in (True, False, 1.9, "1.9", "not-a-count", -1):
+        row = {"eval": {"attempt_count": value}}
+        assert integrity.eval_attempt_count(row) == 0
+        assert controller._row_eval_attempt_count(row) == 0
+
+    row = {"eval": {"attempt_count": "2"}}
+    assert integrity.eval_attempt_count(row) == 2
+    assert controller._row_eval_attempt_count(row) == 2
+
+
 def test_eval_only_reconciles_the_parent_final_report(tmp_path):
     parent = tmp_path / "parent"
     parent.mkdir()
@@ -466,6 +480,42 @@ def test_eval_only_parent_budget_rejects_after_ten_attempts(tmp_path):
 
     with pytest.raises(RuntimeError, match="max total is 10"):
         runner.apply_parent_eval_budget(args)
+
+
+def test_eval_only_parent_budget_ignores_stale_candidate_attempts(tmp_path):
+    """A prior candidate at the same index must not consume this retry budget."""
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    stale = {
+        "index": 82,
+        "task": "instance_owner__repo-82-old",
+        "generation": {
+            "task": "instance_owner__repo-82-old",
+            "record_id": "record-old",
+            "patch_sha256": "a" * 64,
+        },
+        "eval": {"status": "technical_eval_failed", "attempt_count": 10},
+    }
+    (parent / "parallel_summary.json").write_text(
+        json.dumps({"results": [{"index": 82, "rows": [stale]}]}),
+        encoding="utf-8",
+    )
+    args = SimpleNamespace(
+        eval_only=True,
+        parent_output_dir=parent,
+        start_index=82,
+        limit=1,
+        max_eval_attempts=1,
+        expected_task="instance_owner__repo-82-new",
+        expected_record_id="record-new",
+        expected_source_patch_sha256="b" * 64,
+        expected_eval_patch_sha256="c" * 64,
+    )
+
+    budget = runner.apply_parent_eval_budget(args)
+
+    assert budget["previous_eval_attempts"].get(82, 0) == 0
+    assert budget["effective_additional_eval_attempts"] == 1
 
 
 def test_eval_only_parent_budget_does_not_count_a_dry_run(tmp_path):

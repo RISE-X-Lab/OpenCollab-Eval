@@ -496,16 +496,24 @@ def _try_lock(fd: int) -> bool:
         raise
 
 
-def _assert_identity(record: dict[str, Any], *, trusted: bool) -> None:
+def _assert_identity(record: dict[str, Any], *, trusted: bool, allow_unavailable: bool = False) -> bool:
+    """Return whether the recorded leader still identifies the same process."""
     session_id = int(record["session_id"])
     expected = str(record.get("start_identity") or "")
-    if trusted:
-        return
+    if trusted and not allow_unavailable:
+        return True
     if not expected:
+        if allow_unavailable:
+            return False
         raise GuardError("stale owner marker lacks a verifiable start identity")
     current = _start_identity(session_id)
-    if current and current != expected:
-        raise GuardError("session leader identity changed; refusing to signal reused pid")
+    if current != expected:
+        if allow_unavailable and not current:
+            return False
+        raise GuardError(
+            "session leader identity is unavailable or changed; refusing to signal reused pid"
+        )
+    return True
 
 
 def _signal_group(session_id: int, sig: signal.Signals) -> None:
@@ -520,8 +528,9 @@ def _signal_group(session_id: int, sig: signal.Signals) -> None:
         pass
 
 
-def _signal_members(session_id: int, members: set[int], sig: signal.Signals) -> None:
-    _signal_group(session_id, sig)
+def _signal_members(session_id: int, members: set[int], sig: signal.Signals, *, signal_group: bool = True) -> None:
+    if signal_group:
+        _signal_group(session_id, sig)
     for pid in members:
         try:
             os.kill(pid, sig)
@@ -531,12 +540,23 @@ def _signal_members(session_id: int, members: set[int], sig: signal.Signals) -> 
             raise GuardError(f"cannot signal process {pid}: {exc}") from exc
 
 
-def _terminate_session(record: dict[str, Any], *, trusted: bool) -> None:
-    _assert_identity(record, trusted=trusted)
+def _terminate_session(record: dict[str, Any], *, trusted: bool, leader_reaped: bool = False) -> None:
     session_id = int(record["session_id"])
-    _signal_group(session_id, signal.SIGTERM)
+    # After reaping, only group-signal when the leader identity still matches;
+    # otherwise enumerate and signal remaining members individually.
+    members = _session_members(session_id) if leader_reaped else set()
+    group_identity_ok = _assert_identity(record, trusted=trusted, allow_unavailable=leader_reaped)
+    if group_identity_ok:
+        _signal_group(session_id, signal.SIGTERM)
+    if members:
+        _signal_members(session_id, members, signal.SIGTERM, signal_group=False)
     time.sleep(0.3)
-    _signal_group(session_id, signal.SIGKILL)
+    members = _session_members(session_id)
+    group_identity_ok = _assert_identity(record, trusted=trusted, allow_unavailable=leader_reaped)
+    if group_identity_ok:
+        _signal_group(session_id, signal.SIGKILL)
+    if members:
+        _signal_members(session_id, members, signal.SIGKILL, signal_group=False)
     deadline = time.monotonic() + 2.0
     empty_scans = 0
     while time.monotonic() < deadline:
@@ -547,7 +567,8 @@ def _terminate_session(record: dict[str, Any], *, trusted: bool) -> None:
                 return
         else:
             empty_scans = 0
-            _signal_members(session_id, members, signal.SIGKILL)
+            group_identity_ok = _assert_identity(record, trusted=trusted, allow_unavailable=leader_reaped)
+            _signal_members(session_id, members, signal.SIGKILL, signal_group=group_identity_ok)
         time.sleep(_POLL_SECONDS)
     remaining = _session_members(session_id)
     if remaining:
@@ -683,6 +704,10 @@ def run(pidfile: Path, cancelfile: Path, command: list[str]) -> int:
             if interrupted and record is not None and not interrupt_signalled:
                 try:
                     session_id = int(record["session_id"])
+                    # The child is still live in this branch, so this
+                    # in-process record is trusted and its process group can
+                    # be terminated directly.  The reaped-leader path below
+                    # deliberately avoids this shortcut.
                     _signal_group(session_id, signal.SIGTERM)
                     time.sleep(0.1)
                     _signal_group(session_id, signal.SIGKILL)
@@ -711,7 +736,7 @@ def run(pidfile: Path, cancelfile: Path, command: list[str]) -> int:
                     "nonce": nonce,
                 }
         try:
-            _terminate_session(record, trusted=True)
+            _terminate_session(record, trusted=True, leader_reaped=True)
         except GuardError as exc:
             cleanup_error = exc
         if cleanup_error is None:

@@ -516,7 +516,7 @@ def test_pending_survives_unknown_output_directory_fsync(monkeypatch, tmp_path):
     assert pending.exists()
 
 
-def test_staging_failure_marks_owner_for_manual_preservation(monkeypatch, tmp_path):
+def test_staging_validation_failure_does_not_strand_container(monkeypatch, tmp_path):
     gp.write_container_marker(tmp_path, "cid", "name")
     patch = "diff --git a/src/a.py b/src/a.py\n+fixed\n"
     prediction, metric = gp.build_output_records(
@@ -541,7 +541,9 @@ def test_staging_failure_marks_owner_for_manual_preservation(monkeypatch, tmp_pa
 
     owner_path = gp.container_owner_path(tmp_path, "name")
     owner = json.loads(owner_path.read_text(encoding="utf-8"))
-    assert owner["state"] == "preservation_required"
+    # Validation failed before a pending record was written, so teardown must
+    # still be allowed to remove the active container.
+    assert owner["state"] == "active"
     assert not list((tmp_path / ".opencollab" / "pending_outputs").glob("*.json"))
     owner["owner_pid"] = 2**30
     owner["owner_start_identity"] = "proc:dead"
@@ -553,9 +555,9 @@ def test_staging_failure_marks_owner_for_manual_preservation(monkeypatch, tmp_pa
         lambda reference, owner_token, **kwargs: removed.append(reference) or True,
     )
 
-    assert gp.recover_generation_state(tmp_path) is False
-    assert removed == []
-    assert owner_path.exists()
+    assert gp.recover_generation_state(tmp_path) is True
+    assert removed == ["cid"]
+    assert not owner_path.exists()
 
 
 def test_recovery_promotes_durable_candidate_after_owner_upgrade_crash(

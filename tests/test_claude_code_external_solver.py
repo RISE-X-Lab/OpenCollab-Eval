@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -285,7 +286,7 @@ def test_claude_launcher_has_fixed_identity_permissions_and_empty_patch_gate() -
     assert "b4131d5c" not in script
     assert "Read Edit Write Glob Grep TaskOutput TaskStop Bash(/control/run_in_container *)" in script
     assert '--disallowedTools "WebFetch WebSearch"' in script
-    assert "docker run -d --network none" in script
+    assert "docker_control run -d --network none" in script
     assert "type=bind,src=/dev/null,dst=/dev/null,readonly" in script
     assert "dst=/control/run_in_container,readonly" in script
     assert "dst=/control/claude.settings.json,readonly" in script
@@ -293,9 +294,12 @@ def test_claude_launcher_has_fixed_identity_permissions_and_empty_patch_gate() -
     assert script.count("dst=/var/run/docker.sock") == 1
     assert "command-gateway:8090" in script
     assert "--network host" not in script
-    assert "docker network create --internal" in script
+    assert "docker_control network create --internal" in script
     assert 'docker run --rm -i --name "$runtime_name"' in script
     assert "CLAUDE_RELAY_UPSTREAM_UNIX=/control/upstream.sock" in script
+    assert "CLAUDE_RELAY_UPSTREAM_TIMEOUT" in script
+    assert "relay_upstream_timeout_max" in script
+    assert "timeout=300" not in script
     assert "src=$relay_socket,dst=/control/upstream.sock" in script
     assert '--network "$network_name" --network-alias claude-api' in script
     assert "host.docker.internal" not in script
@@ -303,17 +307,24 @@ def test_claude_launcher_has_fixed_identity_permissions_and_empty_patch_gate() -
     assert "opencollab_eval.generation.candidate_gitlinks_cli" in script
     assert "add -f -A" not in script
     assert '--gitlink-projections "$gitlink_projection_manifest"' in script
-    assert "docker inspect --format '{{.Image}}'" in script
+    assert "docker_control inspect --format '{{.Image}}'" in script
     assert 'GIT_CONFIG_GLOBAL=$solver_global_config' in script
     assert 'GIT_CONFIG_SYSTEM=$solver_system_config' in script
     assert "GIT_NO_REPLACE_OBJECTS=1" in script
     assert 'env -i PATH="$PATH"' in script
     assert '--git-dir="$trusted_git_dir" --work-tree="$workspace"' in script
-    assert 'sha256sum "$rendered_prompt"' in script
-    assert "shasum -a 256" not in script
+    assert 'sha256_file "$rendered_prompt"' in script
+    assert "sha256_stdin" in script
+    assert "shasum -a 256" in script
+    assert 'python3 -c "import hashlib,sys;' in script
     assert '--entrypoint find "$actual_runtime_id" /cleanup -mindepth 1 -delete' in script
     assert 'if [[ -e "$workspace" ]]' in script
     assert "workspace_cleanup_failed=125" in script
+    assert "remove_container_and_prove_absent" in script
+    assert "remove_network_and_prove_absent" in script
+    assert 'claude_returncode=$?\nruntime_name=""' not in script
+    assert "-c core.fsmonitor=false -c core.hooksPath=/dev/null" in script
+    assert "-c core.attributesFile=/dev/null -c diff.external=" in script
     assert 'echo "Claude Code version must be $expected_version" >&2\n  exit 2' in script
     assert "if (printf x >> /control/run_in_container) 2>/dev/null" in script
     assert "if (printf x >> /control/claude.settings.json) 2>/dev/null" in script
@@ -322,6 +333,103 @@ def test_claude_launcher_has_fixed_identity_permissions_and_empty_patch_gate() -
     final_sidecar = script.index('build_claude_sidecar "$raw_patch_sha256" "$candidate_tree"')
     assert first_sidecar < candidate < final_sidecar
     assert 'if [[ ! -s "$sidecar_file" ]]' in script
+
+
+@pytest.mark.parametrize("docker_host", ["tcp://127.0.0.1:2375", "ssh://builder", "unix://", "relative.sock"])
+def test_claude_launcher_rejects_non_unix_docker_host_before_side_effects(
+    tmp_path: Path,
+    docker_host: str,
+) -> None:
+    output = tmp_path / "output"
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "DOCKER_HOST": docker_host,
+            "LLM_API_KEY": "test-key",
+            "LLM_BASE_URL": "http://127.0.0.1:1",
+            "LLM_MODEL": "glm-5.2",
+            "OPENCOLLAB_CLAUDE_EXPECTED_MODEL": "glm-5.2",
+            "OPENCOLLAB_CLAUDE_EXPECTED_VERSION": "2.1.175",
+            "OPENCOLLAB_CLAUDE_RUNTIME_IMAGE": "runtime-image",
+            "OPENCOLLAB_CLAUDE_RUNTIME_IMAGE_ID": RUNTIME_IMAGE_ID,
+            "OPENHANDS_INSTANCE_ID": "solver-" + "1" * 32,
+        }
+    )
+    completed = subprocess.run(
+        ["bash", str(SCRIPT), "task-container", str(tmp_path / "prompt"), str(output)],
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert "DOCKER_HOST" in completed.stderr
+    assert not output.exists()
+
+
+def test_claude_launcher_bounds_control_docker_hang_without_wrapping_runtime(
+    tmp_path: Path,
+) -> None:
+    """A wedged short-lived Docker request fails promptly, while Claude stays streaming."""
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "docker-calls.log"
+    fake_docker = bin_dir / "docker"
+    fake_docker.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -eu\n"
+        "printf '%s\\n' \"$*\" >> \"$FAKE_DOCKER_CALLS\"\n"
+        "if [[ \"$1\" == image && \"$2\" == inspect ]]; then\n"
+        "  while :; do sleep 1; done\n"
+        "fi\n"
+        "exit 99\n",
+        encoding="utf-8",
+    )
+    fake_docker.chmod(0o755)
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text("Fix the repository.\n", encoding="utf-8")
+    output = tmp_path / "output"
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{bin_dir}:{environment['PATH']}",
+            "FAKE_DOCKER_CALLS": str(calls),
+            "LLM_API_KEY": "fake-key",
+            "LLM_BASE_URL": "http://127.0.0.1:1",
+            "LLM_MODEL": "glm-5.2",
+            "OPENCOLLAB_CLAUDE_EXPECTED_MODEL": "glm-5.2",
+            "OPENCOLLAB_CLAUDE_EXPECTED_VERSION": "2.1.175",
+            "OPENCOLLAB_CLAUDE_RUNTIME_IMAGE": RUNTIME_IMAGE,
+            "OPENCOLLAB_CLAUDE_RUNTIME_IMAGE_ID": RUNTIME_IMAGE_ID,
+            "OPENCOLLAB_CLAUDE_SIDECAR_PYTHON": sys.executable,
+            # Keep enough startup headroom for a loaded CI/macOS host while
+            # still exercising a short bounded control path.
+            "OPENCOLLAB_CLAUDE_DOCKER_CONTROL_TIMEOUT_SECONDS": "2",
+            "OPENHANDS_INSTANCE_ID": "solver-" + "1" * 32,
+        }
+    )
+    started = time.monotonic()
+    completed = subprocess.run(
+        ["bash", str(SCRIPT), "task-container", str(prompt), str(output)],
+        cwd=tmp_path,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=7,
+    )
+
+    assert completed.returncode == 124
+    assert time.monotonic() - started < 5
+    assert "Docker control command timed out" in completed.stderr
+    assert calls.read_text(encoding="utf-8").splitlines() == [
+        "image inspect --format {{.Id}} registry.example.invalid/claude-runtime:2.1.175"
+    ]
+    script = SCRIPT.read_text(encoding="utf-8")
+    assert 'docker run --rm -i --name "$runtime_name"' in script
+    assert 'docker_control run --rm -i --name "$runtime_name"' not in script
 
 
 def test_read_only_probe_suppresses_expected_shell_noise(tmp_path: Path) -> None:
@@ -393,6 +501,9 @@ for ((index=1; index<=$#; index++)); do
 done
 if [[ "$1" == image && "$2" == inspect ]]; then
   printf '{RUNTIME_IMAGE_ID}\\n'
+elif [[ "$1" == network && "$2" == inspect ]]; then
+  echo 'Error: No such network' >&2
+  exit 1
 elif [[ "$1" == network ]]; then
   exit 0
 elif [[ "$1" == cp ]]; then
@@ -569,7 +680,7 @@ exec /bin/rm "$@"
     assert sidecar["invocation_binding"]["task_image_id"] == TASK_IMAGE_ID
     assert not (tmp_path / "untrusted-git-config-executed").exists()
     script = SCRIPT.read_text(encoding="utf-8")
-    assert script.index('docker rm -f "$test_id"') < script.index(
+    assert script.index('remove_container_and_prove_absent "$test_id"') < script.index(
         "opencollab_eval.generation.candidate_patch_cli"
     )
 

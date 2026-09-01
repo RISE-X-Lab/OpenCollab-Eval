@@ -2,6 +2,8 @@
 
 # ruff: noqa: E501, F403, F405
 
+import math
+
 from opencollab_eval.engine.swe_v1_go_failure_proof import *
 from opencollab_eval.engine.swe_v1_remote_core import *
 from opencollab_eval.engine.swe_v1_remote_go_targets import *
@@ -112,11 +114,19 @@ def write_start_state(run_dir, task, session):
         return state
 
 
-def write_fifo_with_timeout(path, text, timeout=45):
+def write_fifo_with_timeout(path, text, timeout=120):
+    if isinstance(timeout, bool):
+        return {"ok": False, "error": "fifo timeout must be finite and positive"}
+    try:
+        timeout = float(timeout)
+    except (TypeError, ValueError, OverflowError):
+        return {"ok": False, "error": "fifo timeout must be finite and positive"}
+    if not math.isfinite(timeout) or timeout <= 0:
+        return {"ok": False, "error": "fifo timeout must be finite and positive"}
     data = text.encode("utf-8")
-    deadline = time.time() + timeout
+    deadline = time.monotonic() + timeout
     last_error = ""
-    while time.time() < deadline:
+    while time.monotonic() < deadline:
         try:
             fd = os.open(path, os.O_WRONLY | os.O_NONBLOCK)
         except OSError as exc:
@@ -126,7 +136,7 @@ def write_fifo_with_timeout(path, text, timeout=45):
         try:
             offset = 0
             while offset < len(data):
-                if time.time() >= deadline:
+                if time.monotonic() >= deadline:
                     return {
                         "ok": False,
                         "error": "timed out while writing complete fifo payload",
@@ -147,6 +157,9 @@ def write_fifo_with_timeout(path, text, timeout=45):
     return {"ok": False, "error": last_error or "timed out waiting for fifo reader"}
 
 
+def _public_preparation_docker_env():
+    value = effective_workflow_env().get("OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS")
+    return [] if value is None else ["--env", f"OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS={value}"]
 
 def prolite_eval_spec_sha256(
     row,
@@ -155,7 +168,19 @@ def prolite_eval_spec_sha256(
     *,
     script_source=None,
     helper_sources=None,
+    eval_timeout=None,
+    controller_timeout=None,
+    controller_source=None,
 ):
+    """Return the identity of the exact direct-evaluation specification.
+
+    ``eval_timeout`` and the timeout passed to the privileged pytest
+    controller are part of the evaluation contract.  Keep them optional for
+    older callers, while resolving omitted values from the installed remote
+    runner state when available.  The generated controller source is hashed
+    as well, so a changed controller cannot accidentally reuse an old
+    summary.
+    """
     if script_source is None or helper_sources is None:
         from opencollab_eval.engine.swe_v1_remote_eval_script import (
             direct_eval_script,
@@ -166,6 +191,35 @@ def prolite_eval_spec_sha256(
         helper_sources = (
             eval_workspace_helper_sources() if helper_sources is None else helper_sources
         )
+    if eval_timeout is None:
+        eval_timeout = resolve_eval_timeout()
+    if controller_timeout is None:
+        controller_timeout = eval_timeout
+    for label, value in (("eval_timeout", eval_timeout), ("controller_timeout", controller_timeout)):
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            raise ValueError(f"{label} must be finite and positive")
+        try:
+            normalized = float(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"{label} must be finite and positive") from exc
+        if not math.isfinite(normalized) or normalized <= 0:
+            raise ValueError(f"{label} must be finite and positive")
+        value = normalized
+        if label == "eval_timeout":
+            eval_timeout = value
+        else:
+            controller_timeout = value
+    if controller_source is None:
+        source_factory = globals().get("prolite_pytest_controller_source")
+        if source_factory is None:
+            from opencollab_eval.engine.swe_v1_remote_pytest_controller import (
+                prolite_pytest_controller_source,
+            )
+
+            source_factory = prolite_pytest_controller_source
+        controller_source = source_factory()
     payload = {
         "schema": "opencollab.prolite_eval_spec.v4",
         "base_commit": str(row.get("base_commit") or row.get("commit") or "").strip().lower(),
@@ -179,6 +233,11 @@ def prolite_eval_spec_sha256(
         "test_patch_sha256": hashlib.sha256(str(row.get("test_patch") or "").encode()).hexdigest(),
         "before_repo_sha256": hashlib.sha256(str(row.get("before_repo_set_cmd") or "").encode()).hexdigest(),
         "service_bootstrap_sha256": hashlib.sha256(prolite_service_bootstrap(row).encode()).hexdigest(),
+        "eval_timeout": eval_timeout,
+        "controller_timeout": controller_timeout,
+        "pytest_controller_source_sha256": hashlib.sha256(
+            str(controller_source).encode("utf-8")
+        ).hexdigest(),
     }
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(serialized.encode()).hexdigest()

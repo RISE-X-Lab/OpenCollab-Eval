@@ -192,6 +192,132 @@ from .gen_prediction_snapshot import (
 _CONFIG_ROOT = Path(os.environ.get("OPENCOLLAB_EVAL_WORKSPACE", Path.cwd())).resolve()
 
 
+def _cleanup_generation_attempt(
+    *,
+    trusted_baseline: object | None,
+    run_dir: Path,
+    cid: str,
+    name: str,
+    args: argparse.Namespace,
+    metrics: dict,
+    patch: str,
+    pending_required: bool,
+    pending_path: Path | None,
+    generation_error: BaseException | None,
+) -> tuple[tuple[str, BaseException], ...]:
+    """Best-effort cleanup that never skips container finalization.
+
+    Cleanup runs after both successful and failed generation.  Every cleanup
+    operation is isolated so a baseline/evidence failure cannot mask the
+    generation exception or prevent the ownership finalizer from running.
+    """
+    failures: list[tuple[str, BaseException]] = []
+
+    def capture(label: str, error: BaseException) -> None:
+        failures.append((label, error))
+        detail = f"{type(error).__name__}: {str(error)[:512]}"
+        if not isinstance(metrics, dict):
+            return
+        try:
+            existing = metrics.get("cleanup_errors")
+            if not isinstance(existing, list):
+                existing = []
+                metrics["cleanup_errors"] = existing
+            existing.append(f"{label}: {detail}")
+        except BaseException:
+            # Metrics are diagnostic only; never let recording a cleanup error
+            # prevent the remaining finalization attempt.
+            pass
+
+    if trusted_baseline is not None:
+        try:
+            trusted_baseline.cleanup()
+        except BaseException as exc:
+            capture("trusted baseline cleanup", exc)
+
+    preserve_container = False
+    try:
+        preserve_container = bool(
+            pending_required
+            and pending_path is None
+            and output_staging_requires_container_preservation(
+                run_dir,
+                cid=cid,
+                name=name,
+            )
+        )
+    except BaseException as exc:
+        capture("container preservation check", exc)
+
+    if preserve_container:
+        try:
+            metrics["container_preservation_required"] = True
+        except BaseException as exc:
+            capture("container preservation marker", exc)
+            # If the preservation marker cannot be recorded, fail closed and
+            # continue through ownership finalization instead of leaking the
+            # active container.
+            preserve_container = False
+    if not preserve_container:
+        completed = False
+        try:
+            completed = (
+                not failures
+                and generation_error is None
+                and metrics_have_completed_identity(metrics, patch)
+            )
+        except BaseException as exc:
+            capture("completion identity check", exc)
+        try:
+            finalize_container_ownership(
+                run_dir=run_dir,
+                cid=cid,
+                name=name,
+                keep_container=(
+                    bool(getattr(args, "keep_container", False))
+                    if generation_error is None and not failures
+                    else False
+                ),
+                completed=completed,
+                metrics=metrics,
+            )
+        except BaseException as exc:
+            capture("container finalization", exc)
+
+    return tuple(failures)
+
+
+def _raise_or_note_cleanup_failures(
+    failures: tuple[tuple[str, BaseException], ...],
+    generation_error: BaseException | None,
+) -> None:
+    """Preserve generation errors while surfacing cleanup-only failures."""
+    if not failures:
+        return
+    if generation_error is None:
+        raise failures[0][1]
+    add_note = getattr(generation_error, "add_note", None)
+    for label, error in failures:
+        note = (
+            f"{label} failed after generation error: "
+            f"{type(error).__name__}: {str(error)[:512]}"
+        )
+        if callable(add_note):
+            try:
+                add_note(note)
+                continue
+            except BaseException:
+                pass
+        try:
+            notes = getattr(generation_error, "__notes__", None)
+            if not isinstance(notes, list):
+                notes = []
+                generation_error.__notes__ = notes  # type: ignore[attr-defined]
+            notes.append(note)
+        except BaseException:
+            pass
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Generate one SWE-bench prediction with OpenCollab")
     ap.add_argument("--instance-file", required=True, help="JSON file with one instance")
@@ -355,42 +481,19 @@ def main() -> None:
         )
         raise
     finally:
-        if trusted_baseline is not None:
-            trusted_baseline.cleanup()
-        preserve_container = (
-            pending_required
-            and pending_path is None
-            and output_staging_requires_container_preservation(
-                run_dir,
-                cid=cid,
-                name=name,
-            )
+        cleanup_failures = _cleanup_generation_attempt(
+            trusted_baseline=trusted_baseline,
+            run_dir=run_dir,
+            cid=cid,
+            name=name,
+            args=args,
+            metrics=metrics,
+            patch=patch,
+            pending_required=pending_required,
+            pending_path=pending_path,
+            generation_error=generation_error,
         )
-        if preserve_container:
-            metrics["container_preservation_required"] = True
-        else:
-            completed = generation_error is None and metrics_have_completed_identity(
-                metrics,
-                patch,
-            )
-            try:
-                finalize_container_ownership(
-                    run_dir=run_dir,
-                    cid=cid,
-                    name=name,
-                    keep_container=args.keep_container if generation_error is None else False,
-                    completed=completed,
-                    metrics=metrics,
-                )
-            except BaseException as cleanup_error:
-                if generation_error is None:
-                    raise
-                add_note = getattr(generation_error, "add_note", None)
-                if callable(add_note):
-                    add_note(
-                        "container cleanup failed after generation error: "
-                        f"{type(cleanup_error).__name__}: {cleanup_error}"
-                    )
+        _raise_or_note_cleanup_failures(cleanup_failures, generation_error)
 
     if record is None or metric_record is None:
         raise RuntimeError("generation output record was not built")

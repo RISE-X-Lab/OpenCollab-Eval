@@ -160,3 +160,57 @@ def test_disguised_third_eval_cannot_bypass_round_limit(tmp_path):
     _assert_technical(report, "orphan_evidence_only_rejudgement")
     assert report["tasks"][0]["eval_attempt_count"] == 2
     assert report["counts"]["rounds"] == 3
+
+
+def test_build_report_accepts_a_top_level_legacy_mirror(tmp_path):
+    """A top-level row mirrored by results remains one valid attempt."""
+    module = _load_module()
+    task = "instance_owner__repo-82"
+    row = _row(82, task, "/run/task.log", 10, "eval_done", True)
+    report_path = _write_json(
+        tmp_path / "hybrid.json",
+        {
+            "schema": "opencollab.swe_parallel_runner.v2",
+            "indices": [82],
+            "rows": [row],
+            "results": [
+                {
+                    "index": 82,
+                    "completed": True,
+                    "runner_status": "done",
+                    "rows": [row],
+                }
+            ],
+        },
+    )
+
+    report = module.build_report([report_path], expected_indices=[82])
+
+    assert report["counts"]["eval_success"] == 1
+    assert report["counts"]["technical_failed_final"] == 0
+    assert report["tasks"][0]["eval_attempt_count"] == 1
+
+
+def test_build_report_retains_distinct_nested_duplicate_rows_as_technical(
+    tmp_path,
+):
+    """Two nested result ledgers must retain duplicate detection semantics."""
+    module = _load_module()
+    task = "instance_owner__repo-82"
+    row = _row(82, task, "/run/task.log", 10, "eval_done", True)
+    report_path = _write_json(
+        tmp_path / "nested-duplicates.json",
+        {
+            "schema": "opencollab.swe_parallel_runner.v2",
+            "indices": [82],
+            "results": [
+                {"index": 82, "completed": True, "runner_status": "done", "rows": [row]},
+                {"index": 82, "completed": True, "runner_status": "done", "rows": [row]},
+            ],
+        },
+    )
+
+    report = module.build_report([report_path], expected_indices=[82])
+
+    assert report["counts"]["technical_failed_final"] == 1
+    assert "duplicate_task_row" in report["tasks"][0]["technical_reasons"]

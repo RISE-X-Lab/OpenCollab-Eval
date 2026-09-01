@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import shlex
 import subprocess
@@ -17,6 +18,18 @@ class RemoteSocketProbeUnavailable(RuntimeError):
     """The remote socket could not be inspected because SSH is unavailable."""
 
 
+def _finite_positive(value: object, message: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(message)
+    try:
+        normalized = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(message) from exc
+    if not math.isfinite(normalized) or normalized <= 0:
+        raise ValueError(message)
+    return normalized
+
+
 def _cleanup_command(socket_path: str) -> str:
     probe = "\n".join(
         (
@@ -25,12 +38,19 @@ def _cleanup_command(socket_path: str) -> str:
             "try: info=os.lstat(path)",
             "except FileNotFoundError: raise SystemExit(0)",
             "if not (stat.S_ISSOCK(info.st_mode) and info.st_uid == os.getuid()): raise SystemExit(3)",
+            "identity=(info.st_dev,info.st_ino)",
             "client=socket.socket(socket.AF_UNIX)",
             "client.settimeout(2)",
             "try: client.connect(path)",
             "except OSError as exc:",
             "    if exc.errno not in {errno.ECONNREFUSED,errno.ENOENT}: raise SystemExit(4)",
             "else: raise SystemExit(5)",
+            "try: current=os.lstat(path)",
+            "except FileNotFoundError: raise SystemExit(0)",
+            "if (current.st_dev,current.st_ino) != identity:",
+            "    if stat.S_ISSOCK(current.st_mode) and current.st_uid == os.getuid(): raise SystemExit(5)",
+            "    raise SystemExit(3)",
+            "if not (stat.S_ISSOCK(current.st_mode) and current.st_uid == os.getuid()): raise SystemExit(3)",
             "try: os.unlink(path)",
             "except FileNotFoundError: pass",
         )
@@ -39,8 +59,22 @@ def _cleanup_command(socket_path: str) -> str:
 
 
 def remove_stale_remote_socket(
-    *, ssh_command: str, host: str, socket_path: str
+    *,
+    ssh_command: str,
+    host: str,
+    socket_path: str,
+    probe_timeout_seconds: float | None = None,
 ) -> None:
+    if probe_timeout_seconds is not None:
+        probe_timeout = min(
+            20.0,
+            _finite_positive(
+                probe_timeout_seconds,
+                "remote socket probe timeout must be finite and positive",
+            ),
+        )
+    else:
+        probe_timeout = 20.0
     command = [
         *shlex.split(ssh_command),
         "-o",
@@ -52,7 +86,7 @@ def remove_stale_remote_socket(
     ]
     try:
         result = subprocess.run(
-            command, text=True, capture_output=True, timeout=20, check=False
+            command, text=True, capture_output=True, timeout=probe_timeout, check=False
         )
     except subprocess.TimeoutExpired as exc:
         raise RemoteSocketProbeUnavailable(
@@ -80,20 +114,32 @@ def wait_for_remote_socket_release(
     maximum_delay_seconds: float = 30.0,
 ) -> None:
     """Wait for an old relay listener to disappear without unlinking it live."""
-    if timeout_seconds is not None and timeout_seconds < 0:
-        raise ValueError("socket release timeout must be non-negative")
-    if initial_delay_seconds <= 0 or maximum_delay_seconds <= 0:
-        raise ValueError("socket release delays must be positive")
+    if timeout_seconds is not None:
+        timeout_seconds = _finite_positive(
+            timeout_seconds, "socket release timeout must be finite and positive"
+        )
+    initial_delay_seconds = _finite_positive(
+        initial_delay_seconds, "socket release delays must be finite and positive"
+    )
+    maximum_delay_seconds = _finite_positive(
+        maximum_delay_seconds, "socket release delays must be finite and positive"
+    )
 
     started = time.monotonic()
     delay = min(initial_delay_seconds, maximum_delay_seconds)
     while True:
+        probe_kwargs = {
+            "ssh_command": ssh_command,
+            "host": host,
+            "socket_path": socket_path,
+        }
+        if timeout_seconds is not None:
+            remaining = timeout_seconds - (time.monotonic() - started)
+            if remaining <= 0:
+                raise RuntimeError("timed out while waiting for the remote proxy socket")
+            probe_kwargs["probe_timeout_seconds"] = min(20.0, remaining)
         try:
-            remove_stale_remote_socket(
-                ssh_command=ssh_command,
-                host=host,
-                socket_path=socket_path,
-            )
+            remove_stale_remote_socket(**probe_kwargs)
             return
         except (RemoteSocketStillActive, RemoteSocketProbeUnavailable) as exc:
             if (
@@ -104,7 +150,15 @@ def wait_for_remote_socket_release(
                     "timed out while waiting for the remote proxy socket"
                 ) from exc
             print(f"ssh reverse proxy waiting for remote socket release: {exc}", flush=True)
-            time.sleep(delay)
+            if timeout_seconds is not None:
+                remaining = timeout_seconds - (time.monotonic() - started)
+                if remaining <= 0:
+                    raise RuntimeError(
+                        "timed out while waiting for the remote proxy socket"
+                    ) from exc
+                time.sleep(min(delay, remaining))
+            else:
+                time.sleep(delay)
             delay = min(delay * 2.0, maximum_delay_seconds)
 
 

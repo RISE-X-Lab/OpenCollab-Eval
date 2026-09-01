@@ -81,6 +81,16 @@ def test_final_report_rejects_a_dataset_that_disagrees_with_the_fixed_census(tmp
     with pytest.raises(FinalReportInputError, match="dataset must be swe-batch-pro-lite"):
         swe_final_report.run_from_args(args)
 
+@pytest.mark.parametrize(
+    "value",
+    [0, -1, pytest.param(10**10000, id="huge-int"), float("nan"),
+     float("inf"), float("-inf"), True, False],
+)
+def test_final_report_rejects_non_finite_latex_timeout(tmp_path, value):
+    args = _args(tmp_path)
+    args.latex_timeout = value
+    with pytest.raises(FinalReportInputError, match="finite positive"):
+        swe_final_report.run_from_args(args)
 
 @pytest.mark.parametrize(
     ("mutate", "message"),

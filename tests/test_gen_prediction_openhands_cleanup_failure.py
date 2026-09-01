@@ -137,3 +137,111 @@ def test_supervisor_reap_failure_still_cleans_external_resources(
     assert result["host_supervisor_cleanup_error"] == (
         "supervisor process did not exit after SIGKILL"
     )
+
+
+def test_openhands_finalization_preserves_generation_error_and_reaches_container_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline_error = RuntimeError("trusted baseline cleanup failed")
+    evidence_error = OSError("evidence copy failed")
+    generation_error = ValueError("OpenHands generation failed")
+    baseline = SimpleNamespace(cleanup=lambda: (_ for _ in ()).throw(baseline_error))
+    finalize_calls: list[dict] = []
+    metrics: dict = {}
+
+    monkeypatch.setattr(
+        gpo.shutil,
+        "copytree",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(evidence_error),
+    )
+    monkeypatch.setattr(
+        gpo.gp,
+        "output_staging_requires_container_preservation",
+        lambda *_args, **_kwargs: False,
+    )
+    monkeypatch.setattr(
+        gpo.gp,
+        "finalize_container_ownership",
+        lambda **kwargs: finalize_calls.append(kwargs),
+    )
+
+    openhands_dir = tmp_path / "attempt"
+    openhands_dir.mkdir()
+    returned = gpo._cleanup_openhands_attempt(
+        trusted_baseline=baseline,
+        evidence_dir=tmp_path / "evidence" / "attempt",
+        openhands_dir=openhands_dir,
+        run_dir=tmp_path,
+        cid="container-123",
+        name="oc-oh-test",
+        pending_required=False,
+        pending_path=None,
+        metrics=metrics,
+        patch="",
+        generation_error=generation_error,
+        keep_container=False,
+    )
+
+    assert returned is generation_error
+    assert [call["cid"] for call in finalize_calls] == ["container-123"]
+    assert finalize_calls[0]["completed"] is False
+    assert any("trusted baseline cleanup failed" in item for item in metrics["cleanup_errors"])
+    assert any("evidence copy failed" in item for item in metrics["cleanup_errors"])
+    notes = getattr(generation_error, "__notes__", [])
+    assert any("trusted baseline cleanup failed" in note for note in notes)
+    assert any("evidence copy failed" in note for note in notes)
+
+
+def test_openhands_finalization_returns_cleanup_error_after_attempting_all_steps(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline_error = RuntimeError("baseline cleanup failed")
+    evidence_error = OSError("evidence copy failed")
+    finalize_error = PermissionError("container finalization failed")
+    baseline = SimpleNamespace(cleanup=lambda: (_ for _ in ()).throw(baseline_error))
+    finalize_calls: list[dict] = []
+    metrics: dict = {}
+
+    monkeypatch.setattr(
+        gpo.shutil,
+        "copytree",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(evidence_error),
+    )
+    monkeypatch.setattr(
+        gpo.gp,
+        "output_staging_requires_container_preservation",
+        lambda *_args, **_kwargs: False,
+    )
+
+    def fail_finalize(**kwargs):
+        finalize_calls.append(kwargs)
+        raise finalize_error
+
+    monkeypatch.setattr(gpo.gp, "finalize_container_ownership", fail_finalize)
+
+    openhands_dir = tmp_path / "attempt"
+    openhands_dir.mkdir()
+    returned = gpo._cleanup_openhands_attempt(
+        trusted_baseline=baseline,
+        evidence_dir=tmp_path / "evidence" / "attempt",
+        openhands_dir=openhands_dir,
+        run_dir=tmp_path,
+        cid="container-123",
+        name="oc-oh-test",
+        pending_required=False,
+        pending_path=None,
+        metrics=metrics,
+        patch="",
+        generation_error=None,
+        keep_container=False,
+    )
+
+    assert returned is baseline_error
+    assert [call["cid"] for call in finalize_calls] == ["container-123"]
+    assert finalize_calls[0]["completed"] is False
+    assert len(metrics["cleanup_errors"]) == 3
+    notes = getattr(baseline_error, "__notes__", [])
+    assert any("evidence copy failed" in note for note in notes)
+    assert any("container finalization failed" in note for note in notes)

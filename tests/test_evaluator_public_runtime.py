@@ -177,7 +177,19 @@ def test_failed_or_uncontrolled_agent_result_keeps_patch_but_blocks_submission(
     assert result.submission_eligible is False
 
 
-@pytest.mark.parametrize("reason", ["budget_exceeded", "timeout"])
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "budget_exceeded",
+        "budget exceeded: 100 tokens used",
+        "budget exceeded after model call: 100 tokens used",
+        "budget exhausted before model call: no output headroom",
+        "team budget exceeded: aggregate spend reached the global cap",
+        "step limit reached: 4 steps",
+        "context overflow: prompt exceeds the model context window",
+        "timeout",
+    ],
+)
 def test_controlled_stop_keeps_quiescent_patch_and_metrics_eligible(
     monkeypatch,
     tmp_path,
@@ -256,7 +268,19 @@ def test_nonquiescent_controlled_stop_blocks_submission(monkeypatch, tmp_path):
     assert result.submission_eligible is False
 
 
-@pytest.mark.parametrize("reason", ["budget_exceeded", "timeout"])
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "budget_exceeded",
+        "budget exceeded: 100 tokens used",
+        "budget exceeded after model call: 100 tokens used",
+        "budget exhausted before model call: no output headroom",
+        "team budget exceeded: aggregate spend reached the global cap",
+        "step limit reached: 4 steps",
+        "context overflow: prompt exceeds the model context window",
+        "timeout",
+    ],
+)
 def test_controlled_workflow_stop_keeps_patch_eligible(
     monkeypatch,
     tmp_path,

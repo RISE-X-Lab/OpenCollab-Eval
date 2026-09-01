@@ -25,6 +25,18 @@ from .gen_prediction_constants import (
     MAX_INSTANCE_BYTES,
 )
 
+_CONTROLLED_STOP_REASON_PREFIXES = (
+    "budget exceeded:",
+    "budget exceeded after model call:",
+    "budget exhausted before model call:",
+    "team budget exceeded:",
+    "step limit reached:",
+    "context overflow:",
+)
+_CONTROLLED_STOP_REASON_NAMES = frozenset(
+    {"budget_exceeded", "context_overflow", "step_limit_exceeded", "timeout"}
+)
+
 
 def build_task(instance: dict) -> str:
     return (
@@ -74,6 +86,26 @@ def _runtime_failure_metrics(exc: Exception) -> dict[str, Any]:
     }
 
 
+def _controlled_stop_status(reason: object) -> str | None:
+    """Return the stable timeout disposition for a bounded stop reason.
+
+    OpenCollab keeps useful counters in these reasons (for example, ``"step
+    limit reached: 4 steps"``), while generation records need one stable
+    status for the existing return-code contract.  The original reason stays
+    in ``session_phase`` and the runtime trace; this helper only classifies
+    known controlled-stop prefixes and never treats cancellation or failures as
+    a successful stop.
+    """
+    if not isinstance(reason, str):
+        return None
+    normalized = reason.strip().lower()
+    if normalized in _CONTROLLED_STOP_REASON_NAMES or normalized.startswith(
+        _CONTROLLED_STOP_REASON_PREFIXES
+    ):
+        return "done_with_timeout_patch"
+    return None
+
+
 def _result_metrics(result: RunResult[str]) -> dict[str, Any]:
     values = result.metrics
     if "session_quiesced" in values:
@@ -89,14 +121,23 @@ def _result_metrics(result: RunResult[str]) -> dict[str, Any]:
     elif result.status == "completed":
         workflow_status = "done"
     elif result.status == "stopped":
+        # Keep the runtime's detailed terminal reason in the diagnostic status
+        # until trusted extraction has succeeded.  The output layer applies
+        # ``_controlled_stop_status`` only after its proof gate, so a stopped
+        # run without a valid patch cannot look like a completed candidate.
         workflow_status = str(result.reason or phase)
     else:
         workflow_status = "error"
-    candidate_probe_eligible = (
-        session_quiesced
-        and result.status in {"completed", "stopped"}
-        and workflow_status in {"done", "done_with_timeout_patch"}
-    )
+    # A controlled stop can happen after the agent has already edited the
+    # workspace.  Once the session is quiescent, the workspace probe and
+    # trusted extraction below are safe regardless of whether the stop was
+    # caused by the token budget, step ceiling, context overflow, or timeout.
+    # Unhandled failures remain excluded because they provide no workspace
+    # integrity guarantee.
+    candidate_probe_eligible = session_quiesced and result.status in {
+        "completed",
+        "stopped",
+    }
     metrics = {
         "workflow_status": workflow_status,
         "session_phase": phase,

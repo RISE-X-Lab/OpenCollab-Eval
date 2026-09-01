@@ -21,6 +21,7 @@ from opencollab_eval.safe_files import (
     write_regular_bytes_atomic,
 )
 
+from .gen_prediction_agent import _controlled_stop_status
 from .gen_prediction_constants import (
     HARNESS_LOCK_TIMEOUT_SECONDS,
     MAX_OUTPUT_JSONL_BYTES,
@@ -169,6 +170,47 @@ def _path_matches_open_file(path: Path, fd: int) -> bool:
 def _require_path_matches_open_file(path: Path, fd: int) -> None:
     if not _path_matches_open_file(path, fd):
         raise OSError(f"output path changed during durable append: {path}")
+
+
+def _existing_output_record(fd: int, row: dict) -> bool:
+    """Return whether this record is already durably present under the lock.
+
+    Prediction and metric projections are committed to separate JSONL files.
+    If a process dies between those appends, a retry must not append a second
+    prediction row.  Scan only while holding the same file lock used for the
+    append, and reject an identity collision with different contents.
+    """
+    instance_id = row.get("instance_id")
+    record_id = row.get("record_id")
+    if instance_id is None or record_id is None:
+        return False
+    chunks: list[bytes] = []
+    offset = 0
+    while offset <= MAX_OUTPUT_JSONL_BYTES:
+        chunk = os.pread(fd, min(1024 * 1024, MAX_OUTPUT_JSONL_BYTES + 1 - offset), offset)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        offset += len(chunk)
+        if offset > MAX_OUTPUT_JSONL_BYTES:
+            break
+    for line in b"".join(chunks).splitlines():
+        try:
+            existing = json.loads(line)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(existing, dict):
+            continue
+        if (
+            existing.get("instance_id") == instance_id
+            and existing.get("record_id") == record_id
+        ):
+            if existing != row:
+                raise OSError(
+                    "output record identity collision with different contents"
+                )
+            return True
+    return False
 
 
 def _atomic_write_bytes(path: Path, payload: bytes) -> None:
@@ -331,6 +373,10 @@ def complete_single_agent_integrity(
     metrics["submission_eligible"] = (
         metrics.get("submission_eligible") is True and proof_valid
     )
+    if patch.strip() and proof_valid:
+        controlled_status = _controlled_stop_status(metrics.get("workflow_status"))
+        if controlled_status is not None:
+            metrics["workflow_status"] = controlled_status
 
 
 def normalize_trusted_extraction_status(metrics: dict, patch: str) -> None:
@@ -360,6 +406,16 @@ def build_output_records(
         "patch_sha256": patch_sha,
         "model_name_or_path": model_name,
     }
+    # ``EvalResult.task_id`` is an internal (often anonymous) solver task id,
+    # whereas persisted prediction/metric rows are keyed by the public SWE
+    # instance id.  Keeping two different values under the generic
+    # ``task_id``/``instance_id`` aliases makes strict record pairing reject a
+    # perfectly valid provider-failure row.  Preserve the internal value under
+    # an explicit name and bind the public alias to the persisted instance.
+    solver_task_id = metric_record.get("task_id")
+    if solver_task_id not in (None, "", instance_id):
+        metric_record["solver_task_id"] = solver_task_id
+    metric_record["task_id"] = instance_id
     metric_record["runner_returncode"] = runner_returncode_for_metrics(metric_record)
     prediction = {
         "instance_id": instance_id,
@@ -426,6 +482,8 @@ def _append_jsonl_durable(path: Path, row: dict) -> None:
         _acquire_exclusive_lock(fd, label=f"output lock {path}")
         locked = True
         _require_path_matches_open_file(path, fd)
+        if _existing_output_record(fd, row):
+            return
         size = os.fstat(fd).st_size
         needs_separator = size > 0 and os.pread(fd, 1, size - 1) != b"\n"
         if size + int(needs_separator) + len(payload) > MAX_OUTPUT_JSONL_BYTES:

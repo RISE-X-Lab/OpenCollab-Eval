@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import time
 
 import pytest
 from swe_v1_prolite_runner_test_support import runner
@@ -39,6 +40,82 @@ def test_ssh_checked_retries_only_pre_session_transport(monkeypatch):
     assert len(calls) == 3
     assert sleeps == [1, 2]
     assert [item["retried"] for item in evidence] == [True, True, False]
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "ssh: connect to host worker port 22: Connection timed out\n",
+        "ssh: connect to host worker port 22: Operation timed out\n",
+    ],
+)
+def test_ssh_checked_retries_platform_specific_connect_timeout(
+    monkeypatch, message
+):
+    calls = []
+
+    def run_checked(command, *, timeout=120, input_text=None):
+        calls.append(command)
+        if len(calls) == 1:
+            raise CheckedCommandError(
+                command,
+                subprocess.CompletedProcess(command, 255, "", message),
+            )
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(runner, "run_checked", run_checked)
+    monkeypatch.setattr(runner.time, "sleep", lambda _seconds: None)
+    evidence = []
+
+    result = runner.run_ssh_checked(
+        ["ssh", "worker", "true"], attempts=2, retry_log=evidence
+    )
+
+    assert result.returncode == 0
+    assert len(calls) == 2
+    assert evidence[0]["failure_kind"] == "connect_timeout"
+    assert evidence[0]["retried"] is True
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        "remote command: connection refused\n",
+        "remote command: no route to host\n",
+    ],
+)
+def test_ssh_checked_does_not_retry_remote_command_marker(
+    monkeypatch, stderr
+):
+    calls = []
+
+    def run_checked(command, **_kwargs):
+        calls.append(command)
+        raise CheckedCommandError(
+            command,
+            subprocess.CompletedProcess(command, 255, "", stderr),
+        )
+
+    monkeypatch.setattr(runner, "run_checked", run_checked)
+    evidence = []
+
+    with pytest.raises(CheckedCommandError):
+        runner.run_ssh_checked(
+            ["ssh", "worker", "mutating-command"],
+            attempts=3,
+            retry_log=evidence,
+        )
+
+    assert len(calls) == 1
+    assert evidence == [
+        {
+            "attempt": 1,
+            "status": "failed",
+            "returncode": 255,
+            "failure_kind": "non_retryable",
+            "retried": False,
+        }
+    ]
 
 
 def test_runtime_sync_retries_pre_session_mkdir_and_install(monkeypatch):
@@ -152,6 +229,41 @@ def test_idempotent_ssh_retries_connection_closed_after_remote_start(monkeypatch
     assert attempts == 2
 
 
+@pytest.mark.parametrize(
+    ("stdout", "stderr"),
+    [
+        ("application: connection closed by remote peer\n", ""),
+        ("", "application: connection reset by peer while handling request\n"),
+    ],
+)
+def test_idempotent_ssh_does_not_retry_remote_disconnect_marker(
+    monkeypatch, stdout, stderr
+):
+    calls = []
+
+    def run_checked(command, **_kwargs):
+        calls.append(command)
+        raise CheckedCommandError(
+            command,
+            subprocess.CompletedProcess(command, 255, stdout, stderr),
+        )
+
+    monkeypatch.setattr(runner, "run_checked", run_checked)
+    evidence = []
+
+    with pytest.raises(CheckedCommandError):
+        runner.run_ssh_checked(
+            ["ssh", "worker", "read-only-probe"],
+            attempts=3,
+            idempotent=True,
+            retry_log=evidence,
+        )
+
+    assert len(calls) == 1
+    assert evidence[0]["failure_kind"] == "non_retryable"
+    assert evidence[0]["retried"] is False
+
+
 def test_non_idempotent_ssh_does_not_retry_ambiguous_disconnect(monkeypatch):
     attempts = 0
 
@@ -232,6 +344,19 @@ def test_idempotent_ssh_retries_timeout_with_bounded_attempt_log(monkeypatch):
         "command_timeout",
         "command_timeout",
     ]
+
+
+def test_ssh_checked_rejects_an_expired_shared_deadline(monkeypatch):
+    invoked = []
+    monkeypatch.setattr(runner, "run_checked", lambda *args, **kwargs: invoked.append(args))
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        runner.run_ssh_checked(
+            ["ssh", "remote-host", "true"],
+            deadline=time.monotonic() - 1,
+        )
+
+    assert invoked == []
 
 
 def test_runtime_sync_cleans_archive_after_transport_retry_exhaustion(monkeypatch):

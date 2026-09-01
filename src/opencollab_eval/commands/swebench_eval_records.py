@@ -623,9 +623,21 @@ def report_is_done(path: Path, instance_id: str, expected_identity: dict) -> boo
         return False
     if str(item.get("status") or "") in _runner().TECHNICAL_REPORT_STATUSES or bool(item.get("error")):
         return False
+    embedded_record_id = item.get("record_id")
+    if embedded_record_id not in (None, "") and embedded_record_id != expected_identity.get(
+        "record_id"
+    ):
+        # A report may carry its candidate record identity directly.  Do not
+        # let a same-patch result from another generation satisfy the current
+        # queue item; legacy reports that omit the field continue through the
+        # sidecar binding path below.
+        return False
     embedded_sha = str(item.get("patch_sha256") or item.get("patch_sha") or item.get("model_patch_sha256") or "")
     if embedded_sha:
-        return embedded_sha == expected_identity.get("patch_sha256")
+        return swe_records.patch_sha_matches(
+            embedded_sha,
+            str(expected_identity.get("patch_sha256") or ""),
+        )
     sidecar = _runner().identity_path(path)
     sidecar_document = _runner()._read_bounded_json_safe(sidecar)
     if sidecar_document is None:
@@ -643,10 +655,13 @@ def report_is_done(path: Path, instance_id: str, expected_identity: dict) -> boo
     if str(attempt.get("patch_sha256") or "") != str(expected_identity.get("patch_sha256") or ""):
         return False
     if "prior_report_fingerprint" in attempt:
-        # A report format without an embedded patch identity can only be bound
-        # when the destination was absent at attempt start. Rewriting or merely
-        # touching a pre-existing report does not prove which patch was graded.
-        if str(attempt.get("prior_report_fingerprint") or ""):
+        # A report format without an embedded patch identity must not reuse the
+        # exact report that was present before this attempt.  The evaluator may
+        # legitimately replace that report in place, so compare the complete
+        # opened-file fingerprint (the same metadata captured by discovery)
+        # before applying the existing post-start mtime gate below.
+        prior_fingerprint = str(attempt.get("prior_report_fingerprint") or "")
+        if prior_fingerprint and _runner()._stat_fingerprint(report_stat) == prior_fingerprint:
             return False
     try:
         return report_mtime_ns >= int(attempt.get("started_at_ns") or 0) > 0

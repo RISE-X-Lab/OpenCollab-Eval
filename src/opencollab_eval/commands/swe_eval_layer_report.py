@@ -11,6 +11,7 @@ from typing import Any
 
 from opencollab_eval.commands import _swe_eval_layer_integrity as _integrity
 from opencollab_eval.commands import _swe_report_io as _report_io
+from opencollab_eval.commands import swe_v1_prolite_report as _prolite_report
 from opencollab_eval.engine.token_cost import WORKFLOW_RE
 
 
@@ -18,19 +19,8 @@ def _now() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S %z")
 
 
-def _load_json(path: Path) -> dict[str, Any]:
-    return _report_io.load_json(path)
-
-
 def _iter_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    if isinstance(report.get("rows"), list):
-        rows.extend(row for row in report["rows"] if isinstance(row, dict))
-    for result in report.get("results") or []:
-        if isinstance(result, dict) and isinstance(result.get("rows"), list):
-            rows.extend(row for row in result["rows"] if isinstance(row, dict))
-    return rows
-
+    return _prolite_report._report_rows_for_attempt_count(report)
 
 def _patch_sha(row: dict[str, Any]) -> str:
     generation = row.get("generation") if isinstance(row.get("generation"), dict) else {}
@@ -40,14 +30,11 @@ def _patch_sha(row: dict[str, Any]) -> str:
     evaluation_sha = str(summary.get("patch_sha256") or "")
     return generation_sha or evaluation_sha
 
-
 def _task_key(row: dict[str, Any]) -> str:
-    return str(row.get("task") or row.get("instance_id") or "")
-
+    return _integrity._task_alias(row)
 
 def _task_index(row: dict[str, Any]) -> int | None:
     return _integrity.strict_index(row.get("index"))
-
 
 def _eval_state(row: dict[str, Any]) -> dict[str, Any]:
     evaluation = row.get("eval") if isinstance(row.get("eval"), dict) else {}
@@ -410,6 +397,7 @@ def build_report(
     max_eval_attempts: int = 10,
     allow_over_budget_evidence: bool = False,
     usd_cny: float | None = None,
+    candidate_identities: dict[int, tuple[str, str, str, str]] | None = None,
 ) -> dict[str, Any]:
     attempts: list[dict[str, Any]] = []
     observed_attempts: list[dict[str, Any]] = []
@@ -420,12 +408,14 @@ def build_report(
     global_census_issues: list[str] = []
     inferred_indices: list[int] = []
     seen_rows: set[tuple[str, int | None, str]] = set()
+    expected_identities = _prolite_report._normalized_candidate_identities(candidate_identities)
     loaded_reports = [(path, *_report_io.load_json_with_error(path)) for path in report_paths]
     ordered_reports = sorted(loaded_reports, key=_integrity.report_evidence_order)
     for source_order, (path, report, load_error) in enumerate(ordered_reports, start=1):
         if load_error:
             global_census_issues.append(f"{load_error}:{path}")
             continue
+        report = _prolite_report.candidate_report_view(report, expected_identities)
         report_indices, report_issues, report_global_issues = _integrity.report_census(report)
         for index in report_indices:
             if index not in inferred_indices:
@@ -437,6 +427,9 @@ def build_report(
             if reason not in global_census_issues:
                 global_census_issues.append(reason)
         for row in _iter_rows(report):
+            index = _task_index(row)
+            if not _prolite_report.candidate_row_is_admitted(row, expected_identities.get(index)):
+                continue
             task = _task_key(row)
             if not task:
                 index = _task_index(row)
@@ -446,7 +439,6 @@ def build_report(
                 else:
                     _integrity.append_issue(issues_by_index, index, "missing_task_identity")
                 continue
-            index = _task_index(row)
             row_key = (str(path), index, task)
             if row_key in seen_rows:
                 _integrity.append_issue(task_issues, task, "duplicate_task_row")
@@ -483,7 +475,7 @@ def build_report(
             if path_text not in used_reports:
                 used_reports.append(path_text)
             attempts.append(observed)
-    token_cost = _load_json(token_cost_path) if token_cost_path else {}
+    token_cost = _report_io.load_json(token_cost_path) if token_cost_path else {}
     source_patch_by_task: dict[str, str] = {}
     projection_identity_by_task: dict[str, tuple[str, tuple[str, ...]]] = {}
     record_id_by_task: dict[str, str] = {}
@@ -775,11 +767,13 @@ def main() -> int:
     parser.add_argument("--max-rounds", type=int, default=2)
     parser.add_argument("--max-eval-attempts", type=int, default=10)
     parser.add_argument("--allow-over-budget-evidence", action="store_true")
+    parser.add_argument("--candidate-identities-json")
     parser.add_argument("--usd-cny", type=float)
     parser.add_argument("--json-output", type=Path, required=True)
     parser.add_argument("--markdown-output", type=Path, required=True)
     args = parser.parse_args()
 
+    candidate_identities = _prolite_report.load_candidate_identities_json(args.candidate_identities_json)
     report = build_report(
         [Path(path) for path in args.report_json],
         token_cost_path=args.token_cost_json,
@@ -788,12 +782,12 @@ def main() -> int:
         max_eval_attempts=args.max_eval_attempts,
         allow_over_budget_evidence=args.allow_over_budget_evidence,
         usd_cny=args.usd_cny,
+        candidate_identities=candidate_identities or None,
     )
     _report_io.write_json(args.json_output, report)
     _report_io.write_text(args.markdown_output, to_markdown(report))
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

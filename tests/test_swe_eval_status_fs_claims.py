@@ -614,7 +614,7 @@ def test_auto_eval_pid_reuse_mismatch_reclaims_claim_even_with_fresh_lease(
     assert observed == replacement
 
 
-def test_auto_eval_expired_unverified_residual_group_is_recoverable(
+def test_auto_eval_retains_group_when_identity_probe_is_unavailable(
     monkeypatch,
     tmp_path,
 ):
@@ -625,25 +625,24 @@ def test_auto_eval_expired_unverified_residual_group_is_recoverable(
         json.dumps(
             {
                 "schema": "opencollab.swe_eval_claim.v1",
-                "status": "technical_eval_failed",
+                "status": "cleanup_failed",
                 "pid": 0,
-                "evaluator_pgid": 424243,
-                "evaluator_start_identity": "",
-                "started_at_ns": now_ns - 120_000_000_000,
-                "heartbeat_at_ns": now_ns - 120_000_000_000,
-                "lease_expires_at_ns": now_ns - 90_000_000_000,
+                "evaluator_pgid": 424244,
+                "evaluator_start_identity": "proc:expected",
+                "lease_until_ns": now_ns - 1,
             }
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(driver, "_process_group_exists", lambda pgid: True)
-    monkeypatch.setattr(driver, "_process_start_identity", lambda pid: "")
+    monkeypatch.setattr(driver, "_process_group_exists", lambda _pgid: True)
+    monkeypatch.setattr(driver, "_process_start_identity", lambda _pid: "")
     replacement = {"schema": "opencollab.swe_eval_claim.v1", "pid": 0}
 
     acquired, observed = driver._acquire_claim(claim, replacement)
 
-    assert acquired is True
-    assert observed == replacement
+    assert acquired is False
+    assert observed["evaluator_pgid"] == 424244
+    assert json.loads(claim.read_text(encoding="utf-8"))["evaluator_pgid"] == 424244
 
 
 def test_auto_eval_rejects_symlink_claim_without_touching_target(tmp_path):

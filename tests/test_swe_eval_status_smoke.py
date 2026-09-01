@@ -13,6 +13,7 @@ from swe_eval_status_support import (
     signal,
     subprocess,
     sys,
+    threading,
     time,
 )
 
@@ -214,6 +215,93 @@ def test_smoke_generator_normal_exit_kills_residual_descendant(tmp_path):
     assert ready.exists()
     time.sleep(0.9)
     assert not finished.exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="fork guard is POSIX-specific")
+def test_smoke_generator_never_uses_python_fork(monkeypatch, tmp_path):
+    driver = importlib.import_module("opencollab_eval.commands.run_swebench_smoke_batch")
+    monkeypatch.setattr(
+        driver.os,
+        "fork",
+        lambda: pytest.fail("smoke generator must not call Python os.fork"),
+        raising=False,
+    )
+    returncode, reason = driver._run_generator(
+        [sys.executable, "-c", "pass"],
+        cwd=tmp_path,
+        env=os.environ.copy(),
+        outer_timeout=2,
+        spawn_timeout=1,
+    )
+    assert returncode == 0, reason
+
+
+def test_smoke_generator_avoids_fork_with_background_thread(monkeypatch, tmp_path):
+    driver = importlib.import_module("opencollab_eval.commands.run_swebench_smoke_batch")
+    started = threading.Event()
+    stop = threading.Event()
+
+    def background_worker():
+        started.set()
+        stop.wait(2)
+
+    worker = threading.Thread(target=background_worker, daemon=True)
+    worker.start()
+    assert started.wait(1)
+    monkeypatch.setattr(
+        driver.os,
+        "fork",
+        lambda: pytest.fail("smoke generator must not call Python os.fork"),
+        raising=False,
+    )
+    try:
+        returncode, reason = driver._run_generator(
+            [sys.executable, "-c", "pass"],
+            cwd=tmp_path,
+            env=os.environ.copy(),
+            outer_timeout=2,
+            spawn_timeout=1,
+        )
+    finally:
+        stop.set()
+        worker.join(timeout=1)
+    assert returncode == 0, reason
+
+
+def test_smoke_generator_spawn_wait_respects_outer_timeout(
+    monkeypatch,
+    tmp_path,
+):
+    """A stalled Popen constructor cannot extend the instance wall bound."""
+    driver = importlib.import_module("opencollab_eval.commands.run_swebench_smoke_batch")
+    entered = threading.Event()
+    release = threading.Event()
+
+    def blocked_popen(*args, **kwargs):
+        del args, kwargs
+        entered.set()
+        release.wait(0.4)
+        raise OSError("simulated launch stall")
+
+    monkeypatch.setattr(driver.subprocess, "Popen", blocked_popen)
+    started = time.monotonic()
+    try:
+        returncode, reason = driver._run_generator(
+            [sys.executable, "-c", "pass"],
+            cwd=tmp_path,
+            env=os.environ.copy(),
+            outer_timeout=0.05,
+            spawn_timeout=1.0,
+            term_timeout=0.01,
+            kill_timeout=0.01,
+        )
+    finally:
+        release.set()
+
+    assert entered.is_set()
+    assert time.monotonic() - started < 0.25
+    assert returncode == driver.TECHNICAL_EXIT_CODE
+    assert "spawn" in reason
 
 
 def test_smoke_generator_normal_exit_cleanup_failure_is_technical(

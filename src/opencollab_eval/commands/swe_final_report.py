@@ -6,6 +6,7 @@ import argparse
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -289,8 +290,12 @@ def run_from_args(args: argparse.Namespace) -> dict[str, Any]:
         raise FinalReportInputError(f"dataset must be {_DATASET_ID}")
     author = _nonempty(args.author, label="author")
     meeting_date = _meeting_date(args.meeting_date)
-    if not isinstance(args.latex_timeout, (int, float)) or args.latex_timeout <= 0:
-        raise FinalReportInputError("LaTeX timeout must be positive")
+    try:
+        latex_timeout = float(args.latex_timeout)
+    except (TypeError, ValueError, OverflowError):
+        latex_timeout = float("nan")
+    if isinstance(args.latex_timeout, bool) or not math.isfinite(latex_timeout) or latex_timeout <= 0:
+        raise FinalReportInputError("LaTeX timeout must be a finite positive number")
     prefix = args.output_prefix or _default_prefix(meeting_date)
     if not isinstance(prefix, str) or _PREFIX_RE.fullmatch(prefix) is None:
         raise FinalReportInputError("output prefix contains unsafe characters")
@@ -387,7 +392,7 @@ def run_from_args(args: argparse.Namespace) -> dict[str, Any]:
                 tex_path,
                 output_dir=stage,
                 latex_engine=args.latex_engine,
-                timeout_seconds=float(args.latex_timeout),
+                timeout_seconds=latex_timeout,
             )
             staged_outputs = {
                 "json": json_path,

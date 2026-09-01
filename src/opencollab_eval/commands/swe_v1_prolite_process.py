@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import shlex
 import signal
@@ -33,6 +34,11 @@ def terminate_remote_run(
     remote_python: str = "python3",
     timeout: int = 30,
 ) -> dict[str, Any]:
+    timeout_value = _validate_timeout(
+        timeout,
+        name="remote cleanup timeout",
+        allow_zero=False,
+    )
     runtime_repo = remote_runtime_repo or str(Path(base_run_dir) / "_runtime" / "repo")
     remote_pythonpath = str(Path(runtime_repo) / "src")
     remote_command = (
@@ -47,7 +53,7 @@ def terminate_remote_run(
         [*ssh_command, host, remote_command],
         text=True,
         capture_output=True,
-        timeout=timeout,
+        timeout=timeout_value,
         check=False,
     )
     try:
@@ -157,6 +163,42 @@ def _drain_text_stream(stream: Any, sink: _BoundedTextTail) -> None:
         return
 
 
+def _validate_communication_timeout(timeout: float) -> float:
+    """Validate a programmatic communication timeout before starting I/O."""
+    if isinstance(timeout, bool):
+        raise ValueError("remote communication timeout must be finite and non-negative")
+    try:
+        value = float(timeout)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(
+            "remote communication timeout must be finite and non-negative"
+        ) from exc
+    if not math.isfinite(value) or value < 0:
+        raise ValueError("remote communication timeout must be finite and non-negative")
+    return value
+
+
+def _validate_timeout(
+    timeout: float,
+    *,
+    name: str,
+    allow_zero: bool,
+) -> float:
+    """Validate a cleanup timeout before creating worker threads."""
+    if isinstance(timeout, bool):
+        qualifier = "non-negative" if allow_zero else "positive"
+        raise ValueError(f"{name} must be finite and {qualifier}")
+    try:
+        value = float(timeout)
+    except (TypeError, ValueError, OverflowError) as exc:
+        qualifier = "non-negative" if allow_zero else "positive"
+        raise ValueError(f"{name} must be finite and {qualifier}") from exc
+    if not math.isfinite(value) or (value < 0 if allow_zero else value <= 0):
+        qualifier = "non-negative" if allow_zero else "positive"
+        raise ValueError(f"{name} must be finite and {qualifier}")
+    return value
+
+
 def _bounded_remote_communicate(
     proc: subprocess.Popen[str],
     input_text: str,
@@ -165,12 +207,24 @@ def _bounded_remote_communicate(
     poll_interval: float | None = None,
     poll_callback: Callable[[], None] | None = None,
 ) -> tuple[str, str]:
+    timeout_value = _validate_communication_timeout(timeout)
+    if poll_interval is not None:
+        poll_interval = _validate_timeout(
+            poll_interval,
+            name="remote poll interval",
+            allow_zero=False,
+        )
+    # Start the deadline before any potentially blocking pipe operation.  In
+    # particular, writing a large request to a child that never reads stdin
+    # must not bypass the caller's timeout.
+    deadline = time.monotonic() + timeout_value
     if (
         getattr(proc, "stdout", None) is None
         or getattr(proc, "stderr", None) is None
         or getattr(proc, "stdin", None) is None
     ):
-        return proc.communicate(input_text, timeout=timeout)
+        remaining = max(0.0, deadline - time.monotonic())
+        return proc.communicate(input_text, timeout=remaining)
     stdout_tail = _BoundedTextTail(MAX_REMOTE_OUTPUT_TAIL_CHARS)
     stderr_tail = _BoundedTextTail(MAX_REMOTE_OUTPUT_TAIL_CHARS)
     threads = [
@@ -190,29 +244,78 @@ def _bounded_remote_communicate(
     proc._opencollab_bounded_drainers = threads
     for thread in threads:
         thread.start()
-    try:
-        proc.stdin.write(input_text)
-        proc.stdin.flush()
-    except (BrokenPipeError, OSError):
-        pass
-    finally:
+    input_done = threading.Event()
+    input_errors: list[BaseException] = []
+
+    def write_input() -> None:
         try:
-            proc.stdin.close()
-        except OSError:
+            proc.stdin.write(input_text)
+            proc.stdin.flush()
+        except (BrokenPipeError, OSError, ValueError):
+            # The child may exit before consuming the request, or the caller
+            # may close stdin while aborting a timed-out process.
             pass
-    deadline = time.monotonic() + max(0.0, timeout)
+        except BaseException as exc:
+            input_errors.append(exc)
+        finally:
+            try:
+                proc.stdin.close()
+            except (OSError, ValueError):
+                pass
+            input_done.set()
+
+    input_thread = threading.Thread(
+        target=write_input,
+        name=f"prolite-stdin-{proc.pid}",
+        daemon=True,
+    )
+    proc._opencollab_bounded_input_writer = input_thread
+    input_thread.start()
+
+    def close_stdin() -> None:
+        # ``TextIOWrapper.close()`` takes the same lock as a concurrent
+        # ``write`` and can therefore block forever while the writer is stuck
+        # on a full pipe.  Close the descriptor directly so the blocked write
+        # wakes with ``OSError``; the writer's finally block then closes the
+        # wrapper itself.
+        try:
+            os.close(proc.stdin.fileno())
+        except (AttributeError, OSError, ValueError):
+            pass
+
+    def raise_input_error() -> None:
+        if input_errors:
+            raise input_errors[0]
+
     while proc.poll() is None:
+        raise_input_error()
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise subprocess.TimeoutExpired(proc.args, timeout)
+            close_stdin()
+            raise subprocess.TimeoutExpired(
+                getattr(proc, "args", proc), timeout_value
+            ) from None
         wait_timeout = min(remaining, poll_interval) if poll_interval else remaining
         try:
             proc.wait(timeout=wait_timeout)
         except subprocess.TimeoutExpired:
-            if poll_callback is not None and wait_timeout < remaining:
-                poll_callback()
+            if wait_timeout < remaining:
+                if poll_callback is not None:
+                    poll_callback()
                 continue
-            raise
+            close_stdin()
+            raise subprocess.TimeoutExpired(
+                getattr(proc, "args", proc), timeout_value
+            ) from None
+    # An exited child cannot consume more input.  Close the descriptor to
+    # release a writer blocked on a full pipe, then wait only within the same
+    # deadline for the writer to observe that closure.
+    if not input_done.is_set():
+        close_stdin()
+    writer_remaining = max(0.0, deadline - time.monotonic())
+    if not input_done.wait(timeout=writer_remaining):
+        raise subprocess.TimeoutExpired(getattr(proc, "args", proc), timeout_value)
+    raise_input_error()
     for thread in threads:
         thread.join(timeout=5)
     if any(thread.is_alive() for thread in threads):
@@ -263,8 +366,13 @@ _local_process_group_exists = local_process_group_exists
 def wait_for_local_process_groups_exit(
     pgids: set[int], *, timeout: float
 ) -> set[int]:
+    timeout_value = _validate_timeout(
+        timeout,
+        name="local process-group wait timeout",
+        allow_zero=True,
+    )
     pending = set(pgids)
-    deadline = time.monotonic() + max(0.0, timeout)
+    deadline = time.monotonic() + timeout_value
     while pending:
         pending = {pgid for pgid in pending if local_process_group_exists(pgid)}
         remaining = deadline - time.monotonic()
@@ -350,6 +458,16 @@ def terminate_local_process_group(
     kill_timeout: float = LOCAL_PROCESS_KILL_REAP_TIMEOUT_SECONDS,
 ) -> bool:
     """Terminate an SSH wrapper and drain its pipes without an unbounded wait."""
+    term_timeout = _validate_timeout(
+        term_timeout,
+        name="local process termination timeout",
+        allow_zero=True,
+    )
+    kill_timeout = _validate_timeout(
+        kill_timeout,
+        name="local process kill timeout",
+        allow_zero=True,
+    )
     state: dict[str, object] = {}
     done = threading.Event()
 

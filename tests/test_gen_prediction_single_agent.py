@@ -538,6 +538,11 @@ def test_generation_limits_normalize_valid_values():
     )
 
 
+def test_generation_limits_rejects_huge_timeout_without_leaking_overflow():
+    with pytest.raises(ValueError, match="--timeout must be a positive finite number"):
+        gp.validate_generation_limits(max_steps=10, budget=100, timeout=10**10000)
+
+
 def test_default_metrics_path_matches_status_layout(tmp_path):
     output = tmp_path / "predictions.jsonl"
 
@@ -726,6 +731,30 @@ def test_output_commit_recovers_when_metrics_projection_crashes(monkeypatch, tmp
     assert pair.status == "embedded_metric"
     assert pair.prediction["record_id"] == "r1"
     assert pair.metric == metric
+
+    # A retry after the process died between the two projections is
+    # idempotent: it completes the missing metric row without duplicating the
+    # already durable prediction row.
+    monkeypatch.setattr(gp, "_append_jsonl_durable", original_append)
+    gp.append_output_records(prediction_path, metrics_path, prediction, metric)
+    assert len(prediction_path.read_text(encoding="utf-8").splitlines()) == 1
+    assert len(metrics_path.read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_output_commit_rejects_same_record_id_with_different_contents(tmp_path):
+    prediction, _metric = gp.build_output_records(
+        instance_id="task-1",
+        model_name="model",
+        patch="diff --git a/a b/a\n+x\n",
+        metrics={"workflow_status": "done"},
+        record_id="r1",
+    )
+    path = tmp_path / "predictions.jsonl"
+    gp._append_jsonl_durable(path, prediction)
+    conflicting = dict(prediction, model_patch="different")
+
+    with pytest.raises(OSError, match="identity collision"):
+        gp._append_jsonl_durable(path, conflicting)
 
 
 def test_durable_append_separates_preexisting_truncated_tail(tmp_path):

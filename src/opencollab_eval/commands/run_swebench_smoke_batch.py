@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import select
 import signal
 import subprocess
 import sys
@@ -29,11 +27,8 @@ REPO_ROOT = Path(os.environ.get("OPENCOLLAB_EVAL_WORKSPACE", Path.cwd())).resolv
 
 positive_timeout_seconds = process_tools.positive_timeout_seconds
 _ensure_process_tree_quiesced_after_wait = process_tools.ensure_process_tree_quiesced_after_wait
-_posix_group_exists = process_tools.posix_group_exists
 _process_group_kwargs = process_tools.process_group_kwargs
 _terminate_process_tree = process_tools.terminate_process_tree
-
-_ORIGINAL_POPEN = _GENERATOR_POPEN = subprocess.Popen
 
 PROCESS_TERM_GRACE_SECONDS = 0.1
 PROCESS_KILL_REAP_SECONDS = 2.0
@@ -196,7 +191,11 @@ def _run_generator_thread(
             "kill_timeout": kill_timeout,
         },
         name="swe-smoke-generator",
-        daemon=False,
+        # ``Popen`` has no constructor-level timeout.  Keep the supervisor
+        # daemonized so an OS-level launch stall cannot hold interpreter
+        # shutdown forever after the bounded spawn wait expires.  Once the
+        # child is created, the worker owns normal process-group teardown.
+        daemon=True,
     )
     try:
         _install_termination_handlers(stop, previous_handlers)
@@ -204,7 +203,7 @@ def _run_generator_thread(
 
         spawn_finished, interruption = _wait_event_resisting_interrupt(
             started,
-            timeout=spawn_timeout,
+            timeout=min(spawn_timeout, outer_timeout),
             interrupt_event=stop,
         )
         if not spawn_finished:
@@ -263,181 +262,6 @@ def _run_generator_thread(
         _restore_termination_handlers(previous_handlers)
 
 
-_ORIGINAL_WAIT_EVENT = _wait_event_resisting_interrupt
-_ORIGINAL_ENSURE_PROCESS_TREE_QUIESCED = _ensure_process_tree_quiesced_after_wait
-
-
-def _helper_send(fd: int, value: dict) -> None:
-    payload = (json.dumps(value, separators=(",", ":")) + "\n").encode("utf-8")
-    view = memoryview(payload)
-    while view:
-        written = os.write(fd, view)
-        if written <= 0:
-            raise OSError("generator helper status write made no progress")
-        view = view[written:]
-
-
-def _generator_helper_main(
-    write_fd: int,
-    *,
-    cmd: list[str],
-    cwd: Path,
-    env: dict[str, str],
-    deadline: float,
-) -> None:
-    try:
-        os.setsid()
-        for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-            signal.signal(signum, signal.SIG_DFL)
-        _helper_send(write_fd, {"status": "helper_ready", "pgid": os.getpid()})
-        try:
-            process = _GENERATOR_POPEN(cmd, cwd=cwd, env=env)
-        except BaseException as exc:
-            _helper_send(
-                write_fd,
-                {
-                    "status": "spawn_error",
-                    "error": f"{type(exc).__name__}: {exc}"[:8_192],
-                },
-            )
-        else:
-            _helper_send(
-                write_fd,
-                {"status": "spawned", "pid": int(process.pid)},
-            )
-            remaining = max(0.0, deadline - time.monotonic())
-            try:
-                returncode = process.wait(timeout=remaining)
-            except subprocess.TimeoutExpired:
-                _helper_send(write_fd, {"status": "timeout"})
-            except BaseException as exc:
-                _helper_send(
-                    write_fd,
-                    {
-                        "status": "worker_error",
-                        "error": f"{type(exc).__name__}: {exc}"[:8_192],
-                    },
-                )
-            else:
-                _helper_send(
-                    write_fd,
-                    {"status": "completed", "returncode": int(returncode)},
-                )
-        # Stay alive as the owned process-group leader until the parent has
-        # terminated and proven the whole group quiescent.
-        while True:
-            signal.pause()
-    except BaseException:
-        os._exit(TECHNICAL_EXIT_CODE)
-
-
-def _read_helper_message(
-    fd: int,
-    buffer: bytearray,
-    *,
-    deadline: float,
-) -> dict | None:
-    while True:
-        newline = buffer.find(b"\n")
-        if newline >= 0:
-            raw = bytes(buffer[:newline])
-            del buffer[: newline + 1]
-            try:
-                value = json.loads(raw.decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                raise RuntimeError("generator helper returned malformed status") from exc
-            if not isinstance(value, dict):
-                raise RuntimeError("generator helper returned non-object status")
-            return value
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            return None
-        readable, _writable, _exceptional = select.select(
-            [fd],
-            [],
-            [],
-            min(0.05, remaining),
-        )
-        if not readable:
-            continue
-        chunk = os.read(fd, 4096)
-        if not chunk:
-            return None
-        buffer.extend(chunk)
-        if len(buffer) > 64 * 1024:
-            raise RuntimeError("generator helper status exceeded its byte bound")
-
-
-def _wait_helper_reaped(pid: int, *, deadline: float) -> bool:
-    while True:
-        try:
-            waited, _status = os.waitpid(pid, os.WNOHANG)
-        except ChildProcessError:
-            return True
-        if waited == pid:
-            return True
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            return False
-        time.sleep(min(0.01, remaining))
-
-
-def _cleanup_generator_helper(
-    pid: int,
-    *,
-    ready: bool,
-    term_timeout: float,
-    kill_timeout: float,
-) -> tuple[bool, BaseException | None]:
-    interruption: BaseException | None = None
-
-    def send(sig: signal.Signals) -> None:
-        nonlocal interruption
-        while True:
-            try:
-                if ready:
-                    os.killpg(pid, sig)
-                else:
-                    os.kill(pid, sig)
-                return
-            except (ProcessLookupError, PermissionError):
-                return
-            except (KeyboardInterrupt, SystemExit) as exc:
-                if interruption is None:
-                    interruption = exc
-
-    send(signal.SIGTERM)
-    term_deadline = time.monotonic() + max(0.0, term_timeout)
-    while time.monotonic() < term_deadline:
-        try:
-            reaped = _wait_helper_reaped(
-                pid,
-                deadline=min(term_deadline, time.monotonic() + 0.02),
-            )
-            group_gone = not ready or not _posix_group_exists(pid)
-        except (KeyboardInterrupt, SystemExit) as exc:
-            if interruption is None:
-                interruption = exc
-            continue
-        if reaped and group_gone:
-            return True, interruption
-    send(signal.SIGKILL)
-    kill_deadline = time.monotonic() + max(0.0, kill_timeout)
-    reaped = False
-    while time.monotonic() < kill_deadline:
-        try:
-            reaped = _wait_helper_reaped(pid, deadline=kill_deadline) or reaped
-            group_gone = not ready or not _posix_group_exists(pid)
-            if reaped and group_gone:
-                return True, interruption
-            time.sleep(min(0.01, max(0.0, kill_deadline - time.monotonic())))
-        except (KeyboardInterrupt, SystemExit) as exc:
-            if interruption is None:
-                interruption = exc
-    group_gone = not ready or not _posix_group_exists(pid)
-    return reaped and group_gone, interruption
-
-
 def _run_generator_helper(
     cmd: list[str],
     *,
@@ -448,105 +272,16 @@ def _run_generator_helper(
     term_timeout: float,
     kill_timeout: float,
 ) -> tuple[int, str]:
-    started_at = time.monotonic()
-    deadline = started_at + outer_timeout
-    previous_handlers: dict[int, object] = {}
-    signal_stop = threading.Event()
-    _install_termination_handlers(signal_stop, previous_handlers)
-    read_fd = -1
-    write_fd = -1
-    try:
-        read_fd, write_fd = os.pipe()
-        pid = os.fork()
-    except BaseException:
-        if read_fd >= 0:
-            os.close(read_fd)
-        if write_fd >= 0:
-            os.close(write_fd)
-        _restore_termination_handlers(previous_handlers)
-        raise
-    if pid == 0:
-        os.close(read_fd)
-        _generator_helper_main(
-            write_fd,
-            cmd=cmd,
-            cwd=cwd,
-            env=env,
-            deadline=deadline,
-        )
-        os._exit(TECHNICAL_EXIT_CODE)
-    os.close(write_fd)
-    ready = False
-    buffer = bytearray()
-    outcome: dict | None = None
-    cleanup_ok = False
-    cleanup_interruption: BaseException | None = None
-    try:
-        spawn_deadline = min(deadline, started_at + spawn_timeout)
-        while True:
-            message = _read_helper_message(
-                read_fd,
-                buffer,
-                deadline=spawn_deadline,
-            )
-            if message is None:
-                outcome = {"status": "spawn_timeout"}
-                break
-            status = message.get("status")
-            if status == "helper_ready":
-                ready = True
-                continue
-            outcome = message
-            break
-        if outcome is not None and outcome.get("status") == "spawned":
-            while True:
-                message = _read_helper_message(read_fd, buffer, deadline=deadline)
-                if message is None:
-                    outcome = {"status": "timeout"}
-                    break
-                if message.get("status") in {
-                    "completed",
-                    "timeout",
-                    "worker_error",
-                }:
-                    outcome = message
-                    break
-    except (KeyboardInterrupt, SystemExit):
-        raise
-    except BaseException as exc:
-        outcome = {
-            "status": "worker_error",
-            "error": f"{type(exc).__name__}: {exc}",
-        }
-    finally:
-        os.close(read_fd)
-        cleanup_ok, cleanup_interruption = _cleanup_generator_helper(
-            pid,
-            ready=ready,
-            term_timeout=term_timeout,
-            kill_timeout=kill_timeout,
-        )
-        _restore_termination_handlers(previous_handlers)
-
-    if cleanup_interruption is not None:
-        raise cleanup_interruption
-
-    status = (outcome or {}).get("status")
-    if not cleanup_ok:
-        return TECHNICAL_EXIT_CODE, "generator helper process tree did not quiesce"
-    if status == "completed":
-        return int(outcome.get("returncode", TECHNICAL_EXIT_CODE)), ""
-    if status == "timeout":
-        return 124, f"generator exceeded outer timeout of {outer_timeout:g}s"
-    if status == "spawn_error":
-        return 127, f"generator failed to start: {outcome.get('error')}"
-    if status == "spawn_timeout":
-        return TECHNICAL_EXIT_CODE, "generator spawn exceeded its outer bound"
-    return (
-        TECHNICAL_EXIT_CODE,
-        f"generator lifecycle failed: {(outcome or {}).get('error') or status}",
+    """Compatibility entry point for callers of the former helper."""
+    return _run_generator_thread(
+        cmd,
+        cwd=cwd,
+        env=env,
+        outer_timeout=outer_timeout,
+        spawn_timeout=spawn_timeout,
+        term_timeout=term_timeout,
+        kill_timeout=kill_timeout,
     )
-
 
 def _run_generator(
     cmd: list[str],
@@ -558,22 +293,10 @@ def _run_generator(
     term_timeout: float = PROCESS_TERM_GRACE_SECONDS,
     kill_timeout: float = PROCESS_KILL_REAP_SECONDS,
 ) -> tuple[int, str]:
-    helper_compatible = (
-        subprocess.Popen is _ORIGINAL_POPEN
-        and _wait_event_resisting_interrupt is _ORIGINAL_WAIT_EVENT
-        and _ensure_process_tree_quiesced_after_wait
-        is _ORIGINAL_ENSURE_PROCESS_TREE_QUIESCED
-    )
-    if os.name == "posix" and helper_compatible:
-        return _run_generator_helper(
-            cmd,
-            cwd=cwd,
-            env=env,
-            outer_timeout=outer_timeout,
-            spawn_timeout=spawn_timeout,
-            term_timeout=term_timeout,
-            kill_timeout=kill_timeout,
-        )
+    # Always use the Popen-backed supervisor.  A process-launch choice based on
+    # a racy active-thread count could let a newly started thread's interpreter
+    # lock state leak into the child.  Popen performs the minimal C-level spawn
+    # setup and the worker thread owns all process-group cleanup.
     return _run_generator_thread(
         cmd,
         cwd=cwd,

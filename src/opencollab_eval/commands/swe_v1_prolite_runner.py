@@ -23,6 +23,7 @@ from opencollab_eval.commands import swe_v1_prolite_config as _config
 from opencollab_eval.commands import swe_v1_prolite_controller as _controller
 from opencollab_eval.commands import swe_v1_prolite_process as _process
 from opencollab_eval.commands import swe_v1_prolite_report as _report
+from opencollab_eval.commands import swe_v1_proxy as _proxy
 from opencollab_eval.commands import swe_v1_transport_recovery as _transport_recovery
 from opencollab_eval.commands.swe_v1_prolite_common import *  # noqa: F403
 from opencollab_eval.commands.swe_v1_prolite_config import *  # noqa: F403
@@ -346,6 +347,7 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
 _COMPATIBILITY_MODULES = (
     _common,
     _process,
+    _proxy,
     _config,
     _controller,
     _report,

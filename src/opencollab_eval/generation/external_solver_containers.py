@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -17,19 +19,60 @@ EXPECTED_OWNERS = {
     "gateway-container.id": "claude-code-gateway",
 }
 EXPECTED_OWNER_VALUES = {*EXPECTED_OWNERS.values(), "claude-code-probe"}
+_DOCKER_RETRY_ATTEMPTS = 3
+_DOCKER_RETRY_BACKOFF_SECONDS = 0.05
+_TRANSIENT_DOCKER_ERRORS = (
+    "cannot connect to the docker daemon",
+    "error during connect",
+    "connection refused",
+    "connection reset",
+    "context deadline exceeded",
+    "i/o timeout",
+    "temporarily unavailable",
+    "daemon is not responding",
+)
+
+
+def _transient_docker_failure(result: subprocess.CompletedProcess[str]) -> bool:
+    if result.returncode == 0:
+        return False
+    detail = _detail(result).lower()
+    return any(marker in detail for marker in _TRANSIENT_DOCKER_ERRORS)
 
 
 def _docker(command: list[str], timeout: int) -> subprocess.CompletedProcess[str] | None:
+    """Run a Docker CLI call with retries inside one wall-clock budget."""
     try:
-        return subprocess.run(
-            command,
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=timeout,
-        )
-    except (OSError, subprocess.TimeoutExpired):
+        budget = float(timeout)
+    except (TypeError, ValueError, OverflowError):
         return None
+    if budget <= 0 or not math.isfinite(budget):
+        return None
+    deadline = time.monotonic() + budget
+    result: subprocess.CompletedProcess[str] | None = None
+    for attempt in range(_DOCKER_RETRY_ATTEMPTS):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        try:
+            result = subprocess.run(
+                command,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=remaining,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            result = None
+        if result is not None and not _transient_docker_failure(result):
+            return result
+        if attempt + 1 >= _DOCKER_RETRY_ATTEMPTS:
+            break
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(_DOCKER_RETRY_BACKOFF_SECONDS * (attempt + 1), remaining))
+    return result
 
 
 def _detail(result: subprocess.CompletedProcess[str] | None) -> str:

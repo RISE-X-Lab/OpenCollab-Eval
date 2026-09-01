@@ -72,11 +72,14 @@ def _positive_integer(value):
 
 
 def _finite_number(value):
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(float(value))
-    )
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except (OverflowError, ValueError, TypeError):
+        # A huge integer (or a hostile numeric subclass) can overflow during
+        # float coercion.  Candidate identity validation must fail closed.
+        return False
 
 
 def _normalized_historical_llm_transport(embedded, metric):
@@ -453,6 +456,14 @@ def _blocked_identity_document_proven(prediction, metric):
         return False
     if any(embedded[field] != metric[field] for field in _BLOCKED_CAUSAL_FIELDS):
         return False
+    # A prediction can carry a copy of the generation identity in its
+    # top-level document.  Bind any fields that are present on both documents
+    # so an eval-only run cannot silently pair a stale top-level prediction
+    # with a newer embedded/metric identity.  Older records did not persist
+    # these fields on the prediction; absent legacy fields remain compatible.
+    for field in _BLOCKED_IDENTITY_FIELDS:
+        if field in prediction and field in embedded and prediction[field] != embedded[field]:
+            return False
     if _normalized_historical_llm_transport(embedded, metric) is None:
         return False
     invocation = str(metric["invocation_id"])

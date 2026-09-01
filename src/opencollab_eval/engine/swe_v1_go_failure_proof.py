@@ -24,6 +24,15 @@ _PLAIN_PACKAGE_FAILURE_RE = re.compile(
     r"FAIL\s+(?P<package>\S+)\s+\[(?:build|setup) failed\]\Z"
 )
 _GO_DOWNLOAD_RE = re.compile(r"go: downloading (?P<module>\S+) (?P<version>v\S+)\Z")
+# Go 1.21+ may auto-select a newer toolchain and print this informational
+# stderr line before the JSON test stream. Keep the accepted shape narrow:
+# only a Go toolchain version (optionally followed by the official OS/arch
+# annotation) is ignored; arbitrary non-JSON output remains fail-closed.
+_GO_TOOLCHAIN_DOWNLOAD_RE = re.compile(
+    r"go: downloading go[0-9]+\.[0-9]+"
+    r"(?:\.[0-9]+)?(?:alpha[0-9]+|beta[0-9]+|rc[0-9]+)?"
+    r"(?: \([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\))?\Z"
+)
 _GO_MODULE_FETCH_RE = re.compile(
     r"(?P<path>(?:[A-Za-z]:)?[^:\r\n]*?[^/\\:\r\n]+\.go):"
     r"[0-9]+(?::[0-9]+)?:\s+(?P<module>[^@\s:]+)@(?P<version>[^:\s]+):"
@@ -75,6 +84,16 @@ def _parse_go_log(
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
+            # The Go tool emits module-cache progress on stderr even when the
+            # targeted test command eventually succeeds.  stderr is merged
+            # into the proof log, so this known informational line must not
+            # turn an otherwise complete JSON event stream into an unknown
+            # protocol.  Other non-JSON output remains fail-closed below.
+            if (
+                _GO_DOWNLOAD_RE.fullmatch(line)
+                or _GO_TOOLCHAIN_DOWNLOAD_RE.fullmatch(line)
+            ):
+                continue
             diagnostic = _PLAIN_GO_DIAGNOSTIC_RE.fullmatch(line)
             header = _GO_BUILD_HEADER_RE.fullmatch(line)
             dependency_header = _GO_DEPENDENCY_BUILD_HEADER_RE.fullmatch(line)
@@ -267,6 +286,8 @@ def _candidate_dependency_setup_failure_matches(
         download = _GO_DOWNLOAD_RE.fullmatch(line)
         if download:
             downloads.add((download.group("module"), download.group("version")))
+            continue
+        if _GO_TOOLCHAIN_DOWNLOAD_RE.fullmatch(line):
             continue
         failure = _GO_MODULE_FETCH_RE.fullmatch(line)
         if failure:

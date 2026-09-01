@@ -15,6 +15,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import math
 import os
 import re
 import selectors
@@ -29,6 +30,8 @@ from pathlib import Path
 
 TECHNICAL_EXIT = 86
 MAX_EVENT_BYTES = 8 * 1024 * 1024
+DEFAULT_EVENT_TIMEOUT_SECONDS = 7200.0
+MAX_EVENT_TIMEOUT_SECONDS = 86400.0
 WORKER_UID = 65532
 WORKER_GID = 65532
 SOURCE_LAYOUT_ROOTS = ()
@@ -40,6 +43,11 @@ def _arguments():
     parser.add_argument("--command-sha256", required=True)
     parser.add_argument("--plugin-dir", type=Path, default=Path("/eval_input"))
     parser.add_argument("--output-root", type=Path, default=Path("/eval_output"))
+    parser.add_argument(
+        "--event-timeout-seconds",
+        type=float,
+        default=DEFAULT_EVENT_TIMEOUT_SECONDS,
+    )
     parser.add_argument("--candidate-source-path", action="append", default=[])
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
@@ -50,6 +58,11 @@ def _arguments():
         raise ValueError("invalid pytest worker command")
     if digest != args.command_sha256:
         raise ValueError("pytest worker command identity changed")
+    if (
+        not math.isfinite(args.event_timeout_seconds)
+        or not 0 < args.event_timeout_seconds <= MAX_EVENT_TIMEOUT_SECONDS
+    ):
+        raise ValueError("pytest event timeout must be finite, positive, and bounded")
     return args
 
 
@@ -213,7 +226,16 @@ def _drop_privileges():
     os.umask(0o077)
 
 
-def _collect_events(process, descriptor):
+def _collect_events(
+    process, descriptor, timeout=DEFAULT_EVENT_TIMEOUT_SECONDS
+):
+    try:
+        timeout = float(timeout)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("pytest event timeout must be finite, positive, and bounded") from exc
+    if not math.isfinite(timeout) or not 0 < timeout <= MAX_EVENT_TIMEOUT_SECONDS:
+        raise ValueError("pytest event timeout must be finite, positive, and bounded")
+    deadline = time.monotonic() + timeout
     os.set_blocking(descriptor, False)
     selector = selectors.DefaultSelector()
     selector.register(descriptor, selectors.EVENT_READ)
@@ -223,7 +245,10 @@ def _collect_events(process, descriptor):
     finished_at = None
     try:
         while not eof:
-            for _key, _mask in selector.select(0.1):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ValueError("pytest worker event stream timed out")
+            for _key, _mask in selector.select(min(0.1, remaining)):
                 try:
                     chunk = os.read(descriptor, 65536)
                 except BlockingIOError:
@@ -242,6 +267,18 @@ def _collect_events(process, descriptor):
     finally:
         selector.close()
         os.close(descriptor)
+    # EOF on the protocol pipe is not proof that the worker has exited: a
+    # worker (or a descendant) can close its inherited descriptor and keep
+    # running.  Bound the reap by the same event deadline so ``main`` never
+    # falls into an unbounded ``wait()`` after an apparently clean EOF.
+    remaining = deadline - time.monotonic()
+    if process.poll() is None:
+        if remaining <= 0:
+            raise ValueError("pytest worker did not exit before event timeout")
+        try:
+            process.wait(timeout=remaining)
+        except subprocess.TimeoutExpired as exc:
+            raise ValueError("pytest worker did not exit before event timeout") from exc
     return b"".join(chunks)
 
 
@@ -381,7 +418,7 @@ def main():
         write_fd = -1
         owned_read_fd = read_fd
         read_fd = -1
-        raw = _collect_events(process, owned_read_fd)
+        raw = _collect_events(process, owned_read_fd, args.event_timeout_seconds)
         returncode = process.wait()
         if _kill_surviving_group(process.pid):
             raise ValueError("pytest worker left a process alive")

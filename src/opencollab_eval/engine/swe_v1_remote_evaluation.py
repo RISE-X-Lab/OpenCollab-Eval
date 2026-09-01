@@ -13,6 +13,7 @@ from opencollab_eval.engine.swe_v1_remote_eval_retry import *
 from opencollab_eval.engine.swe_v1_remote_eval_script import direct_eval_script, eval_workspace_helper_sources
 from opencollab_eval.engine.swe_v1_remote_generation import *
 from opencollab_eval.engine.swe_v1_remote_gitlink_probe import *
+from opencollab_eval.engine.swe_v1_remote_health import http_health
 from opencollab_eval.engine.swe_v1_remote_pytest_controller import prolite_pytest_controller_source
 from opencollab_eval.engine.swe_v1_remote_records import *
 from opencollab_eval.engine.swe_v1_remote_runtime_dependencies import *
@@ -85,7 +86,14 @@ def eval_for_task_once(row, patch_selection=None):
         candidate_added_go_modules=candidate_go_modules,
     )
     runtime_dependency_specs = plan_runtime_dependency_specs(f2p_plan, p2p_plan)
-    eval_spec_sha256 = prolite_eval_spec_sha256(row, f2p_plan, p2p_plan)
+    eval_timeout = configured_eval_timeout = resolve_eval_timeout(globals().get("eval_timeout") or None)
+    eval_spec_sha256 = prolite_eval_spec_sha256(
+        row,
+        f2p_plan,
+        p2p_plan,
+        eval_timeout=configured_eval_timeout,
+        controller_timeout=configured_eval_timeout,
+    )
     unverified_plan_reasons = []
     if not f2p_plan["coverage_verified"]:
         unverified_plan_reasons.append("no_verified_fail_to_pass_plan")
@@ -141,6 +149,7 @@ def eval_for_task_once(row, patch_selection=None):
             p2p_plan=p2p_plan,
             expected_eval_patch_sha256=patch_selection["eval_patch_sha256"],
             expected_eval_image_id=str(patch_selection.get("image_id") or ""),
+            expected_candidate_expectation=patch_selection.get("candidate_expectation"),
         )
     ):
         return {
@@ -206,14 +215,8 @@ def eval_for_task_once(row, patch_selection=None):
     atomic_write_bytes(input_dir / "opencollab_pytest_proof.py", prolite_pytest_proof_plugin_source().encode("utf-8"))
     atomic_write_bytes(controller_path, prolite_pytest_controller_source().encode("utf-8"))
     atomic_write_bytes(input_dir / "proof.nonce", (proof_nonce + "\n").encode("ascii"))
-    atomic_write_bytes(
-        input_dir / "f2p.sh",
-        prolite_test_plan_script(f2p_plan, "f2p", proof_nonce).encode("utf-8"),
-    )
-    atomic_write_bytes(
-        input_dir / "p2p.sh",
-        prolite_test_plan_script(p2p_plan, "p2p", proof_nonce).encode("utf-8"),
-    )
+    atomic_write_bytes(input_dir / "f2p.sh", prolite_test_plan_script(f2p_plan, "f2p", proof_nonce, controller_timeout=configured_eval_timeout, shared_deadline_env="OPENCOLLAB_EVAL_DEADLINE").encode("utf-8"))
+    atomic_write_bytes(input_dir / "p2p.sh", prolite_test_plan_script(p2p_plan, "p2p", proof_nonce, controller_timeout=configured_eval_timeout, shared_deadline_env="OPENCOLLAB_EVAL_DEADLINE").encode("utf-8"))
     write_json(input_dir / "f2p.plan.json", f2p_plan)
     write_json(input_dir / "p2p.plan.json", p2p_plan)
     inner = direct_eval_script()
@@ -285,9 +288,9 @@ def eval_for_task_once(row, patch_selection=None):
             "created_at": now(),
         },
     )
+    timeout_prefix = ["timeout", str(eval_timeout)] if shutil.which("timeout") else []
     docker_cmd = [
-        "timeout",
-        str(eval_timeout),
+        *timeout_prefix,
         "docker",
         "run",
         "--rm",
@@ -309,6 +312,9 @@ def eval_for_task_once(row, patch_selection=None):
         f"{input_dir}:/eval_input:ro",
         "-v",
         f"{container_output_dir}:/eval_output",
+        "--env",
+        f"OPENCOLLAB_EVAL_TIMEOUT_SECONDS={configured_eval_timeout}",
+        *_public_preparation_docker_env(),
         image,
         "/eval_input/run_prolite_direct_eval.sh",
     ]
@@ -361,37 +367,41 @@ def eval_for_task_once(row, patch_selection=None):
             raise
         else:
             ACTIVE_CHILD_PGIDS.add(proc.pid)
-            binding = bind_eval_container_marker(
-                cidfile, marker_path, container_name, proc,
-                timeout=eval_container_bind_timeout,
-            )
+            try:
+                binding = bind_eval_container_marker(cidfile, marker_path, container_name, proc, timeout=eval_container_bind_timeout)
+            except Exception as exc:
+                binding = {"ok": False, "status": "container_identity_binding_exception", "details": f"{type(exc).__name__}: {exc}"}
+            except BaseException:
+                cleanup_eval_binding_interruption(proc, cidfile, marker_path, container_name, temporary_output, spawn_signal_state, cleanup_eval_container, clear_pending_eval_marker, cleanup_temporary_output)
+                raise
             if not binding.get("ok"):
-                cleanup_quiesced = terminate_process_group_bounded(proc)
-                cleanup = cleanup_eval_container(
-                    cidfile,
-                    marker_path,
-                    container_name,
-                )
-                if cleanup_quiesced:
-                    ACTIVE_CHILD_PGIDS.discard(proc.pid)
-                summary = {
-                    "schema": "opencollab.prolite_direct_eval.v2",
-                    "status": "technical_eval_failed",
-                    "task": task,
-                    "resolved": False,
-                    "patch_sha256": row_patch_sha(prediction),
-                    "record_id": row_record_id(prediction),
-                    "technical_reasons": ["container_identity_binding"],
-                    "container_binding": binding,
-                    "container_cleanup": cleanup,
-                    "cleanup_quiesced": cleanup_quiesced,
-                }
-                cleanup_errors = cleanup_temporary_output(temporary_output)
-                if cleanup_errors:
-                    summary["technical_reasons"].append("temporary_output_cleanup")
-                    summary["output_artifact_errors"] = cleanup_errors
-                write_json(summary_path, summary)
-                return {"status": "technical_eval_failed", "task": task, "summary": summary}
+                try:
+                    cleanup_quiesced = terminate_process_group_bounded(proc)
+                    cleanup = safe_eval_container_cleanup(cleanup_eval_container, cidfile, marker_path, container_name)
+                    pending_cleanup = clear_pending_eval_marker(cidfile, marker_path, container_name) if cleanup_quiesced and not cleanup.get("ok") else None
+                    cleanup = pending_cleanup if isinstance(pending_cleanup, dict) and pending_cleanup.get("ok") else cleanup
+                    if cleanup_quiesced:
+                        ACTIVE_CHILD_PGIDS.discard(proc.pid)
+                    summary = {
+                        "schema": "opencollab.prolite_direct_eval.v2",
+                        "status": "technical_eval_failed",
+                        "task": task,
+                        "resolved": False,
+                        "patch_sha256": row_patch_sha(prediction),
+                        "record_id": row_record_id(prediction),
+                        "technical_reasons": ["container_identity_binding"],
+                        "container_binding": binding,
+                        "container_cleanup": cleanup,
+                        "cleanup_quiesced": cleanup_quiesced,
+                    }
+                    cleanup_errors = cleanup_temporary_output(temporary_output)
+                    if cleanup_errors:
+                        summary["technical_reasons"].append("temporary_output_cleanup")
+                        summary["output_artifact_errors"] = cleanup_errors
+                    write_json(summary_path, summary)
+                    return {"status": "technical_eval_failed", "task": task, "summary": summary}
+                finally:
+                    restore_spawn_signals(spawn_signal_state)
             try:
                 try:
                     restore_spawn_signals(spawn_signal_state)
@@ -428,7 +438,6 @@ def eval_for_task_once(row, patch_selection=None):
             marker_path,
             container_name,
         )
-
     artifacts = publish_and_read_eval_output_artifacts(
         container_output_dir, output_dir, f2p_plan, p2p_plan, proof_nonce, temporary_output,
         str(row.get("base_commit") or row.get("commit") or ""),
@@ -547,12 +556,8 @@ def eval_for_task_once(row, patch_selection=None):
         "executed": True,
         "eval_patch_sha256": patch_selection["eval_patch_sha256"],
     }
-
-
 def eval_for_task(row):
-    return eval_for_task_with_retries(row, eval_for_task_once)
-
-
+    return eval_for_task_with_retries(row, eval_for_task_once, resolve_eval_timeout(globals().get("eval_timeout") or None), resolve_eval_timeout(globals().get("eval_timeout") or None))
 def write_markdown(summary):
     lines = [
         f"# SWE G1.1 Pro-Lite {summary.get('slice', slice_label())} Report",
@@ -592,7 +597,6 @@ def write_markdown(summary):
             )
         )
     summary["markdown"] = "\n".join(lines) + "\n"
-
 def main():
     config_errors = validate_runner_config()
     if config_errors:
@@ -666,7 +670,6 @@ def main():
         write_json(base_run_dir / "summary.json", summary)
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 2
-
     selected = load_dataset(start_index, limit)
     base_run_dir.mkdir(parents=True, exist_ok=True)
     result_rows = []
@@ -791,10 +794,7 @@ def main():
     }
     write_markdown(summary)
     write_json(base_run_dir / "summary.json", summary)
-    atomic_write_bytes(
-        base_run_dir / "summary.md",
-        summary["markdown"].encode("utf-8"),
-    )
+    atomic_write_bytes(base_run_dir / "summary.md", summary["markdown"].encode("utf-8"))
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0 if counts["technical_failed"] == 0 else 1
 __all__ = [name for name in globals() if not name.startswith("__")]
