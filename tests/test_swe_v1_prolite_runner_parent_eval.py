@@ -575,3 +575,27 @@ def test_eval_only_cli_rejects_a_multi_task_slice(tmp_path):
 
     assert proc.returncode == 2
     assert "--eval-only requires --limit 1" in proc.stderr
+
+
+def test_eval_only_cli_requires_zero_task_starts(tmp_path):
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "opencollab_eval.commands.swe_v1_prolite_runner",
+            "--eval-only",
+            "--parent-output-dir",
+            str(tmp_path),
+            "--limit",
+            "1",
+            "--max-task-starts",
+            "1",
+            "--dry-run",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        capture_output=True,
+    )
+
+    assert proc.returncode == 2
+    assert "--eval-only requires --max-task-starts 0" in proc.stderr

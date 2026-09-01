@@ -45,6 +45,8 @@ def test_standalone_allows_legacy_checkpoint_value_for_eval_only(
                 str(tmp_path),
                 "--limit",
                 "1",
+                "--max-task-starts",
+                "0",
                 "--checkpoint-interval",
                 "30",
                 "--host",
