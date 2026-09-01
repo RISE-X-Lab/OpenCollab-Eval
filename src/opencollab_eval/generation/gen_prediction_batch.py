@@ -76,6 +76,17 @@ ARM_MODULES: dict[str, str] = {
     ),
 }
 
+#: The generator that has to be *told* which solver to open.
+#:
+#: An arm that runs through it and is listed in neither table below is started
+#: with no ``--workflow`` and no ``--team-config``, and that generator's last
+#: branch falls back to the built-in ``generate_review_fix``. The run happens,
+#: exits zero, and appends a row to ``preds-<arm>.jsonl`` that is a different
+#: arm's run; nothing in the output says so, and the arm it was meant to be is
+#: never run. That is the reason the wiring below is checked rather than
+#: remembered.
+ORCHESTRATED_GENERATOR = "opencollab_eval.generation.gen_prediction_workflow"
+
 #: Arms whose generator is the workflow entry point and therefore takes
 #: ``--team-config``. Kept separate from ``ARM_MODULES`` so adding a workflow
 #: arm that is not the team does not silently inherit the team's configuration.
@@ -90,6 +101,69 @@ WORKFLOW_ARMS: dict[str, str] = {
 }
 
 MANIFEST_NAME = "manifest.jsonl"
+
+
+def validate_arm_wiring(
+    arm_modules: dict[str, str] | None = None,
+    team_arms: frozenset[str] | None = None,
+    workflow_arms: dict[str, str] | None = None,
+) -> None:
+    """Every arm names a solver, and only the arms that need one name it.
+
+    Run at import, so a table edited in one place and not the other cannot be
+    discovered by a batch. The three tables are separate on purpose -- an arm's
+    module, its team file, its workflow name are different decisions -- and the
+    cost of that is that they can disagree. Every way they can disagree is a
+    silent one:
+
+    * an orchestrated arm in neither table is run as ``generate_review_fix``;
+    * an arm in both tables would be given a workflow *and* a team file, which
+      the generator's own mutually exclusive group rejects only at run time,
+      after a container is up;
+    * a name in one of the tables that is not an arm is a rename that was done
+      halfway, and the arm it used to configure is now configured by nothing.
+    """
+    arm_modules = ARM_MODULES if arm_modules is None else arm_modules
+    team_arms = TEAM_ARMS if team_arms is None else team_arms
+    workflow_arms = WORKFLOW_ARMS if workflow_arms is None else workflow_arms
+
+    both = sorted(set(team_arms) & set(workflow_arms))
+    if both:
+        raise ValueError(f"arms configured as both team and workflow: {both}")
+    unknown = sorted((set(team_arms) | set(workflow_arms)) - set(arm_modules))
+    if unknown:
+        raise ValueError(f"solver configuration for arms the driver cannot run: {unknown}")
+    for arm, module in sorted(arm_modules.items()):
+        selected = arm in team_arms or arm in workflow_arms
+        if module == ORCHESTRATED_GENERATOR and not selected:
+            raise ValueError(
+                f"arm {arm!r} runs through {ORCHESTRATED_GENERATOR} and names no "
+                "solver, so it would silently run the built-in review-fix "
+                "workflow; add it to TEAM_ARMS or WORKFLOW_ARMS"
+            )
+        if module != ORCHESTRATED_GENERATOR and selected:
+            raise ValueError(
+                f"arm {arm!r} names a solver but does not run through "
+                f"{ORCHESTRATED_GENERATOR}, which is the only generator that "
+                "reads one"
+            )
+
+
+validate_arm_wiring()
+
+
+def _arm_module(arm: str) -> str:
+    """The module that runs ``arm``, or a refusal that names the arms there are.
+
+    ``pool_for`` used to answer for an unregistered arm by falling through to
+    the single-seat budget, which is a plausible number and the wrong one.
+    """
+    try:
+        return ARM_MODULES[arm]
+    except KeyError:
+        raise ValueError(
+            f"unknown arm {arm!r}; the driver runs {sorted(ARM_MODULES)}"
+        ) from None
 
 #: The sampling temperature every arm's generator process is started with.
 #:
@@ -215,6 +289,7 @@ def pool_for(arm: str, budget_per_seat: int, team_config: Path | None) -> int:
     declares, because the scheduler divides the pool by that same count, and a
     workflow arm once per seat its own module declares, for the same reason.
     """
+    _arm_module(arm)
     if arm in WORKFLOW_ARMS:
         return budget_per_seat * workflow_seats(WORKFLOW_ARMS[arm])
     if arm not in TEAM_ARMS:
@@ -244,10 +319,11 @@ def build_command(
     has: a host that pulled the images under their published ``swebench/``
     namespace has no image under the derived name at all.
     """
+    module = _arm_module(arm)
     command = [
         sys.executable,
         "-m",
-        ARM_MODULES[arm],
+        module,
         "--instance-file",
         str(instance_path),
         "--output",
@@ -267,6 +343,18 @@ def build_command(
         if team_config is None:
             raise ValueError(f"arm {arm!r} needs --team-config")
         command += ["--team-config", str(team_config)]
+    # The argv is the last place this can still be caught, and the only one
+    # that sees what was actually built: an arm added to ARM_MODULES on the
+    # orchestrated generator and to neither solver table produces a command
+    # with no solver flag, which that generator answers by running the built-in
+    # review-fix workflow under this arm's name.
+    if (module == ORCHESTRATED_GENERATOR) != bool(
+        {"--workflow", "--team-config"} & set(command)
+    ):
+        raise ValueError(
+            f"arm {arm!r} would be run as {' '.join(command[2:])!r}, which does "
+            "not name the solver this arm is; see validate_arm_wiring"
+        )
     command += list(extra)
     return command
 
