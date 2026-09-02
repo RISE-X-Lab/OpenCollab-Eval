@@ -1,0 +1,24 @@
+# The first ladder batch of 2026-09-02: rung cmd-plain on the first 30 rows of
+# the replication subset. Launched by hand that morning, before this launcher
+# existed; the spec reproduces its command line and its instance file byte for
+# byte (pinned in tests/test_batch_launcher.py), so a later resume or a sibling
+# rung starts from the same written-down inputs.
+name: cmdplain30
+host: gpu3
+arm: team
+cell: cmd-plain
+suite: subset-30
+rows: {start: 1, stop: 30}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env            # relative to the OpenCollab checkout on the host
+env:                               # quote every value: YAML reads off/true as booleans
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"      # reasoning text is only captured from the stream
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"      # the nudge commands an action that competes with delegating
+pins:
+  opencollab: b00f256995e321e910a988908842705177d4c0f4
+  opencollab_eval: 315a06c3df10dcde3d0218a3a3b6a6b157ee12b1
+note: ladder rung cmd-plain, first 30 of subset-50; the remaining 10 rows are a separate spec

@@ -1,0 +1,16 @@
+# The shared machine batches run on. Facts about the machine, not choices
+# about an experiment: nothing here should change between two batches that
+# are meant to be compared.
+name: gpu3
+ssh: gpu3                                   # ssh alias; a ControlMaster is configured
+workdir: /home/xuzhenhua/oc-team-smoke      # out-dirs, instance files and logs live here
+python: /home/xuzhenhua/git/OpenCollab/.venv/bin/python
+opencollab_dir: OpenCollab                  # git checkout under workdir, detached at the pin
+eval_dir: OpenCollab-Eval                   # same
+proxy: http://172.16.200.37:8888            # model calls hang 60 s without it
+docker_disk: /mnt                           # docker root; has filled to 100% before
+min_free_gb: 10
+local_batches_dir: /root/oc-batches         # where `pull` puts a batch and `plan` its inputs
+local_opencollab_dir: /root/git/OpenCollab  # card bytes are read at the pin with `git show`
+frame_content: ~/.cache/opencollab-eval/swebench-verified.jsonl
+scanner: /root/git/overleaf/oc-iclr2027/05-experiment/scripts/scan_batch.py
