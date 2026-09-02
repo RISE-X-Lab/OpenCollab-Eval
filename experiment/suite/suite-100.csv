@@ -1,0 +1,101 @@
+order,instance_id,repo,difficulty,image
+1,psf__requests-6028,psf/requests,15 min - 1 hour,swebench/sweb.eval.x86_64.psf_1776_requests-6028:latest
+2,sympy__sympy-13480,sympy/sympy,<15 min fix,swebench/sweb.eval.x86_64.sympy_1776_sympy-13480:latest
+3,pytest-dev__pytest-7571,pytest-dev/pytest,15 min - 1 hour,swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-7571:latest
+4,django__django-14140,django/django,15 min - 1 hour,swebench/sweb.eval.x86_64.django_1776_django-14140:latest
+5,django__django-13933,django/django,<15 min fix,swebench/sweb.eval.x86_64.django_1776_django-13933:latest
+6,sympy__sympy-20590,sympy/sympy,15 min - 1 hour,swebench/sweb.eval.x86_64.sympy_1776_sympy-20590:latest
+7,pytest-dev__pytest-5262,pytest-dev/pytest,<15 min fix,swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-5262:latest
+8,django__django-12262,django/django,15 min - 1 hour,swebench/sweb.eval.x86_64.django_1776_django-12262:latest
+9,django__django-14539,django/django,<15 min fix,swebench/sweb.eval.x86_64.django_1776_django-14539:latest
+10,django__django-13809,django/django,15 min - 1 hour,swebench/sweb.eval.x86_64.django_1776_django-13809:latest
+11,sphinx-doc__sphinx-7889,sphinx-doc/sphinx,<15 min fix,swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-7889:latest
+12,sympy__sympy-13798,sympy/sympy,15 min - 1 hour,swebench/sweb.eval.x86_64.sympy_1776_sympy-13798:latest
+13,sphinx-doc__sphinx-10435,sphinx-doc/sphinx,<15 min fix,swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-10435:latest
+14,matplotlib__matplotlib-22871,matplotlib/matplotlib,15 min - 1 hour,swebench/sweb.eval.x86_64.matplotlib_1776_matplotlib-22871:latest
+15,sympy__sympy-22914,sympy/sympy,15 min - 1 hour,swebench/sweb.eval.x86_64.sympy_1776_sympy-22914:latest
+16,sympy__sympy-21379,sympy/sympy,15 min - 1 hour,swebench/sweb.eval.x86_64.sympy_1776_sympy-21379:latest
+17,sphinx-doc__sphinx-9673,sphinx-doc/sphinx,15 min - 1 hour,swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-9673:latest
+18,scikit-learn__scikit-learn-11310,scikit-learn/scikit-learn,<15 min fix,swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-11310:latest
+19,pylint-dev__pylint-7277,pylint-dev/pylint,<15 min fix,swebench/sweb.eval.x86_64.pylint-dev_1776_pylint-7277:latest
+20,sympy__sympy-15875,sympy/sympy,<15 min fix,swebench/sweb.eval.x86_64.sympy_1776_sympy-15875:latest
+21,pydata__xarray-4075,pydata/xarray,<15 min fix,swebench/sweb.eval.x86_64.pydata_1776_xarray-4075:latest
+22,scikit-learn__scikit-learn-12682,scikit-learn/scikit-learn,15 min - 1 hour,swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-12682:latest
+23,sphinx-doc__sphinx-7985,sphinx-doc/sphinx,15 min - 1 hour,swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-7985:latest
+24,django__django-13794,django/django,<15 min fix,swebench/sweb.eval.x86_64.django_1776_django-13794:latest
+25,sympy__sympy-24213,sympy/sympy,15 min - 1 hour,swebench/sweb.eval.x86_64.sympy_1776_sympy-24213:latest
+26,django__django-15128,django/django,1-4 hours,swebench/sweb.eval.x86_64.django_1776_django-15128:latest
+27,matplotlib__matplotlib-25287,matplotlib/matplotlib,<15 min fix,swebench/sweb.eval.x86_64.matplotlib_1776_matplotlib-25287:latest
+28,django__django-16429,django/django,<15 min fix,swebench/sweb.eval.x86_64.django_1776_django-16429:latest
+29,pydata__xarray-7393,pydata/xarray,15 min - 1 hour,swebench/sweb.eval.x86_64.pydata_1776_xarray-7393:latest
+30,django__django-13128,django/django,1-4 hours,swebench/sweb.eval.x86_64.django_1776_django-13128:latest
+31,astropy__astropy-13977,astropy/astropy,15 min - 1 hour,swebench/sweb.eval.x86_64.astropy_1776_astropy-13977:latest
+32,pydata__xarray-3677,pydata/xarray,15 min - 1 hour,swebench/sweb.eval.x86_64.pydata_1776_xarray-3677:latest
+33,django__django-12741,django/django,<15 min fix,swebench/sweb.eval.x86_64.django_1776_django-12741:latest
+34,astropy__astropy-14096,astropy/astropy,15 min - 1 hour,swebench/sweb.eval.x86_64.astropy_1776_astropy-14096:latest
+35,django__django-15561,django/django,15 min - 1 hour,swebench/sweb.eval.x86_64.django_1776_django-15561:latest
+36,django__django-16938,django/django,15 min - 1 hour,swebench/sweb.eval.x86_64.django_1776_django-16938:latest
+37,pydata__xarray-4094,pydata/xarray,<15 min fix,swebench/sweb.eval.x86_64.pydata_1776_xarray-4094:latest
+38,sphinx-doc__sphinx-9281,sphinx-doc/sphinx,<15 min fix,swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-9281:latest
+39,sympy__sympy-13647,sympy/sympy,15 min - 1 hour,swebench/sweb.eval.x86_64.sympy_1776_sympy-13647:latest
+40,django__django-11333,django/django,15 min - 1 hour,swebench/sweb.eval.x86_64.django_1776_django-11333:latest
+41,django__django-11149,django/django,15 min - 1 hour,swebench/sweb.eval.x86_64.django_1776_django-11149:latest
+42,matplotlib__matplotlib-24177,matplotlib/matplotlib,<15 min fix,swebench/sweb.eval.x86_64.matplotlib_1776_matplotlib-24177:latest
+43,django__django-16950,django/django,15 min - 1 hour,swebench/sweb.eval.x86_64.django_1776_django-16950:latest
+44,astropy__astropy-14369,astropy/astropy,1-4 hours,swebench/sweb.eval.x86_64.astropy_1776_astropy-14369:latest
+45,django__django-11099,django/django,<15 min fix,swebench/sweb.eval.x86_64.django_1776_django-11099:latest
+46,scikit-learn__scikit-learn-14710,scikit-learn/scikit-learn,15 min - 1 hour,swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-14710:latest
+47,django__django-14534,django/django,<15 min fix,swebench/sweb.eval.x86_64.django_1776_django-14534:latest
+48,sphinx-doc__sphinx-9711,sphinx-doc/sphinx,<15 min fix,swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-9711:latest
+49,psf__requests-1766,psf/requests,<15 min fix,swebench/sweb.eval.x86_64.psf_1776_requests-1766:latest
+50,sphinx-doc__sphinx-10614,sphinx-doc/sphinx,15 min - 1 hour,swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-10614:latest
+51,sympy__sympy-13974,sympy/sympy,15 min - 1 hour,swebench/sweb.eval.x86_64.sympy_1776_sympy-13974:latest
+52,sympy__sympy-22714,sympy/sympy,<15 min fix,swebench/sweb.eval.x86_64.sympy_1776_sympy-22714:latest
+53,sympy__sympy-13757,sympy/sympy,15 min - 1 hour,swebench/sweb.eval.x86_64.sympy_1776_sympy-13757:latest
+54,django__django-15525,django/django,15 min - 1 hour,swebench/sweb.eval.x86_64.django_1776_django-15525:latest
+55,sphinx-doc__sphinx-7462,sphinx-doc/sphinx,<15 min fix,swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-7462:latest
+56,django__django-13279,django/django,15 min - 1 hour,swebench/sweb.eval.x86_64.django_1776_django-13279:latest
+57,pydata__xarray-4695,pydata/xarray,15 min - 1 hour,swebench/sweb.eval.x86_64.pydata_1776_xarray-4695:latest
+58,django__django-17084,django/django,15 min - 1 hour,swebench/sweb.eval.x86_64.django_1776_django-17084:latest
+59,django__django-12663,django/django,15 min - 1 hour,swebench/sweb.eval.x86_64.django_1776_django-12663:latest
+60,sympy__sympy-18189,sympy/sympy,<15 min fix,swebench/sweb.eval.x86_64.sympy_1776_sympy-18189:latest
+61,sympy__sympy-19954,sympy/sympy,<15 min fix,swebench/sweb.eval.x86_64.sympy_1776_sympy-19954:latest
+62,django__django-13195,django/django,15 min - 1 hour,swebench/sweb.eval.x86_64.django_1776_django-13195:latest
+63,sympy__sympy-20438,sympy/sympy,15 min - 1 hour,swebench/sweb.eval.x86_64.sympy_1776_sympy-20438:latest
+64,scikit-learn__scikit-learn-14087,scikit-learn/scikit-learn,15 min - 1 hour,swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-14087:latest
+65,scikit-learn__scikit-learn-10908,scikit-learn/scikit-learn,15 min - 1 hour,swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-10908:latest
+66,scikit-learn__scikit-learn-9288,scikit-learn/scikit-learn,15 min - 1 hour,swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-9288:latest
+67,sympy__sympy-23950,sympy/sympy,15 min - 1 hour,swebench/sweb.eval.x86_64.sympy_1776_sympy-23950:latest
+68,astropy__astropy-13236,astropy/astropy,15 min - 1 hour,swebench/sweb.eval.x86_64.astropy_1776_astropy-13236:latest
+69,matplotlib__matplotlib-24870,matplotlib/matplotlib,15 min - 1 hour,swebench/sweb.eval.x86_64.matplotlib_1776_matplotlib-24870:latest
+70,matplotlib__matplotlib-21568,matplotlib/matplotlib,15 min - 1 hour,swebench/sweb.eval.x86_64.matplotlib_1776_matplotlib-21568:latest
+71,django__django-11138,django/django,1-4 hours,swebench/sweb.eval.x86_64.django_1776_django-11138:latest
+72,sympy__sympy-12489,sympy/sympy,1-4 hours,swebench/sweb.eval.x86_64.sympy_1776_sympy-12489:latest
+73,django__django-14787,django/django,<15 min fix,swebench/sweb.eval.x86_64.django_1776_django-14787:latest
+74,sympy__sympy-12096,sympy/sympy,<15 min fix,swebench/sweb.eval.x86_64.sympy_1776_sympy-12096:latest
+75,django__django-14089,django/django,<15 min fix,swebench/sweb.eval.x86_64.django_1776_django-14089:latest
+76,django__django-16801,django/django,<15 min fix,swebench/sweb.eval.x86_64.django_1776_django-16801:latest
+77,mwaskom__seaborn-3187,mwaskom/seaborn,15 min - 1 hour,swebench/sweb.eval.x86_64.mwaskom_1776_seaborn-3187:latest
+78,django__django-13569,django/django,15 min - 1 hour,swebench/sweb.eval.x86_64.django_1776_django-13569:latest
+79,sphinx-doc__sphinx-10673,sphinx-doc/sphinx,15 min - 1 hour,swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-10673:latest
+80,astropy__astropy-12907,astropy/astropy,15 min - 1 hour,swebench/sweb.eval.x86_64.astropy_1776_astropy-12907:latest
+81,pylint-dev__pylint-8898,pylint-dev/pylint,1-4 hours,swebench/sweb.eval.x86_64.pylint-dev_1776_pylint-8898:latest
+82,sympy__sympy-18199,sympy/sympy,1-4 hours,swebench/sweb.eval.x86_64.sympy_1776_sympy-18199:latest
+83,pytest-dev__pytest-5840,pytest-dev/pytest,15 min - 1 hour,swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-5840:latest
+84,django__django-16145,django/django,<15 min fix,swebench/sweb.eval.x86_64.django_1776_django-16145:latest
+85,sphinx-doc__sphinx-9229,sphinx-doc/sphinx,1-4 hours,swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-9229:latest
+86,sphinx-doc__sphinx-7440,sphinx-doc/sphinx,<15 min fix,swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-7440:latest
+87,scikit-learn__scikit-learn-25973,scikit-learn/scikit-learn,<15 min fix,swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-25973:latest
+88,matplotlib__matplotlib-25775,matplotlib/matplotlib,15 min - 1 hour,swebench/sweb.eval.x86_64.matplotlib_1776_matplotlib-25775:latest
+89,pydata__xarray-6599,pydata/xarray,15 min - 1 hour,swebench/sweb.eval.x86_64.pydata_1776_xarray-6599:latest
+90,matplotlib__matplotlib-26113,matplotlib/matplotlib,<15 min fix,swebench/sweb.eval.x86_64.matplotlib_1776_matplotlib-26113:latest
+91,sympy__sympy-14531,sympy/sympy,15 min - 1 hour,swebench/sweb.eval.x86_64.sympy_1776_sympy-14531:latest
+92,django__django-13658,django/django,15 min - 1 hour,swebench/sweb.eval.x86_64.django_1776_django-13658:latest
+93,matplotlib__matplotlib-13989,matplotlib/matplotlib,<15 min fix,swebench/sweb.eval.x86_64.matplotlib_1776_matplotlib-13989:latest
+94,pylint-dev__pylint-4661,pylint-dev/pylint,15 min - 1 hour,swebench/sweb.eval.x86_64.pylint-dev_1776_pylint-4661:latest
+95,matplotlib__matplotlib-22865,matplotlib/matplotlib,15 min - 1 hour,swebench/sweb.eval.x86_64.matplotlib_1776_matplotlib-22865:latest
+96,scikit-learn__scikit-learn-14983,scikit-learn/scikit-learn,<15 min fix,swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-14983:latest
+97,pytest-dev__pytest-6197,pytest-dev/pytest,1-4 hours,swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-6197:latest
+98,django__django-16595,django/django,<15 min fix,swebench/sweb.eval.x86_64.django_1776_django-16595:latest
+99,astropy__astropy-14995,astropy/astropy,<15 min fix,swebench/sweb.eval.x86_64.astropy_1776_astropy-14995:latest
+100,pytest-dev__pytest-6202,pytest-dev/pytest,<15 min fix,swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-6202:latest
