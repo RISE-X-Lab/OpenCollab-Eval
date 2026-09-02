@@ -201,7 +201,28 @@ class Batch:
     def record_path(self) -> Path:
         return self.local_dir / "batch.json"
 
+    def previous_record(self) -> dict[str, Any] | None:
+        path = self.record_path()
+        if not path.exists():
+            return None
+        try:
+            old = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            return None
+        return old if old.get("spec_digest") == spec_digest(self.spec) else None
+
     def save_record(self, record: dict[str, Any]) -> Path:
+        """Write batch.json, carrying forward what this write does not know.
+
+        `plan` runs without the host and must not erase the pre-flight's host
+        facts; nothing but `launch` adds a launch, and none of them removes one.
+        """
+        old = self.previous_record()
+        if old is not None:
+            if "host" not in record and "host" in old:
+                record["host"] = old["host"]
+            if "launches" not in record and "launches" in old:
+                record["launches"] = old["launches"]
         self.local_dir.mkdir(parents=True, exist_ok=True)
         path = self.record_path()
         path.write_text(json.dumps(record, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
@@ -262,15 +283,8 @@ def cmd_launch(batch: Batch, remote: Ssh, limit: int | None) -> int:
         return 1
     instances = batch.write_inputs()
     record = batch.record(host_facts)
-    record.setdefault("launches", [])
-    previous = batch.record_path()
-    if previous.exists():
-        try:
-            old = json.loads(previous.read_text(encoding="utf-8"))
-            if old.get("spec_digest") == record["spec_digest"]:
-                record["launches"] = old.get("launches", [])
-        except ValueError:
-            pass
+    old = batch.previous_record()
+    record["launches"] = list((old or {}).get("launches", []))
     launched_at = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     record["launches"].append({"at": launched_at, "limit": limit, "argv": driver_argv(batch.spec, batch.host, limit)})
     record_path = batch.save_record(record)
@@ -364,7 +378,7 @@ def cmd_report(batch: Batch, _remote: Ssh | None, scanner: str | None, json_out:
             encoding="utf-8",
         )
         print(f"JSON -> {json_out}")
-    scanner = scanner or batch.host.scanner
+    scanner = None if scanner == "none" else (scanner or batch.host.scanner)
     if scanner:
         print(f"\n--- scan_batch ({scanner}) ---")
         sys.stdout.flush()
@@ -392,7 +406,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--timeout", type=float, default=6 * 3600)
     p = sub.add_parser("report")
     p.add_argument("spec")
-    p.add_argument("--scanner", default=None, help="path to scan_batch.py; defaults to the host file's 'scanner'")
+    p.add_argument(
+        "--scanner", default=None, help="path to scan_batch.py; defaults to the host file's 'scanner'; 'none' skips it"
+    )
     p.add_argument("--json", dest="json_out", default=None)
     return ap
 

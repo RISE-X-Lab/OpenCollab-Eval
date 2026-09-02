@@ -770,3 +770,22 @@ def test_report_for_a_single_arm_computes_no_delivery(tmp_path: Path) -> None:
     assert summary["valid"] == 1 and summary["invalid"] == ["b"]
     text = cell_report.render(rows, summary, [])
     assert "delivered" not in text and "team-arm quantity" in text and "[excluded: provider]" in text
+
+
+def test_plan_after_preflight_keeps_the_host_facts(experiment: dict) -> None:
+    remote = FakeRemote(_facts(experiment))
+    args = ["--experiment-dir", str(experiment["dir"])]
+    assert batch_cli.main([*args, "preflight", str(experiment["spec"])], remote_factory=lambda h: remote) == 0
+    assert batch_cli.main([*args, "plan", str(experiment["spec"])], remote_factory=lambda h: None) == 0
+    record_path = Path(load_host(experiment["dir"] / "hosts" / "h.yaml").local_batches_dir) / "t1.launch" / "batch.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    assert record["host"]["model"] == "deepseek-v4-flash"
+    assert (
+        batch_cli.main([*args, "launch", str(experiment["spec"]), "--limit", "1"], remote_factory=lambda h: remote) == 0
+    )
+    assert batch_cli.main([*args, "launch", str(experiment["spec"])], remote_factory=lambda h: remote) == 0
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    assert [launch["limit"] for launch in record["launches"]] == [1, None]
+    assert batch_cli.main([*args, "plan", str(experiment["spec"])], remote_factory=lambda h: None) == 0
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    assert len(record["launches"]) == 2 and "host" in record
