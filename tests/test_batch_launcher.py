@@ -704,3 +704,69 @@ def test_status_script_counts_rows_under_bash(experiment: dict, fake_host: dict)
     statuses = {p[0]: p[1] for p in batch_remote.facts_all(facts, "STATUS")}
     assert statuses == {"completed": "2", "stopped": "1"}
     assert [p[0] for p in batch_remote.facts_all(facts, "LOGTAIL")] == ["line one", "line two"]
+
+
+# --- rungs, pins, and arms without a team -------------------------------------------------
+
+
+def test_rung_derives_the_cell_and_refuses_a_mismatch(experiment: dict) -> None:
+    from opencollab_eval.experiment.batch_spec import RUNG_CELLS
+
+    path = experiment["dir"] / "batches" / "r.yaml"
+    path.write_text(_spec_text(experiment, "cell: x\n", "rung: plain\n"), encoding="utf-8")
+    spec = load_spec(path)
+    assert (spec.rung, spec.cell) == ("plain", "cmd-plain")
+    path.write_text(_spec_text(experiment, "cell: x\n", "rung: prohibit\ncell: cmd-plain\n"), encoding="utf-8")
+    with pytest.raises(SpecError, match="must come from that rung's card"):
+        load_spec(path)
+    path.write_text(_spec_text(experiment, "cell: x\n", "rung: strong\n"), encoding="utf-8")
+    with pytest.raises(SpecError, match="not one of"):
+        load_spec(path)
+    path.write_text(_spec_text(experiment, "arm: team\ncell: x\n", "arm: single\nrung: plain\n"), encoding="utf-8")
+    with pytest.raises(SpecError, match="has none"):
+        load_spec(path)
+    assert RUNG_CELLS == {
+        "primary": "facts-v2",
+        "opt-out": "cmd-optout",
+        "bare": "cmd-bare",
+        "plain": "cmd-plain",
+        "prohibit": "cmd-prohibit",
+    }
+
+
+def test_checked_in_specs_name_rung_and_cell_consistently() -> None:
+    for path in sorted((EXPERIMENT / "batches").glob("*.yaml")):
+        spec = load_spec(path)
+        if spec.arm == "team":
+            assert spec.rung is not None, f"{path.name}: a team spec names its rung"
+            assert spec.cell is not None
+        assert (EXPERIMENT / "hosts" / f"{spec.host}.yaml").exists()
+        assert (EXPERIMENT / "suite" / f"{spec.suite}.csv").exists()
+
+
+def test_plan_refuses_a_pin_that_is_not_a_local_commit(experiment: dict, capsys) -> None:
+    path = experiment["dir"] / "batches" / "p.yaml"
+    path.write_text(_spec_text(experiment, PIN_EVAL, "abcdef0123" * 4), encoding="utf-8")
+    rc = batch_cli.main(["--experiment-dir", str(experiment["dir"]), "plan", str(path)], remote_factory=lambda h: None)
+    assert rc == 2
+    assert "not a commit" in capsys.readouterr().err
+
+
+def test_report_for_a_single_arm_computes_no_delivery(tmp_path: Path) -> None:
+    cell = tmp_path / "cell"
+    cell.mkdir()
+    metrics = [
+        {
+            "instance_id": "a",
+            "run_summary": {"status": "completed", "tokens": 100, "steps": 5},
+            "submitted_patch_chars": 40,
+        },
+        {"instance_id": "b", "run_summary": {"status": "failed", "reason": "provider", "tokens": 0, "steps": 0}},
+    ]
+    (cell / "metrics.jsonl").write_text("".join(json.dumps(m) + "\n" for m in metrics), encoding="utf-8")
+    rows = cell_report.run_rows(cell, "single")
+    summary = cell_report.summarize(rows, team=False)
+    assert summary["delivered"] is None and summary["alpha"] is None and summary["ci95"] is None
+    assert summary["valid"] == 1 and summary["invalid"] == ["b"]
+    text = cell_report.render(rows, summary, [])
+    assert "delivered" not in text and "team-arm quantity" in text and "[excluded: provider]" in text

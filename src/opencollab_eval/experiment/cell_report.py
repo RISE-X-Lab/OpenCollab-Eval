@@ -164,10 +164,13 @@ def order_rows(rows: list[RunRow], order_csv: str | Path | None) -> tuple[list[R
     return ordered + extra, [i for i in wanted if i not in index]
 
 
-def summarize(rows: list[RunRow], expected_card: str | None = None) -> dict[str, Any]:
+def summarize(rows: list[RunRow], expected_card: str | None = None, team: bool = True) -> dict[str, Any]:
+    """Counts over the cell. Delivery and its interval exist only for a team arm:
+    a single agent has nobody to deliver to, so the quantity is undefined there,
+    not zero."""
     valid = [r for r in rows if r.valid]
-    delivered = sum(1 for r in valid if r.delivered)
-    low, high = clopper_pearson(delivered, len(valid))
+    delivered = sum(1 for r in valid if r.delivered) if team else None
+    low, high = clopper_pearson(delivered, len(valid)) if team else (None, None)
     cards = sorted({r.card for r in rows if r.card})
     statuses: dict[str, int] = {}
     for r in rows:
@@ -176,9 +179,10 @@ def summarize(rows: list[RunRow], expected_card: str | None = None) -> dict[str,
         "runs": len(rows),
         "valid": len(valid),
         "invalid": [r.instance_id for r in rows if not r.valid],
+        "team": team,
         "delivered": delivered,
-        "alpha": (delivered / len(valid)) if valid else None,
-        "ci95": [low, high],
+        "alpha": (delivered / len(valid)) if (team and valid) else None,
+        "ci95": [low, high] if team else None,
         "statuses": statuses,
         "cap_hit": [r.instance_id for r in rows if r.cap_hit],
         "analyst_cards": cards,
@@ -188,10 +192,30 @@ def summarize(rows: list[RunRow], expected_card: str | None = None) -> dict[str,
     }
 
 
+def _render_single(rows: list[RunRow], summary: dict[str, Any], lines: list[str]) -> str:
+    lines.append(f"{'#':>3} {'instance_id':40s} {'status':10s} {'tok':>9s} {'steps':>5s} {'patch':>6s}")
+    for i, r in enumerate(rows, 1):
+        lines.append(
+            f"{i:>3} {r.instance_id:40s} {r.status:10s} {r.tokens:>9,} {r.steps:>5} {str(r.patch_chars or 0):>6}"
+            + ("" if r.valid else "   [excluded: " + (r.reason or r.status) + "]")
+        )
+    lines.append("")
+    lines.append(
+        f"valid {summary['valid']}/{summary['runs']}"
+        + (f"   excluded {len(summary['invalid'])}: {summary['invalid']}" if summary["invalid"] else "")
+        + "   (delivery is a team-arm quantity; none is computed here)"
+    )
+    lines.append(f"statuses: {summary['statuses']}")
+    lines.append(f"tokens total: {summary['tokens_total']:,}")
+    return "\n".join(lines)
+
+
 def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> str:
     lines = []
     if missing:
         lines.append(f"MISSING FROM METRICS ({len(missing)}): {missing}")
+    if not summary.get("team", True):
+        return _render_single(rows, summary, lines)
     header = (
         f"{'#':>3} {'instance_id':40s} {'status':10s} {'tok':>9s} {'analyst':>9s} {'coder':>8s} {'tester':>8s} "
         f"{'deleg':5s} {'msgA':>4s} {'aWr':>3s} {'snap':>4s} cap"

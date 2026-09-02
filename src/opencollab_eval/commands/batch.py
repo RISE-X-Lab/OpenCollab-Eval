@@ -32,6 +32,7 @@ from typing import Any
 
 from opencollab_eval.experiment import batch_remote, cell_report
 from opencollab_eval.experiment.batch_spec import (
+    TEAM_ARMS,
     BatchSpec,
     HostConfig,
     SpecError,
@@ -98,6 +99,13 @@ class Ssh:
         )
 
 
+def commit_exists(repo: str | Path, sha: str) -> bool:
+    proc = subprocess.run(
+        ["git", "-C", str(repo), "cat-file", "-e", f"{sha}^{{commit}}"], capture_output=True, check=False
+    )
+    return proc.returncode == 0
+
+
 def blob_sha256(repo: str | Path, rev: str, path: str) -> str:
     """sha256 of ``path`` at commit ``rev`` in the local checkout, without checking it out."""
     proc = subprocess.run(
@@ -124,6 +132,13 @@ class Batch:
         host_file = host_path or (experiment_dir / "hosts" / f"{self.spec.host}.yaml")
         self.host: HostConfig = load_host(host_file)
         self.suite_dir = experiment_dir / "suite"
+        for key, repo in (("opencollab", self.host.local_opencollab_dir), ("opencollab_eval", REPO_ROOT)):
+            sha = self.spec.pins[key]
+            if not commit_exists(repo, sha):
+                raise SpecError(
+                    f"pins.{key} {sha[:12]} is not a commit in {repo}. The host fetches from GitHub, so a pin "
+                    "must be pushed: fetch it here if it exists (git fetch origin iclr-2027), or push it first."
+                )
         self.rows = suite_rows(self.spec, self.suite_dir)
         self.local_dir = Path(self.host.local_batches_dir) / f"{self.spec.name}.launch"
         self.data_dir = Path(self.host.local_batches_dir) / self.spec.name
@@ -337,8 +352,9 @@ def cmd_report(batch: Batch, _remote: Ssh | None, scanner: str | None, json_out:
             ).get("analyst")
         except ValueError:
             expected = None
-    summary = cell_report.summarize(ordered, expected)
-    print(f"report for {batch.spec.name} ({batch.spec.arm}/{batch.spec.cell}) from {batch.data_dir}")
+    summary = cell_report.summarize(ordered, expected, team=batch.spec.arm in TEAM_ARMS)
+    label = f"{batch.spec.arm}/{batch.spec.cell}" + (f" (rung {batch.spec.rung})" if batch.spec.rung else "")
+    print(f"report for {batch.spec.name} ({label}) from {batch.data_dir}")
     pins = batch.spec.pins
     print(f"  pins: opencollab {pins['opencollab'][:12]} opencollab_eval {pins['opencollab_eval'][:12]}")
     print(cell_report.render(ordered, summary, missing))

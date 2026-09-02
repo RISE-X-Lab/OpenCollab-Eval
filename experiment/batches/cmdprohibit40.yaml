@@ -6,6 +6,7 @@
 name: cmdprohibit40
 host: gpu3
 arm: team
+rung: prohibit
 cell: cmd-prohibit
 suite: subset-50
 rows: {start: 1, stop: 40}

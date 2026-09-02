@@ -6,6 +6,7 @@
 name: cmdplain30
 host: gpu3
 arm: team
+rung: plain
 cell: cmd-plain
 suite: subset-30
 rows: {start: 1, stop: 30}

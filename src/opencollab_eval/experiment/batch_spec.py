@@ -41,6 +41,17 @@ REQUIRED_ENV = (
     "OPENCOLLAB_WRITE_NUDGE_MODE",
 )
 
+# The paper's rung names against the team files that seat them (§5, D18). A
+# spec may name the rung, the cell, or both; both that disagree is an error,
+# because a rung's number must come from the card the paper says it comes from.
+RUNG_CELLS = {
+    "primary": "facts-v2",
+    "opt-out": "cmd-optout",
+    "bare": "cmd-bare",
+    "plain": "cmd-plain",
+    "prohibit": "cmd-prohibit",
+}
+
 # ``pgrep -f`` matches its own caller's command line, so the pattern carries a
 # bracket that the literal string in a shell command does not match.
 BATCH_PROCESS_PATTERN = "[o]pencollab_eval.generation.gen_prediction_batch"
@@ -84,6 +95,7 @@ class BatchSpec:
     host: str
     arm: str
     cell: str | None
+    rung: str | None
     suite: str
     row_start: int | None
     row_stop: int | None
@@ -157,8 +169,21 @@ def load_spec(path: str | Path) -> BatchSpec:
     if arm not in ARM_MODULES:
         raise SpecError(f"{where}: arm {arm!r} is not one of {sorted(ARM_MODULES)}")
     cell = raw.get("cell")
+    rung = raw.get("rung")
+    if rung is not None:
+        if rung not in RUNG_CELLS:
+            raise SpecError(f"{where}: rung {rung!r} is not one of {list(RUNG_CELLS)}")
+        if arm not in TEAM_ARMS:
+            raise SpecError(f"{where}: a rung is a Team card; arm {arm!r} has none")
+        if cell is None:
+            cell = RUNG_CELLS[rung]
+        elif cell != RUNG_CELLS[rung]:
+            raise SpecError(
+                f"{where}: rung {rung!r} is the card {RUNG_CELLS[rung]!r}, but cell says {cell!r}; "
+                "a number reported under a rung name must come from that rung's card"
+            )
     if arm in TEAM_ARMS and not isinstance(cell, str):
-        raise SpecError(f"{where}: arm {arm!r} needs a 'cell' (the team.handoff.<cell>.yaml to seat)")
+        raise SpecError(f"{where}: arm {arm!r} needs a 'cell' (the team.handoff.<cell>.yaml to seat) or a 'rung'")
     if arm not in TEAM_ARMS and cell is not None:
         raise SpecError(f"{where}: arm {arm!r} takes no 'cell'; the driver would ignore it silently")
 
@@ -200,6 +225,7 @@ def load_spec(path: str | Path) -> BatchSpec:
         host=_require(raw, "host", str, where),
         arm=arm,
         cell=cell,
+        rung=rung,
         suite=_require(raw, "suite", str, where),
         row_start=row_start,
         row_stop=row_stop,
@@ -225,6 +251,7 @@ def spec_identity(spec: BatchSpec) -> dict[str, Any]:
         "host": spec.host,
         "arm": spec.arm,
         "cell": spec.cell,
+        "rung": spec.rung,
         "suite": spec.suite,
         "rows": {"start": spec.row_start, "stop": spec.row_stop},
         "budget_per_seat": spec.budget_per_seat,
