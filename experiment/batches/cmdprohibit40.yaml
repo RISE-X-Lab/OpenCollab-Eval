@@ -1,0 +1,24 @@
+# The fuse of the ladder: the positive control (rung cmd-prohibit) on the first
+# 40 rows of the replication subset. Runs before any other rung: if fewer than
+# 27 of 40 valid runs deliver, the ladder's reader is not working and nothing
+# above it is worth paying for. The pins are today's; update both after the
+# W1-W3 changes land, then re-run `plan` and `preflight`.
+name: cmdprohibit40
+host: gpu3
+arm: team
+cell: cmd-prohibit
+suite: subset-50
+rows: {start: 1, stop: 40}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: b00f256995e321e910a988908842705177d4c0f4
+  opencollab_eval: 315a06c3df10dcde3d0218a3a3b6a6b157ee12b1
+note: ladder positive control; clears when the lower 95% bound of alpha exceeds 0.5 (27 of 40)
