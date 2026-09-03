@@ -109,3 +109,99 @@ def test_the_arm_native_keys_are_left_alone():
     assert single["used_tokens"] == 173_818
     assert team["steps"] == 57
     assert team["tokens_used"] == 498_112
+
+
+def _degenerate_workflow_metrics() -> dict:
+    """The dw-subset50 shape: the workflow returned an error, the runtime did not.
+
+    ``self_collaboration`` returns ``{"status": "error", ...}`` when the analyst
+    commits no brief. The workflow function itself returned normally, so the
+    runtime around it reports "completed" with no reason -- while the very same
+    stop on the single-agent arm is recorded as "stopped" with a reason string.
+    """
+    result = EvalResult(
+        task_id="django__django-15128",
+        patch="",
+        patch_produced=False,
+        tokens_used=1_874_331,
+        steps=88,
+        duration=1_910.0,
+        runtime_status="completed",
+        runtime_reason=None,
+        workflow_result={
+            "status": "error",
+            "error": "analyst produced no structured brief",
+            "seat_cap": 666_666,
+            "seat_spend": {"analyst": 620_140},
+            "edges_walked": [],
+        },
+    )
+    return gpw._result_metrics(result)
+
+
+def test_a_workflow_that_returned_an_error_is_recorded_as_stopped_with_a_reason():
+    summary = _degenerate_workflow_metrics()[RUN_SUMMARY_KEY]
+
+    assert set(summary) == set(RUN_SUMMARY_FIELDS)
+    assert summary["status"] == "stopped"
+    assert summary["reason"] == "analyst produced no structured brief"
+    # The run totals still come from the run, not from the override.
+    assert summary["tokens"] == 1_874_331
+    assert summary["steps"] == 88
+
+
+def test_a_completed_workflow_is_still_recorded_as_the_runtime_reported_it():
+    """Positive control: the override fires on the error status and nowhere else."""
+    result = EvalResult(
+        task_id="django__django-15128",
+        patch="diff --git a/a b/a",
+        patch_produced=True,
+        tokens_used=900_000,
+        steps=40,
+        duration=800.0,
+        runtime_status="completed",
+        runtime_reason=None,
+        workflow_result={"status": "done", "edges_walked": ["analyst->coder"]},
+    )
+
+    summary = gpw._result_metrics(result)[RUN_SUMMARY_KEY]
+
+    assert summary["status"] == "completed"
+    assert summary["reason"] is None
+
+
+def test_a_workflow_error_is_not_labelled_as_a_run_that_finished_empty():
+    """``workflow_status`` must name the stop, not the empty patch it left.
+
+    ``result.error`` is the runtime's crash string and stays None here, so the
+    empty patch used to fall through to ``empty_patch_after_done`` -- "the run
+    finished and wrote nothing", a different fact from "the analyst never
+    handed anything over".
+    """
+    result = EvalResult(
+        task_id="django__django-15128",
+        patch="",
+        patch_produced=False,
+        tokens_used=1_874_331,
+        steps=88,
+        duration=1_910.0,
+        runtime_status="completed",
+        workflow_result={
+            "status": "error",
+            "error": "analyst produced no structured brief",
+        },
+    )
+
+    assert gpw._workflow_status_for_result(result, "") == "error"
+    # A workflow that really did finish empty keeps its old label.
+    done = EvalResult(
+        task_id="django__django-15128",
+        patch="",
+        patch_produced=False,
+        tokens_used=10,
+        steps=1,
+        duration=1.0,
+        runtime_status="completed",
+        workflow_result={"status": "done"},
+    )
+    assert gpw._workflow_status_for_result(done, "") == "empty_patch_after_done"

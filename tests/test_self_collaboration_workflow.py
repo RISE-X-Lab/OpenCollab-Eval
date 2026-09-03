@@ -407,6 +407,30 @@ async def test_each_seat_is_capped_at_the_pool_divided_by_the_three_seats():
 
 
 @pytest.mark.asyncio
+async def test_a_degenerate_run_records_the_same_seat_accounting_as_a_healthy_one():
+    # The failure this arm actually hit in dw-subset50 was an analyst that
+    # returned no brief. Without the seat keys the artifact cannot answer the
+    # only question that failure raises -- how much of its 2M seat the analyst
+    # still held -- and a degenerate run carries 7 keys where a healthy one
+    # carries 12, so the two cannot be read side by side.
+    ctx = BudgetedCtx([None], total=900, cost=250)
+
+    result = await self_collaboration(ctx, {"goal": "fix the pager"})
+
+    assert result["status"] == "error"
+    assert result["seat_cap"] == 300
+    assert result["seat_spend"] == {"analyst": 250}
+    healthy = await self_collaboration(
+        BudgetedCtx([BRIEF, CODER_OK, TESTER_PASS, ACCEPT], total=900, cost=100),
+        {"goal": "fix the pager"},
+    )
+    # Every key the degenerate return carries beyond its own "error" is a key
+    # the completed return carries too, so the two rows line up.
+    assert set(result) - {"error"} <= set(healthy)
+    assert {"seat_cap", "seat_spend"} <= set(result)
+
+
+@pytest.mark.asyncio
 async def test_an_analyst_that_spends_its_whole_seat_analysing_still_leaves_the_coder_a_seat():
     ctx = BudgetedCtx([BRIEF, CODER_OK, TESTER_PASS], total=900, cost=300)
 

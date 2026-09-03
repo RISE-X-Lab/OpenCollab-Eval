@@ -181,11 +181,24 @@ def _result_metrics(result) -> dict:
     # The same quantities again, under the names the single-agent path also
     # writes them under. Without this the two arms' records can only be read
     # one arm at a time; see ``gen_prediction_run_summary``.
+    status = result.runtime_status
+    reason = result.runtime_reason
+    workflow_result = getattr(result, "workflow_result", None)
+    if isinstance(workflow_result, dict) and workflow_result.get("status") == "error":
+        # A workflow that returns an error has stopped, but the runtime around
+        # it returned normally, so it reports "completed" and no reason at all.
+        # Left alone the very same stop reads as "completed" on the workflow
+        # arms and as "stopped" on the single-agent arm: an arm-varying
+        # recording rule on the field a cross-arm reader selects. Record the
+        # stop, and carry the workflow's own error string as the detail so the
+        # reason is non-empty here exactly as it is on the single-agent arm.
+        status = "stopped"
+        reason = reason or str(workflow_result.get("error") or "workflow error")
     metrics[RUN_SUMMARY_KEY] = build_run_summary(
         steps=result.steps,
         tokens=result.tokens_used,
-        status=result.runtime_status,
-        reason=result.runtime_reason,
+        status=status,
+        reason=reason,
         duration_s=result.duration,
         error=result.error,
     )
@@ -270,13 +283,24 @@ def _workflow_status_for_result(result, patch: str) -> str:
         if error.startswith("Task timed out after ") and patch.strip():
             return "done_with_timeout_patch"
         return "error"
+    workflow_result = getattr(result, "workflow_result", None)
+    workflow_status = (
+        str(workflow_result["status"])
+        if isinstance(workflow_result, dict) and workflow_result.get("status")
+        else ""
+    )
+    # ``result.error`` is the runtime's own crash string and stays None when a
+    # workflow returns an error normally, so the empty patch such a run leaves
+    # behind used to be labelled ``empty_patch_after_done`` -- a run that
+    # finished and wrote nothing, which is a different fact.
+    if workflow_status == "error":
+        return "error"
     if not patch.strip():
         return "empty_patch_after_done"
     if getattr(result, "runtime_reason", None) == "timeout":
         return "done_with_timeout_patch"
-    workflow_result = getattr(result, "workflow_result", None)
-    if isinstance(workflow_result, dict) and workflow_result.get("status"):
-        return str(workflow_result["status"])
+    if workflow_status:
+        return workflow_status
     return "done" if patch.strip() else ""
 
 

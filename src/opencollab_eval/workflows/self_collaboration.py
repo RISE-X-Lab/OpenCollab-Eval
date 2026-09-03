@@ -493,11 +493,17 @@ async def _run(
     await _snapshot(ctx, "analyze", snapshots)
 
     if not isinstance(brief, dict):
+        # Carry the same seat accounting the completed return carries. Without
+        # it a degenerate run records 7 keys where a healthy one records 12, and
+        # the one question this failure raises -- how much of its seat the
+        # analyst still held when it stopped -- has no answer in the artifact.
         return {
             "status": "error",
             "error": "analyst produced no structured brief",
             "analyst_wrote_source": analyst_wrote_source,
             "tree_snapshots": snapshots,
+            "seat_cap": seats.cap,
+            "seat_spend": dict(seats.spent),
             "edges_declared": list(DECLARED_EDGES),
             "edges_walked": walked,
             "tokens_spent": ctx.tokens_spent(),
