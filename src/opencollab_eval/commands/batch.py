@@ -32,7 +32,6 @@ from typing import Any
 
 from opencollab_eval.experiment import batch_remote, cell_report
 from opencollab_eval.experiment.batch_spec import (
-    TEAM_ARMS,
     BatchSpec,
     HostConfig,
     SpecError,
@@ -49,6 +48,7 @@ from opencollab_eval.experiment.batch_spec import (
     spec_identity,
     suite_rows,
 )
+from opencollab_eval.generation.gen_prediction_batch import DELIVERY_READABLE_ARMS
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 EXPERIMENT_DIR = REPO_ROOT / "experiment"
@@ -366,7 +366,13 @@ def cmd_report(batch: Batch, _remote: Ssh | None, scanner: str | None, json_out:
             ).get("analyst")
         except ValueError:
             expected = None
-    summary = cell_report.summarize(ordered, expected, team=batch.spec.arm in TEAM_ARMS)
+    # Delivery is read on every arm that seats more than one role, which is a
+    # wider set than the arms that take a team file: a DW run has an analyst,
+    # a coder and a tester too, and reporting it with ``team=False`` printed
+    # null delivery, null alpha and null CI for the arm the ladder compares.
+    summary = cell_report.summarize(
+        ordered, expected, team=batch.spec.arm in DELIVERY_READABLE_ARMS
+    )
     label = f"{batch.spec.arm}/{batch.spec.cell}" + (f" (rung {batch.spec.rung})" if batch.spec.rung else "")
     print(f"report for {batch.spec.name} ({label}) from {batch.data_dir}")
     pins = batch.spec.pins

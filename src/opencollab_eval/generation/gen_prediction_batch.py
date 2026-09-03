@@ -101,6 +101,14 @@ WORKFLOW_ARMS: dict[str, str] = {
     "self-collaboration-reading-analyst": "self-collaboration-reading-analyst",
 }
 
+#: Arms whose runs seat more than one role and therefore have a delivery rate
+#: to read. Strictly a *reporting* set: ``TEAM_ARMS`` is also what
+#: ``experiment/batch_spec`` uses to require a cell and a rung, so widening
+#: that set to cover the scripted workflows would reject every DW spec. Keep
+#: the two apart -- "this arm takes a team file" and "this arm has seats worth
+#: counting" are different questions with different answers.
+DELIVERY_READABLE_ARMS: frozenset[str] = TEAM_ARMS | frozenset(WORKFLOW_ARMS)
+
 MANIFEST_NAME = "manifest.jsonl"
 
 

@@ -24,6 +24,17 @@ WRITE_TOOLS = frozenset({"apply_patch", "file_write"})
 DELEGATE_ROLES = frozenset({"coder", "tester"})
 # A run the model never touched: no denominator for anything.
 INVALID_STATUSES = frozenset({"failed", "error"})
+# The runtime stamps every seat of a scripted workflow with one generic role,
+# so a workflow seat's identity lives in its file name instead. A team seat
+# carries its own role and is read from the record as before.
+GENERIC_WORKFLOW_ROLE = "workflow_agent"
+# Two different terminal events, both spelt with the word "budget". The first
+# is the pre-call input reservation refusing to enter a call the seat could
+# still have afforded; the second is the seat actually overspending after a
+# call returned. Only the second one means "this run's outcome was chosen by
+# the cap", so the ladder's capped column cannot be read off their union.
+CAP_PRECHECK_MARKER = "before model call: conservative input reservation"
+CAP_POSTCALL_MARKER = "budget exceeded after model call"
 
 
 def binom_cdf(k: int, n: int, p: float) -> float:
@@ -81,6 +92,8 @@ class RunRow:
     delivered: bool = False
     tree_snapshots: int = 0
     cap_hit: list[str] = field(default_factory=list)
+    cap_hit_precheck: list[str] = field(default_factory=list)
+    cap_hit_postcall: list[str] = field(default_factory=list)
     patch_chars: int | None = None
     card: str | None = None
     team_config: str | None = None
@@ -90,11 +103,49 @@ class RunRow:
         return self.status not in INVALID_STATUSES
 
 
+#: How each arm names the per-seat snapshot the runtime autosaves, relative to
+#: one instance's ``trajectories`` root. A team writes
+#: ``agent_<aid>_<role>-<hex>.json``; a scripted workflow writes
+#: ``<nnn>_<label>.json`` (``000_analyst.json``, ``001_coder-r1.json``), which
+#: the team pattern does not match -- so a DW cell used to read as zero seats,
+#: zero delivery and no cap, with no error anywhere saying the files were never
+#: opened. The journal sidecars (``*.json.journal``) do not match either
+#: pattern, which is why neither has to exclude them.
+_SEAT_FILE_PATTERNS = ("*/*/agent_*.json", "*/*/[0-9][0-9][0-9]_*.json")
+
+
 def _agent_files(cell: Path, arm: str, instance_id: str) -> list[Path]:
+    """Per-seat snapshots for one run, whichever arm wrote them.
+
+    The single-agent arm is not readable here: it writes
+    ``<cell>/agent-<hex>/agent.json`` at the batch root, and that path carries
+    no instance id, so a row cannot be attributed to a run from it. Delivery is
+    undefined on that arm anyway (``summarize(team=False)``).
+    """
     root = cell / f"logs-{arm}" / instance_id / "trajectories"
     if not root.exists():
         return []
-    return sorted(p for p in root.glob("*/*/agent_*.json"))
+    found: set[Path] = set()
+    for pattern in _SEAT_FILE_PATTERNS:
+        found.update(root.glob(pattern))
+    return sorted(found)
+
+
+def _seat_role(path: Path, recorded: str) -> str:
+    """The seat's role, from the record when it names one, else from the file.
+
+    A team seat records ``analyst`` / ``coder`` / ``tester`` and is taken as
+    written. A workflow seat records the generic ``workflow_agent`` for every
+    seat, so ``delivered`` -- "a coder or tester seat spent tokens and spoke"
+    -- was false for every DW run no matter what the run did. The name the
+    driver gave the file is where that arm's seat identity actually is:
+    ``001_coder-r1`` is the coder, ``003_analyst-adjudicate-r1`` is the analyst
+    coming back to adjudicate.
+    """
+    if recorded and recorded != GENERIC_WORKFLOW_ROLE:
+        return recorded
+    label = path.stem.split("_", 1)[1] if "_" in path.stem else path.stem
+    return label.split("-", 1)[0] or recorded
 
 
 def _read_seat(path: Path) -> tuple[int, Seat]:
@@ -107,7 +158,7 @@ def _read_seat(path: Path) -> tuple[int, Seat]:
         for call in (message.get("tool_calls") or [])
     ]
     seat = Seat(
-        role=str(data.get("role") or ""),
+        role=_seat_role(path, str(data.get("role") or "")),
         tokens=int(state.get("used_tokens") or 0),
         steps=int(state.get("step_count") or 0),
         assistant=sum(1 for m in messages if m.get("role") == "assistant"),
@@ -134,6 +185,14 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
             for path in _agent_files(cell, arm, record["instance_id"]):
                 aid, seat = _read_seat(path)
                 seats[str(aid)] = seat
+            # A workflow arm records its seat boundaries inside its own result
+            # rather than at the top level (see ``_result_metrics``), so a DW
+            # run read only at the top level shows zero snapshots -- the same
+            # reading an arm that records none produces.
+            workflow_result = record.get("workflow_result")
+            snapshots = record.get("tree_snapshots")
+            if not snapshots and isinstance(workflow_result, dict):
+                snapshots = workflow_result.get("tree_snapshots")
             row = RunRow(
                 instance_id=record["instance_id"],
                 status=str(summary.get("status") or record.get("runtime_status") or ""),
@@ -142,8 +201,14 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
                 steps=int(summary.get("steps") or 0),
                 seats=seats,
                 delivered=any(s.role in DELEGATE_ROLES and s.tokens > 0 and s.assistant > 0 for s in seats.values()),
-                tree_snapshots=len(record.get("tree_snapshots") or []),
+                tree_snapshots=len(snapshots or []),
                 cap_hit=[aid for aid, s in seats.items() if "budget" in s.terminal.lower()],
+                cap_hit_precheck=[
+                    aid for aid, s in seats.items() if CAP_PRECHECK_MARKER in s.terminal
+                ],
+                cap_hit_postcall=[
+                    aid for aid, s in seats.items() if CAP_POSTCALL_MARKER in s.terminal
+                ],
                 patch_chars=record.get("submitted_patch_chars"),
                 card=(record.get("role_prompt_sha256") or {}).get("analyst"),
                 team_config=record.get("team_config_path"),
@@ -185,6 +250,10 @@ def summarize(rows: list[RunRow], expected_card: str | None = None, team: bool =
         "ci95": [low, high] if team else None,
         "statuses": statuses,
         "cap_hit": [r.instance_id for r in rows if r.cap_hit],
+        # The two halves of ``cap_hit``, kept apart because only the second is
+        # a run whose outcome the budget chose.
+        "cap_hit_precheck": [r.instance_id for r in rows if r.cap_hit_precheck],
+        "cap_hit_postcall": [r.instance_id for r in rows if r.cap_hit_postcall],
         "analyst_cards": cards,
         "card_matches_expected": (cards == [expected_card]) if expected_card else None,
         "team_configs": sorted({r.team_config for r in rows if r.team_config}),
@@ -240,6 +309,14 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
     )
     lines.append(f"statuses: {summary['statuses']}")
     lines.append(f"seat at budget cap: {len(summary['cap_hit'])}/{summary['runs']} -> {summary['cap_hit']}")
+    lines.append(
+        f"  stopped by the pre-call reservation: {len(summary['cap_hit_precheck'])}"
+        f" -> {summary['cap_hit_precheck']}"
+    )
+    lines.append(
+        f"  overspent after a call returned:     {len(summary['cap_hit_postcall'])}"
+        f" -> {summary['cap_hit_postcall']}"
+    )
     lines.append(
         f"analyst card digests: {summary['analyst_cards']}"
         + (
