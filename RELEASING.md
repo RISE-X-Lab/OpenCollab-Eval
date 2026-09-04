@@ -9,8 +9,8 @@ OpenCollab-Eval releases are paired with a verified OpenCollab release. PyPI pub
 - Bind CI to the immutable commit behind the compatible OpenCollab tag.
 - Verify every GitHub check, test, and artifact against the exact release SHA.
 - Push only the intended tag ref and never move a published tag.
-- Use a PR and merge title that satisfies the repository's Conventional Title
-  checker, including its required Chinese summary text.
+- Use a PR and merge-commit title that satisfies the repository's Conventional
+  Title checker, including its required Chinese summary text.
 - Use a signed annotated tag. When signing or tag protection is unavailable, record the maintainer's explicit waiver in the GitHub Release before completion.
 
 ## Verify the candidate
