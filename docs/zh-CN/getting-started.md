@@ -16,7 +16,7 @@
 python -m venv .venv
 . .venv/bin/activate
 python -m pip install /path/to/opencollab-0.5.0-py3-none-any.whl
-python -m pip install /path/to/opencollab_eval-0.5.0-py3-none-any.whl
+python -m pip install /path/to/opencollab_eval-0.5.1-py3-none-any.whl
 oc-eval --version
 oc-eval --help
 ```
@@ -24,13 +24,13 @@ oc-eval --help
 通过软件包的可选依赖安装官方 SWE-bench 支持。
 
 ```bash
-python -m pip install '/path/to/opencollab_eval-0.5.0-py3-none-any.whl[swebench]'
+python -m pip install '/path/to/opencollab_eval-0.5.1-py3-none-any.whl[swebench]'
 ```
 
 在 Python 3.12 环境中安装 OpenHands 支持。
 
 ```bash
-python -m pip install '/path/to/opencollab_eval-0.5.0-py3-none-any.whl[openhands]'
+python -m pip install '/path/to/opencollab_eval-0.5.1-py3-none-any.whl[openhands]'
 ```
 
 ## 安装源码检出

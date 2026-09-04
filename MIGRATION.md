@@ -26,7 +26,9 @@ tree identity, and then imports from that synchronized package root.
 
 ## OpenCollab version boundary
 
-OpenCollab-Eval 0.5.0 requires OpenCollab 0.5.0. This paired release provides
+OpenCollab-Eval 0.5.1 requires OpenCollab 0.5.0. This patch release preserves
+the 0.5.0 pair while correcting legacy result and controlled-stop handling. The
+paired release provides
 the Responses transport, runtime identity checks, and public test contracts
 used by the current evaluator. The package root provides `OpenCollab`,
 `RunResult`, `RunError`, and `workflow`. Optional public contracts and

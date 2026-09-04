@@ -22,7 +22,7 @@ wheels and verifies the installed boundary.
 python -m venv .venv
 . .venv/bin/activate
 python -m pip install /path/to/opencollab-0.5.0-py3-none-any.whl
-python -m pip install /path/to/opencollab_eval-0.5.0-py3-none-any.whl
+python -m pip install /path/to/opencollab_eval-0.5.1-py3-none-any.whl
 oc-eval --version
 oc-eval --help
 ```
@@ -30,13 +30,13 @@ oc-eval --help
 Install official SWE-bench support with the package extra.
 
 ```bash
-python -m pip install '/path/to/opencollab_eval-0.5.0-py3-none-any.whl[swebench]'
+python -m pip install '/path/to/opencollab_eval-0.5.1-py3-none-any.whl[swebench]'
 ```
 
 Install OpenHands support in a Python 3.12 environment.
 
 ```bash
-python -m pip install '/path/to/opencollab_eval-0.5.0-py3-none-any.whl[openhands]'
+python -m pip install '/path/to/opencollab_eval-0.5.1-py3-none-any.whl[openhands]'
 ```
 
 ## Install source checkouts
