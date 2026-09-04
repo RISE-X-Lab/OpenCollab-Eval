@@ -63,13 +63,13 @@ Install the two wheel files.
 
 ```bash
 python -m pip install /path/to/opencollab-0.5.0-py3-none-any.whl
-python -m pip install /path/to/opencollab_eval-0.5.0-py3-none-any.whl
+python -m pip install /path/to/opencollab_eval-0.5.1-py3-none-any.whl
 ```
 
 Install the SWE-bench integration when official evaluation is needed.
 
 ```bash
-python -m pip install '/path/to/opencollab_eval-0.5.0-py3-none-any.whl[swebench]'
+python -m pip install '/path/to/opencollab_eval-0.5.1-py3-none-any.whl[swebench]'
 ```
 
 For a source checkout, install the matching OpenCollab repository first.
@@ -282,7 +282,7 @@ ruff check .
 pytest -q
 scripts/verify_wheel_contract.sh \
   /path/to/opencollab-0.5.0-py3-none-any.whl \
-  /path/to/opencollab_eval-0.5.0-py3-none-any.whl
+  /path/to/opencollab_eval-0.5.1-py3-none-any.whl
 scripts/run_deterministic_swe_e2e.sh --output /tmp/oce-e2e --runs 1
 ```
 
@@ -348,13 +348,13 @@ OpenCollab-Eval 支持 Python 3.10 及以上版本，并要求 OpenCollab 0.5.0 
 
 ```bash
 python -m pip install /path/to/opencollab-0.5.0-py3-none-any.whl
-python -m pip install /path/to/opencollab_eval-0.5.0-py3-none-any.whl
+python -m pip install /path/to/opencollab_eval-0.5.1-py3-none-any.whl
 ```
 
 需要官方评测时，安装 SWE-bench 集成。
 
 ```bash
-python -m pip install '/path/to/opencollab_eval-0.5.0-py3-none-any.whl[swebench]'
+python -m pip install '/path/to/opencollab_eval-0.5.1-py3-none-any.whl[swebench]'
 ```
 
 使用源码检出时，先安装与之匹配的 OpenCollab 仓库。
@@ -520,7 +520,7 @@ ruff check .
 pytest -q
 scripts/verify_wheel_contract.sh \
   /path/to/opencollab-0.5.0-py3-none-any.whl \
-  /path/to/opencollab_eval-0.5.0-py3-none-any.whl
+  /path/to/opencollab_eval-0.5.1-py3-none-any.whl
 scripts/run_deterministic_swe_e2e.sh --output /tmp/oce-e2e --runs 1
 ```
 

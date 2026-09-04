@@ -29,7 +29,7 @@ python -m build --wheel --outdir "$wheel_root/opencollab" ../OpenCollab
 python -m build --wheel --outdir "$wheel_root/eval" .
 scripts/verify_wheel_contract.sh \
   "$wheel_root"/opencollab/opencollab-0.5*.whl \
-  "$wheel_root"/eval/opencollab_eval-0.5.0*.whl
+  "$wheel_root"/eval/opencollab_eval-0.5.1*.whl
 ```
 
 The deterministic SWE E2E requires Docker, `sshd`, `ssh`, `ssh-keygen`, and

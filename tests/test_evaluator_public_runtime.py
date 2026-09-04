@@ -185,8 +185,10 @@ def test_failed_or_uncontrolled_agent_result_keeps_patch_but_blocks_submission(
         "budget exceeded after model call: 100 tokens used",
         "budget exhausted before model call: no output headroom",
         "team budget exceeded: aggregate spend reached the global cap",
+        "budget reserve exhausted: protected commit turn already used",
         "step limit reached: 4 steps",
         "context overflow: prompt exceeds the model context window",
+        "output truncated: provider reached its generation limit",
         "timeout",
     ],
 )
@@ -231,13 +233,20 @@ def test_controlled_stop_keeps_quiescent_patch_and_metrics_eligible(
     assert result.submission_eligible is True
 
 
-def test_nonquiescent_controlled_stop_blocks_submission(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "timeout",
+        "output truncated: provider reached its generation limit",
+    ],
+)
+def test_nonquiescent_controlled_stop_blocks_submission(monkeypatch, tmp_path, reason):
     class Client:
         async def agent(self, _prompt, **_kwargs):
             return RunResult(
                 output=None,
                 status="stopped",
-                reason="timeout",
+                reason=reason,
                 tokens=13,
                 metrics={"steps": 6, "execution_quiesced": False},
             )
@@ -260,7 +269,7 @@ def test_nonquiescent_controlled_stop_blocks_submission(monkeypatch, tmp_path):
     assert result.patch == ""
     assert result.patch_produced is False
     assert result.runtime_status == "stopped"
-    assert result.runtime_reason == "timeout"
+    assert result.runtime_reason == reason
     assert result.tokens_used == 13
     assert result.steps == 6
     assert result.execution_quiesced is False
@@ -278,6 +287,7 @@ def test_nonquiescent_controlled_stop_blocks_submission(monkeypatch, tmp_path):
         "team budget exceeded: aggregate spend reached the global cap",
         "step limit reached: 4 steps",
         "context overflow: prompt exceeds the model context window",
+        "output truncated: provider reached its generation limit",
         "timeout",
     ],
 )

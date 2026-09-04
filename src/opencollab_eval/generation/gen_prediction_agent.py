@@ -30,8 +30,10 @@ _CONTROLLED_STOP_REASON_PREFIXES = (
     "budget exceeded after model call:",
     "budget exhausted before model call:",
     "team budget exceeded:",
+    "budget reserve exhausted:",
     "step limit reached:",
     "context overflow:",
+    "output truncated:",
 )
 _CONTROLLED_STOP_REASON_NAMES = frozenset(
     {"budget_exceeded", "context_overflow", "step_limit_exceeded", "timeout"}

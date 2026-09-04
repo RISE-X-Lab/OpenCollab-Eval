@@ -99,8 +99,10 @@ _CONTROLLED_STOP_REASON_PREFIXES = (
     "budget exceeded after model call:",
     "budget exhausted before model call:",
     "team budget exceeded:",
+    "budget reserve exhausted:",
     "step limit reached:",
     "context overflow:",
+    "output truncated:",
 )
 
 

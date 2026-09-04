@@ -4,6 +4,17 @@ All notable changes to OpenCollab-Eval are recorded in this file.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-04
+
+### Fixed
+
+- Accepted legacy per-instance sidecars that identify a task with `task` or
+  `task_id`, while normalizing valid patch digests without weakening conflict
+  or format checks.
+- Preserved eligible, quiescent candidates when OpenCollab ends a run through
+  the protected budget reserve or provider output truncation; incomplete
+  evidence remains a technical failure.
+
 ## [0.5.0] - 2026-08-13
 
 ### Added
@@ -26,5 +37,6 @@ All notable changes to OpenCollab-Eval are recorded in this file.
 - Prevented stale checkpoints, malformed streaming responses, duplicate model starts, cleanup races, and parser-specific evidence gaps from producing untrusted terminal results.
 - Raised the deterministic SWE test budget so OpenCollab 0.5.0 can preserve the configured output allowance after conservative input reservation.
 
-[Unreleased]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/RISE-X-Lab/OpenCollab-Eval/releases/tag/v0.5.1
 [0.5.0]: https://github.com/RISE-X-Lab/OpenCollab-Eval/releases/tag/v0.5.0

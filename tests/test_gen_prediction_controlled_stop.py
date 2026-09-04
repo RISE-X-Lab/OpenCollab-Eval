@@ -13,10 +13,12 @@ from opencollab_eval.generation import gen_prediction_safe_output as safe_output
         "budget exceeded after model call: 100 tokens used",
         "budget exhausted before model call: no output headroom",
         "team budget exceeded: aggregate spend reached the global cap",
+        "budget reserve exhausted: protected commit turn already used",
         "step_limit_exceeded",
         "step limit reached: 4 steps",
         "context_overflow",
         "context overflow: prompt exceeds the model context window",
+        "output truncated: provider reached its generation limit",
     ],
 )
 def test_trusted_controlled_stop_patch_uses_timeout_contract(
@@ -51,8 +53,16 @@ def test_trusted_controlled_stop_patch_uses_timeout_contract(
     assert safe_output.metrics_have_completed_identity(metric, patch)
 
 
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "budget exceeded: 100 tokens used",
+        "output truncated: provider reached its generation limit",
+    ],
+)
 def test_empty_controlled_stop_patch_remains_ineligible(
     monkeypatch: pytest.MonkeyPatch,
+    reason: str,
 ) -> None:
     monkeypatch.setattr(
         safe_output,
@@ -60,7 +70,7 @@ def test_empty_controlled_stop_patch_remains_ineligible(
         lambda metrics, candidate: True,
     )
     metrics = {
-        "workflow_status": "budget exceeded: 100 tokens used",
+        "workflow_status": reason,
         "execution_quiesced": True,
         "submission_eligible": True,
     }
@@ -72,7 +82,7 @@ def test_empty_controlled_stop_patch_remains_ineligible(
         patch_extraction_succeeded=True,
     )
 
-    assert metrics["workflow_status"] == "budget exceeded: 100 tokens used"
+    assert metrics["workflow_status"] == reason
     assert metrics["submission_eligible"] is False
 
 
