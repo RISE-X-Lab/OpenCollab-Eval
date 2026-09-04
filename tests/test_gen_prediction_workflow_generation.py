@@ -670,6 +670,7 @@ def test_workflow_status_does_not_relabel_provider_failure_as_timeout_patch():
     "reason",
     ["budget_exceeded", "context_overflow", "step_limit_exceeded",
      "budget exceeded: 123 tokens used", "budget exceeded after model call: 123 tokens used",
+     "budget reserve exhausted: protected commit turn already used",
      "output truncated: provider reached its generation limit"],
 )
 def test_workflow_status_maps_controlled_stop_patch_to_timeout_contract(reason):

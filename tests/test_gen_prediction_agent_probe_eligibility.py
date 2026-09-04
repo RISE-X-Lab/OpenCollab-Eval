@@ -60,6 +60,7 @@ def test_failed_result_remains_ineligible_even_when_session_is_quiescent() -> No
         "budget exceeded after model call: 100 tokens used",
         "budget exhausted before model call: conservative input reservation",
         "team budget exceeded: aggregate spend reached the global cap",
+        "budget reserve exhausted: protected commit turn already used",
         "step limit reached: 4 steps",
         "context overflow: prompt exceeds the model context window",
         "output truncated: provider reached its generation limit",

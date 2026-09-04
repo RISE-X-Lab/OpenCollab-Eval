@@ -13,6 +13,7 @@ from opencollab_eval.generation import gen_prediction_safe_output as safe_output
         "budget exceeded after model call: 100 tokens used",
         "budget exhausted before model call: no output headroom",
         "team budget exceeded: aggregate spend reached the global cap",
+        "budget reserve exhausted: protected commit turn already used",
         "step_limit_exceeded",
         "step limit reached: 4 steps",
         "context_overflow",
