@@ -17,6 +17,7 @@ import unicodedata
 from pathlib import Path, PureWindowsPath
 
 from opencollab_eval.engine import swe_eval_records as swe_records
+from opencollab_eval.engine.swe_eval_record_identity import direct_payload_task_id
 from opencollab_eval.engine.swe_eval_records import (
     MAX_JSON_DOCUMENT_BYTES,
     SUBMISSION_INTEGRITY_PROVEN,
@@ -648,11 +649,14 @@ def report_is_done(path: Path, instance_id: str, expected_identity: dict) -> boo
         return False
     if attempt.get("status") not in {"launching", "started", "completed"}:
         return False
-    if str(attempt.get("instance_id") or "") != instance_id:
+    if direct_payload_task_id(attempt) != instance_id:
         return False
     if str(attempt.get("record_id") or "") != str(expected_identity.get("record_id") or ""):
         return False
-    if str(attempt.get("patch_sha256") or "") != str(expected_identity.get("patch_sha256") or ""):
+    if not swe_records.patch_sha_matches(
+        attempt.get("patch_sha256"),
+        expected_identity.get("patch_sha256"),
+    ):
         return False
     if "prior_report_fingerprint" in attempt:
         # A report format without an embedded patch identity must not reuse the

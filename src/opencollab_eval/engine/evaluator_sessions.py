@@ -33,6 +33,7 @@ _CONTROLLED_STOP_REASON_PREFIXES = (
     "team budget exceeded:",
     "step limit reached:",
     "context overflow:",
+    "output truncated:",
 )
 
 

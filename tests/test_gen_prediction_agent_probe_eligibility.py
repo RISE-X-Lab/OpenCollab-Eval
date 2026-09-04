@@ -62,6 +62,7 @@ def test_failed_result_remains_ineligible_even_when_session_is_quiescent() -> No
         "team budget exceeded: aggregate spend reached the global cap",
         "step limit reached: 4 steps",
         "context overflow: prompt exceeds the model context window",
+        "output truncated: provider reached its generation limit",
     ],
 )
 def test_verbose_controlled_stop_reason_stays_diagnostic_until_proof(

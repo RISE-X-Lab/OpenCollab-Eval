@@ -32,6 +32,7 @@ _CONTROLLED_STOP_REASON_PREFIXES = (
     "team budget exceeded:",
     "step limit reached:",
     "context overflow:",
+    "output truncated:",
 )
 _CONTROLLED_STOP_REASON_NAMES = frozenset(
     {"budget_exceeded", "context_overflow", "step_limit_exceeded", "timeout"}

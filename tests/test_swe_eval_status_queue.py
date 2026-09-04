@@ -147,6 +147,47 @@ def test_per_instance_queue_accepts_sidecar_for_exact_candidate(tmp_path):
     assert queue == []
 
 
+def test_per_instance_queue_accepts_legacy_task_id_uppercase_sidecar(tmp_path):
+    """Legacy sidecar aliases must not re-run an exact completed candidate."""
+    runner = importlib.import_module("opencollab_eval.commands.run_swebench_eval_per_instance")
+    dataset_path = tmp_path / "dataset.json"
+    predictions_path = tmp_path / "predictions.jsonl"
+    work_dir = tmp_path / "eval"
+    prediction = {
+        "instance_id": "task-1",
+        "record_id": "current-record",
+        "model_name_or_path": "model",
+        "model_patch": _patch("+current\n"),
+    }
+    dataset_path.write_text(json.dumps([{"instance_id": "task-1"}]), encoding="utf-8")
+    _write_jsonl(predictions_path, [prediction])
+    report = runner.report_path(work_dir, "run", "model", "task-1")
+    report.parent.mkdir(parents=True)
+    report.write_text(json.dumps({"task-1": {"resolved": True}}), encoding="utf-8")
+    identity = runner.prediction_identity(prediction)
+    started_at_ns = time.time_ns()
+    runner.identity_path(report).write_text(
+        json.dumps(
+            {
+                "schema": "opencollab.swe_eval_attempt.v1",
+                "task_id": "task-1",
+                "record_id": "current-record",
+                "patch_sha256": identity["patch_sha256"].upper(),
+                "started_at_ns": started_at_ns,
+                "status": "completed",
+                "pid": 0,
+                "prior_report_fingerprint": "",
+            }
+        ),
+        encoding="utf-8",
+    )
+    changed_ns = max(time.time_ns(), started_at_ns + 1)
+    os.utime(report, ns=(changed_ns, changed_ns))
+
+    assert runner.report_is_done(report, "task-1", identity) is True
+    assert runner.load_eval_queue(dataset_path, predictions_path, "run", work_dir) == []
+
+
 def test_per_instance_report_rejects_unchanged_preexisting_no_sha_report(tmp_path):
     runner = importlib.import_module("opencollab_eval.commands.run_swebench_eval_per_instance")
     report = tmp_path / "report.json"
