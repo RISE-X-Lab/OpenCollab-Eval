@@ -42,6 +42,33 @@ GENERIC_WORKFLOW_ROLE = "workflow_agent"
 # the cap", so the ladder's capped column cannot be read off their union.
 CAP_PRECHECK_MARKER = "before model call: conservative input reservation"
 CAP_POSTCALL_MARKER = "budget exceeded after model call"
+# The runtime writes four budget stops, not two. These are the other two:
+# ``session_run.py:616`` fires the precheck on spend already made, and
+# ``session_run.py:625`` is the aggregate ceiling a whole team draws against.
+# Both matched the bare ``"budget" in terminal`` test that fills ``cap_hit``
+# and neither of the two columns that split it, so a run stopped by either was
+# counted once and attributed nowhere. Matched on the prefix, because the
+# aggregate string contains the per-session one.
+CAP_PRECHECK_SPENT_PREFIX = "budget exceeded: "
+CAP_AGGREGATE_PREFIX = "team budget exceeded"
+# NOT a cap, and the reason this had to be established rather than assumed: on
+# a scripted workflow every healthy seat ends with this string. It is the
+# structured-output capture -- ``workflow_structured.py:137-138`` sets a cancel
+# event when ``structured_output`` is accepted and ``session_run.py:604-606``
+# turns that into this reason at the next precheck. A seat that stopped here
+# stopped because it had answered, whatever it had left.
+STRUCTURED_CAPTURE_TERMINAL = "interrupted by user"
+
+#: The run's ordered event log, written beside its seat snapshots:
+#: ``trajectory.jsonl`` on the single and team arms, ``orchestration.jsonl`` on
+#: a scripted workflow. It is the only place the allowance a seat was drawing
+#: against is recorded -- ``session_state`` carries ``used_tokens`` and no
+#: ceiling at all -- so without it a seat that finished with 0.25% of its
+#: allowance left and one that finished with 90% left are the same row.
+EVENT_LOG_NAMES = ("trajectory.jsonl", "orchestration.jsonl")
+#: The row inside that log which names a session's disposition and both of its
+#: ceilings (``session_run.py:333-380``).
+SESSION_TERMINAL_EVENT = "session_terminal"
 
 
 def binom_cdf(k: int, n: int, p: float) -> float:
@@ -86,6 +113,10 @@ class Seat:
     writes: int = 0
     msg_agent: int = 0
     terminal: str = ""
+    #: The allowance this session was handed, from its ``session_terminal``
+    #: event. ``None`` means the event log was not there to read, which is not
+    #: the same as an allowance of zero and must never be printed as one.
+    cap: int | None = None
 
 
 @dataclass
@@ -117,6 +148,20 @@ class RunRow:
     cap_hit: list[str] = field(default_factory=list)
     cap_hit_precheck: list[str] = field(default_factory=list)
     cap_hit_postcall: list[str] = field(default_factory=list)
+    #: The aggregate ceiling, kept apart from the per-seat stops for the same
+    #: reason those two are kept apart: it is a different stop.
+    cap_hit_aggregate: list[str] = field(default_factory=list)
+    #: The allowance one seat of this run was given, recorded: the workflow's
+    #: own ``seat_cap`` where the arm sets one, else the largest
+    #: ``max_budget_tokens`` in the run's ``session_terminal`` events.
+    seat_cap: int | None = None
+    #: Derived from the two above: allowance minus the role's summed spend.
+    role_headroom: dict[str, int] = field(default_factory=dict)
+    seat_headroom_min: int | None = None
+    #: Recorded, and by the arm that owns the rule: the scripted workflow
+    #: writes ``status="budget_exhausted"`` when its own ``exhausted(seat)``
+    #: check stops a round.
+    budget_exhausted: bool = False
     patch_chars: int | None = None
     card: str | None = None
     team_config: str | None = None
@@ -196,6 +241,48 @@ def _seat_files(cell: Path, arm: str, record: dict[str, Any]) -> list[Path]:
     return _agent_files(cell, arm, record["instance_id"])
 
 
+def _int_or_none(value: Any) -> int | None:
+    """An integer when the record holds one, else ``None`` -- never ``0``."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return int(value)
+
+
+def _session_terminals(seat_paths: list[Path]) -> dict[str, dict[str, Any]]:
+    """The ``session_terminal`` payload of each session, keyed by ``aid``.
+
+    Read from the event log beside the seat snapshots, and read defensively:
+    this is the only quantity in the report that comes from a second file, and
+    a batch pulled before the log existed, a truncated log, or a log this
+    reader cannot parse must all leave every other column exactly as it was.
+
+    The logs run to hundreds of megabytes a batch and hold a handful of these
+    rows, so a line that cannot contain one is skipped before it is parsed.
+    """
+    found: dict[str, dict[str, Any]] = {}
+    for directory in dict.fromkeys(path.parent for path in seat_paths):
+        for name in EVENT_LOG_NAMES:
+            log = directory / name
+            if not log.is_file():
+                continue
+            try:
+                with log.open(encoding="utf-8") as handle:
+                    for line in handle:
+                        if SESSION_TERMINAL_EVENT not in line:
+                            continue
+                        try:
+                            event = json.loads(line)
+                        except ValueError:
+                            continue
+                        if event.get("type") != SESSION_TERMINAL_EVENT:
+                            continue
+                        payload = event.get("payload") or {}
+                        found[str(payload.get("aid"))] = payload
+            except OSError:
+                continue
+    return found
+
+
 def _seat_role(path: Path, recorded: str) -> str:
     """The seat's role, from the record when it names one, else from the file.
 
@@ -246,15 +333,19 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
                 continue
             record = json.loads(line)
             summary = record.get("run_summary") or {}
-            seats: dict[str, Seat] = {}
-            for path in _seat_files(cell, arm, record):
-                aid, seat = _read_seat(path)
-                seats[str(aid)] = seat
-            # A workflow arm records its seat boundaries inside its own result
-            # rather than at the top level (see ``_result_metrics``), so a DW
-            # run read only at the top level shows zero snapshots -- the same
-            # reading an arm that records none produces.
+            # A workflow arm records its seat boundaries, its seat ledger and
+            # its own stop verdict inside its own result rather than at the top
+            # level (see ``_result_metrics``), so a DW run read only at the top
+            # level shows zero snapshots -- the same reading an arm that records
+            # none produces.
             workflow_result = record.get("workflow_result")
+            seat_paths = _seat_files(cell, arm, record)
+            terminals = _session_terminals(seat_paths)
+            seats: dict[str, Seat] = {}
+            for path in seat_paths:
+                aid, seat = _read_seat(path)
+                seat.cap = _int_or_none((terminals.get(str(aid)) or {}).get("max_budget_tokens"))
+                seats[str(aid)] = seat
             snapshots = record.get("tree_snapshots")
             if not snapshots and isinstance(workflow_result, dict):
                 snapshots = workflow_result.get("tree_snapshots")
@@ -264,10 +355,32 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
                 role_tokens[seat.role] = role_tokens.get(seat.role, 0) + seat.tokens
                 role_seats[seat.role] = role_seats.get(seat.role, 0) + 1
             recorded_spend = None
+            seat_cap = None
+            budget_exhausted = False
             if isinstance(workflow_result, dict):
                 raw_spend = workflow_result.get("seat_spend")
                 if isinstance(raw_spend, dict):
                     recorded_spend = {str(k): int(v or 0) for k, v in raw_spend.items()}
+                # The scripted workflow sets its own seat allowance and records
+                # it; ``exhausted()`` (self_collaboration.py:466-467) is what
+                # writes the verdict below when a round stops for want of one.
+                seat_cap = _int_or_none(workflow_result.get("seat_cap"))
+                budget_exhausted = workflow_result.get("status") == "budget_exhausted"
+            if seat_cap is None:
+                # Otherwise the allowance is the largest ceiling any of this
+                # run's sessions was handed: a session that resumes a partly
+                # spent seat is given what the seat had left, not the seat.
+                caps = [s.cap for s in seats.values() if s.cap]
+                seat_cap = max(caps) if caps else None
+            # Derived, not recorded: nothing writes down what a seat had left
+            # when it stopped, so this is the recorded allowance minus the
+            # role's summed spend. Empty when the allowance is unknown --
+            # printing zero there would make every unread run look fully spent.
+            role_headroom = (
+                {role: seat_cap - spent for role, spent in role_tokens.items()}
+                if seat_cap is not None
+                else {}
+            )
             row = RunRow(
                 instance_id=record["instance_id"],
                 status=str(summary.get("status") or record.get("runtime_status") or ""),
@@ -288,11 +401,21 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
                 tree_snapshots=len(snapshots or []),
                 cap_hit=[aid for aid, s in seats.items() if "budget" in s.terminal.lower()],
                 cap_hit_precheck=[
-                    aid for aid, s in seats.items() if CAP_PRECHECK_MARKER in s.terminal
+                    aid
+                    for aid, s in seats.items()
+                    if CAP_PRECHECK_MARKER in s.terminal
+                    or s.terminal.startswith(CAP_PRECHECK_SPENT_PREFIX)
                 ],
                 cap_hit_postcall=[
                     aid for aid, s in seats.items() if CAP_POSTCALL_MARKER in s.terminal
                 ],
+                cap_hit_aggregate=[
+                    aid for aid, s in seats.items() if s.terminal.startswith(CAP_AGGREGATE_PREFIX)
+                ],
+                seat_cap=seat_cap,
+                role_headroom=role_headroom,
+                seat_headroom_min=min(role_headroom.values()) if role_headroom else None,
+                budget_exhausted=budget_exhausted,
                 patch_chars=record.get("submitted_patch_chars"),
                 card=(record.get("role_prompt_sha256") or {}).get("analyst"),
                 team_config=record.get("team_config_path"),
@@ -339,6 +462,26 @@ def summarize(rows: list[RunRow], expected_card: str | None = None, team: bool =
         # a run whose outcome the budget chose.
         "cap_hit_precheck": [r.instance_id for r in rows if r.cap_hit_precheck],
         "cap_hit_postcall": [r.instance_id for r in rows if r.cap_hit_postcall],
+        "cap_hit_aggregate": [r.instance_id for r in rows if r.cap_hit_aggregate],
+        # Recorded: the allowances this cell's sessions were actually handed.
+        # More than one value is not a fault -- a session resuming a partly
+        # spent seat is handed the remainder -- but a cell whose largest value
+        # is not the budget the spec declared is a cell that did not run at the
+        # budget it says it ran at.
+        "seat_cap_tokens": sorted({r.seat_cap for r in rows if r.seat_cap is not None}),
+        "seat_cap_unknown": [r.instance_id for r in rows if r.seat_cap is None],
+        # The workflow's own verdict, not this reader's.
+        "seat_budget_exhausted": [r.instance_id for r in rows if r.budget_exhausted],
+        # Derived. The tightest runs first, so a run that finished on a seat it
+        # had all but spent is visible without re-deriving the subtraction.
+        "seat_headroom_min": sorted(
+            (
+                [r.instance_id, r.seat_headroom_min]
+                for r in rows
+                if r.seat_headroom_min is not None
+            ),
+            key=lambda pair: pair[1],
+        ),
         # Not a quantity about the runs: a quantity about the reading of them.
         # Every count below that comes off a seat has this as its denominator,
         # so a cell where it is short of ``runs`` has counts that are floors.
@@ -357,6 +500,16 @@ def summarize(rows: list[RunRow], expected_card: str | None = None, team: bool =
     }
 
 
+def _headroom(row: RunRow) -> str:
+    """The tightest seat's remaining allowance, or ``?`` when none was recorded.
+
+    ``?`` and ``0`` are different findings and the column has to keep them
+    apart: the first says the ceiling was not in the files, the second says the
+    seat was spent to the last token.
+    """
+    return "?" if row.seat_headroom_min is None else f"{row.seat_headroom_min:,}"
+
+
 def _cap_lines(summary: dict[str, Any], lines: list[str]) -> None:
     """The three cap counts, worded and split identically on every arm."""
     lines.append(f"seat at budget cap: {len(summary['cap_hit'])}/{summary['runs']} -> {summary['cap_hit']}")
@@ -368,15 +521,45 @@ def _cap_lines(summary: dict[str, Any], lines: list[str]) -> None:
         f"  overspent after a call returned:     {len(summary['cap_hit_postcall'])}"
         f" -> {summary['cap_hit_postcall']}"
     )
+    lines.append(
+        f"  stopped at the aggregate ceiling:    {len(summary['cap_hit_aggregate'])}"
+        f" -> {summary['cap_hit_aggregate']}"
+    )
+    lines.append(
+        "seat allowance handed to a session (recorded, session_terminal.max_budget_tokens): "
+        + (str(summary["seat_cap_tokens"]) or "[]")
+        + (
+            f"   unknown on {len(summary['seat_cap_unknown'])}/{summary['runs']}"
+            if summary["seat_cap_unknown"]
+            else ""
+        )
+    )
+    lines.append(
+        f"seat budget exhausted (the workflow's own verdict): {len(summary['seat_budget_exhausted'])}"
+        f" -> {summary['seat_budget_exhausted']}"
+    )
+    # Derived, and said so: no record anywhere says what a seat had left when
+    # it stopped. A seat that answered with 0.25% of its allowance unspent
+    # reads in every other column exactly like one that answered with 90%
+    # unspent, and that difference is what the cap columns cannot show.
+    tightest = summary["seat_headroom_min"][:3]
+    lines.append(
+        "smallest seat headroom left (derived = allowance - the role's summed spend), tightest first: "
+        + (
+            ", ".join(f"{instance} {value:,}" for instance, value in tightest)
+            or "n/a (no allowance recorded)"
+        )
+    )
 
 
 def _render_single(rows: list[RunRow], summary: dict[str, Any], lines: list[str]) -> str:
     lines.append(
-        f"{'#':>3} {'instance_id':40s} {'status':10s} {'tok':>9s} {'steps':>5s} {'patch':>6s} cap"
+        f"{'#':>3} {'instance_id':40s} {'status':10s} {'tok':>9s} {'steps':>5s} {'patch':>6s} {'left':>9s} cap"
     )
     for i, r in enumerate(rows, 1):
         lines.append(
             f"{i:>3} {r.instance_id:40s} {r.status:10s} {r.tokens:>9,} {r.steps:>5} {str(r.patch_chars or 0):>6} "
+            f"{_headroom(r):>9s} "
             + (','.join(r.cap_hit) or '-')
             + ("" if r.valid else "   [excluded: " + (r.reason or r.status) + "]")
         )
@@ -411,7 +594,7 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
         return _render_single(rows, summary, lines)
     header = (
         f"{'#':>3} {'instance_id':40s} {'status':10s} {'tok':>9s} {'analyst':>9s} {'coder':>8s} {'tester':>8s} "
-        f"{'deleg':5s} {'msgA':>4s} {'aWr':>3s} {'snap':>4s} cap"
+        f"{'left':>9s} {'deleg':5s} {'msgA':>4s} {'aWr':>3s} {'snap':>4s} cap"
     )
     lines.append(header)
     for i, r in enumerate(rows, 1):
@@ -421,6 +604,7 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
         a_writes = sum(s.writes for s in r.seats.values() if s.role == "analyst")
         lines.append(
             f"{i:>3} {r.instance_id:40s} {r.status:10s} {r.tokens:>9,} {a_tok:>9,} {c_tok:>8,} {t_tok:>8,} "
+            f"{_headroom(r):>9s} "
             f"{'YES' if r.delivered else 'no':5s} {sum(s.msg_agent for s in r.seats.values()):>4} {a_writes:>3} "
             f"{r.tree_snapshots:>4} {','.join(r.cap_hit) or '-'}"
             + ("" if r.valid else "   [excluded: " + (r.reason or r.status) + "]")

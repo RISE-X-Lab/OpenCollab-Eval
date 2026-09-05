@@ -704,3 +704,243 @@ def test_the_role_totals_are_checked_against_the_workflow_s_own_ledger(
 
     assert rows[0].seat_spend_agrees is False
     assert summary["seat_spend_disagrees"] == ["django__django-12262"]
+
+
+# --- E11: the seat allowance, and what a workflow seat's stop actually says -- #
+#
+# On the smoke DW batch three runs of four had every seat's ``terminal_reason``
+# reading ``"interrupted by user"`` and printed ``-`` in the cap column while
+# one of them had spent 1,995,025 of a 2,000,000-token analyst seat. Reading
+# the runtime settles both halves of that:
+#
+#   * "interrupted by user" is not a stop at the budget. It is the
+#     structured-output capture: ``workflow_structured.py:137-138`` sets a
+#     cancel event on a successful ``structured_output`` call and
+#     ``session_run.py:604-606`` writes that reason when the next precheck sees
+#     it. Those three runs ended by a *successful* capture.
+#   * The allowance those seats were drawing against is never in the seat file.
+#     ``session_state`` has ``used_tokens`` and no ``max_budget_tokens``; the
+#     ceiling is recorded once per session in the ``session_terminal`` event
+#     (``session_run.py:333-380``) in the run's own event log --
+#     ``trajectory.jsonl`` on the single and team arms, ``orchestration.jsonl``
+#     on a scripted workflow.
+#
+# So the cap column stays what it was, a stop the runtime *recorded*, and the
+# report gains the recorded ceiling beside the spend, so a run that finished
+# with 0.25% of its seat left is no longer spelt exactly like one that finished
+# with 90% left.
+
+STRUCTURED_CAPTURE_TERMINAL = "interrupted by user"
+SPENT_TERMINAL = "budget exceeded: 2000000 tokens used"
+
+
+def _event_log(directory: Path, filename: str, terminals: list[dict]) -> None:
+    """The run's ordered event log, with one ``session_terminal`` per session."""
+    directory.mkdir(parents=True, exist_ok=True)
+    rows = [{"type": "llm_call", "payload": {"aid": 0}}]
+    rows += [{"type": "session_terminal", "payload": t} for t in terminals]
+    (directory / filename).write_text(
+        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
+    )
+
+
+@pytest.fixture
+def dw_capped_cell(tmp_path: Path) -> Path:
+    """A DW run that finished on a nearly-spent analyst seat, as the driver writes it.
+
+    The numbers are ``smoke-falsecap-dw``'s astropy run: the analyst is seated
+    twice for 1,946,330 + 48,695 against a 2,000,000 seat, the adjudication
+    session's own ceiling is what the seat had left, and every seat stopped on
+    a structured capture.
+    """
+    cell = tmp_path / "dw-capped"
+    runtime = _runtime_dir(cell, "self-collaboration", "astropy__astropy-14369")
+    _seat_file(runtime, "000_analyst.json", aid=0, role="workflow_agent",
+               tokens=1_946_330, assistant=62, terminal=STRUCTURED_CAPTURE_TERMINAL)
+    _seat_file(runtime, "001_coder-r1.json", aid=1, role="workflow_agent",
+               tokens=63_791, assistant=6, terminal=STRUCTURED_CAPTURE_TERMINAL)
+    _seat_file(runtime, "002_tester-r1.json", aid=2, role="workflow_agent",
+               tokens=210_509, assistant=16, terminal=STRUCTURED_CAPTURE_TERMINAL)
+    _seat_file(runtime, "003_analyst-adjudicate-r1.json", aid=3, role="workflow_agent",
+               tokens=48_695, assistant=4, terminal=STRUCTURED_CAPTURE_TERMINAL)
+    _event_log(runtime, "orchestration.jsonl", [
+        {"aid": 0, "used_tokens": 1_946_330, "max_budget_tokens": 2_000_000,
+         "terminal_reason": STRUCTURED_CAPTURE_TERMINAL},
+        {"aid": 1, "used_tokens": 63_791, "max_budget_tokens": 2_000_000,
+         "terminal_reason": STRUCTURED_CAPTURE_TERMINAL},
+        {"aid": 2, "used_tokens": 210_509, "max_budget_tokens": 2_000_000,
+         "terminal_reason": STRUCTURED_CAPTURE_TERMINAL},
+        {"aid": 3, "used_tokens": 48_695, "max_budget_tokens": 53_670,
+         "terminal_reason": STRUCTURED_CAPTURE_TERMINAL},
+    ])
+    _write_metrics(cell, [{
+        "instance_id": "astropy__astropy-14369",
+        "run_summary": {"status": "completed", "reason": None,
+                        "tokens": 2_269_325, "steps": 88, "duration_s": 1265.15},
+        "workflow_result": {
+            "status": "done",
+            "seat_cap": 2_000_000,
+            "seat_spend": {"analyst": 1_995_025, "coder": 63_791, "tester": 210_509},
+            "tree_snapshots": [{"after": "analyze"}, {"after": "implement:r1"}],
+        },
+    }])
+    return cell
+
+
+def test_a_structured_capture_stop_is_not_a_cap_stop(dw_capped_cell: Path) -> None:
+    """The rule that must NOT change: "interrupted by user" stays out of the cap columns."""
+    rows = cell_report.run_rows(dw_capped_cell, "self-collaboration")
+
+    assert rows[0].cap_hit == []
+    assert rows[0].cap_hit_precheck == []
+    assert rows[0].cap_hit_postcall == []
+
+
+def test_the_seat_allowance_is_read_from_the_session_terminal_event(
+    dw_capped_cell: Path,
+) -> None:
+    """``max_budget_tokens`` is in the event log and nowhere in the seat file."""
+    row = cell_report.run_rows(dw_capped_cell, "self-collaboration")[0]
+
+    assert row.seats["0"].cap == 2_000_000
+    # The adjudication session was handed what the seat had left, not the seat.
+    assert row.seats["3"].cap == 53_670
+    assert row.seat_cap == 2_000_000
+
+
+def test_a_run_that_finished_on_a_nearly_spent_seat_says_how_much_was_left(
+    dw_capped_cell: Path,
+) -> None:
+    """The defect: a seat at 99.75% and a seat at 3% both printed ``-``."""
+    row = cell_report.run_rows(dw_capped_cell, "self-collaboration")[0]
+
+    assert row.role_headroom["analyst"] == 4_975
+    assert row.role_headroom["coder"] == 1_936_209
+    assert row.seat_headroom_min == 4_975
+
+    rows = cell_report.run_rows(dw_capped_cell, "self-collaboration")
+    text = cell_report.render(rows, cell_report.summarize(rows, None, team=True), [])
+    assert "4,975" in text
+    assert "smallest seat headroom left" in text
+
+
+def test_the_workflow_s_own_budget_exhausted_verdict_is_read(tmp_path: Path) -> None:
+    """``self_collaboration.py:466-467`` decides a seat is spent and records it.
+
+    ``workflow_result.status == "budget_exhausted"`` is the workflow's own
+    finding, written when ``exhausted(seat)`` stops a round. Nothing read it,
+    so an arm whose script stopped for want of budget reported the same status
+    vocabulary as one that finished.
+    """
+    cell = tmp_path / "dw-exhausted"
+    runtime = _runtime_dir(cell, "self-collaboration", "sympy__sympy-15875")
+    _seat_file(runtime, "000_analyst.json", aid=0, role="workflow_agent",
+               tokens=2_000_000, assistant=60, terminal=STRUCTURED_CAPTURE_TERMINAL)
+    _event_log(runtime, "orchestration.jsonl", [
+        {"aid": 0, "used_tokens": 2_000_000, "max_budget_tokens": 2_000_000,
+         "terminal_reason": STRUCTURED_CAPTURE_TERMINAL},
+    ])
+    _write_metrics(cell, [{
+        "instance_id": "sympy__sympy-15875",
+        "run_summary": {"status": "completed", "tokens": 2_000_000, "steps": 60},
+        "workflow_result": {"status": "budget_exhausted", "seat_cap": 2_000_000,
+                            "seat_spend": {"analyst": 2_000_000}},
+    }])
+
+    rows = cell_report.run_rows(cell, "self-collaboration")
+    summary = cell_report.summarize(rows, None, team=True)
+
+    assert rows[0].budget_exhausted is True
+    assert rows[0].seat_headroom_min == 0
+    assert summary["seat_budget_exhausted"] == ["sympy__sympy-15875"]
+    assert "seat budget exhausted (the workflow's own verdict): 1" in cell_report.render(
+        rows, summary, []
+    )
+
+
+def test_the_other_two_recorded_cap_strings_are_classified_too(tmp_path: Path) -> None:
+    """``session_run.py`` writes four budget stops, not two.
+
+    :616 ``budget exceeded: N tokens used`` is the precheck firing on spend
+    already made; :625 ``team budget exceeded: ...`` is the aggregate ceiling.
+    Both landed in ``cap_hit`` through the bare ``"budget" in terminal`` test
+    and in neither of the two columns that split it, so a run stopped by either
+    was counted once and attributed nowhere.
+    """
+    cell = tmp_path / "team-spent"
+    runtime = _runtime_dir(cell, "team", "django__django-13933")
+    _seat_file(runtime, "agent_0_analyst-aa.json", aid=0, role="analyst",
+               tokens=2_000_000, assistant=40, terminal=SPENT_TERMINAL)
+    _seat_file(runtime, "agent_1_coder-bb.json", aid=1, role="coder",
+               tokens=10, assistant=1,
+               terminal="team budget exceeded: aggregate spend reached the global cap")
+    _write_metrics(cell, [{
+        "instance_id": "django__django-13933",
+        "run_summary": {"status": "stopped", "reason": SPENT_TERMINAL,
+                        "tokens": 2_000_010, "steps": 41},
+    }])
+
+    rows = cell_report.run_rows(cell, "team")
+
+    assert rows[0].cap_hit == ["0", "1"]
+    assert rows[0].cap_hit_precheck == ["0"]
+    assert rows[0].cap_hit_aggregate == ["1"]
+
+
+def test_a_cell_with_no_event_log_still_reads_and_says_the_cap_is_unknown(
+    dw_cell: Path,
+) -> None:
+    """The mutation control: the ceiling is an addition, never a precondition.
+
+    The ``dw_cell`` fixture writes seat files and no event log at all, which is
+    every batch pulled before this column existed. Those runs must keep every
+    reading they had and report the allowance as unknown, not as zero -- zero
+    would make every one of them look fully spent.
+    """
+    rows = _rows(dw_cell)
+
+    assert rows["django__django-12262"].seat_cap is None
+    assert rows["django__django-12262"].seat_headroom_min is None
+    assert rows["django__django-12262"].role_headroom == {}
+    assert rows["django__django-12262"].seats["0"].cap is None
+    # Everything the old report said about this cell is unchanged.
+    assert rows["django__django-12262"].delivered is True
+    assert rows["astropy__astropy-12907"].cap_hit_precheck == ["0"]
+
+
+def test_an_arm_with_no_seat_cap_field_gets_its_allowance_from_the_event_log(
+    tmp_path: Path,
+) -> None:
+    """The control M2a needs: the arms where the log is the only source.
+
+    Only the scripted workflow writes ``workflow_result.seat_cap``. A team or
+    single run's allowance exists nowhere but its ``session_terminal`` events,
+    so if the log goes unread those two arms lose the column entirely rather
+    than falling back to anything.
+    """
+    cell = tmp_path / "team-headroom"
+    runtime = _runtime_dir(cell, "team", "astropy__astropy-14369")
+    _seat_file(runtime, "agent_0_analyst-aa.json", aid=0, role="analyst",
+               tokens=1_981_974, assistant=57, terminal=PRECHECK_TERMINAL)
+    _seat_file(runtime, "agent_1_coder-bb.json", aid=1, role="coder",
+               tokens=0, assistant=0)
+    _event_log(runtime, "trajectory.jsonl", [
+        {"aid": 0, "used_tokens": 1_981_974, "max_budget_tokens": 2_000_000,
+         "terminal_reason": PRECHECK_TERMINAL},
+    ])
+    _write_metrics(cell, [{
+        "instance_id": "astropy__astropy-14369",
+        "run_summary": {"status": "stopped", "reason": PRECHECK_TERMINAL,
+                        "tokens": 1_981_974, "steps": 57},
+    }])
+
+    rows = cell_report.run_rows(cell, "team")
+    summary = cell_report.summarize(rows, None, team=True)
+
+    assert rows[0].seat_cap == 2_000_000
+    assert rows[0].role_headroom == {"analyst": 18_026, "coder": 2_000_000}
+    assert rows[0].seat_headroom_min == 18_026
+    assert summary["seat_cap_tokens"] == [2_000_000]
+    assert summary["seat_cap_unknown"] == []
+    assert summary["seat_headroom_min"] == [["astropy__astropy-14369", 18_026]]
+    assert "18,026" in cell_report.render(rows, summary, [])
