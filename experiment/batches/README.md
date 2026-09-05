@@ -45,7 +45,35 @@ drifted looks exactly like one that did not.
 | `model_env` | The `.env` naming model, provider and endpoint, relative to the OpenCollab checkout on the host. A second model is a second file (`configs/.env.luna`), never an edit of the first. |
 | `env` | Must set `OPENCOLLAB_LLM_STREAM_CHAT`, `OPENCOLLAB_REASONING_EFFORT`, `OPENCOLLAB_WRITE_NUDGE_MODE`, and may set more. **Quote every value**: YAML reads `off`, `on`, `yes`, `no`, `true`, `false` as booleans, and the runtime reads strings. The loader rejects an unquoted boolean. |
 | `pins` | Full 40-character shas of the two checkouts the batch runs under. Both must be commits the local checkouts know about (`plan` checks), and the host must be at exactly these with clean trees (`preflight` checks). |
+| `retry_of` | Optional, and only for a batch that re-attempts instances of another one (see *Retries*). Names that batch. It enters the batch identity, so a retry can never be resumed into the batch it retries. |
 | `note` | Free text, recorded in `batch.json`. |
+
+### Retries
+
+Six runs on 2026-09-04 ended `failed` with `APIError: Upstream request
+failed`: the endpoint dropped them, the model never did anything wrong. Such a
+run still wrote its prediction row, so re-launching the batch resumes nothing
+— the driver reads `preds-<arm>.jsonl` and sees the instance as done.
+
+A second attempt therefore runs in an out-dir of its own, one spec per
+instance:
+
+```
+name: <original>-retry-<row>
+retry_of: <original>
+rows: {start: <row>, stop: <row>}     # the instance's 1-based row in the suite
+```
+
+Every other field is copied from the original **verbatim**. `plan` refuses the
+spec unless the named batch has a `batch.json` here, every field but `name`,
+`rows`, `retry_of`, `note` and `concurrency` is identical to it, and these rows
+are rows that batch ran. `report` on the *original* spec then finds the retries
+by their records and merges them: one row per instance, the last attempt that
+ran (status not `failed`/`error`), and when no attempt ever ran, the last one is
+kept and counted under `infra_failed`. Every run row says which `attempt` it is
+and which `source_batch` it came from; the summary adds `retried`,
+`retry_succeeded` and `infra_failed`. Earlier attempts are not summed into
+anything — the cell is one observation per instance.
 
 ### Arms
 

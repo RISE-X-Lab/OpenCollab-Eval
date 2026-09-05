@@ -789,3 +789,145 @@ def test_plan_after_preflight_keeps_the_host_facts(experiment: dict) -> None:
     assert batch_cli.main([*args, "plan", str(experiment["spec"])], remote_factory=lambda h: None) == 0
     record = json.loads(record_path.read_text(encoding="utf-8"))
     assert len(record["launches"]) == 2 and "host" in record
+
+
+# --- retries: a second attempt at the instances an endpoint dropped -----------------------
+
+#: The digest of a checked-in spec, frozen. ``retry_of`` had to enter the batch
+#: identity, and a new key with a ``None`` value would have changed the digest of
+#: every spec already on disk -- which is the pre-flight's own test for "this
+#: out-dir holds a different batch". This pins the answer for a spec that names
+#: no retry, so the field can only ever change the identity of a spec that uses it.
+CMDPLAIN30_DIGEST = "4fb8ac66259c434e9db5ae9649627ef063bf70e031cdd1b9c7a0c8513df30caa"
+
+
+def test_retry_of_changes_the_identity_only_for_the_specs_that_use_it(experiment: dict) -> None:
+    from opencollab_eval.experiment.batch_spec import spec_identity
+
+    assert spec_digest(load_spec(EXPERIMENT / "batches" / "cmdplain30.yaml")) == CMDPLAIN30_DIGEST
+    base = load_spec(experiment["spec"])
+    assert "retry_of" not in spec_identity(base)
+    path = experiment["dir"] / "batches" / "t1r.yaml"
+    path.write_text(
+        _spec_text(experiment, "name: t1", "name: t1r\nretry_of: t1").replace(
+            "rows: {start: 1, stop: 2}", "rows: {start: 2, stop: 2}"
+        ),
+        encoding="utf-8",
+    )
+    retry = load_spec(path)
+    assert retry.retry_of == "t1"
+    assert spec_identity(retry)["retry_of"] == "t1"
+    assert spec_digest(retry) != spec_digest(base)
+
+
+def _plan(experiment: dict, path: Path) -> int:
+    return batch_cli.main(
+        ["--experiment-dir", str(experiment["dir"]), "plan", str(path)], remote_factory=lambda h: None
+    )
+
+
+def _retry_spec(experiment: dict, name: str, rows: str, edit: tuple[str, str] | None = None) -> Path:
+    text = _spec_text(experiment, "name: t1", f"name: {name}\nretry_of: t1").replace(
+        "rows: {start: 1, stop: 2}", rows
+    )
+    if edit is not None:
+        assert edit[0] in text, edit[0]
+        text = text.replace(*edit)
+    path = experiment["dir"] / "batches" / f"{name}.yaml"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_plan_refuses_a_retry_whose_original_was_never_planned(experiment: dict, capsys) -> None:
+    path = _retry_spec(experiment, "t1r", "rows: {start: 2, stop: 2}")
+    assert _plan(experiment, path) == 2
+    assert "retry_of" in capsys.readouterr().err
+
+
+def test_plan_refuses_a_retry_that_changes_a_paid_field(experiment: dict, capsys) -> None:
+    assert _plan(experiment, Path(experiment["spec"])) == 0  # the original's record
+    path = _retry_spec(
+        experiment, "t1r", "rows: {start: 2, stop: 2}", ("budget_per_seat: 2000000", "budget_per_seat: 1000000")
+    )
+    assert _plan(experiment, path) == 2
+    err = capsys.readouterr().err
+    assert "budget_per_seat" in err
+
+
+def test_plan_refuses_a_retry_outside_the_original_slice(experiment: dict, capsys) -> None:
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    path = _retry_spec(experiment, "t1r", "rows: {start: 3, stop: 3}")
+    assert _plan(experiment, path) == 2
+    assert "c__c-3" in capsys.readouterr().err
+
+
+def test_plan_accepts_a_retry_of_one_row_of_the_original(experiment: dict, capsys) -> None:
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    path = _retry_spec(experiment, "t1r", "rows: {start: 2, stop: 2}")
+    assert _plan(experiment, path) == 0
+    assert "retry of t1" in capsys.readouterr().out
+
+
+def _metrics(cell: Path, rows: list[dict]) -> None:
+    cell.mkdir(parents=True, exist_ok=True)
+    (cell / "metrics.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+
+
+def test_retry_merge_takes_the_last_valid_attempt(tmp_path: Path) -> None:
+    first = tmp_path / "b"
+    _metrics(
+        first,
+        [
+            {"instance_id": "a", "run_summary": {"status": "completed", "tokens": 10}},
+            {"instance_id": "b", "run_summary": {"status": "failed", "reason": "APIError", "tokens": 1}},
+            {"instance_id": "c", "run_summary": {"status": "failed", "reason": "APIError", "tokens": 2}},
+            {"instance_id": "d", "run_summary": {"status": "completed", "tokens": 4}},
+        ],
+    )
+    second = tmp_path / "b-r"
+    _metrics(
+        second,
+        [
+            {"instance_id": "b", "run_summary": {"status": "completed", "tokens": 90}},
+            {"instance_id": "c", "run_summary": {"status": "failed", "reason": "APIError", "tokens": 3}},
+            {"instance_id": "d", "run_summary": {"status": "completed", "tokens": 40}},
+        ],
+    )
+    rows = cell_report.merge_attempts(
+        [("b", cell_report.run_rows(first, "single")), ("b-r", cell_report.run_rows(second, "single"))]
+    )
+    by_id = {r.instance_id: r for r in rows}
+    assert sorted(by_id) == ["a", "b", "c", "d"]
+    assert (by_id["a"].attempt, by_id["a"].attempts, by_id["a"].source_batch) == (1, 1, "b")
+    # b's second attempt is the one that ran: the failed first attempt is dropped.
+    assert (by_id["b"].attempt, by_id["b"].attempts, by_id["b"].source_batch) == (2, 2, "b-r")
+    assert by_id["b"].tokens == 90
+    # c never ran: the last attempt is kept so the instance is not silently gone.
+    assert (by_id["c"].attempt, by_id["c"].attempts, by_id["c"].source_batch) == (2, 2, "b-r")
+    assert by_id["c"].tokens == 3 and not by_id["c"].valid
+    # Both attempts at d ran. The rule is the LAST that ran, not the first.
+    assert (by_id["d"].attempt, by_id["d"].attempts, by_id["d"].source_batch) == (2, 2, "b-r")
+    assert by_id["d"].tokens == 40
+    summary = cell_report.summarize(rows, team=False)
+    assert summary["retried"] == ["b", "c", "d"] and summary["retried_count"] == 3
+    assert summary["retry_succeeded"] == ["b", "d"] and summary["retry_succeeded_count"] == 2
+    assert summary["infra_failed"] == ["c"] and summary["infra_failed_count"] == 1
+    assert "attempt 2 of 2" in cell_report.render(rows, summary, [])
+
+
+def test_a_report_without_a_retry_names_every_run_attempt_one(tmp_path: Path) -> None:
+    cell = tmp_path / "b"
+    _metrics(
+        cell,
+        [
+            {"instance_id": "a", "run_summary": {"status": "completed", "tokens": 10}},
+            {"instance_id": "b", "run_summary": {"status": "failed", "reason": "APIError", "tokens": 1}},
+        ],
+    )
+    rows = cell_report.merge_attempts([("b", cell_report.run_rows(cell, "single"))])
+    assert [(r.attempt, r.attempts, r.source_batch) for r in rows] == [(1, 1, "b"), (1, 1, "b")]
+    summary = cell_report.summarize(rows, team=False)
+    assert summary["retried"] == [] and summary["retry_succeeded"] == []
+    # One attempt that never ran is still an instance the endpoint took away.
+    assert summary["infra_failed"] == ["b"]
+    assert "attempt" not in cell_report.render(rows, summary, [])

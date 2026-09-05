@@ -197,6 +197,17 @@ class RunRow:
     #: holding what they did were never opened, and the two readings are
     #: identical in the report. This says which one it is.
     seat_snapshot_found: bool = False
+    #: Which attempt at this instance this row is, and how many attempts the
+    #: cell holds. A run the endpoint dropped leaves a prediction row behind,
+    #: so the original batch cannot be resumed into; the second attempt runs in
+    #: its own out-dir and is merged back here. Both numbers are on the row
+    #: because "this instance ran once" and "this instance ran twice and the
+    #: first attempt is not the one reported" are different facts.
+    attempt: int = 1
+    attempts: int = 1
+    #: The out-dir this row was read from. Equal to the cell's own name unless
+    #: the row came from a retry batch.
+    source_batch: str = ""
 
     @property
     def valid(self) -> bool:
@@ -479,6 +490,48 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
     return rows
 
 
+def merge_attempts(batches: list[tuple[str, list[RunRow]]]) -> list[RunRow]:
+    """One row per instance, from the attempts made at it, in attempt order.
+
+    ``batches`` is ``[(out-dir name, its rows), ...]``, oldest first. Six runs
+    on 2026-09-04 ended ``failed`` with ``APIError: Upstream request failed``:
+    the endpoint dropped them, not the model. Each still wrote a prediction
+    row, so re-launching the original batch resumes nothing; the second attempt
+    runs in an out-dir of its own and is folded back in here.
+
+    The rule, and it is the only one that does not quietly change a
+    denominator: an instance reports its **last attempt that ran** -- the last
+    whose status is not in ``INVALID_STATUSES``. When no attempt ran, the last
+    one is kept rather than dropped, because an instance that vanishes from the
+    table is an instance nobody counts as lost. Earlier attempts are not summed
+    into anything: what they spent was spent, but the cell is one observation
+    per instance and a token total over two attempts at one instance is a
+    number about the endpoint, not about the arm.
+    """
+    order: list[str] = []
+    tries: dict[str, list[tuple[str, RunRow]]] = {}
+    for name, rows in batches:
+        for row in rows:
+            if row.instance_id not in tries:
+                tries[row.instance_id] = []
+                order.append(row.instance_id)
+            tries[row.instance_id].append((name, row))
+    merged: list[RunRow] = []
+    for instance_id in order:
+        made = tries[instance_id]
+        chosen = len(made) - 1
+        for index in range(len(made) - 1, -1, -1):
+            if made[index][1].valid:
+                chosen = index
+                break
+        name, row = made[chosen]
+        row.attempt = chosen + 1
+        row.attempts = len(made)
+        row.source_batch = name
+        merged.append(row)
+    return merged
+
+
 def order_rows(rows: list[RunRow], order_csv: str | Path | None) -> tuple[list[RunRow], list[str]]:
     """Rows in the suite's frozen order, plus the instances the suite has but the cell does not."""
     if order_csv is None:
@@ -544,6 +597,20 @@ def summarize(
             if r.edges_declared and (r.edges_walked or 0) < r.edges_declared
         ],
         "statuses": statuses,
+        # The retry ledger. Present on every cell, including the ones nothing
+        # was retried in, so "no instance needed a second attempt" and "this
+        # report does not say" are not the same blank.
+        "retried": [r.instance_id for r in rows if r.attempts > 1],
+        "retried_count": sum(1 for r in rows if r.attempts > 1),
+        # A second attempt that ran where the first did not.
+        "retry_succeeded": [r.instance_id for r in rows if r.attempts > 1 and r.attempt > 1 and r.valid],
+        "retry_succeeded_count": sum(1 for r in rows if r.attempts > 1 and r.attempt > 1 and r.valid),
+        # No attempt at this instance ever reached the model. Identical to
+        # ``invalid`` on a cell with no retries, and deliberately so: it is the
+        # same fact, counted after every attempt has been made.
+        "infra_failed": [r.instance_id for r in rows if not r.valid],
+        "infra_failed_count": sum(1 for r in rows if not r.valid),
+        "attempt_sources": sorted({r.source_batch for r in rows if r.source_batch}),
         "cap_hit": [r.instance_id for r in rows if r.cap_hit],
         # The two halves of ``cap_hit``, kept apart because only the second is
         # a run whose outcome the budget chose.
@@ -640,6 +707,29 @@ def _timeout_lines(summary: dict[str, Any], lines: list[str]) -> None:
         )
 
 
+def _attempt_note(row: RunRow) -> str:
+    """Which attempt this row is, printed only where there was more than one."""
+    if row.attempts <= 1:
+        return ""
+    return f"   [attempt {row.attempt} of {row.attempts} from {row.source_batch}]"
+
+
+def _retry_lines(summary: dict[str, Any], lines: list[str]) -> None:
+    """The retry ledger, printed only on a cell that has one."""
+    if not summary.get("retried"):
+        return
+    lines.append(
+        f"retried instances: {summary['retried_count']} -> {summary['retried']}"
+        f"   (merged from {summary['attempt_sources']})"
+    )
+    lines.append(
+        f"  a later attempt ran: {summary['retry_succeeded_count']} -> {summary['retry_succeeded']}"
+    )
+    lines.append(
+        f"  no attempt ever ran: {summary['infra_failed_count']} -> {summary['infra_failed']}"
+    )
+
+
 def _headroom(row: RunRow) -> str:
     """The tightest seat's remaining allowance, or ``?`` when none was recorded.
 
@@ -703,6 +793,7 @@ def _render_single(rows: list[RunRow], summary: dict[str, Any], lines: list[str]
             f"{_headroom(r):>9s} {'CUT' if r.timeout_censored else '-':>3s} "
             + (','.join(r.cap_hit) or '-')
             + ("" if r.valid else "   [excluded: " + (r.reason or r.status) + "]")
+            + _attempt_note(r)
         )
     lines.append("")
     lines.append(
@@ -711,6 +802,7 @@ def _render_single(rows: list[RunRow], summary: dict[str, Any], lines: list[str]
         + "   (delivery is a team-arm quantity; none is computed here)"
     )
     lines.append(f"statuses: {summary['statuses']}")
+    _retry_lines(summary, lines)
     _cap_lines(summary, lines)
     _timeout_lines(summary, lines)
     lines.append(f"tokens total: {summary['tokens_total']:,}")
@@ -750,6 +842,7 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
             f"{'YES' if r.delivered else 'no':5s} {sum(s.msg_agent for s in r.seats.values()):>4} {a_writes:>3} "
             f"{r.tree_snapshots:>4} {','.join(r.cap_hit) or '-'}"
             + ("" if r.valid else "   [excluded: " + (r.reason or r.status) + "]")
+            + _attempt_note(r)
         )
     lines.append("")
     excluded = (
@@ -785,6 +878,7 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
             f" -> {[[i, f'{w}/{d}'] for i, w, d in summary['edges_unwalked']]}"
         )
     lines.append(f"statuses: {summary['statuses']}")
+    _retry_lines(summary, lines)
     _cap_lines(summary, lines)
     _timeout_lines(summary, lines)
     lines.append(

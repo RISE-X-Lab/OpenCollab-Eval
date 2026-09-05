@@ -27,6 +27,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +53,14 @@ from opencollab_eval.generation.gen_prediction_batch import DELIVERY_READABLE_AR
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 EXPERIMENT_DIR = REPO_ROOT / "experiment"
+
+#: The fields a retry batch may differ from the batch it retries in, and
+#: nothing else. ``name`` and ``rows`` are what make it a second attempt at
+#: part of the same slice; ``concurrency`` is already outside the digest
+#: (a resume may use a different one); ``note`` and ``retry_of`` are prose and
+#: the pointer itself. Every other field is what the batch paid for, and a
+#: retry that changed one would be a different cell reported as the same one.
+RETRY_MAY_DIFFER = frozenset({"name", "rows", "retry_of", "note", "concurrency"})
 
 
 class RemoteError(RuntimeError):
@@ -143,6 +152,52 @@ class Batch:
         self.local_dir = Path(self.host.local_batches_dir) / f"{self.spec.name}.launch"
         self.data_dir = Path(self.host.local_batches_dir) / self.spec.name
         self._instances: str | None = None
+        self.check_retry()
+
+    def check_retry(self) -> None:
+        """Refuse a ``retry_of`` that is not a second attempt at the same cell.
+
+        The whole point of the field is that two out-dirs are reported as one
+        cell. That is a claim about the instrument, so it is checked rather
+        than trusted: the batch named must have been planned, every paid field
+        must be the one it paid, and these rows must be rows it ran. Without
+        the check, a retry at a different budget or a different card would be
+        merged into the original's numbers with nothing saying so.
+        """
+        name = self.spec.retry_of
+        if name is None:
+            return
+        record_path = Path(self.host.local_batches_dir) / f"{name}.launch" / "batch.json"
+        if not record_path.exists():
+            raise SpecError(
+                f"retry_of {name!r}: {record_path} does not exist. A retry is merged into that batch's "
+                "report, so the batch has to have been planned here first."
+            )
+        try:
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+        except ValueError as exc:
+            raise SpecError(f"retry_of {name!r}: {record_path} is not readable JSON ({exc})") from exc
+        theirs = record.get("spec") or {}
+        mine = spec_identity(self.spec)
+        differ = sorted(
+            key
+            for key in set(mine) | set(theirs)
+            if key not in RETRY_MAY_DIFFER and mine.get(key) != theirs.get(key)
+        )
+        if differ:
+            detail = "; ".join(f"{key}: this {mine.get(key)!r} vs {name} {theirs.get(key)!r}" for key in differ)
+            raise SpecError(
+                f"retry_of {name!r}: a retry may differ only in {sorted(RETRY_MAY_DIFFER)}, but {detail}"
+            )
+        rows = theirs.get("rows") or {}
+        original = replace(self.spec, row_start=rows.get("start"), row_stop=rows.get("stop"))
+        ran = {row["instance_id"] for row in suite_rows(original, self.suite_dir)}
+        outside = [row["instance_id"] for row in self.rows if row["instance_id"] not in ran]
+        if outside:
+            raise SpecError(
+                f"retry_of {name!r}: rows {self.spec.row_start}..{self.spec.row_stop} include "
+                f"{outside} which that batch never ran; a retry can only re-attempt its own instances."
+            )
 
     @property
     def instances_text(self) -> str:
@@ -248,6 +303,7 @@ def cmd_plan(batch: Batch, _remote: Ssh | None) -> int:
     spec = batch.spec
     print(
         f"batch {spec.name}: arm={spec.arm} cell={spec.cell} suite={spec.suite} rows={spec.row_start}..{spec.row_stop}"
+        + (f" (retry of {spec.retry_of})" if spec.retry_of else "")
     )
     print(f"  instances: {len(batch.rows)} ({batch.rows[0]['instance_id']} .. {batch.rows[-1]['instance_id']})")
     print(f"  instance file: {path} sha256 {batch.instances_sha[:16]}")
@@ -350,8 +406,39 @@ def cmd_pull(batch: Batch, remote: Ssh) -> int:
     return 0
 
 
+def retry_batches(batch: Batch) -> list[tuple[str, Path]]:
+    """The out-dirs that name this batch as the one they retry, oldest first.
+
+    Found by reading the records rather than by a naming convention: the record
+    is what ``plan`` checked, and a directory named ``<something>-retry`` that
+    no record backs is not a second attempt at anything. Ordered by the first
+    launch each one recorded, so "the last attempt" means the last one started.
+    """
+    root = Path(batch.host.local_batches_dir)
+    found: list[tuple[str, str, Path]] = []
+    for record_path in sorted(root.glob("*.launch/batch.json")):
+        try:
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        spec = record.get("spec") or {}
+        if spec.get("retry_of") != batch.spec.name:
+            continue
+        name = str(spec.get("name") or record_path.parent.name.removesuffix(".launch"))
+        launches = record.get("launches") or []
+        at = str((launches[0] or {}).get("at") or "") if launches else ""
+        found.append((at, name, root / name))
+    return [(name, data_dir) for _, name, data_dir in sorted(found)]
+
+
 def cmd_report(batch: Batch, _remote: Ssh | None, scanner: str | None, json_out: Path | None) -> int:
-    rows = cell_report.run_rows(batch.data_dir, batch.spec.arm)
+    attempts = [(batch.spec.name, cell_report.run_rows(batch.data_dir, batch.spec.arm))]
+    for name, data_dir in retry_batches(batch):
+        if not (data_dir / "metrics.jsonl").exists():
+            print(f"  retry {name}: planned but not pulled ({data_dir}/metrics.jsonl missing); not merged")
+            continue
+        attempts.append((name, cell_report.run_rows(data_dir, batch.spec.arm)))
+    rows = cell_report.merge_attempts(attempts)
     suite_file = batch.suite_dir / f"{batch.spec.suite}.csv"
     ordered, missing = cell_report.order_rows(rows, suite_file)
     wanted = {row["instance_id"] for row in batch.rows}
@@ -383,6 +470,8 @@ def cmd_report(batch: Batch, _remote: Ssh | None, scanner: str | None, json_out:
     )
     label = f"{batch.spec.arm}/{batch.spec.cell}" + (f" (rung {batch.spec.rung})" if batch.spec.rung else "")
     print(f"report for {batch.spec.name} ({label}) from {batch.data_dir}")
+    for name, _rows in attempts[1:]:
+        print(f"  merged retry: {name} from {Path(batch.host.local_batches_dir) / name}")
     pins = batch.spec.pins
     print(f"  pins: opencollab {pins['opencollab'][:12]} opencollab_eval {pins['opencollab_eval'][:12]}")
     print(cell_report.render(ordered, summary, missing))

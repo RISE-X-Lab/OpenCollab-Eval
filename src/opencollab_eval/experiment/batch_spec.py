@@ -106,6 +106,14 @@ class BatchSpec:
     model_env: str
     env: dict[str, str]
     pins: dict[str, str]
+    #: The batch this one re-attempts. A run the endpoint dropped leaves a
+    #: prediction row behind, so a resume of the original skips it; the second
+    #: attempt has to be its own out-dir, and this field is what says the two
+    #: directories are one cell rather than two. ``plan`` refuses it unless the
+    #: named batch was planned, every paid field matches, and these rows are a
+    #: subset of that batch's rows -- otherwise "same cell" would be a claim
+    #: nothing checked.
+    retry_of: str | None = None
     note: str = ""
     source: dict[str, Any] = field(default_factory=dict, compare=False)
 
@@ -212,6 +220,13 @@ def load_spec(path: str | Path) -> BatchSpec:
     if missing:
         raise SpecError(f"{where}: env is missing {', '.join(missing)}")
 
+    retry_of = raw.get("retry_of")
+    if retry_of is not None:
+        if not isinstance(retry_of, str) or not _NAME.match(retry_of):
+            raise SpecError(f"{where}: retry_of must be the name of another batch")
+        if retry_of == name:
+            raise SpecError(f"{where}: retry_of {retry_of!r} is this batch's own name; a retry needs its own out-dir")
+
     pins_raw = _require(raw, "pins", dict, where)
     pins: dict[str, str] = {}
     for key in ("opencollab", "opencollab_eval"):
@@ -236,6 +251,7 @@ def load_spec(path: str | Path) -> BatchSpec:
         model_env=_require(raw, "model_env", str, where),
         env=env,
         pins=pins,
+        retry_of=retry_of,
         note=str(raw.get("note") or ""),
         source=raw,
     )
@@ -246,7 +262,7 @@ def load_spec(path: str | Path) -> BatchSpec:
 
 def spec_identity(spec: BatchSpec) -> dict[str, Any]:
     """The fields that make two launches the same batch (resumable into one out-dir)."""
-    return {
+    identity: dict[str, Any] = {
         "name": spec.name,
         "host": spec.host,
         "arm": spec.arm,
@@ -262,6 +278,14 @@ def spec_identity(spec: BatchSpec) -> dict[str, Any]:
         "env": dict(sorted(spec.env.items())),
         "pins": dict(sorted(spec.pins.items())),
     }
+    if spec.retry_of is not None:
+        # Present only when it is set, and for a reason that is not tidiness:
+        # this dict is the digest, and the digest is how the pre-flight decides
+        # whether an out-dir holds *this* batch. A key added unconditionally
+        # would have changed the digest of every spec already launched, so
+        # every finished batch would have read as a different batch on resume.
+        identity["retry_of"] = spec.retry_of
+    return identity
 
 
 def spec_digest(spec: BatchSpec) -> str:
