@@ -1,0 +1,21 @@
+name: cmdplain30-r2-retry-sympy__sympy-15875
+host: gpu3
+arm: team
+rung: plain
+cell: cmd-plain
+suite: subset-30
+rows: {start: 20, stop: 20}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 1
+model_env: configs/.env            # relative to the OpenCollab checkout on the host
+env:                               # quote every value: YAML reads off/true as booleans
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"      # reasoning text is only captured from the stream
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"      # the nudge commands an action that competes with delegating
+pins:
+  opencollab: 9175297ed56be6a0377b38d6f5949e07d34d7073
+  opencollab_eval: 898d5807305edbac17917ad18a2dafc85dae7487
+retry_of: cmdplain30-r2
+note: "retry of cmdplain30-r2 row 20 after provider error: APIError: Upstream response stream was interrupted"

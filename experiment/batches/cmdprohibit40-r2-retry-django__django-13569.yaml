@@ -1,0 +1,21 @@
+name: cmdprohibit40-r2-retry-django__django-13569
+host: gpu3
+arm: team
+rung: prohibit
+cell: cmd-prohibit
+suite: subset-50
+rows: {start: 19, stop: 19}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 1
+model_env: configs/.env
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 9175297ed56be6a0377b38d6f5949e07d34d7073
+  opencollab_eval: 898d5807305edbac17917ad18a2dafc85dae7487
+retry_of: cmdprohibit40-r2
+note: "retry of cmdprohibit40-r2 row 19 after provider error: APIError: Upstream response stream was interrupted"
