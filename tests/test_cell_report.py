@@ -1203,3 +1203,177 @@ def test_the_single_arm_s_own_flag_agrees_with_the_derived_one(tmp_path: Path) -
     assert cell_report.summarize(rows, None, team=False, timeout_s=5400)[
         "timeout_flag_disagreement"
     ] == []
+
+
+# --- E13: the team arm's declared edges, which no report read --------------- #
+#
+# ``edges_declared`` was read only out of ``workflow_result``, which only the
+# scripted workflow writes, so both team batches of 2026-09-04 reported
+# ``edges_declared = 0`` and ``edges_walked_rate = None``. The team arm does
+# declare its topology: ``_scheduler_team.py:441-460`` writes one
+# ``assigned.topology_edges`` event per run into ``trajectory.jsonl``, and the
+# real runs carry six edges over three roles. "Nobody may talk" and "this
+# report never looked" were spelt the same way.
+#
+# Alpha and edges are not the same quantity and this does not merge them.
+# Alpha is the rate at which an agent *chose* to hand work on -- one number per
+# run, over runs. An edge is a channel the team file declared; walking it is
+# one agent addressing another over that channel at least once. A run can walk
+# an edge without delivering (a message that carried nothing on), and alpha
+# stays the ladder's number.
+
+
+def _topology_log(directory: Path, edges: list[tuple[str, str]], allow_all: bool = False) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {"type": "assigned.topology_nodes", "payload": {"declared_roles": ["analyst", "coder", "tester"]}},
+        {
+            "type": "assigned.topology_edges",
+            "payload": {
+                "allow_all": allow_all,
+                "declared_roles": ["analyst", "coder", "tester"],
+                "edges": [{"from_role": f, "to_role": t} for f, t in edges],
+            },
+        },
+    ]
+    with (directory / "trajectory.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write("".join(json.dumps(r) + "\n" for r in rows))
+
+
+def _seat_with_messages(directory: Path, filename: str, *, aid: int, role: str, targets: list[dict]) -> None:
+    """A team seat that made one ``message_agent`` call per entry in ``targets``."""
+    directory.mkdir(parents=True, exist_ok=True)
+    messages = [
+        {
+            "role": "assistant",
+            "content": "handing over",
+            "tool_calls": [
+                {"id": f"c{i}", "function": {"name": "message_agent", "arguments": json.dumps(t)}}
+            ],
+        }
+        for i, t in enumerate(targets)
+    ]
+    (directory / filename).write_text(
+        json.dumps(
+            {
+                "aid": aid,
+                "role": role,
+                "session_state": {"used_tokens": 10_000, "step_count": len(targets), "terminal_reason": ""},
+                "messages": messages,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+SIX_EDGES = [
+    ("analyst", "coder"),
+    ("analyst", "tester"),
+    ("coder", "analyst"),
+    ("coder", "tester"),
+    ("tester", "analyst"),
+    ("tester", "coder"),
+]
+
+
+@pytest.fixture
+def team_edges_cell(tmp_path: Path) -> Path:
+    """Three team runs on the six-edge topology the real batches declare."""
+    cell = tmp_path / "team-edges"
+    records = []
+    for instance, analyst_targets in (
+        ("a", [{"to_role": "coder", "summary": "s", "content": "c"}]),
+        (
+            "b",
+            [
+                {"to_aid": 2, "summary": "s", "content": "c"},
+                {"to_role": "coder", "summary": "s", "content": "c"},
+                # A pair this team file never declared. The scheduler refuses
+                # it, so it is not a channel that carried anything.
+                {"to_role": "reviewer", "summary": "s", "content": "c"},
+            ],
+        ),
+        ("c", []),
+    ):
+        runtime = _runtime_dir(cell, "team", instance)
+        _seat_with_messages(runtime, "agent_0_analyst-aa.json", aid=0, role="analyst", targets=analyst_targets)
+        _seat_file(runtime, "agent_1_coder-bb.json", aid=1, role="coder", tokens=5_000, assistant=2)
+        _seat_file(runtime, "agent_2_tester-cc.json", aid=2, role="tester", tokens=5_000, assistant=2)
+        _topology_log(runtime, SIX_EDGES)
+        records.append(
+            {
+                "instance_id": instance,
+                "run_summary": {"status": "completed", "reason": None, "tokens": 20_000, "steps": 4},
+            }
+        )
+    _write_metrics(cell, records)
+    return cell
+
+
+def test_a_team_run_declares_its_edges_in_its_trajectory(team_edges_cell: Path) -> None:
+    by_id = {r.instance_id: r for r in cell_report.run_rows(team_edges_cell, "team")}
+    assert by_id["a"].edges_declared == 6
+    assert by_id["b"].edges_declared == 6
+    assert by_id["c"].edges_declared == 6
+
+
+def test_a_team_edge_is_walked_by_a_message_over_it(team_edges_cell: Path) -> None:
+    by_id = {r.instance_id: r for r in cell_report.run_rows(team_edges_cell, "team")}
+    # analyst -> coder, addressed by role.
+    assert by_id["a"].edges_walked == 1
+    # analyst -> tester by aid and analyst -> coder by role: two distinct
+    # edges. The third message addresses a role the team file never declared an
+    # edge to, and does not become a third.
+    assert by_id["b"].edges_walked == 2
+    # Seated, spoke, never addressed a teammate.
+    assert by_id["c"].edges_walked == 0
+
+
+def test_the_team_summary_carries_the_edge_counts_beside_alpha(team_edges_cell: Path) -> None:
+    rows = cell_report.run_rows(team_edges_cell, "team")
+    summary = cell_report.summarize(rows, None, team=True, alpha_readable=True)
+    assert summary["edges_declared"] == 18
+    assert summary["edges_walked"] == 3
+    assert summary["edges_walked_rate"] == pytest.approx(3 / 18)
+    assert summary["edges_declared_state"] == "declared"
+    # Alpha is still alpha: it is not replaced by the edge count.
+    assert summary["alpha_readable"] is True and summary["alpha"] is not None
+    text = cell_report.render(rows, summary, [])
+    assert "Clopper-Pearson" in text
+    assert "edges walked 3/18" in text
+
+
+def test_an_open_topology_declares_no_edges(tmp_path: Path) -> None:
+    """``allow_all`` means every pair is permitted, so there is no declared set.
+
+    An empty ``edges`` list under ``allow_all`` would otherwise read as
+    "nobody may talk", which is its opposite.
+    """
+    cell = tmp_path / "open"
+    runtime = _runtime_dir(cell, "team", "a")
+    _seat_with_messages(
+        runtime, "agent_0_analyst-aa.json", aid=0, role="analyst",
+        targets=[{"to_role": "coder", "summary": "s", "content": "c"}],
+    )
+    _seat_file(runtime, "agent_1_coder-bb.json", aid=1, role="coder", tokens=5_000, assistant=2)
+    _topology_log(runtime, [], allow_all=True)
+    _write_metrics(cell, [{"instance_id": "a", "run_summary": {"status": "completed", "tokens": 10}}])
+    rows = cell_report.run_rows(cell, "team")
+    assert rows[0].edges_declared is None and rows[0].edges_walked is None
+    # And the control that separates "open" from "closed and empty": a team
+    # file that declares no edge at all is a declaration of zero.
+    assert cell_report.declared_edges({"allow_all": False, "edges": []}) == set()
+    assert cell_report.declared_edges({"allow_all": True, "edges": []}) is None
+    summary = cell_report.summarize(rows, None, team=True)
+    assert summary["edges_declared_state"] == "not_declared"
+    assert summary["edges_walked_rate"] is None
+
+
+def test_an_arm_that_declares_no_topology_says_so(tmp_path: Path) -> None:
+    cell = tmp_path / "single"
+    _write_metrics(cell, [{"instance_id": "a", "run_summary": {"status": "completed", "tokens": 10}}])
+    rows = cell_report.run_rows(cell, "single")
+    summary = cell_report.summarize(rows, None, team=False)
+    assert summary["edges_declared_state"] == "not_declared"
+    assert summary["edges_declared"] == 0 and summary["edges_walked_rate"] is None
+    assert "edges declared: none" in cell_report.render(rows, summary, [])

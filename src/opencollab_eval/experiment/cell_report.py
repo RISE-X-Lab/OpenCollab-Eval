@@ -79,6 +79,21 @@ EVENT_LOG_NAMES = ("trajectory.jsonl", "orchestration.jsonl")
 #: The row inside that log which names a session's disposition and both of its
 #: ceilings (``session_run.py:333-380``).
 SESSION_TERMINAL_EVENT = "session_terminal"
+#: The row that names the topology the run was *assigned*, written once at
+#: prebuild by ``_scheduler_team.py:441-460``: ``allow_all``, ``declared_roles``
+#: and ``edges`` as ``{from_role, to_role}`` pairs, verbatim from the team file.
+#: It is the team arm's answer to the question the scripted workflow answers in
+#: ``workflow_result.edges_declared``, and until it was read the team cells
+#: reported no declared edges at all -- which is how an arm that declares none
+#: reads.
+ASSIGNED_TOPOLOGY_EVENT = "assigned.topology_edges"
+#: The tool one seat addresses another with. A declared edge is *walked* when a
+#: seat holding its ``from_role`` made at least one ``message_agent`` call that
+#: resolved to its ``to_role``. That is not alpha: alpha is whether an agent
+#: chose to hand the work on (a coder or tester seat that spent tokens and
+#: spoke), one number per run; walking an edge is whether a declared channel
+#: carried anything at all. A run can walk an edge and deliver nothing.
+MESSAGE_TOOL = "message_agent"
 
 
 def binom_cdf(k: int, n: int, p: float) -> float:
@@ -123,7 +138,13 @@ class Seat:
     writes: int = 0
     msg_agent: int = 0
     terminal: str = ""
+    #: Who this seat addressed, one entry per ``message_agent`` call, as the
+    #: call itself named the target: ``role:<name>`` or ``aid:<n>`` (the tool
+    #: takes exactly one of ``to_role`` and ``to_aid``). Kept as written so the
+    #: aid can be resolved against this run's own roster rather than guessed.
+    msg_agent_targets: list[str] = field(default_factory=list)
     #: The allowance this session was handed, from its ``session_terminal``
+
     #: event. ``None`` means the event log was not there to read, which is not
     #: the same as an allowance of zero and must never be printed as one.
     cap: int | None = None
@@ -285,18 +306,22 @@ def _int_or_none(value: Any) -> int | None:
     return int(value)
 
 
-def _session_terminals(seat_paths: list[Path]) -> dict[str, dict[str, Any]]:
-    """The ``session_terminal`` payload of each session, keyed by ``aid``.
+def _event_log_facts(seat_paths: list[Path]) -> tuple[dict[str, dict[str, Any]], dict[str, Any] | None]:
+    """The two things this run's event log records: its sessions and its topology.
 
-    Read from the event log beside the seat snapshots, and read defensively:
-    this is the only quantity in the report that comes from a second file, and
-    a batch pulled before the log existed, a truncated log, or a log this
-    reader cannot parse must all leave every other column exactly as it was.
+    Returns the ``session_terminal`` payload of each session keyed by ``aid``,
+    and the single ``assigned.topology_edges`` payload, or ``None`` when the
+    run wrote none. Read from the event log beside the seat snapshots, and read
+    defensively: these are the only quantities in the report that come from a
+    second file, and a batch pulled before the log existed, a truncated log, or
+    a log this reader cannot parse must all leave every other column exactly as
+    it was.
 
     The logs run to hundreds of megabytes a batch and hold a handful of these
-    rows, so a line that cannot contain one is skipped before it is parsed.
+    rows, so a line that can contain neither is skipped before it is parsed.
     """
     found: dict[str, dict[str, Any]] = {}
+    topology: dict[str, Any] | None = None
     for directory in dict.fromkeys(path.parent for path in seat_paths):
         for name in EVENT_LOG_NAMES:
             log = directory / name
@@ -305,19 +330,65 @@ def _session_terminals(seat_paths: list[Path]) -> dict[str, dict[str, Any]]:
             try:
                 with log.open(encoding="utf-8") as handle:
                     for line in handle:
-                        if SESSION_TERMINAL_EVENT not in line:
+                        if SESSION_TERMINAL_EVENT not in line and ASSIGNED_TOPOLOGY_EVENT not in line:
                             continue
                         try:
                             event = json.loads(line)
                         except ValueError:
                             continue
-                        if event.get("type") != SESSION_TERMINAL_EVENT:
-                            continue
+                        kind = event.get("type")
                         payload = event.get("payload") or {}
-                        found[str(payload.get("aid"))] = payload
+                        if kind == SESSION_TERMINAL_EVENT:
+                            found[str(payload.get("aid"))] = payload
+                        elif kind == ASSIGNED_TOPOLOGY_EVENT:
+                            topology = payload
             except OSError:
                 continue
-    return found
+    return found, topology
+
+
+def declared_edges(topology: dict[str, Any] | None) -> set[tuple[str, str]] | None:
+    """The edge set a run was assigned, or ``None`` when it declared none.
+
+    ``allow_all`` travels with the edges precisely because an open topology
+    declares no edges at all (``_scheduler_team.py:425-427``): its ``edges``
+    list is empty, and an empty list read as a declaration would say "nobody
+    may talk", which is its opposite. So an open topology is ``None`` here, the
+    same answer as a run that wrote no topology event -- while a closed
+    topology whose list *is* empty returns the empty set, because "this team
+    file lets nobody address anybody" is a declaration and has to be counted
+    as one.
+    """
+    if not topology or topology.get("allow_all"):
+        return None
+    edges = topology.get("edges")
+    if not isinstance(edges, list):
+        return None
+    return {
+        (str(edge.get("from_role")), str(edge.get("to_role")))
+        for edge in edges
+        if isinstance(edge, dict) and edge.get("from_role") and edge.get("to_role")
+    }
+
+
+def walked_edges(seats: dict[str, Seat], declared: set[tuple[str, str]]) -> set[tuple[str, str]]:
+    """Which declared edges carried at least one message.
+
+    A call addressed ``to_aid`` is resolved against this run's own roster, so
+    the same edge addressed by role and by id counts once. A call to a pair the
+    team file never declared is not counted: the scheduler refuses it
+    (``_topology_forbids``), and counting it would put a refusal in the column
+    that says a channel carried something.
+    """
+    role_of_aid = {aid: seat.role for aid, seat in seats.items()}
+    walked: set[tuple[str, str]] = set()
+    for seat in seats.values():
+        for target in seat.msg_agent_targets:
+            kind, _, value = target.partition(":")
+            to_role = value if kind == "role" else role_of_aid.get(value)
+            if to_role and (seat.role, to_role) in declared:
+                walked.add((seat.role, to_role))
+    return walked
 
 
 def _seat_role(path: Path, recorded: str) -> str:
@@ -341,19 +412,38 @@ def _read_seat(path: Path) -> tuple[int, Seat]:
     data = json.loads(path.read_text(encoding="utf-8"))
     state = data.get("session_state") or {}
     messages = data.get("messages") or []
-    calls = [
-        ((call.get("function") or {}).get("name") or "")
-        for message in messages
-        for call in (message.get("tool_calls") or [])
-    ]
+    calls = []
+    targets: list[str] = []
+    for message in messages:
+        for call in message.get("tool_calls") or []:
+            function = call.get("function") or {}
+            name = function.get("name") or ""
+            calls.append(name)
+            if name != MESSAGE_TOOL:
+                continue
+            try:
+                arguments = json.loads(function.get("arguments") or "{}")
+            except ValueError:
+                arguments = {}
+            if not isinstance(arguments, dict):
+                arguments = {}
+            if arguments.get("to_role"):
+                targets.append(f"role:{arguments['to_role']}")
+            elif arguments.get("to_aid") is not None:
+                targets.append(f"aid:{arguments['to_aid']}")
+            else:
+                # The tool requires exactly one of the two; a call with
+                # neither was refused and addressed nobody.
+                targets.append("unaddressed")
     seat = Seat(
         role=_seat_role(path, str(data.get("role") or "")),
         tokens=int(state.get("used_tokens") or 0),
         steps=int(state.get("step_count") or 0),
         assistant=sum(1 for m in messages if m.get("role") == "assistant"),
         writes=sum(1 for name in calls if name in WRITE_TOOLS),
-        msg_agent=sum(1 for name in calls if name == "message_agent"),
+        msg_agent=sum(1 for name in calls if name == MESSAGE_TOOL),
         terminal=str(state.get("terminal_reason") or ""),
+        msg_agent_targets=targets,
     )
     return int(data.get("aid") or 0), seat
 
@@ -377,7 +467,7 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
             # none produces.
             workflow_result = record.get("workflow_result")
             seat_paths = _seat_files(cell, arm, record)
-            terminals = _session_terminals(seat_paths)
+            terminals, topology = _event_log_facts(seat_paths)
             seats: dict[str, Seat] = {}
             for path in seat_paths:
                 aid, seat = _read_seat(path)
@@ -410,6 +500,15 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
                     edges_declared = len(declared)
                     walked = workflow_result.get("edges_walked")
                     edges_walked = len(walked) if isinstance(walked, list) else 0
+            if edges_declared is None:
+                # The team arm declares its topology in the run's own event
+                # log rather than in a workflow result. Read the same way and
+                # reported in the same two columns, so the two arms' edge
+                # counts mean the same thing.
+                assigned = declared_edges(topology)
+                if assigned is not None:
+                    edges_declared = len(assigned)
+                    edges_walked = len(walked_edges(seats, assigned))
             if seat_cap is None:
                 # Otherwise the allowance is the largest ceiling any of this
                 # run's sessions was handed: a session that resumes a partly
@@ -591,6 +690,12 @@ def summarize(
         ),
         # Averaging hides the shape: one run walking none of its six and six
         # runs each missing one are the same rate.
+        # Whether an edge set was declared at all. ``edges_declared == 0`` is
+        # what an arm that declares none and an arm whose declaration was never
+        # read both produce, and those are different findings.
+        "edges_declared_state": (
+            "declared" if any(r.edges_declared is not None for r in rows) else "not_declared"
+        ),
         "edges_unwalked": [
             [r.instance_id, r.edges_walked or 0, r.edges_declared]
             for r in rows
@@ -730,6 +835,36 @@ def _retry_lines(summary: dict[str, Any], lines: list[str]) -> None:
     )
 
 
+def _edges_short(summary: dict[str, Any], lines: list[str]) -> None:
+    """The runs that fell short of their own declared edges, named not averaged.
+
+    One run walking none of its six and six runs each missing one are the same
+    rate.
+    """
+    lines.append(
+        f"  runs short of their declared edges: {len(summary['edges_unwalked'])}"
+        f" -> {[[i, f'{w}/{d}'] for i, w, d in summary['edges_unwalked']]}"
+    )
+
+
+def _edge_lines(summary: dict[str, Any], lines: list[str]) -> None:
+    """What the declared topology carried, on an arm that also reports alpha."""
+    if summary.get("edges_declared_state") != "declared":
+        lines.append(
+            "edges declared: none (this arm's runs record no assigned topology,"
+            " which is not the same as declaring some and walking none)"
+        )
+        return
+    rate = summary["edges_walked_rate"]
+    lines.append(
+        f"edges walked {summary['edges_walked']}/{summary['edges_declared']}"
+        + (f" = {rate:.3f}" if rate is not None else "")
+        + "   (a declared channel that carried at least one message_agent call;"
+        " delegation is the line above, and the two are different questions)"
+    )
+    _edges_short(summary, lines)
+
+
 def _headroom(row: RunRow) -> str:
     """The tightest seat's remaining allowance, or ``?`` when none was recorded.
 
@@ -802,6 +937,7 @@ def _render_single(rows: list[RunRow], summary: dict[str, Any], lines: list[str]
         + "   (delivery is a team-arm quantity; none is computed here)"
     )
     lines.append(f"statuses: {summary['statuses']}")
+    _edge_lines(summary, lines)
     _retry_lines(summary, lines)
     _cap_lines(summary, lines)
     _timeout_lines(summary, lines)
@@ -860,6 +996,11 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
             )
             + excluded
         )
+        # Beside alpha, never instead of it. The team file declares which role
+        # may address which; alpha says whether an agent chose to hand the work
+        # on. A cell can walk an edge and deliver nothing, and reading either
+        # number off the other is how the two get confused.
+        _edge_lines(summary, lines)
     else:
         # No delivery rate on this arm and no interval: its edges are written
         # by a script, so what the runs vary is whether each fixed edge carried
@@ -873,10 +1014,7 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
             " delegation rate to read)"
             + excluded
         )
-        lines.append(
-            f"  runs short of their declared edges: {len(summary['edges_unwalked'])}"
-            f" -> {[[i, f'{w}/{d}'] for i, w, d in summary['edges_unwalked']]}"
-        )
+        _edges_short(summary, lines)
     lines.append(f"statuses: {summary['statuses']}")
     _retry_lines(summary, lines)
     _cap_lines(summary, lines)
