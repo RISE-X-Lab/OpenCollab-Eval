@@ -22,7 +22,10 @@
 # this control, because only the post-call branch proves a real cap was
 # enforced on real spend rather than on an estimate.
 #
-# PINS ARE PLACEHOLDERS. Fill both before `plan`.
+# Pins are filled and are the two commits this smoke actually ran on
+# (`<name>.launch/batch.json` records `opencollab_head` /
+# `opencollab_eval_head` as the same pair): opencollab 9175297e carries the
+# reservation fix, opencollab_eval d0f5766c is the Eval commit of that day.
 name: smoke-truecap-single
 host: gpu3
 arm: single

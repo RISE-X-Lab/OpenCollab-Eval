@@ -13,8 +13,10 @@
 # steps, same timeout, same model file, same three switches. Only the code
 # changes.
 #
-# PINS ARE PLACEHOLDERS. The fix is not committed yet; fill both with the
-# 40-char shas of the commits that carry it before `plan`.
+# Pins are filled and are the two commits this smoke actually ran on
+# (`<name>.launch/batch.json` records `opencollab_head` /
+# `opencollab_eval_head` as the same pair): opencollab 9175297e carries the
+# reservation fix, opencollab_eval d0f5766c is the Eval commit of that day.
 name: smoke-falsecap-dw
 host: gpu3
 arm: self-collaboration
