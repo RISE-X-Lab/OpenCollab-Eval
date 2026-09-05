@@ -1,0 +1,46 @@
+# r2: the post-fix rerun of this batch, into a directory of its own.
+#
+# Why it is rerun: opencollab 9175297e corrects the pre-call reservation
+# that counted discarded reasoning text toward the input a seat had to
+# reserve, and the stop it produced ended 78 of the 310 runs on record -- 10
+# of this batch's 40 -- at a cap the seat had not reached.
+#
+# Why the name is new: `--out-dir` is the spec's `name` (batch_spec.py:379).
+# Left as `cmdprimary40` the driver would reopen the directory those runs
+# are in, whose `preds-team.jsonl` already names every instance of the
+# slice, and would plan zero runs (gen_prediction_batch.py:250-271,
+# :426-427, :471-473); the new pins would then also fail pre-flight's out-
+# dir check against that directory's batch.json (batch_remote.py:317). Under
+# `cmdprimary40-r2` nothing is resumed and nothing on record is overwritten.
+#
+# Every other field is byte-identical to `cmdprimary40.yaml` -- same arm,
+# same rows of the same suite, same seat budget, steps, timeout,
+# concurrency, model file and the same three switches -- so the only
+# difference between this batch and the one it replaces is the code. The
+# comment and the `note` below are the old spec's, unedited, for the same
+# reason.
+#
+# Ladder rung "primary": the main grid's Team card (facts-v2), which states the facts
+# and leaves the choice open. Statement (a) binds on it. Same 40 rows and pins as
+# the other four rungs, so the five-rung table sits on one instrument version;
+# the frame-wide primary run comes later and supersedes this row.
+name: cmdprimary40-r2
+host: gpu3
+arm: team
+rung: primary
+cell: facts-v2
+suite: subset-50
+rows: {start: 1, stop: 40}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 9175297ed56be6a0377b38d6f5949e07d34d7073
+  opencollab_eval: 898d5807305edbac17917ad18a2dafc85dae7487
+note: "ladder rung primary (facts-v2, choice left open); statement (a) binds, alpha <= 0.2, refuted when the lower 95% bound exceeds 0.2"
