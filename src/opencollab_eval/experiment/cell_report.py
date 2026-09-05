@@ -96,6 +96,22 @@ class RunRow:
     tokens: int
     steps: int
     seats: dict[str, Seat] = field(default_factory=dict)
+    #: What each *role* spent, summed over every seat that held it. A scripted
+    #: workflow seats its analyst twice -- once to write the brief and once to
+    #: adjudicate -- so a per-role lookup built by role alone keeps whichever
+    #: seat it read last and silently discards the other. Reading the analyst
+    #: column off ``seats`` that way printed 48,695 on a run whose analyst
+    #: spent 1,995,025.
+    role_tokens: dict[str, int] = field(default_factory=dict)
+    #: How many seats held each role, so a summed column says how many numbers
+    #: it is the sum of.
+    role_seats: dict[str, int] = field(default_factory=dict)
+    #: The workflow's own per-seat ledger (``workflow_result.seat_spend``),
+    #: kept beside the sum above rather than in place of it: two independent
+    #: readings of the same quantity, so a disagreement is visible instead of
+    #: being settled by whichever one the report happened to print.
+    seat_spend_recorded: dict[str, int] | None = None
+    seat_spend_agrees: bool | None = None
     delivered: bool = False
     tree_snapshots: int = 0
     cap_hit: list[str] = field(default_factory=list)
@@ -242,6 +258,16 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
             snapshots = record.get("tree_snapshots")
             if not snapshots and isinstance(workflow_result, dict):
                 snapshots = workflow_result.get("tree_snapshots")
+            role_tokens: dict[str, int] = {}
+            role_seats: dict[str, int] = {}
+            for seat in seats.values():
+                role_tokens[seat.role] = role_tokens.get(seat.role, 0) + seat.tokens
+                role_seats[seat.role] = role_seats.get(seat.role, 0) + 1
+            recorded_spend = None
+            if isinstance(workflow_result, dict):
+                raw_spend = workflow_result.get("seat_spend")
+                if isinstance(raw_spend, dict):
+                    recorded_spend = {str(k): int(v or 0) for k, v in raw_spend.items()}
             row = RunRow(
                 instance_id=record["instance_id"],
                 status=str(summary.get("status") or record.get("runtime_status") or ""),
@@ -249,6 +275,15 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
                 tokens=int(summary.get("tokens") or record.get("tokens_used") or 0),
                 steps=int(summary.get("steps") or 0),
                 seats=seats,
+                role_tokens=role_tokens,
+                role_seats=role_seats,
+                seat_spend_recorded=recorded_spend,
+                seat_spend_agrees=(
+                    None
+                    if recorded_spend is None
+                    else {k: v for k, v in role_tokens.items() if v or k in recorded_spend}
+                    == {k: v for k, v in recorded_spend.items() if v or k in role_tokens}
+                ),
                 delivered=any(s.role in DELEGATE_ROLES and s.tokens > 0 and s.assistant > 0 for s in seats.values()),
                 tree_snapshots=len(snapshots or []),
                 cap_hit=[aid for aid, s in seats.items() if "budget" in s.terminal.lower()],
@@ -310,6 +345,11 @@ def summarize(rows: list[RunRow], expected_card: str | None = None, team: bool =
         "seat_snapshot_found": sum(1 for r in rows if r.seat_snapshot_found),
         "seat_snapshot_missing": [r.instance_id for r in rows if not r.seat_snapshot_found],
         "seat_snapshot_missing_count": sum(1 for r in rows if not r.seat_snapshot_found),
+        # The runs where summing the seat files and the workflow's own
+        # ``seat_spend`` ledger do not agree. Empty is the expected reading;
+        # a non-empty list means one of the two is wrong and neither column
+        # can be quoted until it is settled.
+        "seat_spend_disagrees": [r.instance_id for r in rows if r.seat_spend_agrees is False],
         "analyst_cards": cards,
         "card_matches_expected": (cards == [expected_card]) if expected_card else None,
         "team_configs": sorted({r.team_config for r in rows if r.team_config}),
@@ -375,11 +415,13 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
     )
     lines.append(header)
     for i, r in enumerate(rows, 1):
-        by_role = {s.role: s for s in r.seats.values()}
-        a, c, t = (by_role.get(k, Seat(k)) for k in ("analyst", "coder", "tester"))
+        # Summed over the seats that held the role, never the last seat that
+        # held it: the workflow arm seats its analyst twice.
+        a_tok, c_tok, t_tok = (r.role_tokens.get(k, 0) for k in ("analyst", "coder", "tester"))
+        a_writes = sum(s.writes for s in r.seats.values() if s.role == "analyst")
         lines.append(
-            f"{i:>3} {r.instance_id:40s} {r.status:10s} {r.tokens:>9,} {a.tokens:>9,} {c.tokens:>8,} {t.tokens:>8,} "
-            f"{'YES' if r.delivered else 'no':5s} {sum(s.msg_agent for s in r.seats.values()):>4} {a.writes:>3} "
+            f"{i:>3} {r.instance_id:40s} {r.status:10s} {r.tokens:>9,} {a_tok:>9,} {c_tok:>8,} {t_tok:>8,} "
+            f"{'YES' if r.delivered else 'no':5s} {sum(s.msg_agent for s in r.seats.values()):>4} {a_writes:>3} "
             f"{r.tree_snapshots:>4} {','.join(r.cap_hit) or '-'}"
             + ("" if r.valid else "   [excluded: " + (r.reason or r.status) + "]")
         )

@@ -630,3 +630,77 @@ def test_best_of_n_keeps_its_seats_out_of_the_batch_root(tmp_path: Path) -> None
     )
     assert "best-of-n" not in cell_report.SEAT_AT_BATCH_ROOT_ARMS
     assert cell_report.SEAT_AT_BATCH_ROOT_ARMS == frozenset({"single"})
+
+
+# --- E10: a role seated twice in one run ------------------------------------ #
+#
+# The scripted workflow seats its analyst twice -- ``000_analyst`` to write the
+# brief and ``003_analyst-adjudicate-r1`` to rule on the tester's report -- and
+# the report keyed the render's per-role lookup by role alone, so the second
+# seat replaced the first and the analyst column printed the adjudication's
+# spend as if it were the whole role's. On the smoke DW batch that printed
+# 48,695 where the run spent 1,995,025.
+
+
+def test_a_role_seated_twice_is_summed_not_overwritten(dw_cell: Path) -> None:
+    row = _rows(dw_cell)["django__django-12262"]
+
+    # 000_analyst 209,224 + 003_analyst-adjudicate-r1 38,137.
+    assert row.role_tokens["analyst"] == 247_361
+    assert row.role_tokens["coder"] == 93_604
+    assert row.role_tokens["tester"] == 111_088
+    assert row.role_seats["analyst"] == 2
+
+
+def test_the_rendered_analyst_column_is_the_role_s_whole_spend(dw_cell: Path) -> None:
+    """The column is what is read; a JSON key nobody prints is not the fix."""
+    rows = cell_report.run_rows(dw_cell, "self-collaboration")
+    text = cell_report.render(rows, cell_report.summarize(rows, None, team=True), [])
+    line = next(l for l in text.splitlines() if "django__django-12262" in l)
+
+    assert "247,361" in line
+    # The last seat's own spend must no longer stand in for the role.
+    assert "38,137" not in line
+
+
+def test_the_role_totals_are_checked_against_the_workflow_s_own_ledger(
+    tmp_path: Path,
+) -> None:
+    """``workflow_result.seat_spend`` is the workflow's own per-seat ledger.
+
+    Summing the seat files reproduces it exactly on every DW run measured, so
+    a disagreement means one of the two readings is wrong and the report has to
+    say so rather than print whichever it happened to compute.
+    """
+    cell = tmp_path / "dw-ledger"
+    runtime = _runtime_dir(cell, "self-collaboration", "django__django-12262")
+    _seat_file(runtime, "000_analyst.json", aid=0, role="workflow_agent",
+               tokens=209_224, assistant=16)
+    _seat_file(runtime, "003_analyst-adjudicate-r1.json", aid=3,
+               role="workflow_agent", tokens=38_137, assistant=5)
+    _write_metrics(cell, [{
+        "instance_id": "django__django-12262",
+        "run_summary": {"status": "completed", "tokens": 247_361, "steps": 21},
+        "workflow_result": {"status": "done", "seat_cap": 2_000_000,
+                            "seat_spend": {"analyst": 247_361}},
+    }])
+
+    rows = cell_report.run_rows(cell, "self-collaboration")
+    summary = cell_report.summarize(rows, None, team=True)
+
+    assert rows[0].seat_spend_recorded == {"analyst": 247_361}
+    assert rows[0].seat_spend_agrees is True
+    assert summary["seat_spend_disagrees"] == []
+
+    # Mutation control: break the ledger and the disagreement must surface.
+    _write_metrics(cell, [{
+        "instance_id": "django__django-12262",
+        "run_summary": {"status": "completed", "tokens": 247_361, "steps": 21},
+        "workflow_result": {"status": "done", "seat_cap": 2_000_000,
+                            "seat_spend": {"analyst": 38_137}},
+    }])
+    rows = cell_report.run_rows(cell, "self-collaboration")
+    summary = cell_report.summarize(rows, None, team=True)
+
+    assert rows[0].seat_spend_agrees is False
+    assert summary["seat_spend_disagrees"] == ["django__django-12262"]
