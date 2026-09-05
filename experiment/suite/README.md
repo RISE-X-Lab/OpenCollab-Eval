@@ -21,6 +21,21 @@ suite is read off an ordered list of 110 -- a container image that will not
 start is not a random event, so its replacement has to have been chosen before
 anyone knew which image would fail.
 
+`subset-50.csv` is a draw of its own over the suite's 100 rows (namespace
+`subset`), not a prefix of `suite-100.csv`; only `subset-30.csv` is a prefix,
+of `subset-50.csv`. So the subset carries no reserve of its own, and the
+reserve for anything drawn here is `ordered_draw` rows 101--110.
+
+Used once, on 2026-09-05: `pylint-dev__pylint-4661` (row 39 of `subset-50`,
+row 94 of `suite-100`) has an evaluation environment that does not run -- the
+benchmark's own gold patch scores `resolved 0/1, infra_failure 1` on it -- so
+no arm can be scored there. Its replacement is `ordered_draw` row 101,
+`scikit-learn__scikit-learn-26323`, the first row of the reserve and the first
+row of the draw that no cell has run. The reserve rows are in no `suite-*.csv`
+file; a batch addresses this one as row 282 of `frame-ordered.csv`. Nothing in
+this directory was rewritten: the replacement lives in the batch specs
+(`experiment/batches/README.md`, *Replacements*).
+
 Regenerate (only when no run has been paid for yet):
 
 ```

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import csv
 import json
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from math import comb
 from pathlib import Path
@@ -41,6 +42,11 @@ DELEGATE_ROLES = frozenset({"coder", "tester"})
 ALPHA_READABLE_ARMS = frozenset({"team"})
 # A run the model never touched: no denominator for anything.
 INVALID_STATUSES = frozenset({"failed", "error"})
+#: Why a paid run of a pre-registered instance leaves every denominator. The
+#: instance's SWE-bench evaluation environment does not run -- the benchmark's
+#: own gold patch does not resolve there -- so the run has no outcome to score,
+#: whatever the agent did. Formatted with the replacement's instance id.
+REPLACED_REASON = "eval environment unusable: replaced by {instance} per ordered draw"
 # The runtime stamps every seat of a scripted workflow with one generic role,
 # so a workflow seat's identity lives in its file name instead. A team seat
 # carries its own role and is read from the record as before.
@@ -229,6 +235,11 @@ class RunRow:
     #: The out-dir this row was read from. Equal to the cell's own name unless
     #: the row came from a retry batch.
     source_batch: str = ""
+    #: The pre-registered instance this run stands in for, when it is a
+    #: replacement. Empty on every run of the drawn slice itself. A replacement
+    #: is not a second attempt at the same task -- the task changed -- so it is
+    #: a field of its own rather than a larger ``attempt``.
+    replacement_for: str = ""
 
     @property
     def valid(self) -> bool:
@@ -716,6 +727,13 @@ def summarize(
         "infra_failed": [r.instance_id for r in rows if not r.valid],
         "infra_failed_count": sum(1 for r in rows if not r.valid),
         "attempt_sources": sorted({r.source_batch for r in rows if r.source_batch}),
+        # The replacement ledger, and the reason it is a list of the instances
+        # that *left*: those are the ones no number here counts any more. Their
+        # run rows are in the document's ``excluded``, not deleted -- a paid run
+        # that no denominator holds still has to be findable.
+        "replaced": [r.replacement_for for r in rows if r.replacement_for],
+        "replaced_count": sum(1 for r in rows if r.replacement_for),
+        "replaced_by": [[r.replacement_for, r.instance_id, r.source_batch] for r in rows if r.replacement_for],
         "cap_hit": [r.instance_id for r in rows if r.cap_hit],
         # The two halves of ``cap_hit``, kept apart because only the second is
         # a run whose outcome the budget chose.
@@ -812,6 +830,11 @@ def _timeout_lines(summary: dict[str, Any], lines: list[str]) -> None:
         )
 
 
+def _replacement_note(row: RunRow) -> str:
+    """Which pre-registered instance this row stands in for, where it stands in for one."""
+    return f"   [replaces {row.replacement_for}]" if row.replacement_for else ""
+
+
 def _attempt_note(row: RunRow) -> str:
     """Which attempt this row is, printed only where there was more than one."""
     if row.attempts <= 1:
@@ -863,6 +886,18 @@ def _edge_lines(summary: dict[str, Any], lines: list[str]) -> None:
         " delegation is the line above, and the two are different questions)"
     )
     _edges_short(summary, lines)
+
+
+def _replacement_lines(summary: dict[str, Any], lines: list[str]) -> None:
+    """The replacement ledger, printed only on a cell that has one."""
+    if not summary.get("replaced_by"):
+        return
+    lines.append(
+        f"replaced instances (evaluation environment unusable): {summary['replaced_count']}"
+    )
+    for gone, stands_in, source in summary["replaced_by"]:
+        lines.append(f"  {gone} -> {stands_in}   (next row of the ordered draw, from {source})")
+    lines.append("  the replaced runs are in the JSON under 'excluded'; they enter no denominator here")
 
 
 def _headroom(row: RunRow) -> str:
@@ -929,6 +964,7 @@ def _render_single(rows: list[RunRow], summary: dict[str, Any], lines: list[str]
             + (','.join(r.cap_hit) or '-')
             + ("" if r.valid else "   [excluded: " + (r.reason or r.status) + "]")
             + _attempt_note(r)
+            + _replacement_note(r)
         )
     lines.append("")
     lines.append(
@@ -939,6 +975,7 @@ def _render_single(rows: list[RunRow], summary: dict[str, Any], lines: list[str]
     lines.append(f"statuses: {summary['statuses']}")
     _edge_lines(summary, lines)
     _retry_lines(summary, lines)
+    _replacement_lines(summary, lines)
     _cap_lines(summary, lines)
     _timeout_lines(summary, lines)
     lines.append(f"tokens total: {summary['tokens_total']:,}")
@@ -979,6 +1016,7 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
             f"{r.tree_snapshots:>4} {','.join(r.cap_hit) or '-'}"
             + ("" if r.valid else "   [excluded: " + (r.reason or r.status) + "]")
             + _attempt_note(r)
+            + _replacement_note(r)
         )
     lines.append("")
     excluded = (
@@ -1017,6 +1055,7 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
         _edges_short(summary, lines)
     lines.append(f"statuses: {summary['statuses']}")
     _retry_lines(summary, lines)
+    _replacement_lines(summary, lines)
     _cap_lines(summary, lines)
     _timeout_lines(summary, lines)
     lines.append(
@@ -1032,15 +1071,30 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
     return "\n".join(lines)
 
 
-def report_document(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> dict[str, Any]:
+def _run_document(row: RunRow) -> dict[str, Any]:
+    return {
+        **{k: v for k, v in asdict(row).items() if k != "seats"},
+        "seats": {k: asdict(s) for k, s in row.seats.items()},
+    }
+
+
+def report_document(
+    rows: list[RunRow],
+    summary: dict[str, Any],
+    missing: list[str],
+    excluded: Sequence[tuple[RunRow, str]] = (),
+) -> dict[str, Any]:
+    """The report as JSON: the cell's rows, and the paid rows no number counts.
+
+    ``excluded`` is ``[(row, why), ...]``. It holds the runs of an instance the
+    cell no longer reports -- today only a replaced one. They are kept in the
+    document rather than dropped because they were paid for and because the
+    next reader has to be able to see what was spent on an instance that ended
+    up in no denominator.
+    """
     return {
         "summary": summary,
         "missing": missing,
-        "runs": [
-            {
-                **{k: v for k, v in asdict(r).items() if k != "seats"},
-                "seats": {k: asdict(s) for k, s in r.seats.items()},
-            }
-            for r in rows
-        ],
+        "runs": [_run_document(r) for r in rows],
+        "excluded": [{**_run_document(r), "excluded_reason": why} for r, why in excluded],
     }

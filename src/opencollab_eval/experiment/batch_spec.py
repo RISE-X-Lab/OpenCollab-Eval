@@ -114,6 +114,16 @@ class BatchSpec:
     #: subset of that batch's rows -- otherwise "same cell" would be a claim
     #: nothing checked.
     retry_of: str | None = None
+    #: The pre-registered instance this batch stands in for, and the batch that
+    #: ran it: ``{"batch": <name>, "instance": <id>}``. Used when an
+    #: instance's evaluation environment is unusable -- the benchmark's own gold
+    #: patch does not resolve there, so no run of any arm on it can be scored.
+    #: That is not a random event, so the replacement is the next row of the
+    #: ordered draw rather than a choice made after the fact. ``plan`` refuses
+    #: it unless the named batch was planned, every paid field matches, this
+    #: spec is one row, the named instance is one that batch ran, and this
+    #: spec's own instance is not.
+    replaces: dict[str, str] | None = None
     note: str = ""
     source: dict[str, Any] = field(default_factory=dict, compare=False)
 
@@ -227,6 +237,27 @@ def load_spec(path: str | Path) -> BatchSpec:
         if retry_of == name:
             raise SpecError(f"{where}: retry_of {retry_of!r} is this batch's own name; a retry needs its own out-dir")
 
+    replaces = raw.get("replaces")
+    if replaces is not None:
+        if not isinstance(replaces, dict) or set(replaces) != {"batch", "instance"}:
+            raise SpecError(
+                f"{where}: replaces must be a mapping with exactly 'batch' and 'instance'; got {replaces!r}"
+            )
+        if not isinstance(replaces["batch"], str) or not _NAME.match(replaces["batch"]):
+            raise SpecError(f"{where}: replaces.batch must be the name of another batch")
+        if not isinstance(replaces["instance"], str) or not replaces["instance"].strip():
+            raise SpecError(f"{where}: replaces.instance must be an instance id")
+        if replaces["batch"] == name:
+            raise SpecError(
+                f"{where}: replaces.batch {name!r} is this batch's own name; a replacement needs its own out-dir"
+            )
+        if retry_of is not None:
+            raise SpecError(
+                f"{where}: a spec is either a second attempt at an instance the cell keeps (retry_of) or a "
+                "stand-in for one it drops (replaces), never both"
+            )
+        replaces = {"batch": replaces["batch"], "instance": replaces["instance"]}
+
     pins_raw = _require(raw, "pins", dict, where)
     pins: dict[str, str] = {}
     for key in ("opencollab", "opencollab_eval"):
@@ -252,6 +283,7 @@ def load_spec(path: str | Path) -> BatchSpec:
         env=env,
         pins=pins,
         retry_of=retry_of,
+        replaces=replaces,
         note=str(raw.get("note") or ""),
         source=raw,
     )
@@ -285,6 +317,12 @@ def spec_identity(spec: BatchSpec) -> dict[str, Any]:
         # would have changed the digest of every spec already launched, so
         # every finished batch would have read as a different batch on resume.
         identity["retry_of"] = spec.retry_of
+    if spec.replaces is not None:
+        # Written into the identity for the same two reasons ``retry_of`` is,
+        # and only when set for the same one: a replacement must never be
+        # resumed into the batch it replaces an instance of, and a key added
+        # unconditionally would move the digest of every spec already launched.
+        identity["replaces"] = dict(sorted(spec.replaces.items()))
     return identity
 
 

@@ -60,7 +60,19 @@ EXPERIMENT_DIR = REPO_ROOT / "experiment"
 #: (a resume may use a different one); ``note`` and ``retry_of`` are prose and
 #: the pointer itself. Every other field is what the batch paid for, and a
 #: retry that changed one would be a different cell reported as the same one.
-RETRY_MAY_DIFFER = frozenset({"name", "rows", "retry_of", "note", "concurrency"})
+#: ``replaces`` is in the list because a retry of a replacement batch is a
+#: retry and not a second replacement: it must not be found again by the
+#: replacement merge, so it carries no ``replaces`` of its own. A spec that set
+#: both is refused at load time.
+RETRY_MAY_DIFFER = frozenset({"name", "rows", "retry_of", "replaces", "note", "concurrency"})
+
+#: The same list for a replacement, plus ``suite``. A replacement runs an
+#: instance the cell never drew, and the reserve row it comes from need not
+#: live in the file the cell was sliced out of -- the ordered draw is longer
+#: than the suite, and the subset is a draw of its own. Everything else is
+#: still what the batch paid for: a replacement at another budget or another
+#: card would be a different cell entering the same numbers.
+REPLACES_MAY_DIFFER = frozenset({"name", "suite", "rows", "replaces", "note", "concurrency"})
 
 
 class RemoteError(RuntimeError):
@@ -132,6 +144,22 @@ def blob_sha256(repo: str | Path, rev: str, path: str) -> str:
 # --- resolved batch ------------------------------------------------------------
 
 
+def original_slice(spec: BatchSpec, record_spec: dict[str, Any]) -> BatchSpec:
+    """``spec`` re-pointed at the suite slice a recorded batch ran.
+
+    Both the retry check and the replacement check ask "which instances did
+    that batch run", and a replacement may cite a different suite file than the
+    batch it stands in for, so the suite is taken from the record too.
+    """
+    rows = record_spec.get("rows") or {}
+    return replace(
+        spec,
+        suite=str(record_spec.get("suite") or spec.suite),
+        row_start=rows.get("start"),
+        row_stop=rows.get("stop"),
+    )
+
+
 class Batch:
     """A spec plus everything derived from it locally."""
 
@@ -153,6 +181,7 @@ class Batch:
         self.data_dir = Path(self.host.local_batches_dir) / self.spec.name
         self._instances: str | None = None
         self.check_retry()
+        self.check_replaces()
 
     def check_retry(self) -> None:
         """Refuse a ``retry_of`` that is not a second attempt at the same cell.
@@ -189,14 +218,67 @@ class Batch:
             raise SpecError(
                 f"retry_of {name!r}: a retry may differ only in {sorted(RETRY_MAY_DIFFER)}, but {detail}"
             )
-        rows = theirs.get("rows") or {}
-        original = replace(self.spec, row_start=rows.get("start"), row_stop=rows.get("stop"))
-        ran = {row["instance_id"] for row in suite_rows(original, self.suite_dir)}
+        ran = {row["instance_id"] for row in suite_rows(original_slice(self.spec, theirs), self.suite_dir)}
         outside = [row["instance_id"] for row in self.rows if row["instance_id"] not in ran]
         if outside:
             raise SpecError(
                 f"retry_of {name!r}: rows {self.spec.row_start}..{self.spec.row_stop} include "
                 f"{outside} which that batch never ran; a retry can only re-attempt its own instances."
+            )
+
+    def check_replaces(self) -> None:
+        """Refuse a ``replaces`` that is not one reserve row standing in for one drawn row.
+
+        A replacement is the only edit that changes *which tasks* a cell
+        reports, so each half of the claim is checked rather than trusted. The
+        instance leaving has to be one this batch actually ran; the instance
+        arriving has to be one it did not, or the cell would report the same
+        task twice; and there has to be exactly one of it, because a slice here
+        would quietly regrow the cell.
+        """
+        if self.spec.replaces is None:
+            return
+        name = self.spec.replaces["batch"]
+        instance = self.spec.replaces["instance"]
+        record_path = Path(self.host.local_batches_dir) / f"{name}.launch" / "batch.json"
+        if not record_path.exists():
+            raise SpecError(
+                f"replaces {name!r}: {record_path} does not exist. A replacement is merged into that "
+                "batch's report, so the batch has to have been planned here first."
+            )
+        try:
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+        except ValueError as exc:
+            raise SpecError(f"replaces {name!r}: {record_path} is not readable JSON ({exc})") from exc
+        theirs = record.get("spec") or {}
+        mine = spec_identity(self.spec)
+        differ = sorted(
+            key
+            for key in set(mine) | set(theirs)
+            if key not in REPLACES_MAY_DIFFER and mine.get(key) != theirs.get(key)
+        )
+        if differ:
+            detail = "; ".join(f"{key}: this {mine.get(key)!r} vs {name} {theirs.get(key)!r}" for key in differ)
+            raise SpecError(
+                f"replaces {name!r}: a replacement may differ only in {sorted(REPLACES_MAY_DIFFER)}, but {detail}"
+            )
+        if len(self.rows) != 1:
+            raise SpecError(
+                f"replaces {name!r}: a replacement runs exactly one instance, but rows "
+                f"{self.spec.row_start}..{self.spec.row_stop} of {self.spec.suite} select "
+                f"{len(self.rows)} ({[row['instance_id'] for row in self.rows]})"
+            )
+        ran = {row["instance_id"] for row in suite_rows(original_slice(self.spec, theirs), self.suite_dir)}
+        if instance not in ran:
+            raise SpecError(
+                f"replaces {name!r}: {instance} is not an instance that batch ran, so replacing it "
+                f"would take nothing out of its report."
+            )
+        mine_instance = self.rows[0]["instance_id"]
+        if mine_instance in ran:
+            raise SpecError(
+                f"replaces {name!r}: {mine_instance} is already in that batch's slice. A second run of an "
+                "instance the cell has is a retry (retry_of), not a replacement."
             )
 
     @property
@@ -304,6 +386,7 @@ def cmd_plan(batch: Batch, _remote: Ssh | None) -> int:
     print(
         f"batch {spec.name}: arm={spec.arm} cell={spec.cell} suite={spec.suite} rows={spec.row_start}..{spec.row_stop}"
         + (f" (retry of {spec.retry_of})" if spec.retry_of else "")
+        + (f" (replaces {spec.replaces['instance']} of {spec.replaces['batch']})" if spec.replaces else "")
     )
     print(f"  instances: {len(batch.rows)} ({batch.rows[0]['instance_id']} .. {batch.rows[-1]['instance_id']})")
     print(f"  instance file: {path} sha256 {batch.instances_sha[:16]}")
@@ -406,42 +489,106 @@ def cmd_pull(batch: Batch, remote: Ssh) -> int:
     return 0
 
 
-def retry_batches(batch: Batch) -> list[tuple[str, Path]]:
-    """The out-dirs that name this batch as the one they retry, oldest first.
+def batch_records(root: Path) -> list[tuple[str, str, dict[str, Any]]]:
+    """Every planned batch under ``root`` as ``(first launch time, name, spec)``.
 
-    Found by reading the records rather than by a naming convention: the record
-    is what ``plan`` checked, and a directory named ``<something>-retry`` that
-    no record backs is not a second attempt at anything. Ordered by the first
-    launch each one recorded, so "the last attempt" means the last one started.
+    Read from the records rather than from a naming convention: the record is
+    what ``plan`` checked, and a directory named ``<something>-retry`` that no
+    record backs is not a second attempt at anything.
     """
-    root = Path(batch.host.local_batches_dir)
-    found: list[tuple[str, str, Path]] = []
+    found: list[tuple[str, str, dict[str, Any]]] = []
     for record_path in sorted(root.glob("*.launch/batch.json")):
         try:
             record = json.loads(record_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
         spec = record.get("spec") or {}
-        if spec.get("retry_of") != batch.spec.name:
-            continue
         name = str(spec.get("name") or record_path.parent.name.removesuffix(".launch"))
         launches = record.get("launches") or []
         at = str((launches[0] or {}).get("at") or "") if launches else ""
-        found.append((at, name, root / name))
-    return [(name, data_dir) for _, name, data_dir in sorted(found)]
+        found.append((at, name, spec))
+    return sorted(found)
+
+
+def retry_batches(root: Path, name: str) -> list[tuple[str, Path]]:
+    """The out-dirs that name ``name`` as the batch they retry, oldest first.
+
+    Ordered by the first launch each one recorded, so "the last attempt" means
+    the last one started.
+    """
+    return [(n, root / n) for _, n, spec in batch_records(root) if spec.get("retry_of") == name]
+
+
+def replacement_batches(batch: Batch) -> list[tuple[str, Path, str, str]]:
+    """The out-dirs standing in for an instance of this cell, oldest first.
+
+    Each is ``(name, out-dir, the instance it replaces, the instance it runs)``.
+    The instance it runs is resolved from the record's own suite and rows, not
+    from its metrics, so the reason a replaced run left the denominators can be
+    written even before the replacement has been pulled.
+    """
+    root = Path(batch.host.local_batches_dir)
+    found: list[tuple[str, Path, str, str]] = []
+    for _, name, spec in batch_records(root):
+        replaces = spec.get("replaces") or {}
+        if replaces.get("batch") != batch.spec.name:
+            continue
+        try:
+            rows = suite_rows(original_slice(batch.spec, spec), batch.suite_dir)
+        except SpecError as exc:
+            print(f"  replacement {name}: its slice cannot be read ({exc}); not merged")
+            continue
+        if len(rows) != 1:
+            print(f"  replacement {name}: its slice is {len(rows)} instances, not one; not merged")
+            continue
+        found.append((name, root / name, str(replaces.get("instance") or ""), rows[0]["instance_id"]))
+    return found
+
+
+def _cell_rows(batch: Batch, name: str, data_dir: Path) -> list[cell_report.RunRow]:
+    """One row per instance of one out-dir, with that out-dir's retries folded in."""
+    root = Path(batch.host.local_batches_dir)
+    attempts = [(name, cell_report.run_rows(data_dir, batch.spec.arm))]
+    for retry_name, retry_dir in retry_batches(root, name):
+        if not (retry_dir / "metrics.jsonl").exists():
+            print(f"  retry {retry_name}: planned but not pulled ({retry_dir}/metrics.jsonl missing); not merged")
+            continue
+        attempts.append((retry_name, cell_report.run_rows(retry_dir, batch.spec.arm)))
+    return cell_report.merge_attempts(attempts)
 
 
 def cmd_report(batch: Batch, _remote: Ssh | None, scanner: str | None, json_out: Path | None) -> int:
-    attempts = [(batch.spec.name, cell_report.run_rows(batch.data_dir, batch.spec.arm))]
-    for name, data_dir in retry_batches(batch):
+    root = Path(batch.host.local_batches_dir)
+    rows = _cell_rows(batch, batch.spec.name, batch.data_dir)
+
+    # A replaced instance leaves the cell only once something has taken its
+    # place. Dropping it the moment a replacement spec exists would shrink the
+    # denominator before the replacement had run.
+    replaced: dict[str, str] = {}
+    stand_ins: list[cell_report.RunRow] = []
+    merged_replacements: list[str] = []
+    for name, data_dir, gone, arrives in replacement_batches(batch):
         if not (data_dir / "metrics.jsonl").exists():
-            print(f"  retry {name}: planned but not pulled ({data_dir}/metrics.jsonl missing); not merged")
+            print(f"  replacement {name}: planned but not pulled ({data_dir}/metrics.jsonl missing); not merged")
             continue
-        attempts.append((name, cell_report.run_rows(data_dir, batch.spec.arm)))
-    rows = cell_report.merge_attempts(attempts)
+        for row in _cell_rows(batch, name, data_dir):
+            row.replacement_for = gone
+            stand_ins.append(row)
+        replaced[gone] = arrives
+        merged_replacements.append(name)
+    excluded: list[tuple[cell_report.RunRow, str]] = []
+    if replaced:
+        kept = []
+        for row in rows:
+            if row.instance_id in replaced:
+                excluded.append((row, cell_report.REPLACED_REASON.format(instance=replaced[row.instance_id])))
+            else:
+                kept.append(row)
+        rows = kept + stand_ins
+
     suite_file = batch.suite_dir / f"{batch.spec.suite}.csv"
     ordered, missing = cell_report.order_rows(rows, suite_file)
-    wanted = {row["instance_id"] for row in batch.rows}
+    wanted = ({row["instance_id"] for row in batch.rows} - set(replaced)) | {r.instance_id for r in stand_ins}
     ordered = [r for r in ordered if r.instance_id in wanted]
     missing = [i for i in missing if i in wanted]
     expected = None
@@ -470,14 +617,18 @@ def cmd_report(batch: Batch, _remote: Ssh | None, scanner: str | None, json_out:
     )
     label = f"{batch.spec.arm}/{batch.spec.cell}" + (f" (rung {batch.spec.rung})" if batch.spec.rung else "")
     print(f"report for {batch.spec.name} ({label}) from {batch.data_dir}")
-    for name, _rows in attempts[1:]:
-        print(f"  merged retry: {name} from {Path(batch.host.local_batches_dir) / name}")
+    for name, _dir in retry_batches(root, batch.spec.name):
+        if (root / name / "metrics.jsonl").exists():
+            print(f"  merged retry: {name} from {root / name}")
+    for name in merged_replacements:
+        print(f"  merged replacement: {name} from {root / name}")
     pins = batch.spec.pins
     print(f"  pins: opencollab {pins['opencollab'][:12]} opencollab_eval {pins['opencollab_eval'][:12]}")
     print(cell_report.render(ordered, summary, missing))
     if json_out:
         json_out.write_text(
-            json.dumps(cell_report.report_document(ordered, summary, missing), indent=2, ensure_ascii=False) + "\n",
+            json.dumps(cell_report.report_document(ordered, summary, missing, excluded), indent=2, ensure_ascii=False)
+            + "\n",
             encoding="utf-8",
         )
         print(f"JSON -> {json_out}")

@@ -46,6 +46,7 @@ drifted looks exactly like one that did not.
 | `env` | Must set `OPENCOLLAB_LLM_STREAM_CHAT`, `OPENCOLLAB_REASONING_EFFORT`, `OPENCOLLAB_WRITE_NUDGE_MODE`, and may set more. **Quote every value**: YAML reads `off`, `on`, `yes`, `no`, `true`, `false` as booleans, and the runtime reads strings. The loader rejects an unquoted boolean. |
 | `pins` | Full 40-character shas of the two checkouts the batch runs under. Both must be commits the local checkouts know about (`plan` checks), and the host must be at exactly these with clean trees (`preflight` checks). |
 | `retry_of` | Optional, and only for a batch that re-attempts instances of another one (see *Retries*). Names that batch. It enters the batch identity, so a retry can never be resumed into the batch it retries. |
+| `replaces` | Optional, and only for a batch that stands in for one instance of another one (see *Replacements*): `{batch: <name>, instance: <id>}`. It enters the batch identity. A spec may not set both this and `retry_of`. |
 | `note` | Free text, recorded in `batch.json`. |
 
 ### Retries
@@ -74,6 +75,60 @@ kept and counted under `infra_failed`. Every run row says which `attempt` it is
 and which `source_batch` it came from; the summary adds `retried`,
 `retry_succeeded` and `infra_failed`. Earlier attempts are not summed into
 anything — the cell is one observation per instance.
+
+### Replacements
+
+`pylint-dev__pylint-4661` is row 39 of `subset-50`. Its SWE-bench evaluation
+environment does not run: on 2026-09-05 the benchmark's own gold patch scored
+`resolved 0/1, infra_failure 1` there. Every arm therefore scores zero on that
+instance whatever the agent did, and the score is the outcome the grid reads.
+
+A broken environment is not a random event, so the replacement cannot be
+chosen after the fact. The suite draw is an ordered 110
+(`experiment/suite/sampling-manifest.json`, `ordered_draw`) of which
+`suite-100.csv` is the first 100; rows 101--110 are the reserve, drawn under
+the same capped, stratified rule before anyone knew which instance would fail.
+The replacement is the first reserve row, `scikit-learn__scikit-learn-26323`,
+which is in neither `suite-100.csv` nor `subset-50.csv`.
+
+`subset-50.csv` is **not** a prefix of `suite-100.csv`: it is a draw of its own
+(namespace `subset`) over the suite's 100 rows, so it has no reserve of its
+own and extending it moves rows. Only `subset-30.csv` is a prefix, of
+`subset-50.csv`. The reserve rows are in no `suite-*.csv` file, so a
+replacement spec addresses its instance through `frame-ordered.csv` -- the
+other pre-registration artifact, which carries every frame instance with its
+image. `scikit-learn__scikit-learn-26323` is row 282 of it. That row number is
+an address; the reason it is this instance is `ordered_draw` row 101.
+
+One spec per cell, one row:
+
+```
+name: <original>-repl-<instance>
+suite: frame-ordered
+rows: {start: 282, stop: 282}
+concurrency: 1
+replaces: {batch: <original>, instance: pylint-dev__pylint-4661}
+```
+
+Every other field is copied from the original **verbatim**; `suite` is the one
+field a replacement may change that a retry may not. `plan` refuses the spec
+unless the named batch has a `batch.json` here, every other field is identical
+to it, this spec is exactly one instance, the named instance is one that batch
+ran, and this spec's own instance is not (a second run of an instance the cell
+already has is a retry, not a replacement).
+
+`report` on the *original* spec then finds the replacement by its record and
+merges it: the replaced instance's row leaves every denominator and the
+replacement's row joins them, so a cell of 50 stays a cell of 50. The replaced
+run is not deleted -- it was paid for -- it moves to the JSON's top-level
+`excluded`, with `excluded_reason`. The replacement's row carries
+`replacement_for`, and the summary carries `replaced`, `replaced_count` and
+`replaced_by`. Nothing is dropped until the replacement has actually been
+pulled: a replacement that was planned but never ran leaves the cell as it was
+and says so.
+
+The two mechanisms stack. A replacement run the endpoint drops is retried like
+any other run, with `retry_of` naming the replacement batch.
 
 ### Arms
 
