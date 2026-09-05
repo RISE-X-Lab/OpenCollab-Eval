@@ -656,7 +656,7 @@ def test_the_rendered_analyst_column_is_the_role_s_whole_spend(dw_cell: Path) ->
     """The column is what is read; a JSON key nobody prints is not the fix."""
     rows = cell_report.run_rows(dw_cell, "self-collaboration")
     text = cell_report.render(rows, cell_report.summarize(rows, None, team=True), [])
-    line = next(l for l in text.splitlines() if "django__django-12262" in l)
+    line = next(row for row in text.splitlines() if "django__django-12262" in row)
 
     assert "247,361" in line
     # The last seat's own spend must no longer stand in for the role.
@@ -1060,3 +1060,146 @@ def test_the_alpha_readable_set_is_the_team_arms_and_nothing_else() -> None:
     assert "self-collaboration" in DELIVERY_READABLE_ARMS
     assert "self-collaboration" not in cell_report.ALPHA_READABLE_ARMS
     assert "single" not in cell_report.ALPHA_READABLE_ARMS
+
+
+# --- E13: the censoring indicator only one arm wrote ------------------------ #
+#
+# ``wall_clock_timeout`` is written by ``gen_prediction_agent.py:154`` and by
+# nothing else, so only the single arm carries a censoring indicator -- and the
+# wall-clock window is *shorter* on the other two, which take the remainder
+# after container start (arm_registry.py:476-516). The two arms most likely to
+# be censored were the two with no indicator.
+#
+# The rule does not have to be invented. ``gen_prediction_agent.py:102`` builds
+# that flag as ``status == "stopped" and reason == "timeout"``, and
+# ``gen_prediction_workflow.py:184-203`` writes the very same pair into
+# ``run_summary`` on the workflow and team arms from ``runtime_status`` /
+# ``runtime_reason`` (``runtime_reason == "timeout"`` is a value that path
+# knows, :300). So one rule reads all three arms off the block they share.
+
+
+def _timeout_cell(tmp_path: Path) -> Path:
+    """One team run cut off at the wall and two that were not."""
+    cell = tmp_path / "team-timeout"
+    for instance in (
+        "matplotlib__matplotlib-24870",
+        "django__django-13933",
+        # Stopped, but by its budget: a stop is not a censoring.
+        "sympy__sympy-15875",
+    ):
+        runtime = _runtime_dir(cell, "team", instance)
+        _seat_file(runtime, "agent_0_analyst-aa.json", aid=0, role="analyst",
+                   tokens=500_000, assistant=20)
+    _write_metrics(cell, [
+        {
+            "instance_id": "matplotlib__matplotlib-24870",
+            "run_summary": {"status": "stopped", "reason": "timeout",
+                            "tokens": 3_603_791, "steps": 49,
+                            "duration_s": 5401.108277289197},
+        },
+        {
+            "instance_id": "django__django-13933",
+            "run_summary": {"status": "completed", "reason": None,
+                            "tokens": 552_798, "steps": 48, "duration_s": 1902.95},
+        },
+        {
+            "instance_id": "sympy__sympy-15875",
+            "run_summary": {"status": "stopped", "reason": PRECHECK_TERMINAL,
+                            "tokens": 1_951_372, "steps": 56, "duration_s": 3200.0},
+        },
+    ])
+    return cell
+
+
+def test_a_timeout_is_read_off_the_block_every_arm_writes(tmp_path: Path) -> None:
+    rows = cell_report.run_rows(_timeout_cell(tmp_path), "team")
+    by_id = {r.instance_id: r for r in rows}
+
+    assert by_id["matplotlib__matplotlib-24870"].timeout_censored is True
+    assert by_id["matplotlib__matplotlib-24870"].duration_s == pytest.approx(5401.108, abs=1e-3)
+    assert by_id["django__django-13933"].timeout_censored is False
+    # A run stopped by its budget is stopped, not censored.
+    assert by_id["sympy__sympy-15875"].timeout_censored is False
+
+
+def test_the_summary_counts_censored_runs_and_names_them(tmp_path: Path) -> None:
+    rows = cell_report.run_rows(_timeout_cell(tmp_path), "team")
+    summary = cell_report.summarize(rows, None, team=True, timeout_s=5400)
+
+    assert summary["timeout_censored"] == ["matplotlib__matplotlib-24870"]
+    assert summary["timeout_censored_count"] == 1
+    assert summary["timeout_s"] == 5400
+    # The independent derived check: duration against the wall the spec set.
+    assert summary["duration_at_or_over_timeout"] == ["matplotlib__matplotlib-24870"]
+    assert summary["timeout_rule_disagreement"] == []
+    assert summary["duration_max_s"] == pytest.approx(5401.108, abs=1e-3)
+
+
+def test_the_two_timeout_readings_are_reported_when_they_disagree(
+    tmp_path: Path,
+) -> None:
+    """The recorded reason and the clock have to be able to contradict.
+
+    A run that ran past the wall without the reason, or carries the reason
+    having stopped well inside it, means one of the two is not measuring what
+    it is read as -- which is the whole reason this column is derived on the
+    two arms that do not write one.
+    """
+    cell = tmp_path / "team-disagree"
+    _write_metrics(cell, [{
+        "instance_id": "django__django-13933",
+        "run_summary": {"status": "completed", "reason": None,
+                        "tokens": 10, "steps": 1, "duration_s": 5600.0},
+    }])
+    rows = cell_report.run_rows(cell, "team")
+    summary = cell_report.summarize(rows, None, team=True, timeout_s=5400)
+
+    assert summary["timeout_censored"] == []
+    assert summary["duration_at_or_over_timeout"] == ["django__django-13933"]
+    assert summary["timeout_rule_disagreement"] == ["django__django-13933"]
+    assert "timeout readings disagree" in cell_report.render(rows, summary, [])
+
+
+def test_the_censored_count_is_printed_on_every_arm(tmp_path: Path) -> None:
+    """A JSON key nobody prints is not a column, and all three arms need it."""
+    rows = cell_report.run_rows(_timeout_cell(tmp_path), "team")
+    team_text = cell_report.render(
+        rows, cell_report.summarize(rows, None, team=True, timeout_s=5400), []
+    )
+    single_text = cell_report.render(
+        rows, cell_report.summarize(rows, None, team=False, timeout_s=5400), []
+    )
+
+    for text in (team_text, single_text):
+        assert "cut off at the wall clock: 1/3" in text
+        assert "matplotlib__matplotlib-24870" in text.split("cut off at the wall clock", 1)[1]
+        # The wall itself, so the count can be checked against the spec.
+        assert "5400" in text
+
+
+def test_the_single_arm_s_own_flag_agrees_with_the_derived_one(tmp_path: Path) -> None:
+    """Positive control on the arm that does write an indicator.
+
+    ``wall_clock_timeout`` is the driver's own answer for the single arm. The
+    derived rule has to reproduce it, or it is not the same quantity being
+    extended to the other two arms.
+    """
+    cell = tmp_path / "single-timeout"
+    seat_dir = cell / "agent-9c1f"
+    _seat_file(seat_dir, "agent.json", aid=-1, role="swe_agent",
+               tokens=900_000, assistant=30, terminal="")
+    _write_metrics(cell, [{
+        "instance_id": "django__django-13933",
+        "trajectory_path": f"/home/someone/single/{seat_dir.name}",
+        "wall_clock_timeout": True,
+        "run_summary": {"status": "stopped", "reason": "timeout",
+                        "tokens": 900_000, "steps": 30, "duration_s": 5402.0},
+    }])
+
+    rows = cell_report.run_rows(cell, "single")
+
+    assert rows[0].timeout_censored is True
+    assert rows[0].timeout_recorded is True
+    assert cell_report.summarize(rows, None, team=False, timeout_s=5400)[
+        "timeout_flag_disagreement"
+    ] == []

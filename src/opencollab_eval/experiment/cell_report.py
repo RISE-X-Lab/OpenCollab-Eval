@@ -178,6 +178,16 @@ class RunRow:
     #: is not the same as an arm that declared some and walked none.
     edges_walked: int | None = None
     edges_declared: int | None = None
+    #: How long the run took, from the block every arm writes.
+    duration_s: float | None = None
+    #: Whether the wall clock ended this run, by the rule the single arm's own
+    #: ``wall_clock_timeout`` is built from -- so the two arms that never wrote
+    #: that flag, and whose wall-clock window is the *shorter* one, get the
+    #: same indicator from the same evidence.
+    timeout_censored: bool = False
+    #: The single arm's own flag where the record carries it, kept beside the
+    #: derived reading rather than replacing it, so the two can be compared.
+    timeout_recorded: bool | None = None
     patch_chars: int | None = None
     card: str | None = None
     team_config: str | None = None
@@ -441,6 +451,25 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
                 budget_exhausted=budget_exhausted,
                 edges_walked=edges_walked,
                 edges_declared=edges_declared,
+                duration_s=(
+                    float(summary["duration_s"])
+                    if isinstance(summary.get("duration_s"), int | float)
+                    else None
+                ),
+                # ``gen_prediction_agent.py:102`` verbatim. The workflow and
+                # team paths write the same pair into ``run_summary`` from
+                # ``runtime_status``/``runtime_reason``
+                # (gen_prediction_workflow.py:184-203), so this one rule reads
+                # all three arms off the block they share.
+                timeout_censored=(
+                    str(summary.get("status") or "") == "stopped"
+                    and str(summary.get("reason") or "") == "timeout"
+                ),
+                timeout_recorded=(
+                    bool(record["wall_clock_timeout"])
+                    if "wall_clock_timeout" in record
+                    else None
+                ),
                 patch_chars=record.get("submitted_patch_chars"),
                 card=(record.get("role_prompt_sha256") or {}).get("analyst"),
                 team_config=record.get("team_config_path"),
@@ -551,11 +580,64 @@ def summarize(
         # a non-empty list means one of the two is wrong and neither column
         # can be quoted until it is settled.
         "seat_spend_disagrees": [r.instance_id for r in rows if r.seat_spend_agrees is False],
+        # Censoring, on every arm, by the rule the single arm's driver uses.
+        "timeout_s": timeout_s,
+        "timeout_censored": [r.instance_id for r in rows if r.timeout_censored],
+        "timeout_censored_count": sum(1 for r in rows if r.timeout_censored),
+        # The second, independent reading: the clock against the wall the spec
+        # set. It is derived and it is here to contradict the first one -- a
+        # run past the wall without the reason, or the reason without the run
+        # time, means one of the two is not measuring what it is read as.
+        "duration_at_or_over_timeout": [
+            r.instance_id
+            for r in rows
+            if timeout_s is not None and r.duration_s is not None and r.duration_s >= timeout_s
+        ],
+        "timeout_rule_disagreement": (
+            [
+                r.instance_id
+                for r in rows
+                if r.duration_s is not None
+                and r.timeout_censored != (r.duration_s >= timeout_s)
+            ]
+            if timeout_s is not None
+            else []
+        ),
+        # And against the single arm's own flag, where the record has one.
+        "timeout_flag_disagreement": [
+            r.instance_id
+            for r in rows
+            if r.timeout_recorded is not None and r.timeout_recorded != r.timeout_censored
+        ],
+        "duration_max_s": max((r.duration_s for r in rows if r.duration_s is not None), default=None),
         "analyst_cards": cards,
         "card_matches_expected": (cards == [expected_card]) if expected_card else None,
         "team_configs": sorted({r.team_config for r in rows if r.team_config}),
         "tokens_total": sum(r.tokens for r in rows),
     }
+
+
+def _timeout_lines(summary: dict[str, Any], lines: list[str]) -> None:
+    """The censoring count, worded and derived identically on every arm.
+
+    Printed unconditionally, including when it is zero: "no run was cut off"
+    and "this report does not say" were the same blank line on two of the three
+    arms, and they are the two whose wall-clock window is the shorter one.
+    """
+    wall = summary.get("timeout_s")
+    lines.append(
+        f"cut off at the wall clock: {summary['timeout_censored_count']}/{summary['runs']}"
+        + (f" (spec timeout {wall:g}s)" if isinstance(wall, int | float) else " (no spec timeout given)")
+        + f" -> {summary['timeout_censored']}"
+    )
+    disagree = summary.get("timeout_rule_disagreement") or []
+    flag_disagree = summary.get("timeout_flag_disagreement") or []
+    if disagree or flag_disagree:
+        lines.append(
+            "  !! timeout readings disagree"
+            + (f" -- run time vs recorded reason: {disagree}" if disagree else "")
+            + (f" -- recorded flag vs reason: {flag_disagree}" if flag_disagree else "")
+        )
 
 
 def _headroom(row: RunRow) -> str:
@@ -612,12 +694,13 @@ def _cap_lines(summary: dict[str, Any], lines: list[str]) -> None:
 
 def _render_single(rows: list[RunRow], summary: dict[str, Any], lines: list[str]) -> str:
     lines.append(
-        f"{'#':>3} {'instance_id':40s} {'status':10s} {'tok':>9s} {'steps':>5s} {'patch':>6s} {'left':>9s} cap"
+        f"{'#':>3} {'instance_id':40s} {'status':10s} {'tok':>9s} {'steps':>5s} {'patch':>6s} "
+        f"{'left':>9s} {'cut':>3s} cap"
     )
     for i, r in enumerate(rows, 1):
         lines.append(
             f"{i:>3} {r.instance_id:40s} {r.status:10s} {r.tokens:>9,} {r.steps:>5} {str(r.patch_chars or 0):>6} "
-            f"{_headroom(r):>9s} "
+            f"{_headroom(r):>9s} {'CUT' if r.timeout_censored else '-':>3s} "
             + (','.join(r.cap_hit) or '-')
             + ("" if r.valid else "   [excluded: " + (r.reason or r.status) + "]")
         )
@@ -629,6 +712,7 @@ def _render_single(rows: list[RunRow], summary: dict[str, Any], lines: list[str]
     )
     lines.append(f"statuses: {summary['statuses']}")
     _cap_lines(summary, lines)
+    _timeout_lines(summary, lines)
     lines.append(f"tokens total: {summary['tokens_total']:,}")
     return "\n".join(lines)
 
@@ -652,7 +736,7 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
         return _render_single(rows, summary, lines)
     header = (
         f"{'#':>3} {'instance_id':40s} {'status':10s} {'tok':>9s} {'analyst':>9s} {'coder':>8s} {'tester':>8s} "
-        f"{'left':>9s} {'deleg':5s} {'msgA':>4s} {'aWr':>3s} {'snap':>4s} cap"
+        f"{'left':>9s} {'cut':>3s} {'deleg':5s} {'msgA':>4s} {'aWr':>3s} {'snap':>4s} cap"
     )
     lines.append(header)
     for i, r in enumerate(rows, 1):
@@ -662,7 +746,7 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
         a_writes = sum(s.writes for s in r.seats.values() if s.role == "analyst")
         lines.append(
             f"{i:>3} {r.instance_id:40s} {r.status:10s} {r.tokens:>9,} {a_tok:>9,} {c_tok:>8,} {t_tok:>8,} "
-            f"{_headroom(r):>9s} "
+            f"{_headroom(r):>9s} {'CUT' if r.timeout_censored else '-':>3s} "
             f"{'YES' if r.delivered else 'no':5s} {sum(s.msg_agent for s in r.seats.values()):>4} {a_writes:>3} "
             f"{r.tree_snapshots:>4} {','.join(r.cap_hit) or '-'}"
             + ("" if r.valid else "   [excluded: " + (r.reason or r.status) + "]")
@@ -702,6 +786,7 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
         )
     lines.append(f"statuses: {summary['statuses']}")
     _cap_lines(summary, lines)
+    _timeout_lines(summary, lines)
     lines.append(
         f"analyst card digests: {summary['analyst_cards']}"
         + (
