@@ -1,0 +1,22 @@
+# Dynamic Workflow (the driver's self-collaboration arm) on the replication
+# subset, rows 1-50: first DW runs at this pin, so `launch --limit 3` is the
+# paid pre-flight; theta's numerator on the subset and the subset's first DW
+# repetition. Same pins as the ladder. The frame-wide DW run follows.
+name: dw-subset50
+host: gpu3
+arm: self-collaboration
+suite: subset-50
+rows: {start: 1, stop: 50}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 8
+model_env: configs/.env
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: b00f256995e321e910a988908842705177d4c0f4
+  opencollab_eval: 315a06c3df10dcde3d0218a3a3b6a6b157ee12b1
+note: "Dynamic Workflow on subset-50 rows 1-50; first DW runs at this pin (limit 3 is the pre-flight); theta on the subset"

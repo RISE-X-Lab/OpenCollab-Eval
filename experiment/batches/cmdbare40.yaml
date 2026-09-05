@@ -1,0 +1,23 @@
+# Ladder rung "bare": the imperative to delegate alone. Same 40 rows and the
+# same pins as cmdprohibit40 and cmdplain30; differs from opt-out by the removed
+# exemption sentence and from plain by the missing framing sentence.
+name: cmdbare40
+host: gpu3
+arm: team
+rung: bare
+cell: cmd-bare
+suite: subset-50
+rows: {start: 1, stop: 40}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: b00f256995e321e910a988908842705177d4c0f4
+  opencollab_eval: 315a06c3df10dcde3d0218a3a3b6a6b157ee12b1
+note: ladder rung bare (imperative alone, no exemption, no framing, no prohibition); statement (a)/(b) do not bind here, it locates the step

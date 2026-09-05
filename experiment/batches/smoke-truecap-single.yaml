@@ -1,0 +1,43 @@
+# Positive control for the reservation fix: a cap that is genuinely too small
+# must still stop the run.
+#
+# Why it exists: "0 false cap hits" is also what a broken estimator that
+# reserves nothing would report. This spec starves the seat -- 200,000 tokens
+# against a measured 28k-56k real prompt per turn -- so a budget stop is the
+# expected outcome. If this run does NOT stop on budget, the fix removed the
+# guard rather than corrected it.
+#
+# The task is subset-50 row 22, django-13933: the one row of the smoke slice
+# that was never capped and completed cheaply in all three arms (dw-subset50
+# 276,943 tokens / 30 steps, single-subset50 457,055 / 27, cmdprimary40
+# 704,711 / 30). A task that needs ~450k on a 2M seat, given 200k, overshoots
+# by a wide margin rather than sitting near the line, which is what makes the
+# post-call branch reachable. Everything else is byte-identical to
+# single-subset50 and to smoke-falsecap-single; only budget_per_seat differs.
+#
+# Pass: the run's terminal reason is verbatim `budget exceeded after model
+# call` (the post-call check, opencollab/application/session_run.py:673-679),
+# which has fired zero times in the whole 310-run corpus. Any other terminal
+# reason -- including a pre-call `budget exhausted before model call` -- fails
+# this control, because only the post-call branch proves a real cap was
+# enforced on real spend rather than on an estimate.
+#
+# PINS ARE PLACEHOLDERS. Fill both before `plan`.
+name: smoke-truecap-single
+host: gpu3
+arm: single
+suite: subset-50
+rows: {start: 22, stop: 22}
+budget_per_seat: 200000
+max_steps: 100
+timeout: 5400
+concurrency: 1
+model_env: configs/.env
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 9175297ed56be6a0377b38d6f5949e07d34d7073
+  opencollab_eval: d0f5766c1542cbbee06c490e829aae8dc11d8505
+note: "positive control: Single with a 200k seat on subset-50 row 22 (django-13933, uncapped and cheap in all three arms); pass only if the terminal reason is 'budget exceeded after model call'"

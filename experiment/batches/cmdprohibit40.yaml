@@ -1,8 +1,10 @@
 # The fuse of the ladder: the positive control (rung cmd-prohibit) on the first
 # 40 rows of the replication subset. Runs before any other rung: if fewer than
 # 27 of 40 valid runs deliver, the ladder's reader is not working and nothing
-# above it is worth paying for. The pins are today's; update both after the
-# W1-W3 changes land, then re-run `plan` and `preflight`.
+# above it is worth paying for. Pins are cmdplain30's on purpose (2026-09-02):
+# every rung of the ladder runs on the same two commits, so a difference between
+# rungs is a difference between cards and nothing else. Do not bump them for
+# W1-W3; those change the DW arm, not a Team card.
 name: cmdprohibit40
 host: gpu3
 arm: team

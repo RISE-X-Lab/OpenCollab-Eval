@@ -1,0 +1,35 @@
+# Smoke test of the reservation fix, Team arm at the ladder's `primary` rung.
+#
+# subset-50 rows 20-23, the same four tasks as the dw and single smoke specs.
+# Rows 20, 21 and 23 had their analyst seat stopped by the pre-call reservation
+# in cmdprimary40; row 22 completed and is the negative control. Card, rung,
+# budget, steps, timeout, model file and the three switches are byte-identical
+# to cmdprimary40.
+#
+# Delivery is NOT a pass criterion on this arm: whether the model delegates is
+# the quantity the paper measures, so a run that finishes its analyst turn and
+# still does not delegate is a valid result, not a failure. Note that row 21
+# (matplotlib-25775) already delivered in cmdprimary40 despite its cap, so on
+# this arm only rows 20 and 23 have "no delivery" as their prior state.
+#
+# PINS ARE PLACEHOLDERS. Fill both before `plan`.
+name: smoke-falsecap-team-primary
+host: gpu3
+arm: team
+rung: primary
+cell: facts-v2
+suite: subset-50
+rows: {start: 20, stop: 23}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 4
+model_env: configs/.env
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 9175297ed56be6a0377b38d6f5949e07d34d7073
+  opencollab_eval: d0f5766c1542cbbee06c490e829aae8dc11d8505
+note: "smoke test of the reservation fix: Team primary (facts-v2) on subset-50 rows 20-23; rows 20/21/23 had the analyst seat stopped by the pre-call reservation in cmdprimary40, row 22 is the uncapped negative control; same card and settings as cmdprimary40, new pins"
