@@ -1,0 +1,53 @@
+# The luna leg of the ladder: the same five rungs, run against a second model
+# family so the alpha step can be read off an instrument that is not the one it
+# was found on. Not a repetition of cmdprohibit40 and never merged with it --
+# a different gateway is a different instrument, so this batch is reported on
+# its own.
+#
+# Four fields differ from cmdprohibit40.yaml; every other field is byte-identical.
+#
+#   1. name        cmdprohibit40-r2 -> luna-cmdprohibit40. A new gateway is a new
+#      batch identity: `--out-dir` is the spec's `name` (batch_spec.py:379), so
+#      a shared name would resume the deepseek out-dir and plan zero runs.
+#   2. model_env   configs/.env -> configs/.env.luna. The luna file names
+#      OPENCOLLAB_MODEL=gpt-5.6-luna at http://47.100.35.241/v1; the deepseek
+#      file names deepseek-v4-flash at the same host's port 56477.
+#   3. concurrency 6 -> 8. Capacity only; `concurrency` is excluded from
+#      `spec_digest`, so it is not part of what this batch is.
+#   4. note        rewritten to say which leg this is.
+#
+# The three switches are unchanged, and OPENCOLLAB_REASONING_EFFORT stays "max":
+# probed against the luna gateway on 2026-09-05, which accepted it and returned
+# completion_tokens_details.reasoning_tokens.
+#
+# Two facts to carry into the analysis of this leg:
+#   - luna reports no cache counters. Its usage object has prompt/completion/
+#     total tokens and nothing else, and OpenCollab reads a missing counter as
+#     zero rather than as an error, so cache_read_tokens is 0 on every call here
+#     by construction. Report total tokens for this leg; do not read its zeros
+#     as cache misses.
+#   - gpt-5.6-luna matches the reasoning-model pattern at openai_provider.py:52
+#     and carries no entry in _EXACT_MODEL_CAPABILITIES, so its requests omit
+#     temperature and top_p, spend max_completion_tokens rather than max_tokens,
+#     and its context window is unknown, which leaves history compaction on the
+#     fixed defaults instead of a window-derived trigger.
+name: luna-cmdprohibit40
+host: gpu3
+arm: team
+rung: prohibit
+cell: cmd-prohibit
+suite: subset-50
+rows: {start: 1, stop: 40}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 8
+model_env: configs/.env.luna
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 9175297ed56be6a0377b38d6f5949e07d34d7073
+  opencollab_eval: 898d5807305edbac17917ad18a2dafc85dae7487
+note: luna gateway, gpt-5.6-luna, generalization leg of the ladder; total tokens only, no cache accounting
