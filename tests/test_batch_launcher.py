@@ -5,8 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
+import shlex
 import subprocess
 import textwrap
+import time
 from pathlib import Path
 
 import pytest
@@ -577,6 +580,78 @@ def test_decoy_carries_the_unbracketed_pattern() -> None:
 
     plain = BATCH_PROCESS_PATTERN.replace("[o]", "o")
     assert plain in batch_remote.DECOY_MARK
+
+
+# --- the hand check the README tells a human to run --------------------------------------
+#
+# The README's fallback for "pgrep cannot be trusted here" was
+# ``grep -F '[o]pencollab_eval...'``. Under ``-F`` the brackets are literal, so
+# the pattern matches no driver that ever ran -- only the grep's own command
+# line, which contains it. Run on gpu3 on 2026-09-05 it returned lines and
+# none of them was the driver. A check that answers with the wrong process is
+# worse than one that errors: the caller reads "something is running" or
+# "nothing is running" off a list that never looked.
+
+BATCHES_README = EXPERIMENT / "batches" / "README.md"
+PLANTED_ARGV0 = "python -m opencollab_eval.generation.gen_prediction_batch --out-dir planted-positive-control"
+
+
+def _readme_process_checks() -> list[str]:
+    """Every inline command in the batches README that greps ``ps`` output."""
+    text = BATCHES_README.read_text(encoding="utf-8")
+    return [
+        code.replace("\\|", "|")  # the table escapes the pipe
+        for code in re.findall(r"`([^`\n]+)`", text)
+        if code.startswith("ps -eo") and "gen_prediction_batch" in code
+    ]
+
+
+@pytest.fixture
+def planted_driver():
+    """A process whose command line is a driver's, and nothing else about it."""
+    proc = subprocess.Popen(["bash", "-c", f"exec -a {shlex.quote(PLANTED_ARGV0)} sleep 30"])
+    for _ in range(100):
+        listing = subprocess.run(["ps", "-eo", "pid,args"], capture_output=True, text=True, check=True).stdout
+        if any(str(proc.pid) == line.split(maxsplit=1)[0] and "gen_prediction_batch" in line
+               for line in listing.splitlines()[1:]):
+            break
+        time.sleep(0.05)
+    else:  # pragma: no cover - the control itself failed
+        proc.kill()
+        pytest.fail("the positive control never appeared in ps; the test below would prove nothing")
+    yield proc
+    proc.kill()
+    proc.wait()
+
+
+def test_the_readme_hand_check_sees_a_planted_driver(planted_driver) -> None:
+    checks = _readme_process_checks()
+    assert checks, f"{BATCHES_README} documents no hand check for a running driver"
+    for command in checks:
+        out = subprocess.run(["bash", "-c", command], capture_output=True, text=True, check=False).stdout
+        found = [line for line in out.splitlines() if str(planted_driver.pid) == line.split(maxsplit=1)[0]]
+        assert found, f"{command!r} did not see the planted driver; it returned {out!r}"
+        # And it must not answer with itself: the grep's own command line
+        # carries the pattern, which is the whole reason the bracket is there.
+        # Matched on the command, not on the whole line: any shell that happens
+        # to hold the pattern in an argument is ambient noise, the grep process
+        # is the defect.
+        itself = [
+            line for line in out.splitlines()
+            if len(line.split(maxsplit=2)) == 3 and line.split(maxsplit=2)[2].split()[0].endswith("grep")
+        ]
+        assert not itself, f"{command!r} matched its own grep ({itself}); its answers are not process counts"
+
+
+def test_the_readme_hand_check_carries_its_own_positive_control() -> None:
+    """The instruction to plant a process before believing a "nothing running".
+
+    An empty result has two causes and the reader cannot tell them apart, so
+    the README has to say how to make the check hit something it should hit.
+    """
+    text = BATCHES_README.read_text(encoding="utf-8")
+    row = next(line for line in text.splitlines() if "sees a planted process" in line)
+    assert "exec -a" in row and "sleep" in row, row
 
 
 @pytest.fixture
