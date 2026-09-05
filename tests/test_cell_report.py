@@ -485,3 +485,148 @@ def test_the_workflow_arms_do_not_take_the_single_arm_s_path(dw_cell: Path) -> N
     rows = _rows(dw_cell)
     assert len(rows["django__django-12262"].seats) == 4
     assert rows["astropy__astropy-12907"].cap_hit_precheck == ["0"]
+
+
+# --- E9: a seat file that was never found, said out loud -------------------- #
+
+
+def test_a_single_run_whose_seat_is_not_found_is_named_in_the_summary(
+    tmp_path: Path,
+) -> None:
+    """The gap E8's fix left: the lookup can still come back empty in silence.
+
+    ``_single_agent_files`` returns ``[]`` on four ordinary conditions -- the
+    record has no ``trajectory_path``, the directory was renamed on the way to
+    this machine, the batch predates the autosave, or ``agent.json`` is absent
+    -- and every one of them reads as "zero seats, no cap, nothing delivered",
+    which is what a run that sailed through its budget also reads as. So the
+    row has to say which of the two it is.
+    """
+    cell = tmp_path / "single-halffound"
+    found_dir = cell / "agent-222f65639eb74cc0b1b6020e14714fa7"
+    _seat_file(found_dir, "agent.json", aid=-1, role="swe_agent",
+               tokens=378_313, assistant=21, terminal="submitted")
+    _write_metrics(cell, [
+        {
+            "instance_id": "django__django-13933",
+            "trajectory_path": f"/home/someone/single/{found_dir.name}",
+            "run_summary": {"status": "completed", "tokens": 378_313, "steps": 21},
+        },
+        {
+            # Same shape, but the directory the record names is not here.
+            "instance_id": "sympy__sympy-24213",
+            "trajectory_path": "/home/someone/single/agent-4e0f8c1b",
+            "run_summary": {"status": "completed", "tokens": 511_004, "steps": 30},
+        },
+    ])
+
+    rows = cell_report.run_rows(cell, "single")
+    by_id = {r.instance_id: r for r in rows}
+    summary = cell_report.summarize(rows, None, team=False)
+
+    assert by_id["django__django-13933"].seat_snapshot_found is True
+    assert by_id["sympy__sympy-24213"].seat_snapshot_found is False
+    assert summary["seat_snapshot_found"] == 1
+    assert summary["seat_snapshot_missing"] == ["sympy__sympy-24213"]
+    assert summary["seat_snapshot_missing_count"] == 1
+    # The cap columns are unchanged: the rule that fills them is not touched,
+    # so the run with no file is in none of them -- which is exactly why the
+    # count above has to exist.
+    assert summary["cap_hit"] == []
+    assert summary["cap_hit_precheck"] == []
+
+
+def test_every_seat_found_leaves_the_missing_list_empty(tmp_path: Path) -> None:
+    """Positive control: the flag is not simply always false."""
+    rows = cell_report.run_rows(_single_cell(tmp_path), "single")
+    summary = cell_report.summarize(rows, None, team=False)
+
+    assert all(r.seat_snapshot_found for r in rows)
+    assert summary["seat_snapshot_found"] == 2
+    assert summary["seat_snapshot_missing"] == []
+    assert summary["seat_snapshot_missing_count"] == 0
+
+
+def test_the_report_warns_in_the_text_when_a_seat_is_missing(tmp_path: Path) -> None:
+    """A JSON key nobody prints is not visible; the run report is what is read."""
+    cell = tmp_path / "single-warn"
+    _write_metrics(cell, [{
+        "instance_id": "sympy__sympy-24213",
+        "run_summary": {"status": "completed", "tokens": 511_004, "steps": 30},
+    }])
+    rows = cell_report.run_rows(cell, "single")
+    text = cell_report.render(rows, cell_report.summarize(rows, None, team=False), [])
+
+    assert "SEAT SNAPSHOT NOT FOUND" in text
+    assert "1/1" in text
+    assert "sympy__sympy-24213" in text.split("SEAT SNAPSHOT NOT FOUND", 1)[1]
+
+
+def test_the_report_stays_quiet_when_every_seat_is_found(tmp_path: Path) -> None:
+    """The mutation control for the warning: it must not print unconditionally."""
+    rows = cell_report.run_rows(_single_cell(tmp_path), "single")
+    text = cell_report.render(rows, cell_report.summarize(rows, None, team=False), [])
+
+    assert "SEAT SNAPSHOT NOT FOUND" not in text
+
+
+def test_a_workflow_run_with_no_seat_files_is_named_too(dw_cell: Path) -> None:
+    """The same silence exists on the arms that glob, so the flag covers them.
+
+    A DW run whose ``trajectories`` tree was never written -- the run died
+    before the first seat, or the tree was not pulled -- reads as zero seats,
+    ``delivered=False`` and no cap, which is a reading the arm's own healthy
+    runs can also produce.
+    """
+    _write_metrics(dw_cell, [
+        {
+            "instance_id": "django__django-12262",
+            "run_summary": {"status": "completed", "tokens": 452_053, "steps": 43},
+        },
+        {
+            "instance_id": "pydata__xarray-4075",
+            "run_summary": {"status": "stopped", "reason": "container gone",
+                            "tokens": 0, "steps": 0},
+        },
+    ])
+
+    rows = cell_report.run_rows(dw_cell, "self-collaboration")
+    by_id = {r.instance_id: r for r in rows}
+    summary = cell_report.summarize(rows, None, team=True)
+    text = cell_report.render(rows, summary, [])
+
+    assert by_id["django__django-12262"].seat_snapshot_found is True
+    assert by_id["pydata__xarray-4075"].seat_snapshot_found is False
+    assert summary["seat_snapshot_missing"] == ["pydata__xarray-4075"]
+    assert "SEAT SNAPSHOT NOT FOUND" in text
+    # Delivery, the cap columns and the denominator are untouched.
+    assert summary["delivered"] == 1
+    assert summary["valid"] == 2
+    assert summary["cap_hit"] == []
+
+
+def test_best_of_n_keeps_its_seats_out_of_the_batch_root(tmp_path: Path) -> None:
+    """Why the batch-root set stays at one arm.
+
+    ``arm_registry.ARMS`` also lists ``best-of-n``, and it runs the single
+    arm's own ``run_agent``, so "it is a one-seat arm, add it" is the obvious
+    move. Its generator does not pass the batch root: each candidate is given
+    ``candidate_run_directory``, nested four levels below the batch root and
+    keyed by instance and candidate index, so ``<cell>/<basename>`` resolves to
+    nothing. And ``combine_metrics`` copies the *selected* candidate's record,
+    so the run's ``trajectory_path`` names one of N seats -- reading it would
+    under-count this arm's cap stops rather than fix them.
+    """
+    from opencollab_eval.generation.gen_prediction_best_of_n import (
+        candidate_run_directory,
+    )
+
+    root = tmp_path / "bon-cell"
+    candidate = candidate_run_directory(root, "django__django-13933", 1)
+
+    assert candidate.parent != root
+    assert candidate.relative_to(root).parts == (
+        ".opencollab", "best-of-n", "django__django-13933", "candidate-1",
+    )
+    assert "best-of-n" not in cell_report.SEAT_AT_BATCH_ROOT_ARMS
+    assert cell_report.SEAT_AT_BATCH_ROOT_ARMS == frozenset({"single"})

@@ -11,7 +11,11 @@ tester seat that spent tokens *and* produced at least one assistant turn.
 
 The denominator is stated, not assumed: runs that failed before any model step
 are listed and excluded; a run stopped at its seat cap is valid. The interval
-is Clopper-Pearson, so 0 of n and n of n get honest bounds.
+is Clopper-Pearson, so 0 of n and n of n get honest bounds. So is the reading
+itself: a run whose seat snapshot was never located reads as zero seats, no
+delivery and no cap -- the same as a run that spent nothing and stopped at
+nothing -- so every row carries ``seat_snapshot_found`` and the report names
+the runs where the counts below are floors rather than facts.
 """
 
 from __future__ import annotations
@@ -100,6 +104,12 @@ class RunRow:
     patch_chars: int | None = None
     card: str | None = None
     team_config: str | None = None
+    #: Whether this run's seat snapshot was located at all. Every quantity read
+    #: off a seat -- ``seats``, ``delivered`` and all three cap columns -- is
+    #: zero or empty both when the run's seats did nothing and when the files
+    #: holding what they did were never opened, and the two readings are
+    #: identical in the report. This says which one it is.
+    seat_snapshot_found: bool = False
 
     @property
     def valid(self) -> bool:
@@ -251,6 +261,7 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
                 patch_chars=record.get("submitted_patch_chars"),
                 card=(record.get("role_prompt_sha256") or {}).get("analyst"),
                 team_config=record.get("team_config_path"),
+                seat_snapshot_found=bool(seats),
             )
             rows.append(row)
     return rows
@@ -293,6 +304,12 @@ def summarize(rows: list[RunRow], expected_card: str | None = None, team: bool =
         # a run whose outcome the budget chose.
         "cap_hit_precheck": [r.instance_id for r in rows if r.cap_hit_precheck],
         "cap_hit_postcall": [r.instance_id for r in rows if r.cap_hit_postcall],
+        # Not a quantity about the runs: a quantity about the reading of them.
+        # Every count below that comes off a seat has this as its denominator,
+        # so a cell where it is short of ``runs`` has counts that are floors.
+        "seat_snapshot_found": sum(1 for r in rows if r.seat_snapshot_found),
+        "seat_snapshot_missing": [r.instance_id for r in rows if not r.seat_snapshot_found],
+        "seat_snapshot_missing_count": sum(1 for r in rows if not r.seat_snapshot_found),
         "analyst_cards": cards,
         "card_matches_expected": (cards == [expected_card]) if expected_card else None,
         "team_configs": sorted({r.team_config for r in rows if r.team_config}),
@@ -339,6 +356,17 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
     lines = []
     if missing:
         lines.append(f"MISSING FROM METRICS ({len(missing)}): {missing}")
+    # Printed above everything else, because it is a statement about whether
+    # the rest of the report can be read at face value: on these runs the seat
+    # columns and all three cap counts are zero for want of a file, which is
+    # spelt exactly like a run that never hit its cap.
+    if summary.get("seat_snapshot_missing"):
+        lines.append(
+            "!! SEAT SNAPSHOT NOT FOUND for"
+            f" {summary['seat_snapshot_missing_count']}/{summary['runs']} runs"
+            " -- their seat, delivery and cap columns are zero for want of a file,"
+            f" not for want of a stop: {summary['seat_snapshot_missing']}"
+        )
     if not summary.get("team", True):
         return _render_single(rows, summary, lines)
     header = (
