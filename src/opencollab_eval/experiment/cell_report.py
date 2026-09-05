@@ -29,6 +29,16 @@ from typing import Any
 
 WRITE_TOOLS = frozenset({"apply_patch", "file_write"})
 DELEGATE_ROLES = frozenset({"coder", "tester"})
+#: Arms whose delivery rate is alpha: the rate at which an agent *chose* to
+#: hand work on. Deliberately narrower than ``DELIVERY_READABLE_ARMS``, which
+#: is the wider and different question "does this arm seat more than one role
+#: worth counting" -- a scripted workflow does, and its seats are read as they
+#: were. What it does not have is a choice: ``self_collaboration.py`` sequences
+#: its edges, so a delivery rate there measures the script, and reporting one
+#: put a Clopper-Pearson interval on the wrong quantity (0.750 (0.194, 0.994)
+#: on the smoke DW batch). What varies on that arm is whether a scripted edge
+#: carried anything, which the arm records per run as ``edges_walked``.
+ALPHA_READABLE_ARMS = frozenset({"team"})
 # A run the model never touched: no denominator for anything.
 INVALID_STATUSES = frozenset({"failed", "error"})
 # The runtime stamps every seat of a scripted workflow with one generic role,
@@ -162,6 +172,12 @@ class RunRow:
     #: writes ``status="budget_exhausted"`` when its own ``exhausted(seat)``
     #: check stops a round.
     budget_exhausted: bool = False
+    #: Declared topology, and how much of it carried anything. Recorded by the
+    #: arm that scripts the topology (``workflow_result.edges_walked`` against
+    #: ``edges_declared``); ``None`` on the arms that declare no edges, which
+    #: is not the same as an arm that declared some and walked none.
+    edges_walked: int | None = None
+    edges_declared: int | None = None
     patch_chars: int | None = None
     card: str | None = None
     team_config: str | None = None
@@ -357,6 +373,8 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
             recorded_spend = None
             seat_cap = None
             budget_exhausted = False
+            edges_walked: int | None = None
+            edges_declared: int | None = None
             if isinstance(workflow_result, dict):
                 raw_spend = workflow_result.get("seat_spend")
                 if isinstance(raw_spend, dict):
@@ -366,6 +384,11 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
                 # writes the verdict below when a round stops for want of one.
                 seat_cap = _int_or_none(workflow_result.get("seat_cap"))
                 budget_exhausted = workflow_result.get("status") == "budget_exhausted"
+                declared = workflow_result.get("edges_declared")
+                if isinstance(declared, list):
+                    edges_declared = len(declared)
+                    walked = workflow_result.get("edges_walked")
+                    edges_walked = len(walked) if isinstance(walked, list) else 0
             if seat_cap is None:
                 # Otherwise the allowance is the largest ceiling any of this
                 # run's sessions was handed: a session that resumes a partly
@@ -416,6 +439,8 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
                 role_headroom=role_headroom,
                 seat_headroom_min=min(role_headroom.values()) if role_headroom else None,
                 budget_exhausted=budget_exhausted,
+                edges_walked=edges_walked,
+                edges_declared=edges_declared,
                 patch_chars=record.get("submitted_patch_chars"),
                 card=(record.get("role_prompt_sha256") or {}).get("analyst"),
                 team_config=record.get("team_config_path"),
@@ -437,13 +462,27 @@ def order_rows(rows: list[RunRow], order_csv: str | Path | None) -> tuple[list[R
     return ordered + extra, [i for i in wanted if i not in index]
 
 
-def summarize(rows: list[RunRow], expected_card: str | None = None, team: bool = True) -> dict[str, Any]:
-    """Counts over the cell. Delivery and its interval exist only for a team arm:
-    a single agent has nobody to deliver to, so the quantity is undefined there,
-    not zero."""
+def summarize(
+    rows: list[RunRow],
+    expected_card: str | None = None,
+    team: bool = True,
+    alpha_readable: bool | None = None,
+    timeout_s: float | None = None,
+) -> dict[str, Any]:
+    """Counts over the cell.
+
+    ``team`` says whether the cell has seats to lay out; ``alpha_readable``
+    says whether its delivery rate is alpha. They are different questions and
+    used to be one flag. A single agent has nobody to deliver to, so alpha is
+    undefined there, not zero -- and a scripted workflow *has* the seats but
+    makes no choice, so its delivery rate measures its script. It defaults to
+    ``team`` so every existing caller reads exactly as before.
+    """
     valid = [r for r in rows if r.valid]
-    delivered = sum(1 for r in valid if r.delivered) if team else None
-    low, high = clopper_pearson(delivered, len(valid)) if team else (None, None)
+    if alpha_readable is None:
+        alpha_readable = team
+    delivered = sum(1 for r in valid if r.delivered) if alpha_readable else None
+    low, high = clopper_pearson(delivered, len(valid)) if alpha_readable else (None, None)
     cards = sorted({r.card for r in rows if r.card})
     statuses: dict[str, int] = {}
     for r in rows:
@@ -453,9 +492,28 @@ def summarize(rows: list[RunRow], expected_card: str | None = None, team: bool =
         "valid": len(valid),
         "invalid": [r.instance_id for r in rows if not r.valid],
         "team": team,
+        "alpha_readable": alpha_readable,
         "delivered": delivered,
-        "alpha": (delivered / len(valid)) if (team and valid) else None,
-        "ci95": [low, high] if team else None,
+        "alpha": (delivered / len(valid)) if (alpha_readable and valid) else None,
+        "ci95": [low, high] if alpha_readable else None,
+        # What the arm that scripts its topology reports instead: not a rate at
+        # which an agent chose, a count of how much of a fixed topology carried
+        # anything.
+        "edges_walked": sum(r.edges_walked or 0 for r in rows if r.edges_declared),
+        "edges_declared": sum(r.edges_declared or 0 for r in rows),
+        "edges_walked_rate": (
+            sum(r.edges_walked or 0 for r in rows if r.edges_declared)
+            / sum(r.edges_declared or 0 for r in rows)
+            if sum(r.edges_declared or 0 for r in rows)
+            else None
+        ),
+        # Averaging hides the shape: one run walking none of its six and six
+        # runs each missing one are the same rate.
+        "edges_unwalked": [
+            [r.instance_id, r.edges_walked or 0, r.edges_declared]
+            for r in rows
+            if r.edges_declared and (r.edges_walked or 0) < r.edges_declared
+        ],
         "statuses": statuses,
         "cap_hit": [r.instance_id for r in rows if r.cap_hit],
         # The two halves of ``cap_hit``, kept apart because only the second is
@@ -609,14 +667,39 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
             f"{r.tree_snapshots:>4} {','.join(r.cap_hit) or '-'}"
             + ("" if r.valid else "   [excluded: " + (r.reason or r.status) + "]")
         )
-    lo, hi = summary["ci95"]
-    alpha = summary["alpha"]
     lines.append("")
-    lines.append(
-        f"delivered {summary['delivered']}/{summary['valid']} valid"
-        + (f" = {alpha:.3f}   Clopper-Pearson 95% [{lo:.3f}, {hi:.3f}]" if alpha is not None else "")
-        + (f"   excluded {len(summary['invalid'])}: {summary['invalid']}" if summary["invalid"] else "")
+    excluded = (
+        f"   excluded {len(summary['invalid'])}: {summary['invalid']}" if summary["invalid"] else ""
     )
+    if summary.get("alpha_readable", summary.get("team", True)):
+        lo, hi = summary["ci95"]
+        alpha = summary["alpha"]
+        lines.append(
+            f"delivered {summary['delivered']}/{summary['valid']} valid"
+            + (
+                f" = {alpha:.3f}   Clopper-Pearson 95% [{lo:.3f}, {hi:.3f}]"
+                if alpha is not None
+                else ""
+            )
+            + excluded
+        )
+    else:
+        # No delivery rate on this arm and no interval: its edges are written
+        # by a script, so what the runs vary is whether each fixed edge carried
+        # anything. That is what gets reported, with the runs that fell short
+        # named rather than averaged away.
+        rate = summary["edges_walked_rate"]
+        lines.append(
+            f"edges walked {summary['edges_walked']}/{summary['edges_declared']}"
+            + (f" = {rate:.3f}" if rate is not None else "")
+            + "   (the topology is script-fixed on this arm, so there is no"
+            " delegation rate to read)"
+            + excluded
+        )
+        lines.append(
+            f"  runs short of their declared edges: {len(summary['edges_unwalked'])}"
+            f" -> {[[i, f'{w}/{d}'] for i, w, d in summary['edges_unwalked']]}"
+        )
     lines.append(f"statuses: {summary['statuses']}")
     _cap_lines(summary, lines)
     lines.append(

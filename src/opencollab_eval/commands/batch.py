@@ -366,12 +366,20 @@ def cmd_report(batch: Batch, _remote: Ssh | None, scanner: str | None, json_out:
             ).get("analyst")
         except ValueError:
             expected = None
-    # Delivery is read on every arm that seats more than one role, which is a
-    # wider set than the arms that take a team file: a DW run has an analyst,
-    # a coder and a tester too, and reporting it with ``team=False`` printed
-    # null delivery, null alpha and null CI for the arm the ladder compares.
+    # Two different questions, and they used to be one flag. ``team`` is "does
+    # this arm seat more than one role worth laying out", which is wider than
+    # the arms that take a team file: a DW run has an analyst, a coder and a
+    # tester too, and reporting it with ``team=False`` printed null delivery,
+    # null alpha and null CI for the arm the ladder compares.
+    # ``alpha_readable`` is the narrower "is this arm's delivery rate alpha",
+    # which the scripted workflow fails: its edges are sequenced by
+    # ``self_collaboration.py``, so a rate there measures the script.
     summary = cell_report.summarize(
-        ordered, expected, team=batch.spec.arm in DELIVERY_READABLE_ARMS
+        ordered,
+        expected,
+        team=batch.spec.arm in DELIVERY_READABLE_ARMS,
+        alpha_readable=batch.spec.arm in cell_report.ALPHA_READABLE_ARMS,
+        timeout_s=batch.spec.timeout,
     )
     label = f"{batch.spec.arm}/{batch.spec.cell}" + (f" (rung {batch.spec.rung})" if batch.spec.rung else "")
     print(f"report for {batch.spec.name} ({label}) from {batch.data_dir}")

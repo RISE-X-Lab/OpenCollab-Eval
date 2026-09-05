@@ -944,3 +944,119 @@ def test_an_arm_with_no_seat_cap_field_gets_its_allowance_from_the_event_log(
     assert summary["seat_cap_unknown"] == []
     assert summary["seat_headroom_min"] == [["astropy__astropy-14369", 18_026]]
     assert "18,026" in cell_report.render(rows, summary, [])
+
+
+# --- E12: the arm whose edges are written by a script ----------------------- #
+#
+# ``batch.py`` chose the delivery reading by ``arm in DELIVERY_READABLE_ARMS``,
+# which holds the scripted workflow, so a DW cell reported
+# ``alpha = 0.750 (0.194, 0.994)``. That number is not the paper's alpha. Alpha
+# is the rate at which an agent *chose* to hand work on; the workflow's edges
+# are sequenced by ``self_collaboration.py``, so what its runs vary is whether
+# a scripted edge carried anything -- recorded, per run, as ``edges_walked``
+# against ``edges_declared``. Reporting a choice rate for an arm that makes no
+# choice put a confidence interval on the wrong quantity.
+
+
+@pytest.fixture
+def dw_edges_cell(tmp_path: Path) -> Path:
+    """Three DW runs at 6/6, 5/6 and 0/6 declared edges, as the smoke batch ran."""
+    cell = tmp_path / "dw-edges"
+    declared = ["analyst->coder", "analyst->tester", "coder->tester",
+                "coder->analyst", "tester->coder", "tester->analyst"]
+    records = []
+    for instance, walked in (
+        ("astropy__astropy-14369", declared),
+        ("django__django-13933", declared[:4] + ["tester->analyst"]),
+        ("matplotlib__matplotlib-25775", []),
+    ):
+        runtime = _runtime_dir(cell, "self-collaboration", instance)
+        _seat_file(runtime, "000_analyst.json", aid=0, role="workflow_agent",
+                   tokens=200_000, assistant=10)
+        if walked:
+            _seat_file(runtime, "001_coder-r1.json", aid=1, role="workflow_agent",
+                       tokens=60_000, assistant=6)
+        records.append({
+            "instance_id": instance,
+            "run_summary": {"status": "completed", "reason": None,
+                            "tokens": 260_000, "steps": 16, "duration_s": 900.0},
+            "workflow_result": {"status": "done", "seat_cap": 2_000_000,
+                                "edges_declared": declared, "edges_walked": walked},
+        })
+    _write_metrics(cell, records)
+    return cell
+
+
+def test_the_scripted_arm_reports_no_alpha(dw_edges_cell: Path) -> None:
+    rows = cell_report.run_rows(dw_edges_cell, "self-collaboration")
+    summary = cell_report.summarize(rows, None, team=True, alpha_readable=False)
+
+    assert summary["alpha_readable"] is False
+    assert summary["alpha"] is None
+    assert summary["delivered"] is None
+    assert summary["ci95"] is None
+    # The seat columns the arm does have are untouched.
+    assert summary["valid"] == 3
+    assert summary["tokens_total"] == 780_000
+
+
+def test_the_scripted_arm_reports_the_edges_it_walked(dw_edges_cell: Path) -> None:
+    rows = cell_report.run_rows(dw_edges_cell, "self-collaboration")
+    by_id = {r.instance_id: r for r in rows}
+    summary = cell_report.summarize(rows, None, team=True, alpha_readable=False)
+
+    assert by_id["astropy__astropy-14369"].edges_walked == 6
+    assert by_id["astropy__astropy-14369"].edges_declared == 6
+    assert by_id["django__django-13933"].edges_walked == 5
+    assert by_id["matplotlib__matplotlib-25775"].edges_walked == 0
+    assert summary["edges_walked"] == 11
+    assert summary["edges_declared"] == 18
+    assert summary["edges_walked_rate"] == pytest.approx(11 / 18)
+    assert summary["edges_unwalked"] == [
+        ["django__django-13933", 5, 6],
+        ["matplotlib__matplotlib-25775", 0, 6],
+    ]
+
+
+def test_the_scripted_arm_s_report_prints_edges_where_alpha_was(
+    dw_edges_cell: Path,
+) -> None:
+    rows = cell_report.run_rows(dw_edges_cell, "self-collaboration")
+    summary = cell_report.summarize(rows, None, team=True, alpha_readable=False)
+    text = cell_report.render(rows, summary, [])
+
+    assert "edges walked 11/18" in text
+    assert "Clopper-Pearson" not in text
+    assert "delivered" not in text
+    # And the run that walked none of its six is named, not just averaged in.
+    assert "matplotlib__matplotlib-25775" in text.split("edges walked", 1)[1]
+
+
+def test_a_team_cell_still_reports_alpha(dw_edges_cell: Path) -> None:
+    """The mutation control: the change is which arms, not the quantity."""
+    rows = cell_report.run_rows(dw_edges_cell, "self-collaboration")
+    summary = cell_report.summarize(rows, None, team=True)
+    text = cell_report.render(rows, summary, [])
+
+    assert summary["alpha_readable"] is True
+    assert summary["alpha"] == pytest.approx(2 / 3)
+    assert summary["ci95"] is not None
+    assert "Clopper-Pearson" in text
+
+
+def test_the_alpha_readable_set_is_the_team_arms_and_nothing_else() -> None:
+    """Where the choice is made, so widening it again is a visible edit.
+
+    ``DELIVERY_READABLE_ARMS`` stays as it is -- a DW run does have seats worth
+    counting, which is what that set is for -- and the narrower question "did
+    an agent choose to hand work on" gets its own set.
+    """
+    from opencollab_eval.generation.gen_prediction_batch import (
+        DELIVERY_READABLE_ARMS,
+        TEAM_ARMS,
+    )
+
+    assert cell_report.ALPHA_READABLE_ARMS == TEAM_ARMS
+    assert "self-collaboration" in DELIVERY_READABLE_ARMS
+    assert "self-collaboration" not in cell_report.ALPHA_READABLE_ARMS
+    assert "single" not in cell_report.ALPHA_READABLE_ARMS
