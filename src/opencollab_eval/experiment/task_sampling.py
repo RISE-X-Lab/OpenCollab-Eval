@@ -245,3 +245,18 @@ def draw_ordered_list(
     strata = Counter(head_strata)
     strata.update(tail_strata)
     return SuiteDraw(tuple(ordered), dict(allocation), dict(strata))
+
+
+def order_frame(rows: Sequence[FrameRow], *, seed: int, namespace: str = "frame") -> tuple[str, ...]:
+    """Every row of the frame in one seeded order, no cap and no strata.
+
+    The frame-wide arms run the frame whole, so nothing is drawn; what the
+    order buys is that any prefix of it is a random subsample, which is what
+    lets an arm stopped early keep its task-level pairing with the arms that
+    ran further. The namespace keeps this order independent of the suite and
+    subset draws under the same seed.
+    """
+    ids = [row.instance_id for row in rows]
+    if len(set(ids)) != len(ids):
+        raise ValueError("the frame repeats an instance id")
+    return tuple(sorted(ids, key=lambda instance_id: _rank_key(f"{namespace}-order", seed, instance_id)))

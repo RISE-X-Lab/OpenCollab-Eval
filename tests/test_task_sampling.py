@@ -16,6 +16,7 @@ from opencollab_eval.experiment.task_sampling import (
     allocate_by_largest_remainder,
     capped_repository_shares,
     draw_ordered_list,
+    order_frame,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -228,3 +229,55 @@ def test_growing_the_subset_never_moves_a_row_that_was_already_run() -> None:
     thirty = draw_ordered_list(suite, seed=20260901, head_size=30, total_size=30, namespace="subset").ordered
     fifty = draw_ordered_list(suite, seed=20260901, head_size=30, total_size=50, namespace="subset").ordered
     assert fifty[:30] == thirty
+
+
+def test_the_frame_order_is_a_seeded_permutation_of_the_whole_frame() -> None:
+    frame = _synthetic_frame()
+    first = order_frame(frame, seed=20260901)
+    assert first == order_frame(frame, seed=20260901)
+    assert sorted(first) == sorted(row.instance_id for row in frame)
+    assert first != order_frame(frame, seed=20260902)
+    assert first != tuple(row.instance_id for row in frame)
+    assert first != draw_ordered_list(frame, seed=20260901, head_size=10, total_size=20).ordered[:20]
+
+
+def test_the_frame_order_script_skips_an_absent_image_and_reproduces_itself(tmp_path: Path) -> None:
+    frame = _synthetic_frame()[:40]
+    frame_path = tmp_path / "frame.csv"
+    with frame_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["instance_id", "repo", "difficulty"])
+        writer.writeheader()
+        writer.writerows({"instance_id": r.instance_id, "repo": r.repo, "difficulty": r.difficulty} for r in frame)
+    from opencollab_eval.commands.draw_task_suite import image_reference
+
+    missing = frame[3].instance_id
+    images = tmp_path / "images.txt"
+    images.write_text("\n".join(image_reference(r.instance_id) for r in frame if r.instance_id != missing) + "\n")
+    command = [sys.executable, "-m", "opencollab_eval.commands.order_frame", "--frame", str(frame_path),
+               "--out-dir", str(tmp_path / "out"), "--seed", "7", "--images", str(images), "--images-host", "test"]
+    subprocess.run(command, check=True, cwd=ROOT)
+    first = (tmp_path / "out" / "frame-ordered.csv").read_bytes()
+    manifest = json.loads((tmp_path / "out" / "frame-ordered-manifest.json").read_text())
+    rows = list(csv.DictReader((tmp_path / "out" / "frame-ordered.csv").open(encoding="utf-8", newline="")))
+    assert [r["order"] for r in rows] == [str(i) for i in range(1, len(frame))]
+    assert missing not in {r["instance_id"] for r in rows}
+    assert manifest["preflight"]["skipped"] == [
+        {"instance_id": missing, "image": image_reference(missing), "reason": "image absent on run host"}
+    ]
+    assert manifest["sizes"] == {"frame": len(frame), "ordered": len(frame) - 1, "skipped": 1}
+    assert [r["instance_id"] for r in rows] == [i for i in order_frame(frame, seed=7) if i != missing]
+    subprocess.run(command, check=True, cwd=ROOT)
+    assert (tmp_path / "out" / "frame-ordered.csv").read_bytes() == first
+
+
+def test_the_committed_frame_order_matches_its_manifest() -> None:
+    ordered_path = SUITE / "frame-ordered.csv"
+    manifest = json.loads((SUITE / "frame-ordered-manifest.json").read_text(encoding="utf-8"))
+    from opencollab_eval.commands.draw_task_suite import digest
+
+    assert manifest["frame"]["sha256"] == digest(FRAME)
+    frame = _frame_rows()
+    skipped = {entry["instance_id"] for entry in manifest["preflight"]["skipped"]}
+    rows = list(csv.DictReader(ordered_path.open(encoding="utf-8", newline="")))
+    assert [r["instance_id"] for r in rows] == [i for i in order_frame(frame, seed=manifest["seed"]) if i not in skipped]
+    assert len(rows) == manifest["sizes"]["ordered"] and len(rows) + len(skipped) == len(frame)
