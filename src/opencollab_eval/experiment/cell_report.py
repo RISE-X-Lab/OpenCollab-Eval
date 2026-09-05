@@ -2,7 +2,10 @@
 
 Per run: status and tokens from ``metrics.jsonl``; per seat, tokens, steps,
 assistant turns, ``message_agent`` calls and write-tool calls from the agent
-files the team runtime leaves under ``logs-<arm>/<instance>/trajectories``.
+files the runtime autosaves -- under ``logs-<arm>/<instance>/trajectories`` for
+the team and workflow arms, and at ``<cell>/agent-<hex>/agent.json`` for the
+single arm, where only the run's own ``trajectory_path`` says which directory
+belongs to which instance.
 "Delivered" is the delegation criterion the ladder is read on: a coder or
 tester seat that spent tokens *and* produced at least one assistant turn.
 
@@ -114,14 +117,21 @@ class RunRow:
 _SEAT_FILE_PATTERNS = ("*/*/agent_*.json", "*/*/[0-9][0-9][0-9]_*.json")
 
 
-def _agent_files(cell: Path, arm: str, instance_id: str) -> list[Path]:
-    """Per-seat snapshots for one run, whichever arm wrote them.
+#: Arms whose seat snapshot is not under ``logs-<arm>/<instance>/``. The
+#: single-agent arm autosaves one directory per run at the batch root,
+#: ``<cell>/agent-<hex>/agent.json``, named by a random id that carries no
+#: instance -- so no glob under ``logs-single/<instance>/`` finds it, and every
+#: single run read as zero seats, which is also how a run that never hit its
+#: cap reads. That is why ``cap_hit``, ``cap_hit_precheck`` and
+#: ``cap_hit_postcall`` were empty for the whole arm while the same runs
+#: carried the pre-call reservation verbatim in ``run_summary.reason``.
+SEAT_AT_BATCH_ROOT_ARMS = frozenset({"single"})
+#: What that arm calls its snapshot inside the directory the record names.
+SINGLE_SEAT_FILE = "agent.json"
 
-    The single-agent arm is not readable here: it writes
-    ``<cell>/agent-<hex>/agent.json`` at the batch root, and that path carries
-    no instance id, so a row cannot be attributed to a run from it. Delivery is
-    undefined on that arm anyway (``summarize(team=False)``).
-    """
+
+def _agent_files(cell: Path, arm: str, instance_id: str) -> list[Path]:
+    """Per-seat snapshots for one run, for the arms that write them per instance."""
     root = cell / f"logs-{arm}" / instance_id / "trajectories"
     if not root.exists():
         return []
@@ -129,6 +139,35 @@ def _agent_files(cell: Path, arm: str, instance_id: str) -> list[Path]:
     for pattern in _SEAT_FILE_PATTERNS:
         found.update(root.glob(pattern))
     return sorted(found)
+
+
+def _single_agent_files(cell: Path, record: dict[str, Any]) -> list[Path]:
+    """The one seat of a single-agent run, found through the run's own record.
+
+    Nothing in the directory name ties ``agent-<hex>`` to an instance, so the
+    tie has to come from ``metrics.jsonl``, which records the directory as
+    ``trajectory_path``. That path was written on the machine that ran the
+    batch, so it is resolved by name under the pulled cell first and taken
+    verbatim only when the batch is read where it ran. A record without the
+    field, or whose directory is not here, yields no seat -- the same reading
+    as before, never a wrong one.
+    """
+    raw = str(record.get("trajectory_path") or "")
+    if not raw:
+        return []
+    named = Path(raw)
+    for directory in (cell / named.name, named):
+        snapshot = directory / SINGLE_SEAT_FILE
+        if snapshot.is_file():
+            return [snapshot]
+    return []
+
+
+def _seat_files(cell: Path, arm: str, record: dict[str, Any]) -> list[Path]:
+    """The snapshots of one run, from whichever place its arm keeps them."""
+    if arm in SEAT_AT_BATCH_ROOT_ARMS:
+        return _single_agent_files(cell, record)
+    return _agent_files(cell, arm, record["instance_id"])
 
 
 def _seat_role(path: Path, recorded: str) -> str:
@@ -182,7 +221,7 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
             record = json.loads(line)
             summary = record.get("run_summary") or {}
             seats: dict[str, Seat] = {}
-            for path in _agent_files(cell, arm, record["instance_id"]):
+            for path in _seat_files(cell, arm, record):
                 aid, seat = _read_seat(path)
                 seats[str(aid)] = seat
             # A workflow arm records its seat boundaries inside its own result
@@ -261,11 +300,27 @@ def summarize(rows: list[RunRow], expected_card: str | None = None, team: bool =
     }
 
 
+def _cap_lines(summary: dict[str, Any], lines: list[str]) -> None:
+    """The three cap counts, worded and split identically on every arm."""
+    lines.append(f"seat at budget cap: {len(summary['cap_hit'])}/{summary['runs']} -> {summary['cap_hit']}")
+    lines.append(
+        f"  stopped by the pre-call reservation: {len(summary['cap_hit_precheck'])}"
+        f" -> {summary['cap_hit_precheck']}"
+    )
+    lines.append(
+        f"  overspent after a call returned:     {len(summary['cap_hit_postcall'])}"
+        f" -> {summary['cap_hit_postcall']}"
+    )
+
+
 def _render_single(rows: list[RunRow], summary: dict[str, Any], lines: list[str]) -> str:
-    lines.append(f"{'#':>3} {'instance_id':40s} {'status':10s} {'tok':>9s} {'steps':>5s} {'patch':>6s}")
+    lines.append(
+        f"{'#':>3} {'instance_id':40s} {'status':10s} {'tok':>9s} {'steps':>5s} {'patch':>6s} cap"
+    )
     for i, r in enumerate(rows, 1):
         lines.append(
-            f"{i:>3} {r.instance_id:40s} {r.status:10s} {r.tokens:>9,} {r.steps:>5} {str(r.patch_chars or 0):>6}"
+            f"{i:>3} {r.instance_id:40s} {r.status:10s} {r.tokens:>9,} {r.steps:>5} {str(r.patch_chars or 0):>6} "
+            + (','.join(r.cap_hit) or '-')
             + ("" if r.valid else "   [excluded: " + (r.reason or r.status) + "]")
         )
     lines.append("")
@@ -275,6 +330,7 @@ def _render_single(rows: list[RunRow], summary: dict[str, Any], lines: list[str]
         + "   (delivery is a team-arm quantity; none is computed here)"
     )
     lines.append(f"statuses: {summary['statuses']}")
+    _cap_lines(summary, lines)
     lines.append(f"tokens total: {summary['tokens_total']:,}")
     return "\n".join(lines)
 
@@ -308,15 +364,7 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
         + (f"   excluded {len(summary['invalid'])}: {summary['invalid']}" if summary["invalid"] else "")
     )
     lines.append(f"statuses: {summary['statuses']}")
-    lines.append(f"seat at budget cap: {len(summary['cap_hit'])}/{summary['runs']} -> {summary['cap_hit']}")
-    lines.append(
-        f"  stopped by the pre-call reservation: {len(summary['cap_hit_precheck'])}"
-        f" -> {summary['cap_hit_precheck']}"
-    )
-    lines.append(
-        f"  overspent after a call returned:     {len(summary['cap_hit_postcall'])}"
-        f" -> {summary['cap_hit_postcall']}"
-    )
+    _cap_lines(summary, lines)
     lines.append(
         f"analyst card digests: {summary['analyst_cards']}"
         + (

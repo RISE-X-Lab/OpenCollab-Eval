@@ -336,3 +336,152 @@ def test_a_dw_spec_still_loads_with_no_cell_and_no_rung(tmp_path: Path) -> None:
                     encoding="utf-8")
     with pytest.raises(SpecError, match="takes no 'cell'"):
         load_spec(path)
+
+
+# --- E8: the single arm's seat, which lives nowhere the globs look ---------- #
+
+
+def _single_cell(tmp_path: Path) -> Path:
+    """One capped and one clean single run, laid out the way the driver writes.
+
+    The single arm autosaves ``<cell>/agent-<hex>/agent.json`` at the batch
+    root and leaves only a ``driver.log`` under ``logs-single/<instance>/``, so
+    the instance-to-seat tie exists only in ``metrics.jsonl``
+    (``trajectory_path``). The recorded path is absolute and was written on the
+    host that ran the batch, so the fixture keeps it foreign on purpose.
+    """
+    cell = tmp_path / "single-cell"
+    capped_dir = cell / "agent-5387e0b241a64637a4d4e08fed968cb2"
+    clean_dir = cell / "agent-222f65639eb74cc0b1b6020e14714fa7"
+    _seat_file(capped_dir, "agent.json", aid=-1, role="swe_agent",
+               tokens=1_968_907, assistant=53, terminal=PRECHECK_TERMINAL)
+    _seat_file(clean_dir, "agent.json", aid=-1, role="swe_agent",
+               tokens=378_313, assistant=21, terminal="submitted")
+    for instance in ("matplotlib__matplotlib-25775", "django__django-13933"):
+        (cell / "logs-single" / instance).mkdir(parents=True, exist_ok=True)
+        (cell / "logs-single" / instance / "driver.log").write_text("", encoding="utf-8")
+    _write_metrics(cell, [
+        {
+            "instance_id": "matplotlib__matplotlib-25775",
+            "trajectory_path": f"/home/someone/oc-team-smoke/single/{capped_dir.name}",
+            "run_summary": {"status": "stopped", "reason": PRECHECK_TERMINAL,
+                            "tokens": 1_968_907, "steps": 53},
+            "submitted_patch_chars": 3231,
+        },
+        {
+            "instance_id": "django__django-13933",
+            "trajectory_path": f"/home/someone/oc-team-smoke/single/{clean_dir.name}",
+            "run_summary": {"status": "completed", "reason": None,
+                            "tokens": 378_313, "steps": 21},
+            "submitted_patch_chars": 792,
+        },
+    ])
+    return cell
+
+
+def test_a_single_run_s_seat_file_is_found_through_its_record(tmp_path: Path) -> None:
+    """``logs-single/<instance>/`` holds a log and no trajectories at all.
+
+    Globbing there returned no seats for every single run -- the same reading a
+    run that spent nothing produces -- so nothing said the file had not been
+    opened.
+    """
+    rows = {r.instance_id: r for r in cell_report.run_rows(_single_cell(tmp_path), "single")}
+
+    assert len(rows["matplotlib__matplotlib-25775"].seats) == 1
+    assert rows["matplotlib__matplotlib-25775"].seats["-1"].tokens == 1_968_907
+    assert rows["django__django-13933"].seats["-1"].role == "swe_agent"
+
+
+def test_the_single_arm_splits_its_cap_stops_by_the_same_rule_as_the_others(
+    tmp_path: Path,
+) -> None:
+    """The defect this file's E7 case pinned for DW, on the arm it was missing.
+
+    The capped run carries the pre-call reservation verbatim in its own
+    ``reason``, yet ``cap_hit_precheck`` was empty for the whole arm, so the
+    ladder's capped-alone column read zero on Single and non-zero on DW and
+    Team from the same stop.
+    """
+    cell = _single_cell(tmp_path)
+    rows = cell_report.run_rows(cell, "single")
+    summary = cell_report.summarize(rows, None, team=False)
+    row = {r.instance_id: r for r in rows}["matplotlib__matplotlib-25775"]
+
+    assert row.cap_hit == ["-1"]
+    assert row.cap_hit_precheck == ["-1"]
+    assert row.cap_hit_postcall == []
+    assert summary["cap_hit"] == ["matplotlib__matplotlib-25775"]
+    assert summary["cap_hit_precheck"] == ["matplotlib__matplotlib-25775"]
+    assert summary["cap_hit_postcall"] == []
+    # The clean run is in none of the three, and delivery stays undefined:
+    # a single agent has nobody to deliver to.
+    assert "django__django-13933" not in summary["cap_hit"]
+    assert summary["delivered"] is None
+
+
+def test_a_single_run_that_overspent_after_a_call_lands_in_the_other_column(
+    tmp_path: Path,
+) -> None:
+    """Positive control for the split: the same terminal strings, same sides."""
+    cell = tmp_path / "single-postcall"
+    seat_dir = cell / "agent-030b1adf169e4492ba0981ff53bf56c0"
+    _seat_file(seat_dir, "agent.json", aid=-1, role="swe_agent",
+               tokens=2_000_512, assistant=40, terminal=POSTCALL_TERMINAL)
+    _write_metrics(cell, [{
+        "instance_id": "django__django-13933",
+        "trajectory_path": f"/home/someone/oc-team-smoke/x/{seat_dir.name}",
+        "run_summary": {"status": "stopped", "reason": POSTCALL_TERMINAL,
+                        "tokens": 2_000_512, "steps": 40},
+    }])
+
+    summary = cell_report.summarize(cell_report.run_rows(cell, "single"), None, team=False)
+
+    assert summary["cap_hit_postcall"] == ["django__django-13933"]
+    assert summary["cap_hit_precheck"] == []
+
+
+def test_the_single_report_prints_both_kinds_of_stop(tmp_path: Path) -> None:
+    """The counts have to be visible on the arm too, not only in the JSON."""
+    rows = cell_report.run_rows(_single_cell(tmp_path), "single")
+    text = cell_report.render(rows, cell_report.summarize(rows, None, team=False), [])
+
+    assert "stopped by the pre-call reservation: 1" in text
+    assert "overspent after a call returned:     0" in text
+
+
+def test_a_record_with_no_trajectory_path_yields_no_seat(tmp_path: Path) -> None:
+    """An older batch's rows must degrade to the old reading, never a wrong one.
+
+    Nothing else in the cell names an instance, so a seat guessed by globbing
+    ``agent-*`` would be attributed to whichever run happened to be read first.
+    """
+    cell = tmp_path / "single-old"
+    _seat_file(cell / "agent-deadbeef", "agent.json", aid=-1, role="swe_agent",
+               tokens=999, assistant=3, terminal=PRECHECK_TERMINAL)
+    _write_metrics(cell, [{
+        "instance_id": "django__django-13933",
+        "run_summary": {"status": "completed", "tokens": 999, "steps": 3},
+    }])
+
+    rows = cell_report.run_rows(cell, "single")
+
+    assert rows[0].seats == {}
+    assert rows[0].cap_hit_precheck == []
+
+
+def test_the_workflow_arms_do_not_take_the_single_arm_s_path(dw_cell: Path) -> None:
+    """The mutation control for E8.
+
+    A DW or team record's ``trajectory_path`` names an ``orchestration.jsonl``
+    or ``trajectory.jsonl`` *file* inside ``logs-<arm>/``, not a seat
+    directory, so resolving every arm through the record would drop those arms
+    to zero seats. The dispatch is by arm, and this is the arm that must not
+    move.
+    """
+    assert "self-collaboration" not in cell_report.SEAT_AT_BATCH_ROOT_ARMS
+    assert "team" not in cell_report.SEAT_AT_BATCH_ROOT_ARMS
+
+    rows = _rows(dw_cell)
+    assert len(rows["django__django-12262"].seats) == 4
+    assert rows["astropy__astropy-12907"].cap_hit_precheck == ["0"]
