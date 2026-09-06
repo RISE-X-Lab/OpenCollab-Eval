@@ -1,0 +1,23 @@
+# The second machine batches can run on: an A6000 box reached through the
+# `gpu` ssh alias. Facts about the machine, not choices about an experiment:
+# nothing here should change between two batches that are meant to be
+# compared.
+name: lthpc
+ssh: gpu                                    # ssh alias; a ControlMaster is configured
+workdir: /home/xuzhenhua                    # out-dirs, instance files and logs live here
+python: /home/xuzhenhua/oc-venv/bin/python
+opencollab_dir: OpenCollab                  # git checkout under workdir, detached at the pin
+eval_dir: OpenCollab-Eval                   # same
+proxy: null                                 # this host reaches the model endpoints directly
+docker_disk: /home                          # docker data-root is /home/docker/lib
+# Not gpu3's 10. This filesystem is 44 TB shared by 17 users with no quotas and
+# has been sitting at 99% full; the free space it reports is other people's
+# headroom, not ours, and it can move by hundreds of GB while a batch runs. A
+# 10 GB floor on such a disk would pass right up to the moment a run dies with
+# no space left. 300 GB is roughly one full pull of the frame's task images,
+# i.e. enough room to fail on something other than the disk.
+min_free_gb: 300
+local_batches_dir: /root/oc-batches         # where `pull` puts a batch and `plan` its inputs
+local_opencollab_dir: /root/git/OpenCollab  # card bytes are read at the pin with `git show`
+frame_content: ~/.cache/opencollab-eval/swebench-verified.jsonl
+scanner: /root/git/overleaf/oc-iclr2027/05-experiment/scripts/scan_batch.py
