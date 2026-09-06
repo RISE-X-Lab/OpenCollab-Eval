@@ -1,0 +1,54 @@
+# The ladder's `primary` rung run under a second model, `qwen3.8-flash`.
+#
+# Purpose: the paper's claim about delegation is currently carried by one
+# model. This cell is the same card, the same 40 tasks and the same seat budget
+# under a model that is not deepseek, so an alpha read off it is a fact about
+# the rung rather than about deepseek.
+#
+# Every paid field is copied from `cmdprimary40-r2` verbatim -- arm, rung,
+# cell, suite, rows, budget_per_seat, max_steps, timeout, concurrency and the
+# three switches -- so that the two cells differ in the model and in nothing
+# else that was chosen.
+#
+# Three differences are unavoidable and are declared rather than hidden:
+#
+#   * `host`. cmdprimary40-r2 ran on gpu3; this runs on lthpc, because the
+#     shared gateway gpu3 reaches is occupied by another tenant. A machine is
+#     an instrument: `alpha` (a within-run structural fact) carries across,
+#     `resolve` (which depends on wall clock and on the endpoint) does not.
+#   * `pins.opencollab`. The ladder ran at 9175297e. This runs at be6fa3bf,
+#     which differs from it by one dictionary entry -- `qwen3.8-flash`'s two
+#     measured capability values -- and its tests. The entry is what makes this
+#     model's run defined at all: without it the model silently took the
+#     dataclass defaults, which are a different compaction threshold and a
+#     forced tool choice this endpoint answers with HTTP 400. That the entry is
+#     inert for deepseek is not assumed: `lthpc-smoke2-deepseek-primary`
+#     re-runs two of the ladder's own rows at this pin and is compared, row by
+#     row, against the same rows at 9175297e.
+#   * `model_env`. A second model is a second file, never an edit of the first.
+#
+# One confound no code change removes: deepseek's context window is 1,048,576
+# in the capability table and qwen3.8-flash's is 131,072, so the two models
+# compact their history at different sizes. It is a property of the models, it
+# is declared in the audit table, and it is not something this spec can hold
+# equal.
+name: qwen-cmdprimary40
+host: lthpc
+arm: team
+rung: primary
+cell: facts-v2
+suite: subset-50
+rows: {start: 1, stop: 40}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env.qwen
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: be6fa3bf8cc8d61732bf07e00fe5b721220b82f5
+  opencollab_eval: 898d5807305edbac17917ad18a2dafc85dae7487
+note: "ladder rung primary (facts-v2) under qwen3.8-flash on lthpc, the cross-model leg of the same 40 subset-50 rows as cmdprimary40-r2; every paid field copied from that spec, differing only in host, model_env and the OpenCollab pin (be6fa3bf adds the qwen capability entry, shown inert for deepseek by lthpc-smoke2-deepseek-primary); alpha is comparable across the two cells, resolve is not, because the machine and the endpoint differ"
