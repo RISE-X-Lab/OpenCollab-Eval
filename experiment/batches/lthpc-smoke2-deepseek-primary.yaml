@@ -1,0 +1,49 @@
+# The deepseek half of the paired re-run that checks whether registering
+# `qwen3.8-flash` in OpenCollab's capability table changed anything for the
+# model that was already in it.
+#
+# This is NOT a second attempt at `lthpc-smoke-deepseek-primary` and NOT a
+# search for a better result: the two runs it repeats already completed, and
+# their numbers are kept exactly as they were. It is the control half of an
+# intentional same-task before/after pair. The only field that differs from
+# that batch besides `name` is the OpenCollab pin -- 9175297e before the
+# capability entry, be6fa3bf after it -- plus the two observability variables
+# below. If deepseek's alpha, steps and tokens land in the same place under
+# the new pin, the dictionary entry is inert for the arm the paper reports;
+# if they move, it is not, and the entry has to be re-argued rather than
+# assumed.
+#
+# subset-50 rows 2-3 (sympy-24213, xarray-4075), the same two rows the qwen
+# half runs, so the two models are paired on the task as well.
+#
+# `PYTHONPATH` and `OC_TOOLLOG_DIR` are observability only. The prepended
+# directory holds one file, `sitecustomize.py`, which wraps
+# `openai_provider._build_request_kwargs` to append the tool names and the
+# `tool_choice` of every outgoing request to a log. It records; it changes no
+# request. It is there because the trajectory records only the tool calls the
+# model *returned*, so "message_agent was on the menu" could until now only be
+# inferred. The directory contains no `opencollab` package -- checked on the
+# host: `import opencollab` under exactly this PYTHONPATH still resolves to the
+# pinned checkout. Neither variable is set for the 40-run batch.
+name: lthpc-smoke2-deepseek-primary
+host: lthpc
+arm: team
+rung: primary
+cell: facts-v2
+suite: subset-50
+rows: {start: 2, stop: 3}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 2
+model_env: configs/.env.deepseek
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  PYTHONPATH: "/home/xuzhenhua/oc-toollog:/home/xuzhenhua/OpenCollab:/home/xuzhenhua/OpenCollab-Eval/src"
+  OC_TOOLLOG_DIR: "/home/xuzhenhua/oc-toollog/logs-lthpc-smoke2-deepseek-primary"
+pins:
+  opencollab: be6fa3bf8cc8d61732bf07e00fe5b721220b82f5
+  opencollab_eval: 898d5807305edbac17917ad18a2dafc85dae7487
+note: "paired re-run of lthpc-smoke-deepseek-primary at OpenCollab be6fa3bf (the qwen capability entry) to show the entry is inert for deepseek: same two rows, same arm, same card, same switches, alpha and steps and tokens compared run by run against the 9175297e results; requests are logged for their tool list and tool_choice"
