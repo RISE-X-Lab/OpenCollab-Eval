@@ -20,17 +20,26 @@
 # probed against the luna gateway on 2026-09-05, which accepted it and returned
 # completion_tokens_details.reasoning_tokens.
 #
-# Two facts to carry into the analysis of this leg:
-#   - luna reports no cache counters. Its usage object has prompt/completion/
-#     total tokens and nothing else, and OpenCollab reads a missing counter as
-#     zero rather than as an error, so cache_read_tokens is 0 on every call here
-#     by construction. Report total tokens for this leg; do not read its zeros
-#     as cache misses.
-#   - gpt-5.6-luna matches the reasoning-model pattern at openai_provider.py:52
-#     and carries no entry in _EXACT_MODEL_CAPABILITIES, so its requests omit
-#     temperature and top_p, spend max_completion_tokens rather than max_tokens,
-#     and its context window is unknown, which leaves history compaction on the
-#     fixed defaults instead of a window-derived trigger.
+# Facts measured on the paid pre-flight of luna-cmdprimary40 (2026-09-05,
+# three runs, 591 llm_call events), to carry into the analysis of this leg:
+#   - luna DOES report cache counters under real prompts: cache_read_tokens is
+#     non-zero on 591/591 calls and sums to 94.6% of input tokens (deepseek r2,
+#     three runs: 95.4%). An earlier 220-byte probe saw no counter only because
+#     the prompt was too small for the gateway to report prompt_tokens_details.
+#     cache_creation_tokens is 0 on every call: an Anthropic-shaped field this
+#     gateway never reports, not a measurement of anything.
+#   - reasoning IS captured: 186-195 non-empty reasoning entries per run
+#     (short summary headings, median 78-89 characters, not the full chain of
+#     thought), and completion_tokens_details.reasoning_tokens is present
+#     (43,515 / 79,263 / 54,705 per run).
+#   - metrics.context_window reads None (gpt-5.6-luna has no entry in
+#     _EXACT_MODEL_CAPABILITIES; deepseek reads 1,048,576), so history
+#     compaction runs on the fixed defaults instead of a window-derived
+#     trigger. metrics.temperature records 1.0 on this leg and on the deepseek
+#     leg alike, so it is not a difference between the legs.
+#   - gpt-5.6-luna matches the reasoning-model pattern at openai_provider.py:52,
+#     so its requests omit temperature and top_p and spend
+#     max_completion_tokens rather than max_tokens.
 name: luna-cmdplain31to40
 host: gpu3
 arm: team
@@ -50,4 +59,4 @@ env:
 pins:
   opencollab: 9175297ed56be6a0377b38d6f5949e07d34d7073
   opencollab_eval: 898d5807305edbac17917ad18a2dafc85dae7487
-note: luna gateway, gpt-5.6-luna, generalization leg of the ladder; total tokens only, no cache accounting
+note: "luna gateway, gpt-5.6-luna, generalization leg of the ladder; measured 2026-09-05 on 3 runs: cache_read counted (94.6% of input), reasoning summaries and reasoning_tokens recorded, cache_creation always 0, context_window None, temperature 1.0 as on deepseek"
