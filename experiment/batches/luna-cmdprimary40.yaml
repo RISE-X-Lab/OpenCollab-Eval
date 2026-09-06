@@ -40,6 +40,18 @@
 #   - gpt-5.6-luna matches the reasoning-model pattern at openai_provider.py:52,
 #     so its requests omit temperature and top_p and spend
 #     max_completion_tokens rather than max_tokens.
+#
+# 2026-09-06: this batch ran BEFORE the gateway remediation, and its fields are
+# left exactly as they ran -- concurrency 8, and the default
+# OPENCOLLAB_LLM_MAX_RETRIES=3, because .env.luna did not name that key yet.
+# 27 of its 40 runs failed on gateway 503 and on
+# "APIError: Concurrency limit exceeded for user" (a bare APIError, which the
+# pinned OpenCollab retries zero times), in a window where a co-tenant held 15
+# concurrent workers against the same gpt-5.6-luna endpoint. Those 27 are
+# recovered by the luna-cmdprimary40-retry-<instance>.yaml specs, not by
+# re-launching this one (resume skips any instance already in preds).
+# The remaining luna specs use concurrency 4, and .env.luna now sets
+# OPENCOLLAB_LLM_MAX_RETRIES=8.
 name: luna-cmdprimary40
 host: gpu3
 arm: team

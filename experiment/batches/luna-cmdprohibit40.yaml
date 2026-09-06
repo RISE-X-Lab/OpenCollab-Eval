@@ -40,6 +40,8 @@
 #   - gpt-5.6-luna matches the reasoning-model pattern at openai_provider.py:52,
 #     so its requests omit temperature and top_p and spend
 #     max_completion_tokens rather than max_tokens.
+#
+# 2026-09-06: .env.luna sets OPENCOLLAB_LLM_MAX_RETRIES=8 (transport-level; the first 40 primary runs ran with the default 3); concurrency lowered 8->4 after the gateway's per-user concurrency errors.
 name: luna-cmdprohibit40
 host: gpu3
 arm: team
@@ -50,7 +52,7 @@ rows: {start: 1, stop: 40}
 budget_per_seat: 2000000
 max_steps: 100
 timeout: 5400
-concurrency: 8
+concurrency: 4
 model_env: configs/.env.luna
 env:
   OPENCOLLAB_LLM_STREAM_CHAT: "true"
