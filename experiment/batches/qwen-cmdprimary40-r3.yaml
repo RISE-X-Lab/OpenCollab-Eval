@@ -1,0 +1,56 @@
+# The ladder's `primary` rung run under a second model, `qwen3.8-flash`.
+#
+# Purpose: the paper's claim about delegation is currently carried by one
+# model. This cell is the same card, the same 40 tasks and the same seat budget
+# under a model that is not deepseek, so an alpha read off it is a fact about
+# the rung rather than about deepseek.
+#
+# Every paid field is copied from `cmdprimary40-r2` verbatim -- arm, rung,
+# cell, suite, rows, budget_per_seat, max_steps, timeout, concurrency and the
+# three switches -- so that the two cells differ in the model and in nothing
+# else that was chosen.
+#
+# Three differences are unavoidable and are declared rather than hidden:
+#
+#   * `host`. cmdprimary40-r2 ran on gpu3; this runs on lthpc, because the
+#     shared gateway gpu3 reaches is occupied by another tenant. A machine is
+#     an instrument: `alpha` (a within-run structural fact) carries across,
+#     `resolve` (which depends on wall clock and on the endpoint) does not.
+#   * `pins.opencollab`. The ladder ran at 9175297e. This runs at 70512754,
+#     which differs from it by one dictionary entry -- `qwen3.8-flash`'s two
+#     measured capability values -- and its tests. The entry is what makes this
+#     model's run defined at all: without it the model silently took the
+#     dataclass defaults, which are a different compaction threshold and a
+#     forced tool choice this endpoint answers with HTTP 400. That the entry is
+#     inert for deepseek is not assumed: `lthpc-smoke2-deepseek-primary`
+#     re-runs two of the ladder's own rows at the parent of this pin and is
+#     compared, row by row, against the same rows at 9175297e; 70512754 changes
+#     one integer inside the qwen entry and touches no other row, which the
+#     capability table's tests pin field by field.
+#   * `model_env`. A second model is a second file, never an edit of the first.
+#
+# One confound no code change removes: deepseek's context window is 1,048,576
+# in the capability table and qwen3.8-flash's is 983,616, so the two models
+# compact their history at different sizes (trigger 1,015,576 against 950,616).
+# It is a property of the models, it is declared in the audit table, and it is
+# not something this spec can hold equal.
+name: qwen-cmdprimary40-r3
+host: lthpc
+arm: team
+rung: primary
+cell: facts-v2
+suite: subset-50
+rows: {start: 1, stop: 40}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env.qwen
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: 898d5807305edbac17917ad18a2dafc85dae7487
+note: "ladder rung primary (facts-v2) under qwen3.8-flash on lthpc, the cross-model leg of the same 40 subset-50 rows as cmdprimary40-r2; every paid field copied from that spec, differing only in host, model_env and the OpenCollab pin; alpha is comparable across the two cells, resolve is not, because the machine and the endpoint differ. This batch runs under the corrected context_window=983,616 for qwen3.8-flash (OpenCollab 70512754): 983,616 is the model's maximum input in thinking mode, which is the mode this batch runs in (OPENCOLLAB_REASONING_EFFORT=max); history compaction therefore triggers at 950,616 tokens with a target of 712,962. The previous r2 attempt ran at be6fa3bf, where the same field held 131,072 -- that model's maximum *output* tokens, filed under the input field, which triggered compaction at 98,072, about a tenth of the usable window. That attempt was stopped by hand after 2 of its 40 runs; its out-dir and every byte it wrote are kept, not deleted, overwritten or resumed (host /home/xuzhenhua/qwen-cmdprimary40-r2, local /root/oc-batches/qwen-cmdprimary40-r2), which is why this spec carries a name of its own. The same applies to the earlier hand-stopped qwen-cmdprimary40 (8 of 40 finished, 6 killed in flight, 26 never started; host /home/xuzhenhua/qwen-cmdprimary40, local /root/oc-batches/qwen-cmdprimary40 and .../qwen-cmdprimary40.report.json). No number from either stopped batch was read as a reason to re-run: the reasons are a human interruption and a wrong capability value respectively. Commits: OpenCollab 7051275497d9cfd17b029b4cd0b7659ba7c31846, OpenCollab-Eval 898d5807305edbac17917ad18a2dafc85dae7487."
