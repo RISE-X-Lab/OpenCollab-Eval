@@ -124,6 +124,16 @@ class BatchSpec:
     #: spec is one row, the named instance is one that batch ran, and this
     #: spec's own instance is not.
     replaces: dict[str, str] | None = None
+    #: Replacements merged into *this* cell that are withdrawn, as
+    #: ``{the instance the stand-in stood in for: why the withdrawal}``. A
+    #: replacement is withdrawn when the fault that triggered it turns out not
+    #: to have been the instance's: the drawn instance goes back into every
+    #: denominator and the stand-in's run moves to ``excluded``, where a paid
+    #: run stays findable. It is declared here, on the cell, because the cell's
+    #: report is what it changes -- the replacement merge reads launch records,
+    #: not the stand-in's spec file. Deliberately outside ``spec_identity``: a
+    #: withdrawal changes what a finished batch reports, never what it ran.
+    withdraw_replacements: dict[str, str] = field(default_factory=dict)
     note: str = ""
     source: dict[str, Any] = field(default_factory=dict, compare=False)
 
@@ -258,6 +268,30 @@ def load_spec(path: str | Path) -> BatchSpec:
             )
         replaces = {"batch": replaces["batch"], "instance": replaces["instance"]}
 
+    withdrawn_raw = raw.get("withdraw_replacements")
+    withdraw_replacements: dict[str, str] = {}
+    if withdrawn_raw is not None:
+        if not isinstance(withdrawn_raw, dict) or not withdrawn_raw:
+            raise SpecError(
+                f"{where}: withdraw_replacements must be a non-empty mapping of "
+                "<the instance a stand-in replaced> -> <why the replacement is withdrawn>"
+            )
+        if replaces is not None:
+            raise SpecError(
+                f"{where}: withdraw_replacements belongs on the cell it stands in for, not on the "
+                "stand-in's own spec; the replacement merge reads launch records, so a withdrawal "
+                "written here would be read by nothing"
+            )
+        for instance, why in withdrawn_raw.items():
+            if not isinstance(instance, str) or not instance.strip():
+                raise SpecError(f"{where}: withdraw_replacements keys must be instance ids; got {instance!r}")
+            if not isinstance(why, str) or not why.strip():
+                raise SpecError(
+                    f"{where}: withdraw_replacements[{instance!r}] must say why the replacement is "
+                    "withdrawn; that sentence is what the excluded run's reason prints"
+                )
+        withdraw_replacements = {str(k): str(v).strip() for k, v in sorted(withdrawn_raw.items())}
+
     pins_raw = _require(raw, "pins", dict, where)
     pins: dict[str, str] = {}
     for key in ("opencollab", "opencollab_eval"):
@@ -284,6 +318,7 @@ def load_spec(path: str | Path) -> BatchSpec:
         pins=pins,
         retry_of=retry_of,
         replaces=replaces,
+        withdraw_replacements=withdraw_replacements,
         note=str(raw.get("note") or ""),
         source=raw,
     )

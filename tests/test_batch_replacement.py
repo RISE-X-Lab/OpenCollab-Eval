@@ -288,3 +288,125 @@ def test_a_cell_with_no_replacement_carries_an_empty_ledger(experiment: dict, tm
     assert doc["excluded"] == []
     rows = cell_report.run_rows(root / "t1", "team")
     assert "replaced" not in cell_report.render(rows, cell_report.summarize(rows), [])
+
+
+# --- withdrawing a replacement ----------------------------------------------------
+#
+# A replacement is withdrawn when the fault that triggered it turns out not to
+# have been the instance's. The trigger for ``pylint-dev__pylint-4661`` was
+# "the benchmark's own gold patch does not resolve there"; re-run on a machine
+# with a network the gold patch resolves, so the condition never held and the
+# stand-in never had a reason to be in the cell.
+#
+# Withdrawing is not "the replacement never happened". Both runs were paid for
+# and both stay in the document: the drawn instance goes back into every
+# denominator, and the stand-in's run takes the place in ``excluded`` the drawn
+# run had. That is why this is a spec field the report reads rather than an
+# edit to a report JSON.
+
+WITHDRAWN = "replacement withdrawn: this run stood in for {instance}, which is back in the cell. {why}"
+WHY = "the trigger was the machine, not the instance."
+
+
+def _withdraw(experiment: dict, instance: str, why: str = WHY) -> Path:
+    """Declare on the cell's own spec that a replacement merged into it is withdrawn."""
+    path = Path(experiment["spec"])
+    path.write_text(
+        path.read_text(encoding="utf-8") + f'withdraw_replacements:\n  {instance}: "{why}"\n', encoding="utf-8"
+    )
+    return path
+
+
+def test_withdrawing_a_replacement_does_not_move_the_cell_digest(experiment: dict) -> None:
+    """A withdrawal changes what a finished batch reports, never what it ran.
+
+    ``replaces`` and ``retry_of`` are in the identity because they change which
+    out-dir a launch may resume into. A withdrawal is declared after the paying
+    is over, so writing it into the identity would make every finished batch
+    read as a different batch -- and would make the pre-flight refuse the
+    out-dir that holds the very runs the withdrawal is about.
+    """
+    before = spec_digest(load_spec(experiment["spec"]))
+    spec = load_spec(_withdraw(experiment, "b__b-2"))
+    assert spec.withdraw_replacements == {"b__b-2": WHY}
+    assert "withdraw_replacements" not in spec_identity(spec)
+    assert spec_digest(spec) == before
+
+
+def test_a_withdrawal_must_say_why(experiment: dict) -> None:
+    """The reason is the field's content, not decoration: it is what ``excluded_reason`` prints."""
+    with pytest.raises(SpecError, match="withdraw_replacements"):
+        load_spec(_withdraw(experiment, "b__b-2", why=""))
+
+
+def test_the_stand_in_spec_may_not_declare_its_own_withdrawal(experiment: dict) -> None:
+    """The withdrawal is the cell's decision about its own report, so it lives on the cell.
+
+    A ``withdraw_replacements`` on the stand-in's spec would be read by nothing
+    -- the replacement merge reads the launch record, not this file -- and
+    would silently leave the stand-in in the cell.
+    """
+    path = _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2")
+    path.write_text(
+        path.read_text(encoding="utf-8") + 'withdraw_replacements:\n  b__b-2: "x"\n', encoding="utf-8"
+    )
+    with pytest.raises(SpecError, match="the cell it stands in for"):
+        load_spec(path)
+
+
+def test_report_puts_the_drawn_instance_back_and_excludes_the_stand_in(
+    experiment: dict, tmp_path: Path, capsys
+) -> None:
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    assert _plan(experiment, _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2")) == 0
+    root = tmp_path / "batches"
+    _metrics(root / "t1", [_run("a__a-1", tokens=10), _run("b__b-2", tokens=20)])
+    _metrics(root / "t1x", [_run("c__c-3", tokens=30)])
+    _withdraw(experiment, "b__b-2")
+
+    out = tmp_path / "r.json"
+    assert _report(experiment, Path(experiment["spec"]), out) == 0
+    doc = json.loads(out.read_text(encoding="utf-8"))
+
+    assert [r["instance_id"] for r in doc["runs"]] == ["a__a-1", "b__b-2"]
+    assert doc["summary"]["runs"] == 2 and doc["summary"]["valid"] == 2
+    # Nothing is replaced any more, and the ledger says a replacement was.
+    assert doc["summary"]["replaced"] == [] and doc["summary"]["replaced_count"] == 0
+    assert doc["summary"]["replacements_withdrawn"] == ["b__b-2"]
+    assert doc["summary"]["replacements_withdrawn_count"] == 1
+    assert doc["summary"]["replacements_withdrawn_by"] == [["b__b-2", "c__c-3", "t1x", WHY]]
+    # The paid stand-in run is still in the document, and says why it counts for nothing.
+    assert [e["instance_id"] for e in doc["excluded"]] == ["c__c-3"]
+    assert doc["excluded"][0]["excluded_reason"] == WITHDRAWN.format(instance="b__b-2", why=WHY)
+    assert doc["excluded"][0]["tokens"] == 30
+    assert doc["excluded"][0]["replacement_for"] == "b__b-2"
+    printed = capsys.readouterr().out
+    assert "withdrawn replacement: c__c-3" in printed and "b__b-2" in printed
+
+
+def test_report_refuses_a_withdrawal_that_names_no_merged_replacement(
+    experiment: dict, tmp_path: Path, capsys
+) -> None:
+    """A mistyped instance id has to be an error, not a report that silently kept the stand-in."""
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    assert _plan(experiment, _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2")) == 0
+    root = tmp_path / "batches"
+    _metrics(root / "t1", [_run("a__a-1", tokens=10), _run("b__b-2", tokens=20)])
+    _metrics(root / "t1x", [_run("c__c-3", tokens=30)])
+    _withdraw(experiment, "a__a-1")
+
+    assert _report(experiment, Path(experiment["spec"]), tmp_path / "r.json") == 2
+    assert "a__a-1" in capsys.readouterr().err
+
+
+def test_a_cell_with_no_withdrawal_carries_an_empty_withdrawal_ledger(
+    experiment: dict, tmp_path: Path
+) -> None:
+    """Present on every cell, so 'nothing was withdrawn' and 'this report does not say' differ."""
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    _metrics(tmp_path / "batches" / "t1", [_run("a__a-1"), _run("b__b-2")])
+    out = tmp_path / "r.json"
+    assert _report(experiment, Path(experiment["spec"]), out) == 0
+    summary = json.loads(out.read_text(encoding="utf-8"))["summary"]
+    assert summary["replacements_withdrawn"] == [] and summary["replacements_withdrawn_count"] == 0
+    assert summary["replacements_withdrawn_by"] == []

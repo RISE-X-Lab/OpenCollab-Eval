@@ -576,7 +576,32 @@ def cmd_report(batch: Batch, _remote: Ssh | None, scanner: str | None, json_out:
             stand_ins.append(row)
         replaced[gone] = arrives
         merged_replacements.append(name)
+    # A withdrawal turns the merge around. The fault that triggered the
+    # replacement was not the instance's, so the instance the cell drew goes
+    # back into every denominator and the stand-in's run -- paid for, and now
+    # counted by nothing -- takes the place in ``excluded`` the drawn run had.
+    # Both halves stay in the document: "withdrawn" is not "never happened",
+    # and that is the whole reason this is a spec field the report reads rather
+    # than an edit to a report JSON.
+    withdrawals = batch.spec.withdraw_replacements
+    unknown = sorted(set(withdrawals) - set(replaced))
+    if unknown:
+        raise SpecError(
+            f"withdraw_replacements names {unknown}, which no replacement merged into "
+            f"{batch.spec.name} stands in for (merged: {sorted(replaced) or 'none'}). A withdrawal "
+            "that matches nothing would leave the stand-in in the cell without saying so."
+        )
     excluded: list[tuple[cell_report.RunRow, str]] = []
+    withdrawn: list[tuple[str, str, str, str]] = []
+    if withdrawals:
+        for row in stand_ins:
+            why = withdrawals.get(row.replacement_for)
+            if why is None:
+                continue
+            excluded.append((row, cell_report.WITHDRAWN_REASON.format(instance=row.replacement_for, why=why)))
+            withdrawn.append((row.replacement_for, row.instance_id, row.source_batch, why))
+        stand_ins = [r for r in stand_ins if r.replacement_for not in withdrawals]
+        replaced = {gone: arrives for gone, arrives in replaced.items() if gone not in withdrawals}
     if replaced:
         kept = []
         for row in rows:
@@ -614,6 +639,7 @@ def cmd_report(batch: Batch, _remote: Ssh | None, scanner: str | None, json_out:
         team=batch.spec.arm in DELIVERY_READABLE_ARMS,
         alpha_readable=batch.spec.arm in cell_report.ALPHA_READABLE_ARMS,
         timeout_s=batch.spec.timeout,
+        withdrawn=withdrawn,
     )
     label = f"{batch.spec.arm}/{batch.spec.cell}" + (f" (rung {batch.spec.rung})" if batch.spec.rung else "")
     print(f"report for {batch.spec.name} ({label}) from {batch.data_dir}")
@@ -622,6 +648,8 @@ def cmd_report(batch: Batch, _remote: Ssh | None, scanner: str | None, json_out:
             print(f"  merged retry: {name} from {root / name}")
     for name in merged_replacements:
         print(f"  merged replacement: {name} from {root / name}")
+    for gone, stands_in, source, _why in withdrawn:
+        print(f"  withdrawn replacement: {stands_in} (from {source}) no longer stands in for {gone}")
     pins = batch.spec.pins
     print(f"  pins: opencollab {pins['opencollab'][:12]} opencollab_eval {pins['opencollab_eval'][:12]}")
     print(cell_report.render(ordered, summary, missing))

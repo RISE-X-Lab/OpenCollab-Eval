@@ -47,6 +47,13 @@ INVALID_STATUSES = frozenset({"failed", "error"})
 #: own gold patch does not resolve there -- so the run has no outcome to score,
 #: whatever the agent did. Formatted with the replacement's instance id.
 REPLACED_REASON = "eval environment unusable: replaced by {instance} per ordered draw"
+#: Why a stand-in's run leaves every denominator in its turn. The replacement
+#: that put it in the cell is withdrawn, because the fault that triggered the
+#: replacement was not the instance's -- so the instance it stood in for is
+#: back, and this run, paid for and counted by nothing, is kept here rather
+#: than deleted. Formatted with the instance the run stood in for and the
+#: reason the cell's spec gives for withdrawing.
+WITHDRAWN_REASON = "replacement withdrawn: this run stood in for {instance}, which is back in the cell. {why}"
 # The runtime stamps every seat of a scripted workflow with one generic role,
 # so a workflow seat's identity lives in its file name instead. A team seat
 # carries its own role and is read from the record as before.
@@ -660,8 +667,14 @@ def summarize(
     team: bool = True,
     alpha_readable: bool | None = None,
     timeout_s: float | None = None,
+    withdrawn: Sequence[tuple[str, str, str, str]] = (),
 ) -> dict[str, Any]:
     """Counts over the cell.
+
+    ``withdrawn`` is the withdrawal ledger, ``[(the instance that came back,
+    the stand-in's instance, the stand-in's batch, why), ...]``. It is passed
+    in rather than read off ``rows`` because a withdrawn replacement leaves no
+    row here: its run is in the document's ``excluded``.
 
     ``team`` says whether the cell has seats to lay out; ``alpha_readable``
     says whether its delivery rate is alpha. They are different questions and
@@ -734,6 +747,15 @@ def summarize(
         "replaced": [r.replacement_for for r in rows if r.replacement_for],
         "replaced_count": sum(1 for r in rows if r.replacement_for),
         "replaced_by": [[r.replacement_for, r.instance_id, r.source_batch] for r in rows if r.replacement_for],
+        # The mirror of the ledger above, and the reason both are written: a
+        # withdrawn replacement is not a replacement that never happened. The
+        # stand-in was run and paid for, and its row is in ``excluded``. These
+        # keys are what a later reader has to find the episode by -- and what
+        # tells a cell that never had a replacement apart from one whose
+        # replacement was taken back.
+        "replacements_withdrawn": [gone for gone, _stands_in, _source, _why in withdrawn],
+        "replacements_withdrawn_count": len(withdrawn),
+        "replacements_withdrawn_by": [list(entry) for entry in withdrawn],
         "cap_hit": [r.instance_id for r in rows if r.cap_hit],
         # The two halves of ``cap_hit``, kept apart because only the second is
         # a run whose outcome the budget chose.
@@ -900,6 +922,16 @@ def _replacement_lines(summary: dict[str, Any], lines: list[str]) -> None:
     lines.append("  the replaced runs are in the JSON under 'excluded'; they enter no denominator here")
 
 
+def _withdrawal_lines(summary: dict[str, Any], lines: list[str]) -> None:
+    """The withdrawal ledger, printed only on a cell whose replacement was taken back."""
+    if not summary.get("replacements_withdrawn_by"):
+        return
+    lines.append(f"withdrawn replacements: {summary['replacements_withdrawn_count']}")
+    for gone, stands_in, source, why in summary["replacements_withdrawn_by"]:
+        lines.append(f"  {stands_in} (from {source}) no longer stands in for {gone}: {why}")
+    lines.append("  the stand-in runs are in the JSON under 'excluded'; they enter no denominator here")
+
+
 def _headroom(row: RunRow) -> str:
     """The tightest seat's remaining allowance, or ``?`` when none was recorded.
 
@@ -976,6 +1008,7 @@ def _render_single(rows: list[RunRow], summary: dict[str, Any], lines: list[str]
     _edge_lines(summary, lines)
     _retry_lines(summary, lines)
     _replacement_lines(summary, lines)
+    _withdrawal_lines(summary, lines)
     _cap_lines(summary, lines)
     _timeout_lines(summary, lines)
     lines.append(f"tokens total: {summary['tokens_total']:,}")
@@ -1056,6 +1089,7 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
     lines.append(f"statuses: {summary['statuses']}")
     _retry_lines(summary, lines)
     _replacement_lines(summary, lines)
+    _withdrawal_lines(summary, lines)
     _cap_lines(summary, lines)
     _timeout_lines(summary, lines)
     lines.append(
