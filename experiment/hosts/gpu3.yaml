@@ -13,4 +13,4 @@ min_free_gb: 10
 local_batches_dir: /root/oc-batches         # where `pull` puts a batch and `plan` its inputs
 local_opencollab_dir: /root/git/OpenCollab  # card bytes are read at the pin with `git show`
 frame_content: ~/.cache/opencollab-eval/swebench-verified.jsonl
-scanner: /root/git/overleaf/oc-iclr2027/05-experiment/scripts/scan_batch.py
+scanner: /root/git/OpenCollab-Eval/experiment/analysis/scan_batch.py

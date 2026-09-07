@@ -64,7 +64,7 @@ packages = ["src/opencollab_eval"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 pythonpath = ["."]
-testpaths = ["tests"]
+testpaths = ["tests", "experiment/analysis/tests"]
 
 [tool.ruff]
 line-length = 120
@@ -72,3 +72,14 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+# The scanner and its harness came in from outside this repo on 2026-09-07 and
+# carry 26 cosmetic findings under these rules. They are listed rule by rule
+# rather than excluded wholesale, so anything NOT on this list still fails the
+# file. Reformatting is deliberately deferred: this file decides which run
+# enters which denominator, its 83 tests and 21 mutations are what guard that,
+# and a cosmetic sweep before the data freeze buys nothing and can cost a lot.
+[tool.ruff.lint.per-file-ignores]
+"experiment/analysis/scan_batch.py" = ["E501", "E701", "E702", "E401", "E741", "UP031"]
+"experiment/analysis/think_scan.py" = ["E501", "E701", "E702", "E401", "E741", "I001", "UP031"]
+"experiment/analysis/tests/*.py" = ["E501", "E701", "E702", "F841", "I001"]

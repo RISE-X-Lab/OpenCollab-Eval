@@ -1,0 +1,1 @@
+{"snapshot_version": 1, "aid": 0, "role": "analyst", "model": "deepseek-v4-flash", "session_state": {"used_tokens": 120000, "context_tokens": 1234, "step_count": 11, "phase": "stopped", "terminal_reason": "output truncated: provider reached its generation limit"}, "messages": [{"role": "assistant", "content": "", "reasoning_content": "patch the file"}]}
