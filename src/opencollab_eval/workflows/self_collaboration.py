@@ -392,6 +392,34 @@ class _SeatBudget:
         )
         return result
 
+    async def agent(
+        self,
+        seat: str,
+        prompt: str,
+        *,
+        schema: Any,
+        label: str,
+        tools: list[Any],
+    ) -> Any:
+        """Charge one agent call to one seat.
+
+        Three of this workflow's four calls are issued from inside the repair
+        loop, so writing the call as a lambda there closes over names the loop
+        rebinds -- the shape ruff reports as B023. Nothing is late about it,
+        because ``run`` awaits the call inside the iteration that built it, but
+        that is a property of this class rather than of the call sites, and a
+        reader at a call site cannot see it. Taking the prompt, the label and
+        the tools as arguments moves the closure out of the loop and makes the
+        binding the thing it always was: an argument, evaluated once, where it
+        is written.
+        """
+        return await self.run(
+            seat,
+            lambda budget: self._ctx.agent(
+                prompt, schema=schema, label=label, tools=tools, budget=budget
+            ),
+        )
+
 
 def _analyst_tools() -> list[Any]:
     # The single agent's working set, which is also the team analyst's bundle
@@ -473,15 +501,12 @@ async def _run(
         return payload
 
     await ctx.phase("analyze")
-    brief = await seats.run(
+    brief = await seats.agent(
         "analyst",
-        lambda budget: ctx.agent(
-            ANALYST_PROMPT.format(rules=SHARED_RULES, goal=goal),
-            schema=BRIEF_SCHEMA,
-            label="analyst",
-            tools=_analyst_tools() if analyst_may_write else _reading_analyst_tools(),
-            budget=budget,
-        ),
+        ANALYST_PROMPT.format(rules=SHARED_RULES, goal=goal),
+        schema=BRIEF_SCHEMA,
+        label="analyst",
+        tools=_analyst_tools() if analyst_may_write else _reading_analyst_tools(),
     )
     # The analyst holds the working bundle -- the same seven tools the single
     # agent holds -- so nothing stops it from fixing the task here, before the
@@ -521,24 +546,21 @@ async def _run(
             await ctx.log(f"round {round_no}: the coder's seat is spent")
             status = "budget_exhausted"
             break
-        patch = await seats.run(
+        patch = await seats.agent(
             "coder",
-            lambda budget: ctx.agent(
-                CODER_PROMPT.format(
-                    rules=SHARED_RULES,
-                    goal=goal,
-                    brief=_dump(brief),
-                    implementation_task=implementation_task
-                    or "(the analyst left this empty -- work from the brief)",
-                    findings_block=(
-                        FINDINGS_BLOCK.format(findings=findings) if findings else ""
-                    ),
+            CODER_PROMPT.format(
+                rules=SHARED_RULES,
+                goal=goal,
+                brief=_dump(brief),
+                implementation_task=implementation_task
+                or "(the analyst left this empty -- work from the brief)",
+                findings_block=(
+                    FINDINGS_BLOCK.format(findings=findings) if findings else ""
                 ),
-                schema=CODER_SCHEMA,
-                label=f"coder:r{round_no}",
-                tools=_coder_tools(),
-                budget=budget,
             ),
+            schema=CODER_SCHEMA,
+            label=f"coder:r{round_no}",
+            tools=_coder_tools(),
         )
         coder_summary = walk("coder->tester", _text(patch, "summary_for_tester"))
         coder_report = walk("coder->analyst", _text(patch, "report_for_analyst"))
@@ -550,21 +572,18 @@ async def _run(
             await ctx.log(f"round {round_no}: the tester's seat is spent")
             status = "budget_exhausted"
             break
-        verdict_payload = await seats.run(
+        verdict_payload = await seats.agent(
             "tester",
-            lambda budget: ctx.agent(
-                TESTER_PROMPT.format(
-                    rules=SHARED_RULES,
-                    goal=goal,
-                    verification_task=verification_task
-                    or "(the analyst left this empty -- verify against the task)",
-                    coder_summary=coder_summary or "(the coder reported nothing)",
-                ),
-                schema=VERDICT_SCHEMA,
-                label=f"tester:r{round_no}",
-                tools=_tester_tools(),
-                budget=budget,
+            TESTER_PROMPT.format(
+                rules=SHARED_RULES,
+                goal=goal,
+                verification_task=verification_task
+                or "(the analyst left this empty -- verify against the task)",
+                coder_summary=coder_summary or "(the coder reported nothing)",
             ),
+            schema=VERDICT_SCHEMA,
+            label=f"tester:r{round_no}",
+            tools=_tester_tools(),
         )
         verdict = str(_text(verdict_payload, "verdict") or "FAIL").upper()
         tester_findings = walk(
@@ -590,24 +609,21 @@ async def _run(
             )
             decision_payload = None
         else:
-            decision_payload = await seats.run(
+            decision_payload = await seats.agent(
                 "analyst",
-                lambda budget: ctx.agent(
-                    ADJUDICATE_PROMPT.format(
-                        rules=SHARED_RULES,
-                        goal=goal,
-                        brief=_dump(brief),
-                        coder_report=coder_report or "(the coder reported nothing)",
-                        verdict=verdict,
-                        tester_report=tester_report or "(the tester reported nothing)",
-                        tree_state=_tree_state(source_changed),
-                        rounds_left=rounds_left,
-                    ),
-                    schema=DECISION_SCHEMA,
-                    label=f"analyst:adjudicate:r{round_no}",
-                    tools=_analyst_tools(),
-                    budget=budget,
+                ADJUDICATE_PROMPT.format(
+                    rules=SHARED_RULES,
+                    goal=goal,
+                    brief=_dump(brief),
+                    coder_report=coder_report or "(the coder reported nothing)",
+                    verdict=verdict,
+                    tester_report=tester_report or "(the tester reported nothing)",
+                    tree_state=_tree_state(source_changed),
+                    rounds_left=rounds_left,
                 ),
+                schema=DECISION_SCHEMA,
+                label=f"analyst:adjudicate:r{round_no}",
+                tools=_analyst_tools(),
             )
         decision = str(_text(decision_payload, "decision") or "").upper()
         if decision not in {"ACCEPT", "REVISE", "STOP"}:

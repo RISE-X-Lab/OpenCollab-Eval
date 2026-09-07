@@ -587,3 +587,62 @@ async def test_the_variant_changes_nothing_else_about_the_run():
         c["prompt"] for c in reading.agent_calls
     ]
     assert a["edges_walked"] == b["edges_walked"]
+
+
+# Three of the four agent calls are built inside the repair loop, over names
+# that loop rebinds -- the shape ruff reports as B023, "function definition does
+# not bind loop variable". It is not a late binding here, and the two tests
+# below pin the two halves of why: the seat budget issues the call it was handed
+# instead of storing it, and each round's agent therefore reads that round's
+# instruction rather than a later one's. Neither half is visible at the call
+# sites, and a run in which they stopped holding would not raise -- it would
+# hand the coder the wrong round's task and grade the answer.
+
+
+@pytest.mark.asyncio
+async def test_the_seat_budget_issues_its_call_instead_of_storing_it():
+    seats = _module._SeatBudget(ScriptedCtx([]))
+    issued: list[Any] = []
+
+    async def call(budget):
+        issued.append(budget)
+        return "the reply"
+
+    result = await seats.run("analyst", call)
+
+    assert issued == [None]
+    assert result == "the reply"
+
+
+@pytest.mark.asyncio
+async def test_each_seat_reads_its_own_round_and_never_a_later_one():
+    revise = {
+        "decision": "REVISE",
+        "note": "the clamp is on the wrong side",
+        "implementation_task": "clamp the lower bound instead",
+        "verification_task": "check the first page as well",
+    }
+    ctx = ScriptedCtx(
+        [BRIEF, CODER_OK, TESTER_FAIL, revise, CODER_OK, TESTER_PASS, ACCEPT]
+    )
+
+    await self_collaboration(ctx, {"goal": "fix the pager"})
+
+    by_label = {call["label"]: call for call in ctx.agent_calls}
+    first_coder = by_label["coder:r1"]
+    assert "clamp the upper bound in pager.page()" in first_coder["prompt"]
+    assert "clamp the lower bound instead" not in first_coder["prompt"]
+    assert "test_pager still errors at pager.py:41" not in first_coder["prompt"]
+
+    first_tester = by_label["tester:r1"]
+    assert "the last page must render its final row" in first_tester["prompt"]
+    assert "check the first page as well" not in first_tester["prompt"]
+
+    # The instruction each seat reads is its own, not the other seat's. The
+    # coder is handed the whole brief and so sees both tasks, but the tester is
+    # handed only its own; swapping the two payloads would leave every count in
+    # this file unchanged and show up only here.
+    assert "clamp the upper bound in pager.page()" not in first_tester["prompt"]
+
+    adjudicate = by_label["analyst:adjudicate:r1"]
+    assert "the clamp is off by one in the other direction" in adjudicate["prompt"]
