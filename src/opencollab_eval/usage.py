@@ -26,10 +26,34 @@ MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     "gemini": 1_000_000,
 }
 
+#: Exact windows, one row per model whose family fallback above would be wrong.
+#:
+#: Every value here is a second copy of a number OpenCollab already holds in
+#: ``opencollab.adapters.llm.types``, and the copy is what the recorder writes:
+#: ``gen_prediction_workflow`` puts ``model_context_window(cfg["model"])`` into
+#: ``metrics.jsonl`` as a run's ``context_window``, and the audit table reads
+#: that field as the context the run actually had. The runtime meanwhile
+#: compacts its history against *OpenCollab's* number. Two tables therefore
+#: mean the recorded window and the enforced window can disagree, which is a
+#: recorder that is wrong about its own instrument rather than a harmless
+#: duplicate.
+#:
+#: This layer may not import the other table -- ``opencollab.adapters`` is not
+#: in the public surface Eval is allowed to reach into, which
+#: ``tests/test_boundaries.py`` enforces -- so the copy stays, and
+#: ``tests/test_usage.py::test_recorded_context_window_is_the_one_the_runtime_ran_under``
+#: reads OpenCollab's table out of its source and asserts the two agree for
+#: every model a batch runs under. A drift then turns a test red instead of
+#: quietly changing a recorded number.
 EXACT_MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     "deepseek-v4-flash": 1_048_576,
     "k3": 1_048_576,
     "kimi-for-coding": 262_144,
+    # 983,616 is this model's largest *input* in thinking mode, the mode the
+    # batches run in (``OPENCOLLAB_REASONING_EFFORT=max``). Without this row the
+    # substring rule below answered 131,072 -- the model's maximum *output* --
+    # and wrote it into ``metrics.jsonl`` as the window three batches ran under.
+    "qwen3.8-flash": 983_616,
 }
 
 
