@@ -15,9 +15,19 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TARGET = os.path.join(os.path.dirname(HERE), "scan_batch.py")
+TESTS = os.path.join(HERE, "test_scan_batch.py")
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 PYTEST = "/root/git/OpenCollab/.venv/bin/pytest"
+# A rule that does not live in the scanner is broken in the file it does live
+# in, and the suite that has to notice is that file's own. The evaluator's
+# suite needs `opencollab_eval` importable, which the scanner's environment has
+# no reason to carry, so it runs under the evaluator's.
+EVAL_PYTEST = "/root/git/OpenCollab-Eval/.venv/bin/pytest"
+BATCH_CLI = os.path.join(REPO, "src", "opencollab_eval", "commands", "batch.py")
+BATCH_REPLACEMENT_TESTS = os.path.join(REPO, "tests", "test_batch_replacement.py")
 
-# (name, what it breaks, old fragment, new fragment)
+# (name, what it breaks, old fragment, new fragment) -- and, for a rule outside
+# scan_batch.py, the file to break and the suite that has to go red.
 MUTATIONS = [
     (
         "M1 everything-is-valid",
@@ -143,6 +153,18 @@ MUTATIONS = [
         '        "censored_outcome_by_class": {},',
     ),
     (
+        "M22 a withdrawal that changes no denominator",
+        "the report says a replacement was withdrawn while the cell still "
+        "reports the stand-in and still drops the instance it was drawn for -- "
+        "the ledger and the excluded row look right and every rate is the "
+        "pre-withdrawal one",
+        "        stand_ins = [r for r in stand_ins if r.replacement_for not in withdrawals]\n"
+        "        replaced = {gone: arrives for gone, arrives in replaced.items() if gone not in withdrawals}",
+        "        pass",
+        BATCH_CLI,
+        BATCH_REPLACEMENT_TESTS,
+    ),
+    (
         "M12 re-introduce a hard-coded root",
         "the scanner stops being parameterised",
         "SCHEMA_VERSION = 1",
@@ -151,32 +173,58 @@ MUTATIONS = [
 ]
 
 
-def run_tests() -> tuple[bool, str]:
+def normalised() -> list[tuple[str, str, str, str, str, str]]:
+    """Every mutation as (name, effect, old, new, file to break, suite to watch)."""
+    return [m if len(m) == 6 else (*m, TARGET, TESTS) for m in MUTATIONS]
+
+
+def run_tests(tests: str = TESTS) -> tuple[bool, str]:
+    env = dict(os.environ)
+    if tests == TESTS:
+        pytest = PYTEST
+    else:
+        pytest = EVAL_PYTEST
+        # The checkout this file is in, not whichever one the venv was
+        # installed from: a worktree has to mutate and test its own source.
+        env["PYTHONPATH"] = os.pathsep.join(
+            [os.path.join(REPO, "src"), os.path.join(REPO, "tests"), env.get("PYTHONPATH", "")]
+        ).rstrip(os.pathsep)
     proc = subprocess.run(
-        [PYTEST, os.path.join(HERE, "test_scan_batch.py"), "-q", "--no-header", "-p", "no:cacheprovider"],
-        capture_output=True, text=True, cwd=HERE,
+        [pytest, tests, "-q", "--no-header", "-p", "no:cacheprovider"],
+        capture_output=True, text=True, cwd=os.path.dirname(tests), env=env,
     )
     return proc.returncode == 0, (proc.stdout or "") + (proc.stderr or "")
 
 
-def main() -> int:
-    original = open(TARGET, encoding="utf-8").read()
+def _write(path: str, text: str) -> None:
+    open(path, "w", encoding="utf-8").write(text)
 
-    ok, out = run_tests()
-    if not ok:
-        print("BASELINE IS RED -- fix the suite before mutating\n", out[-3000:])
-        return 2
-    print(f"baseline: GREEN ({out.strip().splitlines()[-1]})\n")
+
+def main() -> int:
+    mutations = normalised()
+    originals = {path: open(path, encoding="utf-8").read() for path in {m[4] for m in mutations}}
+
+    for tests in sorted({m[5] for m in mutations}):
+        ok, out = run_tests(tests)
+        if not ok:
+            print(f"BASELINE IS RED ({os.path.basename(tests)}) -- fix the suite before mutating\n", out[-3000:])
+            return 2
+        print(f"baseline {os.path.basename(tests)}: GREEN ({out.strip().splitlines()[-1]})")
+    print()
 
     survivors = []
     try:
-        for name, effect, old, new in MUTATIONS:
+        for name, effect, old, new, target, tests in mutations:
+            original = originals[target]
             if old not in original:
                 print(f"{name:<44s} SKIPPED (anchor not found -- mutation is stale)")
                 survivors.append(name + " [stale anchor]")
                 continue
-            open(TARGET, "w", encoding="utf-8").write(original.replace(old, new, 1))
-            ok, out = run_tests()
+            _write(target, original.replace(old, new, 1))
+            try:
+                ok, out = run_tests(tests)
+            finally:
+                _write(target, original)
             tail = out.strip().splitlines()[-1] if out.strip() else "?"
             if ok:
                 print(f"{name:<44s} SURVIVED  <-- test gap: {effect}")
@@ -189,10 +237,13 @@ def main() -> int:
                 ]
                 print(f"{name:<44s} KILLED    ({tail}) e.g. {failed[:3]}")
     finally:
-        open(TARGET, "w", encoding="utf-8").write(original)
+        for path, text in originals.items():
+            _write(path, text)
 
-    ok, out = run_tests()
-    print(f"\nrestored: {'GREEN' if ok else 'RED'} ({out.strip().splitlines()[-1]})")
+    print()
+    for tests in sorted({m[5] for m in mutations}):
+        ok, out = run_tests(tests)
+        print(f"restored {os.path.basename(tests)}: {'GREEN' if ok else 'RED'} ({out.strip().splitlines()[-1]})")
     print(f"\n{len(MUTATIONS) - len(survivors)}/{len(MUTATIONS)} mutations killed")
     if survivors:
         print("survivors:", ", ".join(survivors))
