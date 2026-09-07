@@ -43,3 +43,33 @@ pins:
   opencollab: 9175297ed56be6a0377b38d6f5949e07d34d7073
   opencollab_eval: 898d5807305edbac17917ad18a2dafc85dae7487
 note: "ladder rung opt-out (imperative plus a sentence permitting departure); statement (a) binds here, alpha <= 0.2, refuted when the lower 95% bound exceeds 0.2"
+
+# The replacement of pylint-dev__pylint-4661 by scikit-learn__scikit-learn-26323
+# is withdrawn (2026-09-07).
+#
+# It was made under the pre-registered rule for an instance whose evaluation
+# environment does not run, whose trigger is "the benchmark's own gold patch
+# does not resolve there". On 2026-09-05 that is what the harness reported --
+# and it was reporting the machine. 4661's `eval_script` runs `python -m pip
+# install -e .`, its gold patch adds `appdirs>=1.4.0` to `setup.py` and its
+# test patch imports `appdirs`, so scoring that instance has to reach a package
+# index. gpu3 cannot: the gold run there recorded
+# `patch_successfully_applied: False` and `infra_failure_reason:
+# 'network_unreachable'`, and every patch scored zero at the collection stage.
+# Re-scored on lthpc on 2026-09-07 at the same harness version (swebench 5.0.2)
+# the gold patch resolves 1/1. The trigger condition never held: the fault was
+# the scoring machine's, and an instance is not replaced for that.
+#
+# 4661 is therefore back in this cell's denominators and the stand-in is out of
+# them. The stand-in's run is not deleted -- it was paid for, and the reserve
+# row is still the right stand-in should the suite ever be extended -- so it
+# stays in the report JSON under `excluded`, counted by nothing.
+withdraw_replacements:
+  pylint-dev__pylint-4661: >-
+    withdrawn 2026-09-07: the trigger was the scoring machine, not the
+    instance. Scoring this instance needs a package index (its eval_script
+    runs `pip install -e .` and its gold patch adds appdirs>=1.4.0); gpu3
+    could not reach one, so every patch scored zero there, gold included. On
+    lthpc, at the same harness version, the gold patch resolves 1/1 -- so the
+    pre-registered condition, the benchmark's own gold patch does not resolve,
+    never held.
