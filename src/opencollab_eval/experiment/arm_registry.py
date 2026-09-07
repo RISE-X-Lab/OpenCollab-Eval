@@ -337,7 +337,7 @@ _FACTORS: tuple[Factor, ...] = (
             "OpenCollab-Eval/src/opencollab_eval/generation/"
             "gen_prediction_constants.py:92",
             "OpenCollab/configs/team.handoff.experiment.yaml:78",
-            "OpenCollab-Eval/src/opencollab_eval/workflows/self_collaboration.py:404",
+            "OpenCollab-Eval/src/opencollab_eval/workflows/self_collaboration.py:432",
         ),
     ),
     Factor(
