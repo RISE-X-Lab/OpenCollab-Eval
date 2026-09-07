@@ -279,5 +279,8 @@ def test_the_committed_frame_order_matches_its_manifest() -> None:
     frame = _frame_rows()
     skipped = {entry["instance_id"] for entry in manifest["preflight"]["skipped"]}
     rows = list(csv.DictReader(ordered_path.open(encoding="utf-8", newline="")))
-    assert [r["instance_id"] for r in rows] == [i for i in order_frame(frame, seed=manifest["seed"]) if i not in skipped]
+    expected = [
+        i for i in order_frame(frame, seed=manifest["seed"]) if i not in skipped
+    ]
+    assert [r["instance_id"] for r in rows] == expected
     assert len(rows) == manifest["sizes"]["ordered"] and len(rows) + len(skipped) == len(frame)

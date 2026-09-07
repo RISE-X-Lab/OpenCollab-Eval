@@ -67,7 +67,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         for position, instance_id in enumerate(ordered, 1)
     ]
     arguments.out_dir.mkdir(parents=True, exist_ok=True)
-    write_csv(arguments.out_dir / f"{arguments.name}.csv", table, ["order", "instance_id", "repo", "difficulty", "image"])
+    write_csv(
+        arguments.out_dir / f"{arguments.name}.csv",
+        table,
+        ["order", "instance_id", "repo", "difficulty", "image"],
+    )
 
     frame_counts = Counter(row.repo for row in frame)
     ordered_counts = Counter(by_id[instance_id].repo for instance_id in ordered)
