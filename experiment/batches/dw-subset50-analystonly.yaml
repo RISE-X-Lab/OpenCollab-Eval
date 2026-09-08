@@ -1,0 +1,47 @@
+# 2026-09-08. Not a batch of runs. The predictions here were assembled from
+# dw-subset50-r2's own recorded phase-boundary snapshots, and this file exists
+# so that scoring them is addressed the same way scoring a batch is.
+#
+# What it scores. In the self-collaboration arms all three seats share one tree
+# at /testbed and the graded patch is whatever git diff returns at the end, so
+# nothing in the record says which seat wrote it. The workflow records the
+# whole diff text at each phase boundary; the snapshot taken after the analyze
+# phase is the tree as the analyst left it, before the coder was called.
+# `experiment/analysis/analyst_patch_preds.py` writes those snapshots out as a
+# predictions file. Scoring it answers, at the outcome level, what the arm
+# would have scored had the coder and the tester contributed nothing.
+#
+# Why it is worth a scoring session. 48 of the 50 rows are byte-identical to
+# dw-subset50-r2's own submitted patch (`numbers.py`:
+# attribution.graded_is_analyst_patch), so most of this session is a positive
+# control: a harness that returns a different verdict for a byte-identical
+# patch is not measuring what it is being asked to measure. The two rows that
+# differ are the whole open question -- astropy-14096, where the analyst wrote
+# nothing and the coder wrote all 1,367 characters, and sympy-12489, where the
+# coder deleted one comment line -- and both resolved in the batch. Until they
+# are scored the analyst-only rate is a bound, 38/50, not a number.
+#
+# derived: true. Every other command treats this out-dir like a batch's own,
+# which is the point; `launch` refuses it, because launching into it would pay
+# for runs that overwrite the artifact being read. The paid fields below are
+# copied from dw-subset50-r2 so that the record says which batch these
+# predictions came out of; nothing here is ever executed.
+name: dw-subset50-analystonly
+derived: true
+host: lthpc
+arm: self-collaboration
+suite: subset-50
+rows: {start: 1, stop: 50}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 8
+model_env: configs/.env.deepseek
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 25d5a2e5b942792ea59334bf67e273dc3d1408e2
+  opencollab_eval: c80e64a396fa8753e3c40adf7f9499c2b6276c7c
+note: "derived, not run: dw-subset50-r2's analyze-boundary snapshots scored as predictions; 48 of 50 rows are byte-identical to that batch's own patches and serve as the session's positive control"

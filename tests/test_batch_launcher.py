@@ -1086,3 +1086,50 @@ def test_the_gold_predictions_are_the_reference_patches() -> None:
     assert batch_score.gold_predictions(rows) == [
         {"instance_id": "a__a-1", "model_name_or_path": "gold", "model_patch": "diff --git a b"}
     ]
+
+
+# --- derived specs ----------------------------------------------------------------
+
+
+def test_derived_spec_is_refused_by_launch_and_copies_nothing(experiment: dict, capsys) -> None:
+    """A spec over assembled predictions must not be launchable.
+
+    Its out-dir holds a predictions file built from a batch that already ran,
+    and every other command treats that directory like a batch's own. Launching
+    into it would pay for runs that overwrite the artifact being read.
+    """
+    path = experiment["dir"] / "batches" / "derived.yaml"
+    path.write_text(_spec_text(experiment, "name: t1", "name: t1\nderived: true"), encoding="utf-8")
+    remote = FakeRemote(_facts(experiment))
+    rc = batch_cli.main(
+        ["--experiment-dir", str(experiment["dir"]), "launch", str(path)],
+        remote_factory=lambda h: remote,
+    )
+    assert rc == 1
+    assert remote.copied == []
+    assert not any("setsid nohup env" in s for s in remote.scripts)
+    assert "derived spec" in capsys.readouterr().out
+
+
+def test_derived_does_not_move_the_digest(experiment: dict) -> None:
+    """Adding the field must not change the identity of any batch already launched."""
+    plain = load_spec(experiment["spec"])
+    path = experiment["dir"] / "batches" / "derived2.yaml"
+    path.write_text(_spec_text(experiment, "name: t1", "name: t1\nderived: true"), encoding="utf-8")
+    assert spec_digest(load_spec(path)) == spec_digest(plain)
+
+
+def test_derived_cannot_also_be_a_retry(experiment: dict) -> None:
+    path = experiment["dir"] / "batches" / "derived3.yaml"
+    path.write_text(
+        _spec_text(experiment, "name: t1", "name: t1\nderived: true\nretry_of: t0"), encoding="utf-8"
+    )
+    with pytest.raises(SpecError, match="cannot also be a retry"):
+        load_spec(path)
+
+
+def test_derived_must_be_a_boolean(experiment: dict) -> None:
+    path = experiment["dir"] / "batches" / "derived4.yaml"
+    path.write_text(_spec_text(experiment, "name: t1", 'name: t1\nderived: "yes"'), encoding="utf-8")
+    with pytest.raises(SpecError, match="must be true or false"):
+        load_spec(path)

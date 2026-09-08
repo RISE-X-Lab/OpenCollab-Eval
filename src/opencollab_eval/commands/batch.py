@@ -496,6 +496,14 @@ def cmd_preflight(batch: Batch, remote: Ssh) -> int:
 
 
 def cmd_launch(batch: Batch, remote: Ssh, limit: int | None) -> int:
+    if batch.spec.derived:
+        # The out-dir a derived spec names holds predictions assembled from a
+        # finished batch, not runs. Everything downstream -- score, report --
+        # treats it like any other batch, which is the point; launching into it
+        # would spend money to overwrite the thing being read.
+        print(f"REFUSED: {batch.spec.name} is a derived spec (derived: true); it addresses")
+        print("         predictions built from data already collected. Nothing was launched.")
+        return 1
     ok, host_facts = run_preflight(batch, remote)
     if not ok:
         print("RESULT: not launched")

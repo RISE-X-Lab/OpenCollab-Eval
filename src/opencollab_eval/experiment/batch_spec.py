@@ -142,6 +142,15 @@ class BatchSpec:
     #: not the stand-in's spec file. Deliberately outside ``spec_identity``: a
     #: withdrawal changes what a finished batch reports, never what it ran.
     withdraw_replacements: dict[str, str] = field(default_factory=dict)
+    #: This spec addresses an out-dir that holds predictions built from data
+    #: already collected -- an attribution read of a finished batch, say --
+    #: rather than runs to be paid for. ``launch`` refuses it: the directory
+    #: looks exactly like a batch out-dir to every other command, and the one
+    #: mistake that costs real money is launching into it. Deliberately outside
+    #: ``spec_identity``: it says how a spec may be used, never what a run did,
+    #: and adding it to the identity would move the digest of every batch
+    #: already launched.
+    derived: bool = False
     note: str = ""
     source: dict[str, Any] = field(default_factory=dict, compare=False)
 
@@ -310,6 +319,16 @@ def load_spec(path: str | Path) -> BatchSpec:
             raise SpecError(f"{where}: pins.{key} must be a full 40-character commit sha")
         pins[key] = value
 
+    derived_raw = raw.get("derived", False)
+    if not isinstance(derived_raw, bool):
+        raise SpecError(f"{where}: 'derived' must be true or false")
+    derived = derived_raw
+    if derived and (retry_of is not None or replaces is not None):
+        raise SpecError(
+            f"{where}: a derived spec re-reads data that already exists; it cannot also be a "
+            "retry or a replacement, both of which describe runs that were paid for"
+        )
+
     spec = BatchSpec(
         name=name,
         host=_require(raw, "host", str, where),
@@ -329,6 +348,7 @@ def load_spec(path: str | Path) -> BatchSpec:
         retry_of=retry_of,
         replaces=replaces,
         withdraw_replacements=withdraw_replacements,
+        derived=derived,
         note=str(raw.get("note") or ""),
         source=raw,
     )
