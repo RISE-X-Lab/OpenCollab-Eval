@@ -1,0 +1,77 @@
+# The ladder's `plain` rung under the second model, `qwen3.8-flash`.
+#
+# What it is for, in one sentence: without it the paper may not print
+# qwen's adherence rate at all.
+#
+# The rule is the paper's own. `05-experiment.tex:473` says "A snapshot's
+# adherence rate is reported only if its own control clears", and the control
+# it names is the plain rung, clearing when the lower 95% bound of
+# alpha_adh exceeds 0.5 -- 27 of 40 delivered runs. The first snapshot
+# (deepseek-v4-flash) cleared it at 32 of 40. The second snapshot has run the
+# primary rung and nothing else: `qwen-cmdprimary40-r4` reports alpha 0.150
+# (95% CI 0.057-0.298) over 40 valid runs, and that number is currently
+# unreportable, because a rung on which a model rarely delegates cannot be
+# told apart from a model whose delegation this instrument fails to record.
+# The plain rung is where deepseek delegates in 80% of runs; a model that
+# clears there has demonstrated the instrument registers its delegation, and
+# its zero elsewhere becomes a fact about the rung.
+#
+# The same gap applies to gpt-5.6-luna and is worse there: its plain rung was
+# never launched either (`launches: 0` in all five non-primary specs) and
+# lthpc holds no credential for it. This spec is the half of the problem that
+# is executable today.
+#
+# Every paid field is copied from the first snapshot's plain cells verbatim --
+# arm, rung, cell, budget_per_seat, max_steps, timeout, concurrency and the
+# three switches -- and from `qwen-cmdprimary40-r4` for the model and pins, so
+# this cell differs from deepseek's plain in the model and from qwen's primary
+# in the rung, and in nothing else that was chosen.
+#
+# Two things are deliberate and must be declared:
+#
+#   * `suite`/`rows`. deepseek's plain rung ran as two batches --
+#     `cmdplain30-r2` (subset-30, rows 1-30) and `cmdplain31to40-r2`
+#     (subset-50, rows 31-40) -- because the rung was extended from 30 tasks to
+#     40 after the first had run. `subset-30.csv` is a byte-for-byte prefix of
+#     `subset-50.csv`, so subset-50 rows 1-40 is exactly the union of those two
+#     slices, in the same frozen order. One batch here, forty tasks, the same
+#     forty.
+#   * `pins`. These are `qwen-cmdprimary40-r4`'s pins, not the ladder's. The
+#     evaluator pin dfc88219 is the commit that records the context window
+#     qwen3.8-flash actually runs under; at the ladder's 898d5807 this model
+#     silently takes the dataclass defaults, which is the failure mode the
+#     2026-09-06 audit found six times. Pairing qwen's plain against qwen's
+#     primary is what the control needs, and those two are then at one pin.
+#     The cross-model comparison against deepseek's plain crosses a pin, as
+#     the primary comparison already does; that difference is one recording
+#     row and is declared in the deviations appendix.
+#
+# Read-out, written before the run:
+#   - lower 95% bound of alpha_adh above 0.5 (>= 27 of 40 delivered) -> the
+#     control clears and qwen's primary alpha of 0.150 becomes reportable
+#   - it does not clear -> qwen's adherence rate may not be printed, and the
+#     cross-model paragraph rests on the fallback control (prohibit) named in
+#     the deviations appendix, or on nothing
+#   - delivered runs but zero `message_agent` calls -> the two alpha
+#     estimators disagree for this model, which is a finding about the
+#     instrument and not about the rung
+name: qwen-cmdplain40
+host: lthpc
+arm: team
+rung: plain
+cell: cmd-plain
+suite: subset-50
+rows: {start: 1, stop: 40}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env.qwen
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "the second snapshot's positive control: the plain rung under qwen3.8-flash on the same forty tasks, at qwen-cmdprimary40-r4's pins; without it no qwen adherence rate may be printed"
