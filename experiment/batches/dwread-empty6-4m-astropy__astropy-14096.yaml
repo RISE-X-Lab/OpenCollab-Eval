@@ -1,0 +1,77 @@
+# 2026-09-08. The six empty patches of dw-reading-subset50, rerun at two caps.
+#
+# What this batch is for. dw-reading-subset50 (the reading-analyst arm, n=50)
+# scored 34/50 against the normal arm's 40/50 and Single's 39/50. The whole
+# gap is one channel: six runs submitted an empty patch, and in the normal arm
+# the same six tasks all produced a patch, five of which resolved. Whether
+# theta = -0.100 is a real cost of the organization or an artefact of the seat
+# cap is exactly what these runs decide, and it cannot be read off the batch
+# that raised the question.
+#
+# The failure mode is shared, the consequence is not. Five of the six stopped
+# with `analyst produced no structured brief`: the analyst seat spent its whole
+# 2M budget and never emitted the handoff artefact, so the coder never ran
+# (role_tokens is analyst-only, 0 of 6 declared edges walked). The normal arm
+# hits that same terminal condition MORE often -- 7 of 50 against 5 of 50 --
+# and still submits a patch every time, because in that arm the analyst holds
+# the editing tools and has already written the fix (`analyst_wrote_source`
+# is true in all seven). Taking the write tools away does not make the handoff
+# more fragile; it makes the same handoff failure fatal.
+#
+# Two caps, both paid, and the second is not redundant. The 4M arm asks whether
+# the analyst emits the brief when the budget stops binding. The 2M arm reruns
+# the identical configuration and is the sampling-variance control: on
+# 2026-09-08 `django__django-13569` spent LESS at a 4M cap than it had at 2M,
+# so rerun-to-rerun spread is real and large. Without the 2M rerun a patch
+# appearing at 4M cannot be told apart from a patch that would have appeared
+# anyway.
+#
+# Read-out, written before the run (identical to EXPERIMENT-LOG 2026-09-08 S10):
+#   - 4M produces a patch and resolves near 0.773 (the arm's resolve rate among
+#     runs that did produce a patch) -> the -0.100 is censoring; the claim
+#     becomes "the organization does not change patch quality, it raises the
+#     budget the run needs"
+#   - the 2M rerun also produces a patch          -> some of the five empties
+#     were luck, and the gap is overstated
+#   - both come back empty                        -> the censoring account holds
+#     and the gap is real, but its cause is still "output is deferred", not
+#     "the coder writes worse patches"
+#   - 4M hits the cap again                       -> that row stays undetermined
+#     and nothing is concluded from it
+#
+# Not a retry and not a replacement. `retry_of` would merge these runs into
+# dw-reading-subset50's denominators; they must stay out of them. This batch is
+# a sensitivity check reported beside theta, and dw-reading-subset50 keeps
+# reporting 34/50 whatever comes back here.
+#
+# Pins are dw-reading-subset50's pins, which are also the host's current
+# checkout, so nothing syncs and the only difference from the run being probed
+# is the seat cap (and, at 4M, max_steps).
+#
+# Row 10 of subset-50, astropy__astropy-14096. In dw-reading-subset50 it ended
+# `stopped` (analyst produced no structured brief) after 1,942,067 tokens over 84 steps against a
+# 2,000,000 seat cap, with 57,933 tokens of headroom left and an empty patch.
+#
+# max_steps moves with the cap. This row stopped at 84 steps under a 100-step
+# ceiling; at twice the budget the same trajectory runs past it, which would
+# trade one censoring reason for another. 200 is the ceiling cmdprimary40-cap4m
+# used for the same reason.
+
+name: dwread-empty6-4m-astropy__astropy-14096
+host: lthpc
+arm: self-collaboration-reading-analyst
+suite: subset-50
+rows: {start: 10, stop: 10}
+budget_per_seat: 4000000
+max_steps: 200
+timeout: 5400
+concurrency: 1
+model_env: configs/.env.deepseek
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 25d5a2e5b942792ea59334bf67e273dc3d1408e2
+  opencollab_eval: c80e64a396fa8753e3c40adf7f9499c2b6276c7c
+note: "sensitivity check on theta: dw-reading-subset50 row 10 (astropy__astropy-14096) rerun at a 4M seat cap; it submitted an empty patch there. Reported beside theta, not merged into dw-reading-subset50's denominators."
