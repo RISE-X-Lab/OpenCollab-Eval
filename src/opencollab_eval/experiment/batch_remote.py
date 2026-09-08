@@ -39,6 +39,80 @@ def _q(value: str) -> str:
     return shlex.quote(value)
 
 
+SYNC_DECOY_MARK = "opencollab_eval.generation.gen_prediction_batch decoy-for-sync"
+
+
+def sync_guard_script(host: HostConfig) -> str:
+    """Facts a checkout needs before it may touch anything. Writes nothing.
+
+    Two things make a checkout unsafe and neither is visible from here: a batch
+    already running against this tree (the checkout would move the code under
+    it mid-run), and local modifications (the checkout would either refuse or
+    carry them onto a different commit, and either way the pin would stop
+    naming what ran). The driver check carries the same positive control the
+    pre-flight uses: a decoy whose command line contains the pattern, so a
+    check that has stopped matching anything says so instead of reading as
+    "nothing is running".
+    """
+    oc = f"{host.workdir}/{host.opencollab_dir}"
+    ev = f"{host.workdir}/{host.eval_dir}"
+    return "\n".join(
+        [
+            "set -u",
+            f"OC={_q(oc)}",
+            f"EV={_q(ev)}",
+            'printf "OC_BEFORE\t%s\n" "$(git -C "$OC" rev-parse HEAD 2>/dev/null || echo none)"',
+            'printf "EV_BEFORE\t%s\n" "$(git -C "$EV" rev-parse HEAD 2>/dev/null || echo none)"',
+            'printf "OC_DIRTY\t%s\n" "$(git -C "$OC" status --porcelain -uno 2>/dev/null | wc -l)"',
+            'printf "EV_DIRTY\t%s\n" "$(git -C "$EV" status --porcelain -uno 2>/dev/null | wc -l)"',
+            f'pgrep -af "{BATCH_PROCESS_PATTERN}" | grep -vF {_q(SYNC_DECOY_MARK)} | while IFS= read -r line; do '
+            'printf "RUNNING\t%s\n" "$(printf "%s" "$line" | cut -c1-300)"; done',
+            f"setsid nohup bash -c 'sleep 6; echo {SYNC_DECOY_MARK}' < /dev/null > /dev/null 2>&1 &",
+            "sleep 1",
+            f'printf "DECOY_HIT\t%s\n" "$(pgrep -af "{BATCH_PROCESS_PATTERN}" | grep -cF {_q(SYNC_DECOY_MARK)})"',
+            "",
+        ]
+    )
+
+
+def sync_script(host: HostConfig, oc_sha: str, eval_sha: str) -> str:
+    """Bring both checkouts to the spec's pins. Run only after the guard passes.
+
+    Fetches only when the commit is not already in the checkout, so a repeat
+    sync costs no network. The proxy comes from the host's own git config
+    rather than from a field here: whichever way that machine reaches GitHub is
+    a fact about the machine, and exporting it covers the paths that read the
+    environment instead of the config.
+    """
+    oc = f"{host.workdir}/{host.opencollab_dir}"
+    ev = f"{host.workdir}/{host.eval_dir}"
+    return "\n".join(
+        [
+            "set -u",
+            "sync_repo() {",
+            '  d="$1"; sha="$2"; tag="$3"',
+            '  P="$(git -C "$d" config --get http.proxy 2>/dev/null || true)"',
+            '  if [ -n "$P" ]; then export https_proxy="$P" http_proxy="$P"; fi',
+            '  if ! git -C "$d" cat-file -e "$sha^{commit}" 2>/dev/null; then',
+            "    for i in 1 2 3; do",
+            '      if git -C "$d" fetch -q origin 2>/dev/null; then break; fi',
+            '      printf "%s_FETCH_RETRY\t%s\n" "$tag" "$i"',
+            "      sleep $((i * 5))",
+            "    done",
+            "  fi",
+            '  if ! git -C "$d" cat-file -e "$sha^{commit}" 2>/dev/null; then',
+            '    printf "%s_MISSING\t%s\n" "$tag" "$sha"; return 0',
+            "  fi",
+            '  git -C "$d" checkout -q "$sha" 2>/dev/null || printf "%s_CHECKOUT_FAILED\t%s\n" "$tag" "$sha"',
+            '  printf "%s_AFTER\t%s\n" "$tag" "$(git -C "$d" rev-parse HEAD)"',
+            "}",
+            f'sync_repo "$(printf %s {_q(oc)})" {_q(oc_sha)} OC',
+            f'sync_repo "$(printf %s {_q(ev)})" {_q(eval_sha)} EV',
+            "",
+        ]
+    )
+
+
 def _disk_line(host: HostConfig) -> str:
     return (
         f'printf "DISK_FREE_GB\\t%s\\n" '

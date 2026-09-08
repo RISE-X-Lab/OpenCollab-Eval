@@ -789,3 +789,125 @@ def test_plan_after_preflight_keeps_the_host_facts(experiment: dict) -> None:
     assert batch_cli.main([*args, "plan", str(experiment["spec"])], remote_factory=lambda h: None) == 0
     record = json.loads(record_path.read_text(encoding="utf-8"))
     assert len(record["launches"]) == 2 and "host" in record
+
+
+# --- sync: bringing the host's checkouts to the pins ------------------------------
+#
+# Pre-flight names a pin mismatch and stops; every batch so far was preceded by
+# a hand-run fetch and checkout over ssh. The step is now a command, which means
+# its two refusals have to be the tested part: a checkout that moves the code
+# under a running batch, and a checkout onto a tree somebody left modified.
+
+
+class SyncRemote:
+    """Answers the guard script from a script, and records what it was sent."""
+
+    def __init__(self, guard: str, sync: str = "") -> None:
+        self.guard = guard
+        self.sync = sync
+        self.scripts: list[str] = []
+
+    def run(self, script: str, timeout: float = 0) -> str:
+        self.scripts.append(script)
+        return self.sync if "sync_repo()" in script else self.guard
+
+    def copy_to(self, local_paths, remote_dir: str) -> None:
+        raise AssertionError("sync copies nothing")
+
+    def pull(self, remote_dir: str, local_dir: Path) -> None:
+        raise AssertionError("not used here")
+
+
+def _sync(experiment: dict, remote: SyncRemote, command: str = "sync") -> int:
+    return batch_cli.main(
+        ["--experiment-dir", str(experiment["dir"]), command, str(experiment["spec"])],
+        remote_factory=lambda h: remote,
+    )
+
+
+def _guard(*, running: str = "", dirty: str = "0", decoy: str = "1") -> str:
+    return (
+        "OC_BEFORE\told\n"
+        "EV_BEFORE\told\n"
+        f"OC_DIRTY\t{dirty}\n"
+        f"EV_DIRTY\t{dirty}\n"
+        + (f"RUNNING\t{running}\n" if running else "")
+        + f"DECOY_HIT\t{decoy}\n"
+    )
+
+
+def _synced(experiment: dict) -> str:
+    return f"OC_AFTER\t{experiment['sha']}\nEV_AFTER\t{PIN_EVAL}\n"
+
+
+def test_sync_checks_out_both_repositories_at_the_spec_pins(experiment: dict, capsys) -> None:
+    remote = SyncRemote(_guard(), _synced(experiment))
+
+    assert _sync(experiment, remote) == 0
+
+    out = capsys.readouterr().out
+    assert "RESULT: synced" in out
+    checkout = remote.scripts[1]
+    assert experiment["sha"] in checkout and PIN_EVAL in checkout
+    # Fetch only when the commit is not already there, so a repeat sync is free.
+    assert 'cat-file -e "$sha^{commit}"' in checkout
+
+
+def test_sync_refuses_while_a_driver_is_alive(experiment: dict, capsys) -> None:
+    """A checkout would move the code under a batch that is still running.
+
+    Nothing may be written, so the assertion is on the scripts sent: the guard
+    and nothing else.
+    """
+    remote = SyncRemote(_guard(running="4242 python -m ...gen_prediction_batch --out-dir t1"))
+
+    assert _sync(experiment, remote) == 1
+
+    out = capsys.readouterr().out
+    assert "REFUSED" in out and "driver(s) alive" in out
+    assert len(remote.scripts) == 1
+    assert "sync_repo()" not in remote.scripts[0]
+
+
+def test_sync_refuses_when_its_own_driver_check_finds_no_decoy(experiment: dict, capsys) -> None:
+    """A quiet result from a check that matches nothing is not evidence.
+
+    The guard plants a process whose command line contains the pattern. If that
+    is not found, "no driver is running" carries no information and the sync
+    must not proceed on it.
+    """
+    remote = SyncRemote(_guard(decoy="0"))
+
+    assert _sync(experiment, remote) == 1
+
+    out = capsys.readouterr().out
+    assert "REFUSED" in out and "decoy" in out
+    assert len(remote.scripts) == 1
+
+
+def test_sync_refuses_on_a_modified_tree(experiment: dict, capsys) -> None:
+    remote = SyncRemote(_guard(dirty="3"))
+
+    assert _sync(experiment, remote) == 1
+
+    out = capsys.readouterr().out
+    assert "REFUSED" in out and "modified tracked files" in out
+    assert len(remote.scripts) == 1
+
+
+def test_sync_reports_a_checkout_that_did_not_land(experiment: dict, capsys) -> None:
+    """The host answering with some other sha is a failure, not a success."""
+    remote = SyncRemote(_guard(), "OC_AFTER\tdeadbeef\nEV_AFTER\tdeadbeef\n")
+
+    assert _sync(experiment, remote) == 1
+    assert "RESULT: NOT synced" in capsys.readouterr().out
+
+
+def test_go_does_not_launch_when_sync_refuses(experiment: dict, capsys) -> None:
+    remote = SyncRemote(_guard(running="4242 python -m ...gen_prediction_batch"))
+
+    assert _sync(experiment, remote, command="go") == 1
+
+    out = capsys.readouterr().out
+    assert "RESULT: not launched" in out
+    assert all("setsid nohup env" not in s for s in remote.scripts)

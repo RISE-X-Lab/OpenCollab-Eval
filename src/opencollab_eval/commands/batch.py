@@ -408,6 +408,80 @@ def run_preflight(batch: Batch, remote: Ssh) -> tuple[bool, dict[str, Any]]:
     return ok, batch_remote.facts_to_record(facts)
 
 
+def cmd_sync(batch: Batch, remote: Ssh) -> int:
+    """Bring the host's two checkouts to the spec's pins, or refuse and say why.
+
+    Pre-flight reports a pin mismatch and stops there, so every batch so far has
+    been preceded by a hand-run fetch and checkout over ssh -- the step where
+    the wrong repository, the wrong sha, or a tree somebody left dirty does not
+    announce itself. Two guards run before anything is written: a live driver
+    (the checkout would move the code under a running batch) and local
+    modifications (the pin would stop naming what ran).
+    """
+    facts = batch_remote.parse_facts(remote.run(batch_remote.sync_guard_script(batch.host)))
+    # A fact line can carry tabs of its own (a process command line does), so
+    # these read by index rather than unpacking a pair.
+    running = [f[1] for f in facts if f[0] == "RUNNING" and len(f) > 1]
+    decoy = next((f[1] for f in facts if f[0] == "DECOY_HIT" and len(f) > 1), "0")
+    before = {f[0]: f[1] for f in facts if f[0].endswith("_BEFORE") and len(f) > 1}
+    dirty = {f[0]: f[1] for f in facts if f[0].endswith("_DIRTY") and len(f) > 1}
+    want = {"OC": batch.spec.pins.get("opencollab", ""), "EV": batch.spec.pins.get("opencollab_eval", "")}
+
+    print(f"sync {batch.spec.name} on {batch.host.ssh}:")
+    for tag, name in (("OC", batch.host.opencollab_dir), ("EV", batch.host.eval_dir)):
+        print(f"  {name}: host {before.get(tag + '_BEFORE', '?')[:12]} -> spec {want[tag][:12] or '(none)'}")
+    if decoy == "0":
+        print("  REFUSED: the running-batch check found not even its own decoy, so a quiet")
+        print("           result from it means nothing. Nothing was changed.")
+        return 1
+    if running:
+        print(f"  REFUSED: {len(running)} driver(s) alive on this host; a checkout would move")
+        print("           the code under a running batch. Nothing was changed.")
+        for line in running:
+            print(f"           {line}")
+        return 1
+    unclean = [tag for tag in ("OC", "EV") if dirty.get(tag + "_DIRTY", "0") not in {"0", ""}]
+    if unclean:
+        print(f"  REFUSED: {', '.join(unclean)} has modified tracked files. Nothing was changed.")
+        return 1
+    if not all(want.values()):
+        print("  REFUSED: the spec does not pin both repositories. Nothing was changed.")
+        return 1
+
+    script = batch_remote.sync_script(batch.host, want["OC"], want["EV"])
+    out = batch_remote.parse_facts(remote.run(script, timeout=900))
+    after = {f[0]: f[1] for f in out if f[0].endswith("_AFTER") and len(f) > 1}
+    for fact in out:
+        if fact[0].endswith("_FETCH_RETRY") and len(fact) > 1:
+            print(f"  {fact[0].split('_')[0]}: fetch retry {fact[1]}")
+    problems = [
+        " ".join(f) for f in out if f[0].endswith("_MISSING") or f[0].endswith("_CHECKOUT_FAILED")
+    ]
+    ok = True
+    for tag, name in (("OC", batch.host.opencollab_dir), ("EV", batch.host.eval_dir)):
+        got = after.get(tag + "_AFTER", "")
+        hit = got == want[tag]
+        ok = ok and hit
+        print(f"  [{'ok  ' if hit else 'FAIL'}] {name} now {got[:12] or '(no answer)'}")
+    for problem in problems:
+        print(f"  {problem}")
+    print("RESULT: " + ("synced" if ok else "NOT synced"))
+    return 0 if ok else 1
+
+
+def cmd_go(batch: Batch, remote: Ssh, limit: int | None) -> int:
+    """sync, then launch. One command for the whole paid path.
+
+    Launch runs pre-flight itself, so the checks are not skipped by going
+    through here -- what is removed is the hand-run ssh between them.
+    """
+    rc = cmd_sync(batch, remote)
+    if rc != 0:
+        print("RESULT: not launched")
+        return rc
+    return cmd_launch(batch, remote, limit)
+
+
 def cmd_preflight(batch: Batch, remote: Ssh) -> int:
     ok, host_facts = run_preflight(batch, remote)
     batch.save_record(batch.record(host_facts))
@@ -676,9 +750,12 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--experiment-dir", default=str(EXPERIMENT_DIR), help="directory holding suite/, hosts/, batches/")
     ap.add_argument("--host-config", default=None, help="override the host file named by the spec")
     sub = ap.add_subparsers(dest="command", required=True)
-    for name in ("plan", "preflight", "status", "pull"):
+    for name in ("plan", "preflight", "status", "pull", "sync"):
         p = sub.add_parser(name)
         p.add_argument("spec")
+    p = sub.add_parser("go")
+    p.add_argument("spec")
+    p.add_argument("--limit", type=int, default=None, help="run only the first N instances (the paid pre-flight)")
     p = sub.add_parser("launch")
     p.add_argument("spec")
     p.add_argument("--limit", type=int, default=None, help="run only the first N instances (the paid pre-flight)")
@@ -710,6 +787,10 @@ def main(argv: Sequence[str] | None = None, remote_factory: Callable[[HostConfig
             return cmd_preflight(batch, remote)
         if args.command == "launch":
             return cmd_launch(batch, remote, args.limit)
+        if args.command == "sync":
+            return cmd_sync(batch, remote)
+        if args.command == "go":
+            return cmd_go(batch, remote, args.limit)
         if args.command == "status":
             return cmd_status(batch, remote)
         if args.command == "wait":
