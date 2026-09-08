@@ -119,19 +119,41 @@ DECLARED_EDGES = (
     "tester->analyst",
 )
 
-SHARED_RULES = """\
+# The rules the three roles share, rendered twice. The reading-analyst variant
+# takes ``apply_patch`` and ``file_write`` away for the analyze phase, and a
+# rules block that still names them describes the other variant: the analyst
+# reaches for a tool that is not there and pays a seat to find out. The
+# ``bash`` line is the part no tool list can carry -- a shell edits files too,
+# so the one arm whose claim is "whatever reaches the patch passed through the
+# coder" has to say so in words.
+_RULES_TEMPLATE = """\
 Rules:
 - Prefer your dedicated tool over bash: file_read/grep to inspect, run_tests to
-  test, file_write/apply_patch to edit. Use bash only for what no dedicated tool
+  test{edit_tools}. Use bash only for what no dedicated tool
   covers (for example a one-line `python -c` repro).
-- Fix the root cause in the source; make the smallest correct change.
-- Never edit test files.
+{edit_rule}- Never edit test files.
 - All three of you work in the same tree at /testbed. Leave your edits in the
   working tree: do not run `git commit`, and do not stash or revert another
   role's work.
 - Keep your report tight: at most eight lines. What changed, why, and what the
   evidence for it is. No preamble.
 """
+
+#: What the analyst that may write was told, and what fifty ``dw-subset50-r2``
+#: runs were made against. Changing this text makes those runs a different arm.
+SHARED_RULES = _RULES_TEMPLATE.format(
+    edit_tools=", file_write/apply_patch to edit",
+    edit_rule="- Fix the root cause in the source; make the smallest correct change.\n",
+)
+
+READING_ANALYST_RULES = _RULES_TEMPLATE.format(
+    edit_tools="",
+    edit_rule=(
+        "- You have no tool that edits the source at this step: name the root"
+        " cause and\n  the smallest correct change, and leave making it to the"
+        " Coder.\n"
+    ),
+)
 
 BRIEF_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -212,14 +234,27 @@ different jobs -- do not write the same paragraph twice.
 Neither of them has read what you read. Whatever you want one of them to act on
 travels only in the text you write here.
 
-You hold the tools to make the change yourself. Whether you use them is your
-own call and does not change what is asked of you at this step.
+{write_stance}
 
 {rules}
 
 Task:
 {goal}
 """
+
+#: The two ``{write_stance}`` renderings. The first is the text the fifty
+#: ``dw-subset50-r2`` runs saw; in forty-nine of them the analyst took it up and
+#: changed the source before the coder was called.
+ANALYST_MAY_WRITE_STANCE = (
+    "You hold the tools to make the change yourself. Whether you use them is"
+    " your\nown call and does not change what is asked of you at this step."
+)
+
+ANALYST_READING_STANCE = (
+    "You do not hold the tools to change the source at this step, and you must"
+    " not\nedit it with bash either. The Coder makes the change, and the only"
+    " thing it\nacts on is the text you write here."
+)
 
 CODER_PROMPT = """\
 You are the Coder on a three-agent team: an Analyst, a Coder, and a Tester.
@@ -503,7 +538,15 @@ async def _run(
     await ctx.phase("analyze")
     brief = await seats.agent(
         "analyst",
-        ANALYST_PROMPT.format(rules=SHARED_RULES, goal=goal),
+        ANALYST_PROMPT.format(
+            rules=SHARED_RULES if analyst_may_write else READING_ANALYST_RULES,
+            goal=goal,
+            write_stance=(
+                ANALYST_MAY_WRITE_STANCE
+                if analyst_may_write
+                else ANALYST_READING_STANCE
+            ),
+        ),
         schema=BRIEF_SCHEMA,
         label="analyst",
         tools=_analyst_tools() if analyst_may_write else _reading_analyst_tools(),

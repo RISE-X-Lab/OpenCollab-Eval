@@ -583,10 +583,72 @@ async def test_the_variant_changes_nothing_else_about_the_run():
     assert [c["label"] for c in writing.agent_calls] == [
         c["label"] for c in reading.agent_calls
     ]
-    assert [c["prompt"] for c in writing.agent_calls] == [
-        c["prompt"] for c in reading.agent_calls
+    # The analyse call is the one thing that does differ: its tool list is
+    # short by two, and a prompt that still described the full bundle would be
+    # describing the other variant.
+    assert writing.agent_calls[0]["prompt"] != reading.agent_calls[0]["prompt"]
+    assert [c["prompt"] for c in writing.agent_calls[1:]] == [
+        c["prompt"] for c in reading.agent_calls[1:]
     ]
     assert a["edges_walked"] == b["edges_walked"]
+
+
+@pytest.mark.asyncio
+async def test_the_reading_analyst_is_not_told_it_holds_the_editing_tools():
+    """The prompt has to describe the tool list the seat is actually given.
+
+    ``_reading_analyst_tools`` takes ``apply_patch`` and ``file_write`` away for
+    the analyze phase. A prompt that still says "you hold the tools to make the
+    change yourself" sends the analyst after a tool that is not there, and the
+    seat pays for the discovery. The bash sentence is the half no tool list can
+    carry: a shell edits files too, so the variant whose whole claim is that the
+    patch passed through the coder has to say it in words.
+    """
+    reading = ScriptedCtx([BRIEF, CODER_OK, TESTER_PASS, ACCEPT])
+    await self_collaboration_reading_analyst(reading, {"goal": "fix the pager"})
+    analyse = reading.agent_calls[0]["prompt"]
+
+    assert "You hold the tools to make the change yourself" not in analyse
+    assert "file_write/apply_patch to edit" not in analyse
+    assert "You do not hold the tools to change the source at this step" in analyse
+    assert "must not\nedit it with bash either" in analyse
+    assert "The Coder makes the change" in analyse
+
+    # The other three seats keep the full bundle and the text that names it.
+    for call in reading.agent_calls[1:]:
+        assert "file_write/apply_patch to edit" in call["prompt"]
+
+
+def test_the_writing_analysts_rules_are_the_text_the_recorded_runs_saw():
+    """Fifty ``dw-subset50-r2`` runs were made against this block, verbatim.
+
+    Splitting it into a template to serve the reading variant must not move a
+    byte of what the other variant renders, or those fifty runs stop being runs
+    of the arm the paper reports.
+    """
+    assert _module.SHARED_RULES == (
+        "Rules:\n"
+        "- Prefer your dedicated tool over bash: file_read/grep to inspect,"
+        " run_tests to\n"
+        "  test, file_write/apply_patch to edit. Use bash only for what no"
+        " dedicated tool\n"
+        "  covers (for example a one-line `python -c` repro).\n"
+        "- Fix the root cause in the source; make the smallest correct change.\n"
+        "- Never edit test files.\n"
+        "- All three of you work in the same tree at /testbed. Leave your edits"
+        " in the\n"
+        "  working tree: do not run `git commit`, and do not stash or revert"
+        " another\n"
+        "  role's work.\n"
+        "- Keep your report tight: at most eight lines. What changed, why, and"
+        " what the\n"
+        "  evidence for it is. No preamble.\n"
+    )
+    assert _module.ANALYST_MAY_WRITE_STANCE == (
+        "You hold the tools to make the change yourself. Whether you use them"
+        " is your\nown call and does not change what is asked of you at this"
+        " step."
+    )
 
 
 # Three of the four agent calls are built inside the repair loop, over names
