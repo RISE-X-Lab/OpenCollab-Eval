@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from opencollab_eval.commands import batch as batch_cli
-from opencollab_eval.experiment import batch_remote, cell_report
+from opencollab_eval.experiment import batch_remote, batch_score, cell_report
 from opencollab_eval.experiment.batch_spec import (
     SpecError,
     build_instances,
@@ -947,3 +947,142 @@ def test_the_sync_script_falls_back_to_the_global_proxy(experiment: dict) -> Non
     # The printf format carries a real tab and newline, as every fact line in
     # this script does, so the assertion is on the parts either side of them.
     assert '"%s_PROXY' in checkout and '"$tag" "${P:-none}"' in checkout
+
+
+# --- score: the gold control, and the counts read before anything is spent --------
+#
+# On 2026-09-07 a cell reported a task as unresolvable with a note about a bad
+# evaluation environment. The environment was a machine with no route to the
+# package index; the same task's reference patch resolves where there is one.
+# The control that would have caught it is scoring the reference patches in the
+# same session, on the same host, against the same dataset -- so `score` runs
+# them first and refuses to read anything else until they all resolve.
+
+
+class ScoreRemote:
+    """Answers the guard, the dataset filter and the launch, and records them."""
+
+    def __init__(self, guard: str, dataset: str = "DATASET_ROWS\t2\n", launch: str = "") -> None:
+        self.guard = guard
+        self.dataset = dataset
+        self.launch = launch
+        self.scripts: list[str] = []
+        self.copied: list[Path] = []
+
+    def run(self, script: str, timeout: float = 0) -> str:
+        self.scripts.append(script)
+        # The guard script names the harness process too, so the three are
+        # told apart by what only one of them carries.
+        if "DATASET_ROWS" in script:
+            return self.dataset
+        if "--run_id" in script:
+            return self.launch
+        return self.guard
+
+    def copy_to(self, local_paths, remote_dir: str) -> None:
+        self.copied.extend(local_paths)
+
+    def pull(self, remote_dir: str, local_dir: Path) -> None:
+        raise AssertionError("not used here")
+
+
+def _score_guard(*, preds: str = "present", rows: str = "2", empty: str = "0",
+                 swebench: str = "5.0.2", disk: str = "500", decoy: str = "1",
+                 running: str = "") -> str:
+    return (
+        f"PREDS\t{preds}\nPREDS_ROWS\t{rows}\nPREDS_EMPTY\t{empty}\n"
+        f"SWEBENCH\t{swebench}\nSCORE_DIR\tabsent\n"
+        + (f"RUNNING\t{running}\n" if running else "")
+        + f"DECOY_HIT\t{decoy}\nDISK_FREE_GB\t{disk}\n"
+    )
+
+
+def _with_scoring_dataset(experiment: dict) -> None:
+    host = Path(experiment["dir"]) / "hosts" / "h.yaml"
+    host.write_text(
+        host.read_text(encoding="utf-8") + "scoring_dataset: /home/u/ds.jsonl\n", encoding="utf-8"
+    )
+
+
+def _score(experiment: dict, remote: ScoreRemote, *extra: str) -> int:
+    return batch_cli.main(
+        ["--experiment-dir", str(experiment["dir"]), "score", str(experiment["spec"]), *extra],
+        remote_factory=lambda h: remote,
+    )
+
+
+def test_score_refuses_when_the_host_names_no_dataset(experiment: dict, capsys) -> None:
+    """Without a dataset there is nothing to score against, and no guess is safe."""
+    remote = ScoreRemote(_score_guard())
+
+    assert _score(experiment, remote) == 1
+
+    assert "no scoring_dataset" in capsys.readouterr().out
+    assert remote.scripts == []
+
+
+def test_score_refuses_when_its_own_running_check_finds_no_decoy(experiment: dict, capsys) -> None:
+    _with_scoring_dataset(experiment)
+    remote = ScoreRemote(_score_guard(decoy="0"))
+
+    assert _score(experiment, remote) == 1
+
+    assert "decoy" in capsys.readouterr().out
+    assert len(remote.scripts) == 1
+
+
+def test_score_refuses_while_a_harness_is_already_running(experiment: dict, capsys) -> None:
+    _with_scoring_dataset(experiment)
+    remote = ScoreRemote(_score_guard(running="991 python -m swebench.harness.run_evaluation --run_id x"))
+
+    assert _score(experiment, remote) == 1
+
+    assert "already running" in capsys.readouterr().out
+    assert len(remote.scripts) == 1
+
+
+def test_score_refuses_a_predictions_file_shorter_than_the_batch(experiment: dict, capsys) -> None:
+    """A short predictions file scores without complaint and returns a rate
+    over the runs that happened to finish. The count is read first."""
+    _with_scoring_dataset(experiment)
+    remote = ScoreRemote(_score_guard(rows="1"))
+
+    assert _score(experiment, remote) == 1
+
+    out = capsys.readouterr().out
+    assert "1 rows of 2 instances" in out and "RESULT: not scored" in out
+    assert len(remote.scripts) == 1
+
+
+def test_score_refuses_when_the_dataset_has_no_row_for_an_instance(experiment: dict, capsys) -> None:
+    _with_scoring_dataset(experiment)
+    remote = ScoreRemote(_score_guard(), dataset="DATASET_MISSING\tb__b-2\n")
+
+    assert _score(experiment, remote) == 1
+
+    assert "no row for b__b-2" in capsys.readouterr().out
+
+
+def test_a_gold_run_that_leaves_a_task_unresolved_makes_the_session_unreadable() -> None:
+    ok, detail = batch_score.gold_verdict(
+        {"total": 51, "resolved": 50, "resolved_ids": [], "unresolved_ids": ["pylint-dev__pylint-4661"],
+         "error_ids": [], "empty_patch_ids": [], "submitted": 51, "completed": 51}
+    )
+    assert not ok
+    assert "pylint-dev__pylint-4661" in detail
+
+
+def test_a_gold_run_that_scored_nothing_is_not_a_pass() -> None:
+    """Zero of zero is the shape a missing report has, and it must not read as success."""
+    ok, detail = batch_score.gold_verdict(
+        {"total": 0, "resolved": 0, "resolved_ids": [], "unresolved_ids": [], "error_ids": [],
+         "empty_patch_ids": [], "submitted": 0, "completed": 0}
+    )
+    assert not ok and "scored no instances" in detail
+
+
+def test_the_gold_predictions_are_the_reference_patches() -> None:
+    rows = [{"instance_id": "a__a-1", "patch": "diff --git a b"}]
+    assert batch_score.gold_predictions(rows) == [
+        {"instance_id": "a__a-1", "model_name_or_path": "gold", "model_patch": "diff --git a b"}
+    ]

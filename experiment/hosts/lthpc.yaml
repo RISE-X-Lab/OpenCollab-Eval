@@ -21,3 +21,10 @@ local_batches_dir: /root/oc-batches         # where `pull` puts a batch and `pla
 local_opencollab_dir: /root/git/OpenCollab  # card bytes are read at the pin with `git show`
 frame_content: ~/.cache/opencollab-eval/swebench-verified.jsonl
 scanner: /root/git/OpenCollab-Eval/experiment/analysis/scan_batch.py
+# Scoring. The harness needs fields the frame content does not carry
+# (eval_script, image, log_parser), so `batch score` filters this dataset down
+# to a batch's instances rather than rebuilding those fields. This file is the
+# one the 2026-09-07 re-scoring ran against; it covers subset-50 plus the
+# scikit-learn-26323 replacement task.
+scoring_dataset: /home/xuzhenhua/oc-scoring/ds-r2-relthpc/dataset-ds51.jsonl
+scoring_python: /home/xuzhenhua/oc-scoring/.venv-swebench/bin/python

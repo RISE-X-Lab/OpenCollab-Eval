@@ -81,6 +81,14 @@ class HostConfig:
     local_opencollab_dir: str
     frame_content: str
     scanner: str | None = None
+    #: A full SWE-bench dataset on the host, in the harness's own schema. The
+    #: frame content this repository keeps has the benchmark's fields but not
+    #: the harness's (eval_script, image, log_parser), so scoring reads a
+    #: dataset built for the harness and filters it to a batch's instances
+    #: rather than reconstructing those fields here.
+    scoring_dataset: str | None = None
+    #: The interpreter the scoring harness runs under, on the host.
+    scoring_python: str | None = None
 
     @property
     def pythonpath(self) -> str:
@@ -181,6 +189,8 @@ def load_host(path: str | Path) -> HostConfig:
         local_opencollab_dir=str(Path(_require(raw, "local_opencollab_dir", str, where)).expanduser()),
         frame_content=str(Path(_require(raw, "frame_content", str, where)).expanduser()),
         scanner=(str(Path(raw["scanner"]).expanduser()) if raw.get("scanner") else None),
+        scoring_dataset=(str(raw["scoring_dataset"]) if raw.get("scoring_dataset") else None),
+        scoring_python=(str(raw["scoring_python"]) if raw.get("scoring_python") else None),
     )
 
 
