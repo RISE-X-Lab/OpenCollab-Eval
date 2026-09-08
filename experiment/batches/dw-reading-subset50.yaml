@@ -1,0 +1,55 @@
+# 2026-09-07. The reading-analyst arm at n=50: the confirmatory counterpart of
+# dw-subset50-r2, and the run that decides what theta means.
+#
+# The problem it exists to fix. In dw-subset50-r2, 49 of 50 runs recorded
+# `analyst_wrote_source: true`. The tree probe fires between the analyze phase
+# and the implement phase, so a true there says the analyst had already
+# changed the source before the script called the coder. The arm is described
+# as analyst -> coder -> tester and ran as one agent fixing the task with two
+# more looking at it afterwards. theta = DW - Single is therefore not "what
+# organization is worth"; it is "what a review pass adds on top of a single
+# agent that already wrote the fix". Nothing in the estimand said that.
+#
+# The cause was the analyst prompt, which told the analyst it held the editing
+# tools and that using them was its own call. The reading variant takes
+# apply_patch and file_write away for the analyze phase and says so in the
+# prompt; before 2d4d590 the variant's prompt still described the full bundle,
+# so the arm had never run against a prompt that matched its tool list. It
+# keeps `bash`, deliberately: an analyst that cannot run anything would be
+# readably weaker than the Single agent this arm is compared against, and the
+# comparison would then be about tooling rather than about sequence.
+#
+# What ran already. dw-reading-probe2, rows 1-2 at these switches: both runs
+# recorded `analyst_wrote_source: false`, 5 of 6 declared edges walked, and
+# the patch written by the coder. That is a behaviour probe, not data.
+#
+# Pairing. Same suite, same fifty rows in the same frozen order, same seat
+# budget, same model file, same three switches as dw-subset50-r2, so the runs
+# pair task-by-task against it. Two things differ and both are on purpose:
+# the arm, and the pins. The evaluator sha is not the one the ladder ran at
+# (898d5807) because the arm being run did not work at that sha; the paper's
+# "one pinned instrument version" sentence covers the ladder, not this pair,
+# and the pairing needs a sentence saying so.
+#
+# What it changes in the paper: the identification sentence for theta in S5.4,
+# and whether the DW row of tab:results-main is reporting the arm it names.
+name: dw-reading-subset50
+host: lthpc
+arm: self-collaboration-reading-analyst
+suite: subset-50
+rows: {start: 1, stop: 50}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+# dw-subset50-r2 ran at 8 on gpu3. lthpc has 64 cores and a load average of
+# 4.3, so the ceiling here is the model endpoint, not the machine.
+concurrency: 8
+model_env: configs/.env.deepseek
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 25d5a2e5b942792ea59334bf67e273dc3d1408e2
+  opencollab_eval: c80e64a396fa8753e3c40adf7f9499c2b6276c7c
+note: "Confirmatory: the reading-analyst arm over the same fifty tasks as dw-subset50-r2"
