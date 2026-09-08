@@ -212,6 +212,14 @@ class RunRow:
     #: is not the same as an arm that declared some and walked none.
     edges_walked: int | None = None
     edges_declared: int | None = None
+    #: Whether the analyst had already changed the source when the script
+    #: probed the tree between the analyze and implement phases
+    #: (``workflow_result.analyst_wrote_source``). It is the same question the
+    #: team arm asks as adherence, asked of an arm whose sequence is not the
+    #: model's to choose, and after the coder has run no later probe can answer
+    #: it. ``None`` on every arm that never probes -- which is not the same
+    #: finding as an arm that probed and found nothing.
+    analyst_wrote_source: bool | None = None
     #: How long the run took, from the block every arm writes.
     duration_s: float | None = None
     #: Whether the wall clock ended this run, by the rule the single arm's own
@@ -504,6 +512,7 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
             budget_exhausted = False
             edges_walked: int | None = None
             edges_declared: int | None = None
+            analyst_wrote_source: bool | None = None
             if isinstance(workflow_result, dict):
                 raw_spend = workflow_result.get("seat_spend")
                 if isinstance(raw_spend, dict):
@@ -512,6 +521,8 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
                 # it; ``exhausted()`` (self_collaboration.py:466-467) is what
                 # writes the verdict below when a round stops for want of one.
                 seat_cap = _int_or_none(workflow_result.get("seat_cap"))
+                probed = workflow_result.get("analyst_wrote_source")
+                analyst_wrote_source = probed if isinstance(probed, bool) else None
                 budget_exhausted = workflow_result.get("status") == "budget_exhausted"
                 declared = workflow_result.get("edges_declared")
                 if isinstance(declared, list):
@@ -579,6 +590,7 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
                 budget_exhausted=budget_exhausted,
                 edges_walked=edges_walked,
                 edges_declared=edges_declared,
+                analyst_wrote_source=analyst_wrote_source,
                 duration_s=(
                     float(summary["duration_s"])
                     if isinstance(summary.get("duration_s"), int | float)
@@ -706,6 +718,13 @@ def summarize(
         # anything.
         "edges_walked": sum(r.edges_walked or 0 for r in rows if r.edges_declared),
         "edges_declared": sum(r.edges_declared or 0 for r in rows),
+        # Two keys, not one: a cell where no run probed the tree and a cell
+        # where every run probed it and found the analyst had written nothing
+        # both give a count of zero, and they are different findings.
+        "analyst_wrote_source": sum(1 for r in rows if r.analyst_wrote_source),
+        "analyst_wrote_source_probed": sum(
+            1 for r in rows if r.analyst_wrote_source is not None
+        ),
         "edges_walked_rate": (
             sum(r.edges_walked or 0 for r in rows if r.edges_declared)
             / sum(r.edges_declared or 0 for r in rows)

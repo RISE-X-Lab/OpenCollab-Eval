@@ -11,6 +11,7 @@ tree built to the shape the driver actually writes.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -105,6 +106,7 @@ def dw_cell(tmp_path: Path) -> Path:
             "run_summary": {"status": "completed", "reason": None,
                             "tokens": 452_053, "steps": 43},
             "workflow_result": {"status": "done",
+                                "analyst_wrote_source": True,
                                 "tree_snapshots": [{"after": "analyze"},
                                                    {"after": "implement:r1"}]},
             "submitted_patch_chars": 812,
@@ -116,6 +118,7 @@ def dw_cell(tmp_path: Path) -> Path:
                             "tokens": 1_898_206, "steps": 61},
             "workflow_result": {"status": "error",
                                 "error": "analyst produced no structured brief",
+                                "analyst_wrote_source": False,
                                 "tree_snapshots": [{"after": "analyze"}]},
             "submitted_patch_chars": 0,
         },
@@ -216,6 +219,41 @@ def test_tree_snapshots_fall_back_to_the_workflow_result(dw_cell: Path) -> None:
 
     assert rows["django__django-12262"].tree_snapshots == 2
     assert rows["astropy__astropy-12907"].tree_snapshots == 1
+
+
+def test_the_analyst_writing_the_source_reaches_the_cell_report(dw_cell: Path) -> None:
+    """The probe between analyze and implement stopped at ``metrics.jsonl``.
+
+    In dw-subset50-r2 forty-nine of fifty runs recorded it true: the analyst
+    had already changed the source when the script went to call the coder. The
+    arm reads as a three-role workflow and ran as one agent fixing the task
+    with two more reviewing it. A number that has to be dug out of the raw
+    metrics by hand is a number the paper does not have.
+    """
+    rows = _rows(dw_cell)
+
+    assert rows["django__django-12262"].analyst_wrote_source is True
+    assert rows["astropy__astropy-12907"].analyst_wrote_source is False
+
+
+def test_a_cell_that_never_probed_the_tree_is_not_summarised_as_a_clean_zero(
+    dw_cell: Path,
+) -> None:
+    """Zero runs that wrote and zero runs that were asked are the same count.
+
+    The summary carries both, so "the analyst never wrote" cannot be read off a
+    cell where nothing ever looked.
+    """
+    rows = list(_rows(dw_cell).values())
+    summary = cell_report.summarize(rows, [])
+
+    assert summary["analyst_wrote_source"] == 1
+    assert summary["analyst_wrote_source_probed"] == 2
+
+    blind = [replace(r, analyst_wrote_source=None) for r in rows]
+    blind_summary = cell_report.summarize(blind, [])
+    assert blind_summary["analyst_wrote_source"] == 0
+    assert blind_summary["analyst_wrote_source_probed"] == 0
 
 
 # --- E7: the two things spelt "budget" ------------------------------------- #
