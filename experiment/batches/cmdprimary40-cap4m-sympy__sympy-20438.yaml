@@ -58,8 +58,40 @@
 # Pre-flight before launching all seven: run this row alone first and confirm
 # the report's `seat_cap_tokens` reads [4000000], not [2000000]. A cap that
 # does not actually move would produce a rerun that looks like a null result.
+#
+# 2026-09-08: moved from gpu3 to lthpc, and the pins moved with it.
+#
+# The host move is safe on the axis that matters. gpu3's `configs/.env` and
+# lthpc's `configs/.env.deepseek` were compared by key fingerprint, not by
+# filename: both hold the same 67-character key (sha256 d6f82b14...), both
+# point at the private gateway http://47.100.35.241:56477/v1, and both name
+# `deepseek-v4-flash`. The model this rerun reaches is the model
+# cmdprimary40-r2 reached.
+#
+# The pins had to move because lthpc's checkouts cannot go backwards while
+# another batch is reading them, and the ladder's pins (runtime 9175297e,
+# evaluator 898d5807) are behind. What that costs was read commit by commit
+# rather than assumed:
+#
+#   evaluator 898d5807 -> c80e64a: nothing on this arm's run path. The only
+#     three files that touch it are a line number inside a citation string
+#     (arm_registry), an import reordering (gen_prediction_batch), and a
+#     context-window row for `qwen3.8-flash` (usage). This batch is deepseek.
+#
+#   runtime 9175297e -> 25d5a2e5: six commits, five of them recording
+#     (time-to-first-token, request tools, compaction thresholds) or
+#     qwen-only capability rows. One is not inert: 191cbb63 retries a gateway
+#     concurrency refusal that carries no HTTP status. It makes a run more
+#     likely to finish rather than die as a provider failure, which is the
+#     bucket D21 excludes -- so it can add runs to this probe's denominator
+#     and cannot manufacture a delegation that did not happen. Declared as a
+#     deviation; the probe is a sensitivity check reported in the appendix,
+#     not a ladder cell.
+#
+# The batch that runs alongside this one (dw-reading-subset50) is at the same
+# two pins, so the two new batches share an instrument version.
 name: cmdprimary40-cap4m-sympy__sympy-20438
-host: gpu3
+host: lthpc
 arm: team
 rung: primary
 cell: facts-v2
@@ -69,12 +101,12 @@ budget_per_seat: 4000000
 max_steps: 200
 timeout: 5400
 concurrency: 1
-model_env: configs/.env
+model_env: configs/.env.deepseek
 env:
   OPENCOLLAB_LLM_STREAM_CHAT: "true"
   OPENCOLLAB_REASONING_EFFORT: "max"
   OPENCOLLAB_WRITE_NUDGE_MODE: "off"
 pins:
-  opencollab: 9175297ed56be6a0377b38d6f5949e07d34d7073
-  opencollab_eval: 898d5807305edbac17917ad18a2dafc85dae7487
+  opencollab: 25d5a2e5b942792ea59334bf67e273dc3d1408e2
+  opencollab_eval: c80e64a396fa8753e3c40adf7f9499c2b6276c7c
 note: "censoring probe: cmdprimary40-r2 row 14 (sympy__sympy-20438) rerun at a 4M seat cap and 200 steps; it stopped at 58,826 tokens of headroom having walked 0/6 edges. Reported in the appendix as a sensitivity check on the censored interval [0.000, 0.175]; not part of the ladder's denominators."
