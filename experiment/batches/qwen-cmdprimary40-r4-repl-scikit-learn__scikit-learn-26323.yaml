@@ -1,0 +1,41 @@
+# The stand-in for pylint-dev__pylint-4661 in the second model's primary cell.
+#
+# Same rule, same replacement instance and same reason as
+# `cmdprimary40-r2-repl-scikit-learn__scikit-learn-26323.yaml`: pylint-4661's
+# SWE-bench evaluation environment does not run, the benchmark's own gold patch
+# does not resolve there, so every arm scores zero on it whatever the agent did.
+# The stand-in is row 101 of the ordered draw -- the first reserve row, fixed on
+# 2026-09-01 before anyone knew which instance would fail -- addressed here as
+# row 282 of `frame-ordered.csv` because the reserve rows are in no `suite-*.csv`.
+#
+# Why this spec exists at all: `cmdprimary40-r2` has already made the swap and
+# `qwen-cmdprimary40-r4` has not, so as of 2026-09-07 the two cells run 39 tasks
+# in common and one task each of their own. A cross-model contrast that is
+# supposed to hold the task set fixed cannot be drawn across cells whose task
+# sets differ, so the swap is made on this cell too rather than the pair being
+# compared on 39.
+#
+# Every paid field is `qwen-cmdprimary40-r4.yaml`'s own, byte for byte,
+# including its pins -- a replacement is part of the cell it joins, so it runs
+# at that cell's instrument, not at the repository head.
+name: qwen-cmdprimary40-r4-repl-scikit-learn__scikit-learn-26323
+host: lthpc
+arm: team
+rung: primary
+cell: facts-v2
+suite: frame-ordered
+rows: {start: 282, stop: 282}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 1
+model_env: configs/.env.qwen
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+replaces: {batch: qwen-cmdprimary40-r4, instance: pylint-dev__pylint-4661}
+note: "stands in for pylint-dev__pylint-4661 (subset-50 row 39) in qwen-cmdprimary40-r4, on the same rule and with the same stand-in the deepseek cell used. Without it the two primary cells run 39 tasks in common and the matched-task comparison loses a pair."

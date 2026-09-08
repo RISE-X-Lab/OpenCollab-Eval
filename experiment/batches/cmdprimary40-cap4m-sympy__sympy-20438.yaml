@@ -1,0 +1,80 @@
+# Censoring probe for the ladder's `primary` rung: does the 2M seat cap hide
+# delegation, or is there none to hide?
+#
+# What this batch is for. In cmdprimary40-r2 the alpha of this rung is reported
+# as a censored interval [0.000, 0.175], not a point. The width is these seven
+# runs: the analyst seat spent its whole 2M budget and stopped on the pre-call
+# reservation, so the record cannot say whether delegation had its chance.
+# Appendix B buckets them as undetermined for exactly that reason. This spec
+# reruns those seven -- and only those seven -- with the cap raised, so the
+# question the interval leaves open is answered by measurement instead of by
+# a bound. If none of the seven delegates once the cap no longer binds, the
+# upper end of the interval collapses onto the point estimate and alpha at
+# this rung is 0.000 outright. If any of them does, the paper's "alpha is zero
+# when the choice is left to the model" is wrong as written, and better found
+# here than by a reviewer.
+#
+# Row 14 of subset-50, sympy__sympy-20438. In cmdprimary40-r2 it spent
+# 1,941,174 tokens over 53 steps against a 2,000,000 seat cap, stopped with
+# `budget exhausted before model call` at 58,826 tokens of headroom,
+# walked 0 of 6 declared edges and wrote 3,305 characters of patch. Its
+# role_tokens read analyst-only: coder and tester each spent zero.
+#
+# Two fields differ from cmdprimary40-r2, and both differ on purpose:
+#
+#   budget_per_seat  2,000,000 -> 4,000,000
+#   max_steps              100 -> 200
+#
+# max_steps has to move with the cap. These runs stopped at 53 steps on a
+# 2M budget; on 4M the same trajectory reaches roughly 110 steps, which
+# would hit the old ceiling of 100 and merely trade one censoring reason for
+# another. Raising both is what makes the probe answer its own question. Every
+# other paid field -- arm, rung, cell, suite, timeout, model file, the three
+# switches -- is byte-identical to cmdprimary40-r2. `concurrency` reads 1
+# rather than that batch's 6 because a one-row spec has one run to schedule:
+# it is a scheduling parameter that does not reach the run, and this batch's
+# own retry specs set it the same way. The pins are that
+# batch's pins rather than today's head, so the only difference between this
+# run and the one it probes is the two budgets. (pylint-dev__pylint-4661, whose
+# replacement was withdrawn on 2026-09-07, is not among these seven, so the
+# Eval-side withdrawal does not reach this batch.)
+#
+# This is NOT a retry: `retry_of` requires every paid field to match, and two
+# of them deliberately do not. It is a standalone batch and its runs stay out
+# of the ladder's denominators. The ladder table keeps reporting the
+# pre-registered censored interval; this batch is reported in the appendix, as
+# a sensitivity check on what that interval was hiding.
+#
+# Read-out, written before the run:
+#   - terminal reason `submitted` / normal completion  -> censoring removed for
+#     this row; alpha's judgement for it is now observed, whatever it says
+#   - any `message_agent` call by the analyst seat      -> delegation existed
+#     and the 2M cap was hiding it; statement (a) has to be rewritten
+#   - `budget exhausted before model call` again at 4M  -> still censored;
+#     escalate this row to 8M rather than concluding anything
+#   - `max steps` at 200                                -> censoring reason
+#     changed, not removed; this row stays undetermined and 200 was too low
+#
+# Pre-flight before launching all seven: run this row alone first and confirm
+# the report's `seat_cap_tokens` reads [4000000], not [2000000]. A cap that
+# does not actually move would produce a rerun that looks like a null result.
+name: cmdprimary40-cap4m-sympy__sympy-20438
+host: gpu3
+arm: team
+rung: primary
+cell: facts-v2
+suite: subset-50
+rows: {start: 14, stop: 14}
+budget_per_seat: 4000000
+max_steps: 200
+timeout: 5400
+concurrency: 1
+model_env: configs/.env
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 9175297ed56be6a0377b38d6f5949e07d34d7073
+  opencollab_eval: 898d5807305edbac17917ad18a2dafc85dae7487
+note: "censoring probe: cmdprimary40-r2 row 14 (sympy__sympy-20438) rerun at a 4M seat cap and 200 steps; it stopped at 58,826 tokens of headroom having walked 0/6 edges. Reported in the appendix as a sensitivity check on the censored interval [0.000, 0.175]; not part of the ladder's denominators."
