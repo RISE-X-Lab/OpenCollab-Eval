@@ -451,9 +451,15 @@ def cmd_sync(batch: Batch, remote: Ssh) -> int:
     script = batch_remote.sync_script(batch.host, want["OC"], want["EV"])
     out = batch_remote.parse_facts(remote.run(script, timeout=900))
     after = {f[0]: f[1] for f in out if f[0].endswith("_AFTER") and len(f) > 1}
+    proxies = {f[0]: f[1] for f in out if f[0].endswith("_PROXY") and len(f) > 1}
     for fact in out:
         if fact[0].endswith("_FETCH_RETRY") and len(fact) > 1:
-            print(f"  {fact[0].split('_')[0]}: fetch retry {fact[1]}")
+            tag = fact[0].split("_")[0]
+            # A retry is where a fetch that cannot reach GitHub first becomes
+            # visible, and the commonest reason on these hosts is that the
+            # proxy resolved to nothing. Say which one it used, here, rather
+            # than leaving the reader to find it by hand afterwards.
+            print(f"  {tag}: fetch retry {fact[1]} (proxy {proxies.get(tag + '_PROXY', 'unknown')})")
     problems = [
         " ".join(f) for f in out if f[0].endswith("_MISSING") or f[0].endswith("_CHECKOUT_FAILED")
     ]

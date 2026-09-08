@@ -911,3 +911,39 @@ def test_go_does_not_launch_when_sync_refuses(experiment: dict, capsys) -> None:
     out = capsys.readouterr().out
     assert "RESULT: not launched" in out
     assert all("setsid nohup env" not in s for s in remote.scripts)
+
+
+def test_a_fetch_retry_names_the_proxy_the_host_resolved(experiment: dict, capsys) -> None:
+    """A fetch that cannot reach GitHub must say what route it tried.
+
+    Both checkouts on lthpc carried a repository-local ``http.proxy =`` whose
+    value was the empty string. It overrides the global setting, and
+    ``config --get`` returns it with a zero exit status, so the sync exported
+    no proxy, fetched direct, and reported three retries and a missing commit
+    without naming the cause. The retry line now carries the resolved proxy,
+    and "none" is one of the answers it can carry.
+    """
+    remote = SyncRemote(
+        _guard(),
+        "EV_PROXY\tnone\nEV_FETCH_RETRY\t1\nEV_MISSING\t" + PIN_EVAL + "\n"
+        f"OC_PROXY\thttp://127.0.0.1:17890\nOC_AFTER\t{experiment['sha']}\n",
+    )
+
+    assert _sync(experiment, remote) == 1
+
+    out = capsys.readouterr().out
+    assert "fetch retry 1 (proxy none)" in out
+
+
+def test_the_sync_script_falls_back_to_the_global_proxy(experiment: dict) -> None:
+    """The repository-local value is read first, the global one when it is empty."""
+    remote = SyncRemote(_guard(), _synced(experiment))
+
+    assert _sync(experiment, remote) == 0
+
+    checkout = remote.scripts[1]
+    assert 'git -C "$d" config --get http.proxy' in checkout
+    assert 'git config --global --get http.proxy' in checkout
+    # The printf format carries a real tab and newline, as every fact line in
+    # this script does, so the assertion is on the parts either side of them.
+    assert '"%s_PROXY' in checkout and '"$tag" "${P:-none}"' in checkout

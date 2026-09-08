@@ -83,6 +83,15 @@ def sync_script(host: HostConfig, oc_sha: str, eval_sha: str) -> str:
     rather than from a field here: whichever way that machine reaches GitHub is
     a fact about the machine, and exporting it covers the paths that read the
     environment instead of the config.
+
+    2026-09-07: read the repository's config and then the global one, and print
+    whichever answered. Both checkouts on lthpc carried a repository-local
+    ``http.proxy =`` with an empty value, which overrides the global setting
+    and which ``config --get`` returns as an empty string with a zero exit
+    status. The fetch then went out with no proxy, hung, and reported three
+    retries and a missing commit -- none of which named the reason. A proxy
+    that resolves to nothing is a fact worth printing, because it is
+    indistinguishable at the far end from a machine that does not need one.
     """
     oc = f"{host.workdir}/{host.opencollab_dir}"
     ev = f"{host.workdir}/{host.eval_dir}"
@@ -92,6 +101,8 @@ def sync_script(host: HostConfig, oc_sha: str, eval_sha: str) -> str:
             "sync_repo() {",
             '  d="$1"; sha="$2"; tag="$3"',
             '  P="$(git -C "$d" config --get http.proxy 2>/dev/null || true)"',
+            '  if [ -z "$P" ]; then P="$(git config --global --get http.proxy 2>/dev/null || true)"; fi',
+            '  printf "%s_PROXY\t%s\n" "$tag" "${P:-none}"',
             '  if [ -n "$P" ]; then export https_proxy="$P" http_proxy="$P"; fi',
             '  if ! git -C "$d" cat-file -e "$sha^{commit}" 2>/dev/null; then',
             "    for i in 1 2 3; do",
