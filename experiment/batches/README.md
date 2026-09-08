@@ -10,6 +10,8 @@ command, refuses to start when the host does not match it, and leaves a
 V=.venv/bin/python
 $V -m opencollab_eval.commands.batch plan      experiment/batches/<name>.yaml   # local, free
 $V -m opencollab_eval.commands.batch preflight experiment/batches/<name>.yaml   # reads the host, changes nothing
+$V -m opencollab_eval.commands.batch sync      experiment/batches/<name>.yaml   # host checkouts -> the spec's pins
+$V -m opencollab_eval.commands.batch go        experiment/batches/<name>.yaml   # sync, then launch
 $V -m opencollab_eval.commands.batch launch    experiment/batches/<name>.yaml --limit 3
 $V -m opencollab_eval.commands.batch status    experiment/batches/<name>.yaml
 $V -m opencollab_eval.commands.batch wait      experiment/batches/<name>.yaml [--poll 120] [--timeout 21600]
@@ -17,7 +19,29 @@ $V -m opencollab_eval.commands.batch launch    experiment/batches/<name>.yaml   
 $V -m opencollab_eval.commands.batch wait      experiment/batches/<name>.yaml
 $V -m opencollab_eval.commands.batch pull      experiment/batches/<name>.yaml
 $V -m opencollab_eval.commands.batch report    experiment/batches/<name>.yaml --json /root/oc-batches/<name>.report.json
+$V -m opencollab_eval.commands.batch score     experiment/batches/<name>.yaml   # the gold control, alone
+$V -m opencollab_eval.commands.batch score-report experiment/batches/<name>.yaml
+$V -m opencollab_eval.commands.batch score --no-gold experiment/batches/<name>.yaml
 ```
+
+`sync` writes nothing and returns non-zero when a driver is alive on the host, a
+tree is dirty, the spec pins only one repository, or its own liveness check
+cannot see the decoy it planted. One host holds one pair of checkouts, so two
+batches at different pins are serial by construction, and a running batch makes
+`sync` refuse — which is the intended answer, not an obstacle to work around.
+
+`score` runs the benchmark's own reference patches first and by themselves, and
+`score-report` refuses to read a resolve rate out of a session whose gold run did
+not resolve everything. That control is not ceremony: on 2026-09-07 a cell
+reported a task as unresolvable and the cause was a machine with no route to the
+package index. It also counts the predictions file before scoring it, because a
+driver that died mid-way leaves a short file that scores without complaint and
+returns a rate over the runs that happened to finish.
+
+**Which host.** The spec's `host:` names a file in `experiment/hosts/`. Since
+2026-09-08 that is `lthpc` (ssh alias `gpu`); `gpu3` is retired and reached only
+to read old data. Everything host-shaped — workdir, checkouts, docker mount, disk
+floor, scoring dataset and interpreter — is in the host file, not here.
 
 `launch --limit 3` is the paid pre-flight: the first three tasks of the slice,
 into the same out-dir. Read them (`pull`, `report`) before launching the rest.
@@ -205,7 +229,7 @@ of a `.env` file whose name contains KEY/TOKEN/SECRET/PASSWORD.
 | `model named` | `OPENCOLLAB_MODEL=` is empty in that file. | Whoever owns the file sets it. Record the exact model id in the spec's `note`. | — |
 | `docker disk free` | `/mnt` (docker root) is below `min_free_gb`. It has reached 100% before. | Find what this experiment left: `docker ps -a --filter name=oc-gen- --filter name=oc-wf- --filter status=exited` (prefixes: `oc-gen-` single, `oc-wf-` team and workflows, `oc-bon-` best-of-n). Remove only those, by name. Then `docker system df` and `du -sh ~/oc-team-smoke/*` to see what else is large, and report it. | `docker system prune`, `docker rmi`, removing containers with other prefixes, lowering `min_free_gb` to make the check pass. |
 | `task images present` | An image the slice needs is not on the host. | Report the image and the instance. The suite's replacement rule lives in `experiment/suite/README.md` and `sampling-manifest.json`; changing the task list is a pre-registration change, not a launch-time fix. | Pull images from the network into a running experiment; drop the row from the CSV. |
-| `running-batch check sees a planted process` | `pgrep` on the host cannot see a process whose command line contains the pattern. Every "nothing is running" answer from this host is now untrustworthy. | Check by hand, and prove the check first: plant a process the check must hit — `setsid bash -c 'exec -a "python -m opencollab_eval.generation.gen_prediction_batch --out-dir positive-control" sleep 30' &` — then run `ps -eo pid,etime,args \| grep '[o]pencollab_eval[.]generation[.]gen_prediction_batch'` and confirm the planted line is in the output before reading anything into the rest of it. **No `-F`**: under `-F` the brackets are literal, the pattern matches no driver that ever ran, and the only line it returns is the grep's own (verified on gpu3, 2026-09-05). The brackets are what keeps the grep from matching itself, so they have to stay a regex. If `pgrep` is missing or its output format changed, say so; do not launch until the check is repaired. | Treat the empty list as "nothing running" — least of all one from a check that has not been shown to hit anything. |
+| `running-batch check sees a planted process` | `pgrep` on the host cannot see a process whose command line contains the pattern. Every "nothing is running" answer from this host is now untrustworthy. | Repair the check; do not launch while it is broken. If you must look by hand, plant a process the check has to hit — `setsid bash -c 'exec -a "python -m opencollab_eval.generation.gen_prediction_batch --out-dir positive-control" sleep 30' &` — then run `ps -eo pid,etime,args \| grep '[o]pencollab_eval[.]generation[.]gen_prediction_batch'` and confirm the planted line appears before reading anything into the rest. **No `-F`**: under `-F` the brackets are literal, the pattern matches no driver that ever ran, and the only line it returns is the grep's own (verified 2026-09-05). And the brackets are not a general fix — they only work while the plain string appears nowhere else in the checker's own command line, which is exactly how they failed on 2026-09-08 in a script that mentioned both forms. **Always print the matched process lines and look at them; a count alone cannot tell you that one of the hits is the checker.** | Treat the empty list as "nothing running" — least of all one from a check that has not been shown to hit anything, or one whose hits you never read. |
 | `no driver already writing this out-dir` | A driver with `--out-dir <name>` is alive. | `wait` for it, then `pull` and `report`. If it is a stale process (check `ps -o pid,etime,args -p <pid>`; a driver whose log has not grown for hours), report it; do not kill a process you did not start. | Launch a second driver into the same out-dir (the manifest and predictions would interleave). |
 | `other batches running on the host` (warning) | The machine is shared. | Look at `/mnt` and the load before adding concurrency; the warning is about capacity, not correctness. | — |
 | `out-dir` exists without `batch.json` | A hand-launched batch (before 2026-09-02: `tri15`, `think-*`, `cmdplain30`), or a directory made by something else. | Pick another `name`. Those directories stay as they are. | Delete or rename the directory; write a `batch.json` into it by hand. |
@@ -216,7 +240,7 @@ of a `.env` file whose name contains KEY/TOKEN/SECRET/PASSWORD.
 
 | Symptom | Where to look | Likely cause |
 |---|---|---|
-| `driver process not seen 5 s after launch` | `ssh gpu3 tail -20 ~/oc-team-smoke/<name>.log` | The driver exited at once: a wrong argument, a team file it cannot read, or the venv python missing. The log has the traceback. The log is appended across launches, so read its tail, not its head. |
+| `driver process not seen 5 s after launch` | `ssh gpu tail -20 ~/<name>.log` (the host file's workdir) | The driver exited at once: a wrong argument, a team file it cannot read, or the venv python missing. The log has the traceback. The log is appended across launches, so read its tail, not its head. |
 | `ssh … exited 255` | The launcher retries six times with backoff before raising. | The host refuses new connections under load. Wait, then retry the same command; nothing was started if `launch` failed before its last step. |
 | Runs `failed` with a provider or infrastructure error | `<out-dir>/logs-<arm>/<instance>/driver.log` on the host, or under the local copy after `pull` | Proxy not reaching the model (the launcher sets it; a change on the network side), a 4xx from the endpoint, a container that would not start. Such runs enter no denominator; `report` lists them as excluded. A batch with many of them in a row is stopped by hand and reported, not resumed blindly. |
 | Runs `stopped` | `report`'s `cap` column | A seat hit its budget. Valid: it counts in every denominator. |
@@ -272,6 +296,7 @@ only: delivery is undefined there, not zero.
 
 ## Not covered here
 
-Scoring (the SWE-bench harness in `~/oc-team-smoke/.venv-swebench`, see the
-gpu3 notes) and the six-axis adherence reader are separate steps; see the
-engineering plan.
+The six-axis adherence reader is a separate step; see the engineering plan.
+Scoring now has a command here (`score` / `score-report`); what it does to the
+numbers — which runs enter a denominator, why infra flags do not remove tasks —
+is in the `oc-score` skill.
