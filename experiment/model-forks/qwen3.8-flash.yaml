@@ -1,0 +1,29 @@
+# What qwen3.8-flash is supposed to resolve to, checked by
+#
+#     python -m opencollab_eval.experiment.model_fork_audit qwen3.8-flash \
+#         --declare experiment/model-forks/qwen3.8-flash.yaml
+#
+# Keys are the QUANTITY column of that tool's table. A key without a prefix is
+# OpenCollab's answer; an ``eval:`` prefix is OpenCollab-Eval's. A key that
+# matches no quantity fails rather than passing quietly -- a declaration whose
+# key was a typo would check nothing forever, which is the same shape of defect
+# this file exists to catch. Declare only what you have a reason for; anything
+# left out is still resolved and printed, just not compared.
+model: qwen3.8-flash
+expect:
+  # 983,616 is the largest input DashScope accepts in thinking mode, the mode
+  # the batches run in. 131,072 is this model's maximum *output*; three batches
+  # were recorded under it before that was found, which put history compaction
+  # at 98,072 tokens instead of 950,616.
+  capabilities.context_window: 983616
+  eval:capabilities.context_window: 983616
+  history.trigger: 950616
+  history.target: 712962
+  # Refused by the endpoint in thinking mode: tool_choice "required" or a named
+  # function comes back HTTP 400, so OpenCollab must rewrite it to "auto".
+  capabilities.supports_forced_tool_choice: false
+  request.forced_tool_choice_downgraded: true
+  # Not an OpenAI reasoning-family spelling, so the request carries max_tokens
+  # and a temperature, exactly as the deepseek batches did.
+  request.max_output_token_field: max_tokens
+  request.sends_temperature: true
