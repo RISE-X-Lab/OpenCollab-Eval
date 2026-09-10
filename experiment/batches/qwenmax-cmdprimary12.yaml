@@ -59,4 +59,4 @@ env:
 pins:
   opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
   opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
-note: "fourth snapshot, baseline rung; run only if qwenmax-cmdprohibit12 cleared"
+note: "fourth snapshot, baseline rung; launched together with qwenmax-cmdprohibit12 (see 01-BATCH-ORDER.md: the key expires by clock, not by quota, so the pair costs no more window than the control alone)"
