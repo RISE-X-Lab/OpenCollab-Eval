@@ -1,0 +1,67 @@
+# Breadth cell: qwen3.8-max at the prohibit rung, on the first twelve tasks.
+#
+# What the breadth table is for. The ladder on forty tasks (deepseek five rungs,
+# qwen four) shows that alpha moves across [0,1] when the wording moves. The
+# breadth table answers the other half: knowing the model name does not let you
+# recover alpha either. Only both halves together make the quantity
+# unrecoverable from what a paper reports, which is the identification claim.
+#
+# Why twelve tasks and not forty. On subset-50 rows 1-12, recomputed from the
+# two ladders already run, the two models separate at exactly one rung:
+#
+#     rung       deepseek   qwen    paired b/c   exact two-sided sign test
+#     primary        0/12    1/12        1 / 0   p = 1.000
+#     bare           5/12   11/12        6 / 0   p = 0.031
+#     plain         11/12   12/12        1 / 0   p = 1.000
+#
+# So twelve tasks carry the comparison this table makes, and carry nothing
+# finer: the marginal Clopper-Pearson intervals at n=12 overlap even where the
+# paired test separates, and no claim about where a step falls is readable at
+# this sample size. The table prints counts out of twelve, not rates.
+#
+# Tasks are subset-50 rows 1-12, a true subset of the forty the ladder ran, so
+# deepseek's and qwen's cells here are recomputed from data already on disk and
+# are not re-run.
+#
+# 2026-09-10, endpoint. This cell runs against the private gateway (configs/.env.qwenmax-pg, http://47.100.35.241:56477/v1). The principal ruled on 2026-09-10 that
+# all endpoints behind this provider are equivalent and only the model varies.
+# Probed from lthpc before launch: http 200, echoed model qwen3.8-max, reasoning
+# tokens present; a bogus model id returns 404, so the probe would have
+# reported a missing model.
+#
+# Read-out, written before the run:
+#   - This is the snapshot's positive control, and it runs first. The rung
+#     clears when the lower 95% Clopper-Pearson bound on alpha exceeds 0.5,
+#     which at n=12 needs 10 of 12 delivered. deepseek's prohibit rung is
+#     11/12 on these tasks, so a model that organizes at all should clear it.
+#   - CLEARS  -> this snapshot's alpha may be reported; run its bare and
+#     primary cells next.
+#   - DOES NOT CLEAR -> sec:exp-crossmodel's rule says no adherence rate is
+#     reported for this snapshot at all. Its other two cells are not run,
+#     because nothing read off them could enter the table. The failure is
+#     itself reportable: a model that will not divide the work even under an
+#     explicit prohibition on doing it alone.
+#   - prohibit is D19's pre-specified fallback control. plain was not used
+#     because at n=12 the gate needs 10/12 and deepseek's plain rung sits at
+#     0.800 on forty, which lands on the threshold; prohibit at 0.925 does
+#     not.
+name: qwenmax-cmdprohibit12
+host: lthpc
+arm: team
+rung: prohibit
+cell: cmd-prohibit
+suite: subset-50
+rows: {start: 1, stop: 12}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env.qwenmax-pg
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "fourth snapshot, control rung first: qwen3.8-max holds vendor and generation fixed against qwen3.8-flash and varies only scale, so this column asks whether alpha tracks model capability"

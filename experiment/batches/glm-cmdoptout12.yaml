@@ -1,0 +1,66 @@
+# Breadth cell: glm-5.2 at the opt-out rung, on the first twelve tasks.
+#
+# THIS IS A CANDIDATE FOR THE ADAPTIVE THIRD CELL. Exactly one of this model's
+# opt-out / bare / plain specs is launched, chosen after its primary and
+# prohibit cells land, by the table in BREADTH-RUNBOOK-0910.md section 3. The
+# other two are never launched and leave no out-dir.
+#
+# Why the third rung is chosen rather than fixed. Three fixed rungs bracket the
+# step for one model and degenerate for another, and our own two models are the
+# counterexample: primary/bare/plain resolves deepseek (0.000 / 0.350 / 0.800)
+# and collapses on qwen, whose bare and plain are the same number (0.950 both),
+# so two of the three cells print one value. Three rungs chosen against this
+# model's own primary and prohibit bracket the step to within two adjacent
+# rungs whatever the model turns out to be.
+#
+# Why twelve tasks. On subset-50 rows 1-12, recomputed from the two ladders
+# already run, the two models separate at exactly one rung -- bare, paired
+# b=6 c=0, exact two-sided sign test p = 0.031 -- while primary and plain both
+# give p = 1.000. Twelve carries the comparison this table makes and nothing
+# finer: the marginal intervals at n=12 overlap even where the paired test
+# separates. The table prints counts out of twelve, not rates, and reports no
+# resolve rate at all: at n=12 resolution is noise, and we measured that
+# directly (six empty patches, same task and same config, four non-empty on one
+# rerun).
+#
+# 2026-09-10, endpoint. This cell runs against the private gateway
+# (configs/.env.glm-pg, http://47.100.35.241:56477/v1). The principal ruled on
+# 2026-09-10 that all endpoints behind this provider are equivalent and only
+# the model varies. Probed from lthpc before launch: http 200, echoed model
+# glm-5.2, reasoning tokens present; a bogus model id returns 404, so the probe
+# would have reported a missing model.
+#
+# Read-out, written before the run:
+#   - This rung is chosen when the model already delivered on 2 to 5 of the
+#     twelve primary tasks: it delegates without being told to, so its step is
+#     low, and the rung between primary and bare is where it can still be seen.
+#   - The card is bare's card plus one sentence: "You may depart from this and
+#     do the implementation yourself; that is your call, and there are runs
+#     where it is the better one." The rung therefore measures what an explicit
+#     permission to depart is worth to this model.
+#   - >= 10/12 -> the step is at or below opt-out: an imperative carrying its
+#     own exemption is already enough.
+#   - <= 5/12  -> the step is above opt-out; with primary and prohibit it is
+#     bracketed to [opt-out, prohibit].
+#   - 6 to 9   -> twelve tasks cannot place it. Report the count and make no
+#     claim about which side it falls on.
+name: glm-cmdoptout12
+host: lthpc
+arm: team
+rung: opt-out
+cell: cmd-optout
+suite: subset-50
+rows: {start: 1, stop: 12}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env.glm-pg
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "breadth arm candidate for the adaptive third cell: glm-5.2 at the opt-out rung on the ladder's first twelve tasks; launched only if this model's primary and prohibit cells select it"
