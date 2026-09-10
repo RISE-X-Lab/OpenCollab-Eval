@@ -1,0 +1,61 @@
+# Single under the second model, `qwen3.8-flash`, on the ladder's forty tasks.
+#
+# What it is for, in one sentence: every quantity the paper reads off a team
+# cell is read against Single on the same tasks, and the second snapshot has
+# no Single at all.
+#
+# `arm-design-by-estimand` states it plainly: Single is the coordinate origin.
+# Without it, qwen's team cells have adherence rates and costs but no
+# denominator -- the cost tax, the delivery-attribution comparison and every
+# "team minus Single" difference are undefined for this model, and §4 can only
+# compare qwen to qwen.
+#
+# Every paid field is copied verbatim from the first snapshot's Single cell
+# (`single-subset50-r2`) -- arm, budget_per_seat, max_steps, timeout,
+# concurrency and the three switches -- and the model and pins are copied from
+# `qwen-cmdplain40`.
+#
+# Two things are deliberate and must be declared:
+#
+#   * `rows` 1-40, not 1-50. deepseek's Single ran the whole subset-50 because
+#     it also served as that subset's first repetition. Here the only job is
+#     the pairing the design paragraph names, which is the ladder's forty
+#     tasks. Rows 41-50 would not enter any comparison and would cost a
+#     quarter more.
+#   * no `withdraw_replacements`, for the reason given in `qwen-cmdbare40`.
+#
+# Read-out, written before the run:
+#   - it completes -> qwen's three rungs each acquire a paired baseline, and
+#     the cost tax becomes computable for the second snapshot
+#   - resolve rate is a descriptive statistic only, never a comparison: the
+#     noise floor recorded on 2026-08-31 (same task, same config, rerun flips)
+#     applies to this cell as it does to every other
+#
+# 2026-09-10, endpoint. This cell runs against the private gateway
+# (`configs/.env.qwen-pg`, http://47.100.35.241:56477/v1) while qwen's primary,
+# bare and plain cells ran against dashscope. The principal ruled on 2026-09-10
+# that the two endpoints are equivalent: the gateway is a proxy layer we placed
+# in front of the same upstream provider for key management, so the only thing
+# that varies across the model axis is the model. Recorded here because it is a
+# paid field that differs from this cell's neighbours, and §4 must be able to
+# say so. The gateway was probed from lthpc before launch: HTTP 200,
+# echoed_model `qwen3.8-flash`, reasoning_tokens present; a bogus model id
+# returns 404, so the probe would have reported a missing model.
+name: qwen-single40
+host: lthpc
+arm: single
+suite: subset-50
+rows: {start: 1, stop: 40}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 10
+model_env: configs/.env.qwen-pg
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "Single under qwen3.8-flash on the ladder's forty tasks; the paired baseline the second snapshot is missing"

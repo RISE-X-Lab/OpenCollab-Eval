@@ -1,0 +1,58 @@
+# The ladder's `bare` rung under the second model, `qwen3.8-flash`.
+#
+# What it is for, in one sentence: `tab:ladder`'s second snapshot is missing
+# this row, and without it the qwen column is a two-point ladder.
+#
+# The paper's design paragraph (05-experiment.tex, D19) says the second
+# snapshot "runs the three main-text rungs and Single on the first snapshot's
+# 40 tasks, so that the ladder is paired task by task across snapshots". The
+# three main-text rungs are primary / bare / plain. qwen has run primary
+# (`qwen-cmdprimary40-r4`, alpha 0.150) and plain (`qwen-cmdplain40`, alpha
+# 0.950, control cleared). `bare` is the remaining one.
+#
+# Every paid field is copied verbatim from the first snapshot's bare cell
+# (`cmdbare40-r2`) -- arm, rung, cell, budget_per_seat, max_steps, timeout,
+# concurrency and the three switches -- and the model and pins are copied from
+# `qwen-cmdplain40`, so this cell differs from deepseek's bare in the model and
+# from qwen's plain in the rung, and in nothing else that was chosen.
+#
+# One thing is deliberate and must be declared:
+#
+#   * no `withdraw_replacements`. deepseek's bare cell withdrew
+#     `pylint-dev__pylint-4661` on gpu3 because that machine could not reach a
+#     package index and scored every patch zero, gold included. The withdrawal
+#     was reverted on 2026-09-07 once lthpc resolved the same instance's gold
+#     patch 1/1. qwen's primary and plain cells both ran the full forty with
+#     pylint-4661 in place; this one does the same, so all three qwen rungs
+#     share one denominator.
+#
+# Read-out, written before the run:
+#   - alpha_adh lands between primary's 0.150 and plain's 0.950 -> the qwen
+#     ladder has the same monotone shape as deepseek's, and the cross-model
+#     paragraph reports two ladders rather than two points
+#   - alpha_adh at or below primary's -> the step between "you may" and "you
+#     must" sits in a different place under this model, which is a finding
+#     about the rung wording and has to be said in §4, not smoothed over
+#   - alpha_adh at or above plain's -> bare and plain are not separable under
+#     this model; the qwen ladder collapses to two levels and `tab:ladder`
+#     must say so
+name: qwen-cmdbare40
+host: lthpc
+arm: team
+rung: bare
+cell: cmd-bare
+suite: subset-50
+rows: {start: 1, stop: 40}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env.qwen
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "the second snapshot's bare rung, on the same forty tasks and at the same pins as qwen's primary and plain; completes the three main-text rungs for tab:ladder"
