@@ -130,6 +130,7 @@ from .gen_prediction_docker import (
     container_owner_path,
     finalize_container_ownership,
     mark_container_kept,
+    prepare_testbed_environment,
     recover_stale_container_owners,
     remove_container,
     remove_container_and_clear_marker,
@@ -265,6 +266,7 @@ def main() -> None:
     trusted_baseline = None
     try:
         generation_image_id = container_image_id(cid)
+        prepare_testbed_environment(cid)
         snapshot = prepare_solver_git_snapshot(
             cid,
             str(instance.get("base_commit") or ""),

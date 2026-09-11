@@ -16,6 +16,7 @@ from opencollab_eval.engine.swe_eval_records import open_regular_binary, read_bo
 
 from .gen_prediction_config import _docker_timeout_from_env
 from .gen_prediction_constants import (
+    _ACTIVATE,
     _MISSING_CONTAINER_RE,
     CONTAINER_OWNER_LABEL,
     CONTAINER_OWNER_SCHEMA_VERSION,
@@ -55,6 +56,12 @@ def _check_docker(res: subprocess.CompletedProcess, action: str) -> None:
         return
     detail = (res.stderr or res.stdout).strip()
     raise RuntimeError(f"{action} failed (exit {res.returncode}): {detail}")
+
+
+def prepare_testbed_environment(container_id: str) -> None:
+    """Check required Conda activation before any model receives the workspace."""
+    result = _docker("exec", container_id, "bash", "-lc", _ACTIVATE)
+    _check_docker(result, "solver environment preparation")
 
 
 def _container_owner_label_state(reference: str, owner_token: str) -> str:

@@ -307,6 +307,7 @@ async def generate(
     trusted_baseline = None
     try:
         generation_image_id = gp.container_image_id(cid)
+        gp.prepare_testbed_environment(cid)
         snapshot = gp.prepare_solver_git_snapshot(
             cid,
             str(instance.get("base_commit") or ""),

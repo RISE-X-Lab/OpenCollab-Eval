@@ -29,6 +29,7 @@ FIXTURE = {
 
 @pytest.fixture(autouse=True)
 def isolated_solver_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(gpw.gp, "prepare_testbed_environment", lambda container_id: None)
     monkeypatch.setattr(gpw.gp, "container_image_id", lambda container_id: "sha256:" + "8" * 64)
     evidence = SimpleNamespace(
         as_dict=lambda: {
