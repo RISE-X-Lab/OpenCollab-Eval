@@ -1,0 +1,52 @@
+# 2026-09-12 endpoint-equivalence probe. Identical to
+# qwen-single40-cap4m-matplotlib__matplotlib-25775 in every paid field except the
+# endpoint: this one runs against dashscope (configs/.env.qwen), the endpoint
+# every dashscope team cell used, instead of the private gateway
+# (configs/.env.qwen-pg) that qwen-single40 used.
+#
+# Why it exists. The qwen cells do not share one endpoint: Single and opt-out
+# ran on the gateway, primary/bare/plain on dashscope, all four serving a model
+# named qwen3.8-flash. The owner's 2026-09-10 ruling treats the endpoints as
+# equivalent and declines an equivalence control, which is sound for a claim
+# about adherence -- an input-side quantity. The full forty-task run is instead
+# going to claim something about resolve, where an endpoint that varies with
+# the arm sits upstream of the outcome. So the control is bought here, at six
+# runs, before the forty are spent.
+#
+# Read-out, written before the run. The comparison is against
+# qwen-single40-cap4m-* on the same six tasks, same 4M cap, same steps and
+# wall clock:
+#
+#   same set of tasks carrying a patch, and per-task token spend within the
+#   spread already seen among same-config reruns -> the endpoints behave alike
+#   on this arm, and the full run may put both arms on one endpoint with the
+#   difference reported as measured rather than assumed
+#
+#   a different set resolves, or spend moves in one direction on most tasks ->
+#   the endpoint is not inert, the 2026-09-10 ruling does not cover a resolve
+#   claim, and every qwen Single-vs-team comparison in the log has to be
+#   re-read with that in mind
+#
+# Six runs cannot establish equivalence. They can only fail to refute it, or
+# refute it. That asymmetry is the point: a refutation here is decisive and
+# cheap, and nothing downstream is safe without having looked.
+#
+# Not poolable with qwen-single40-cap4m-matplotlib__matplotlib-25775: the endpoint differs.
+name: qwen-single40-cap4m-dash-matplotlib__matplotlib-25775
+host: lthpc
+arm: single
+suite: subset-50
+rows: {start: 21, stop: 21}
+budget_per_seat: 4000000
+max_steps: 200
+timeout: 10800
+concurrency: 1
+model_env: configs/.env.qwen
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "endpoint probe on dashscope, twin of qwen-single40-cap4m-matplotlib__matplotlib-25775; 4M-per-seat smoke on subset-50 row 21 (matplotlib__matplotlib-25775), base cell qwen-single40: plain resolved it; Single stopped on the cap at 1.95M"
