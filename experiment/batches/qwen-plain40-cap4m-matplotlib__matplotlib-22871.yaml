@@ -1,0 +1,71 @@
+# 2026-09-12 smoke. One row of the forty-task list, run at a 4,000,000-token
+# per-seat cap instead of 2,000,000. Paid pre-flight for the question "can the
+# three-role team out-resolve the single agent", and nothing is read out of one
+# of these files alone.
+#
+# Why this row: Single resolved it on 1.87M; plain's analyst stopped on the cap at 1.99M
+#
+# What is being changed, and why all three together. `budget_per_seat` is the
+# knob; `max_steps` and `timeout` have to move with it or the run merely stops
+# for a different reason and the probe answers nothing. That was measured on
+# 2026-09-08: doubling the budget without raising the step ceiling only trades
+# one censoring cause for another. plain at 2M already had three runs past
+# 5,000 s and one that hit the 5,400 s wall.
+#
+# What is NOT changed: the three roles, the six directed edges, every role's
+# tool list, every card, the task list, the suite, the pins and the scoring
+# dataset. The arm contrast is still the arm alone -- both arms get the same
+# three new values, so what moves is the operating point of both, not the
+# difference between them. `budget_per_seat` is the quantity the arm-alignment
+# audit calls `token_budget_per_seat` (arm_audit.py:386), so raising it for one
+# arm only would put a cross-arm variable on the outcome. It is raised for both.
+#
+# Read-out, written before the run and identical in all twelve of these files.
+# At 2M, Single resolved rows 1 and 18 and plain resolved row 21; nobody
+# resolved rows 14, 23 or 28.
+#
+#   dT = how many of rows 1, 14, 18, 23, 28 the team resolves here
+#   dS = how many of rows 14, 21, 23, 28 Single resolves here
+#
+#   dT - dS >= 2  -> the cap has more headroom for the team than for the
+#                    single agent; run the full forty for both arms
+#   dT - dS <= 1  -> this lever is not enough; move to the verification-card
+#                    hypothesis, keeping 4M as its base
+#   either arm loses two or more of the rows it already resolved -> stop and
+#                    report: 4M has a side effect, most likely the wall clock
+#
+# This smoke does NOT attribute cause. A rerun of the same task flips outcomes
+# on its own -- on 2026-09-08 three of six reruns at 4M spent LESS than they
+# had at 2M -- so "4M helped" and "a rerun helped" are not separable here. The
+# number that gets reported comes from the full forty-task paired measurement,
+# which needs no attribution.
+#
+# Known asymmetry, carried over deliberately: the two arms' existing cells run
+# on different endpoints (`.env.qwen-pg`, the private gateway, for Single;
+# `.env.qwen`, dashscope, for team), both serving qwen3.8-flash. The owner's
+# 2026-09-10 ruling is that the endpoints are equivalent and only the model
+# distinguishes them. Keeping each arm on the endpoint its 2M cell used is what
+# makes these runs comparable to that cell; changing it would trade a declared
+# difference for an undeclared one.
+#
+# Not poolable with qwen-cmdplain40: three paid fields differ.
+name: qwen-plain40-cap4m-matplotlib__matplotlib-22871
+host: lthpc
+arm: team
+rung: plain
+cell: cmd-plain
+suite: subset-50
+rows: {start: 18, stop: 18}
+budget_per_seat: 4000000
+max_steps: 200
+timeout: 10800
+concurrency: 1
+model_env: configs/.env.qwen
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "4M-per-seat smoke on subset-50 row 18 (matplotlib__matplotlib-22871), base cell qwen-cmdplain40: Single resolved it on 1.87M; plain's analyst stopped on the cap at 1.99M"
