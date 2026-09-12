@@ -26,6 +26,9 @@ def test_pending_publication_accepts_published_status():
 
 @pytest.fixture(autouse=True)
 def _isolated_solver_snapshot(monkeypatch):
+    monkeypatch.setattr(gp, "stash_solver_runtime_dependencies", lambda *a, **k: object())
+    monkeypatch.setattr(gp, "restore_solver_runtime_dependencies", lambda *a, **k: None)
+    monkeypatch.setattr(gp, "remove_solver_runtime_dependencies", lambda *a, **k: None)
     monkeypatch.setattr(gp, "container_image_id", lambda container_id: "sha256:" + "8" * 64)
     evidence = gp.SolverGitSnapshot(
         anonymous_head="a" * 40,

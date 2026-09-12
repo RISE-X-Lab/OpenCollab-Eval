@@ -15,9 +15,9 @@ def test_parallel_default_is_forwarded_to_single_task_runner():
     module = _load_module()
     config = module.resolve_config(_args())
 
-    assert config.eval_container_bind_timeout == 30
+    assert config.eval_container_bind_timeout == 120
     command = module.task_command(config, 51)
-    assert command[command.index("--eval-container-bind-timeout") + 1] == "30"
+    assert command[command.index("--eval-container-bind-timeout") + 1] == "120"
 
 
 @pytest.mark.parametrize("value", [0, -1, 301])

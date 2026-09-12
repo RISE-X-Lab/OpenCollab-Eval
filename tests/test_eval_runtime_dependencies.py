@@ -353,7 +353,7 @@ def test_javascript_plans_carry_structured_runtime_requirements(
     )
 
     assert plan["adapter"] == adapter
-    assert plan["runtime_dependencies"] == [
+    expected_dependencies = [
         {
             "root": "node_modules",
             "required_paths": [required_path],
@@ -373,6 +373,17 @@ def test_javascript_plans_carry_structured_runtime_requirements(
             "candidate_protected": False,
         },
     ]
+
+    if adapter == "mocha-json-stream":
+        expected_dependencies.extend([
+            {"root": "build/public", "required_paths": ["build/public/templates"],
+             "kind": "directory", "candidate_protected": True},
+            {"root": "build/cache-buster", "required_paths": ["build/cache-buster"],
+             "kind": "file", "candidate_protected": True},
+            {"root": "build/active_plugins.json", "required_paths": ["build/active_plugins.json"],
+             "kind": "file", "candidate_protected": True},
+        ])
+    assert plan["runtime_dependencies"] == expected_dependencies
 
 
 def test_stash_rejects_an_unignored_dependency_root(tmp_path: Path):

@@ -8,6 +8,7 @@
 
 | 阅读目标 | 文档 |
 | --- | --- |
+| 复现服务器评测方案 | [评测方案](evaluation-suite.md) |
 | 安装软件包并运行第一条本地命令 | [快速入门](getting-started.md) |
 | 准备数据集或通用任务 JSONL | [任务格式](task-formats.md) |
 | 运行真实的远程 SWE Pro-Lite 任务 | [SWE Pro-Lite 操作指南](swe-prolite-operations.md) |

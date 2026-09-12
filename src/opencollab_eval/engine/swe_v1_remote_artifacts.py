@@ -128,7 +128,10 @@ def cleanup_temporary_output(temporary_output):
 
 def create_local_eval_output():
     """Create a Docker-writable output directory on server-local storage."""
-    temporary_output = tempfile.TemporaryDirectory(prefix="opencollab-eval-", dir="/tmp")
+    temporary_output = tempfile.TemporaryDirectory(
+        prefix="opencollab-eval-",
+        dir=os.environ.get("OPENCOLLAB_EVAL_OUTPUT_ROOT") or "/tmp",
+    )
     output_dir = Path(temporary_output.name)
     output_dir.chmod(0o1777)
     return temporary_output, output_dir
@@ -163,9 +166,7 @@ def _read_text(output_dir, errors, name, limit=4000):
 
 
 def _read_required_text(output_dir, errors, name, limit=4000):
-    return _read_required_bytes(output_dir, errors, name, limit).decode(
-        "utf-8", errors="replace"
-    )
+    return _read_required_bytes(output_dir, errors, name, limit).decode("utf-8", errors="replace")
 
 
 def _read_required_bytes(output_dir, errors, name, limit=4000):
@@ -174,9 +175,7 @@ def _read_required_bytes(output_dir, errors, name, limit=4000):
         with open_regular_binary(path) as handle:
             size = os.fstat(handle.fileno()).st_size
             if size > limit:
-                raise RecordInputLimitError(
-                    f"required output artifact exceeds byte limit: {path}"
-                )
+                raise RecordInputLimitError(f"required output artifact exceeds byte limit: {path}")
             return handle.read(limit + 1)
     except FileNotFoundError:
         errors.append(f"missing:{name}")
@@ -228,11 +227,7 @@ def _read_candidate_projection(output_dir, errors, expectation, base_snapshot):
     except (TypeError, json.JSONDecodeError):
         errors.append("unsafe:candidate_projection.json:invalid_json")
         return {}, {}
-    preparation = (
-        base_snapshot.get("preparation_input_snapshot")
-        if isinstance(base_snapshot, dict)
-        else None
-    )
+    preparation = base_snapshot.get("preparation_input_snapshot") if isinstance(base_snapshot, dict) else None
     source_projection = {}
     if isinstance(report, dict) and report.get("schema") == "opencollab.eval_candidate_projection.v2":
         raw_source = _read_required_bytes(
@@ -243,11 +238,9 @@ def _read_candidate_projection(output_dir, errors, expectation, base_snapshot):
         except (TypeError, UnicodeDecodeError, json.JSONDecodeError):
             errors.append("unsafe:source_candidate_projection.json:invalid_json")
             source_projection = {}
-        if (
-            not source_projection_valid(source_projection, expectation)
-            or report.get("source_projection_sha256")
-            != source_projection_sha256(source_projection)
-        ):
+        if not source_projection_valid(source_projection, expectation) or report.get(
+            "source_projection_sha256"
+        ) != source_projection_sha256(source_projection):
             errors.append("unsafe:source_candidate_projection.json:invalid_integrity")
             source_projection = {}
     common_valid = candidate_projection_valid(report, expectation, source_projection)
@@ -294,9 +287,7 @@ def _read_candidate_projection_failure(
         with open_regular_binary(path) as handle:
             size = os.fstat(handle.fileno()).st_size
             if size > MAX_TEST_EVIDENCE_BYTES:
-                raise RecordInputLimitError(
-                    f"candidate projection failure exceeds byte limit: {path}"
-                )
+                raise RecordInputLimitError(f"candidate projection failure exceeds byte limit: {path}")
             report = json.loads(handle.read(MAX_TEST_EVIDENCE_BYTES + 1))
     except FileNotFoundError:
         return {}, {}
@@ -316,24 +307,15 @@ def _read_candidate_projection_failure(
         except (TypeError, UnicodeDecodeError, json.JSONDecodeError):
             errors.append("unsafe:source_candidate_projection.json:invalid_json")
             source_projection = {}
-    preparation = (
-        base_snapshot.get("preparation_input_snapshot")
-        if isinstance(base_snapshot, dict)
-        else None
-    )
+    preparation = base_snapshot.get("preparation_input_snapshot") if isinstance(base_snapshot, dict) else None
     source_failure = isinstance(report, dict) and report.get("phase") == "source"
     bound_base = preparation if source_failure else base_snapshot
     base_commit = str(
-        bound_base.get("expected_base_commit" if source_failure else "anonymous_head")
-        or ""
+        bound_base.get("expected_base_commit" if source_failure else "anonymous_head") or ""
         if isinstance(bound_base, dict)
         else ""
     )
-    base_tree = str(
-        bound_base.get("base_tree") or ""
-        if isinstance(bound_base, dict)
-        else ""
-    )
+    base_tree = str(bound_base.get("base_tree") or "" if isinstance(bound_base, dict) else "")
     if (
         not candidate_projection_failure_valid(
             report,
@@ -362,9 +344,7 @@ def _read_runtime_dependencies(
     identities=None,
     expected_image_id="",
 ):
-    text = _read_required_text(
-        output_dir, errors, "runtime_dependencies.json", MAX_TEST_EVIDENCE_BYTES
-    )
+    text = _read_required_text(output_dir, errors, "runtime_dependencies.json", MAX_TEST_EVIDENCE_BYTES)
     if not text:
         return {}
     try:
@@ -385,21 +365,16 @@ def _read_runtime_dependencies(
     for item in expected:
         expected_roots[item["root"]] = item
     legacy_roots = {
-        item.get("root")
-        for item in raw_expected
-        if isinstance(item, dict) and set(item) == {"root", "required_paths"}
+        item.get("root") for item in raw_expected if isinstance(item, dict) and set(item) == {"root", "required_paths"}
     }
-    expected_file_roots = {
-        item["root"] for item in expected if item.get("kind") == "file"
-    }
+    expected_file_roots = {item["root"] for item in expected if item.get("kind") == "file"}
     identity_entries = identities.get("entries") if isinstance(identities, dict) else None
     identity_valid = (
         not expected_file_roots
         and identities is None
         or isinstance(identities, dict)
         and identities.get("schema") == "opencollab.runtime_dependency_identities.v1"
-        and re.fullmatch(r"sha256:[0-9a-f]{64}", str(identities.get("image_id") or ""))
-        is not None
+        and re.fullmatch(r"sha256:[0-9a-f]{64}", str(identities.get("image_id") or "")) is not None
         and (not expected_image_id or identities.get("image_id") == expected_image_id)
         and isinstance(identity_entries, list)
         and len(identity_entries) <= 16
@@ -407,8 +382,7 @@ def _read_runtime_dependencies(
             isinstance(item, dict)
             and set(item) == {"root", "content_sha256"}
             and item.get("root") in expected_file_roots
-            and re.fullmatch(r"[0-9a-f]{64}", str(item.get("content_sha256") or ""))
-            is not None
+            and re.fullmatch(r"[0-9a-f]{64}", str(item.get("content_sha256") or "")) is not None
             for item in identity_entries
         )
         and len({item["root"] for item in identity_entries}) == len(identity_entries)
@@ -455,11 +429,7 @@ def _read_runtime_dependencies(
             and kind == expected_item["kind"]
             and candidate_protected == expected_item["candidate_protected"]
             and isinstance(content_sha256, str)
-            and (
-                not content_sha256
-                if kind == "directory"
-                else identity_hashes.get(root) == content_sha256
-            )
+            and (not content_sha256 if kind == "directory" else identity_hashes.get(root) == content_sha256)
         )
 
     valid = (
@@ -476,8 +446,7 @@ def _read_runtime_dependencies(
         and {
             item.get("root")
             for item in entries
-            if isinstance(item, dict)
-            and (item.get("kind") == "file" or item.get("root") in expected_file_roots)
+            if isinstance(item, dict) and (item.get("kind") == "file" or item.get("root") in expected_file_roots)
         }
         == set(identity_hashes)
     )
@@ -601,13 +570,11 @@ def read_eval_output_artifacts(
     f2p_log_tail = _read_text(output_dir, errors, "f2p.log")
     p2p_log_tail = _read_text(output_dir, errors, "p2p.log")
     base_snapshot = _read_integrity_report(output_dir, errors, expected_base_commit)
-    candidate_projection_failure, source_candidate_projection = (
-        _read_candidate_projection_failure(
-            output_dir,
-            errors,
-            candidate_expectation,
-            base_snapshot,
-        )
+    candidate_projection_failure, source_candidate_projection = _read_candidate_projection_failure(
+        output_dir,
+        errors,
+        candidate_expectation,
+        base_snapshot,
     )
     candidate_projection = {}
     if not candidate_projection_failure:
@@ -663,8 +630,7 @@ def read_eval_output_artifacts(
         "f2p_evidence": f2p_evidence,
         "p2p_evidence": p2p_evidence,
         "f2p_evidence_complete": _plan_evidence_complete(f2p_plan, f2p_evidence),
-        "p2p_evidence_complete": not p2p_plan["commands"]
-        or _plan_evidence_complete(p2p_plan, p2p_evidence),
+        "p2p_evidence_complete": not p2p_plan["commands"] or _plan_evidence_complete(p2p_plan, p2p_evidence),
         "f2p_execution_evidence_complete": _plan_execution_evidence_complete(
             f2p_plan,
             f2p_evidence,

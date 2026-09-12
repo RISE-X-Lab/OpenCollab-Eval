@@ -12,6 +12,8 @@ import unicodedata
 import uuid
 from pathlib import PureWindowsPath
 
+from opencollab_eval.runtime_config import effective_generation_limits
+
 from .gen_prediction_constants import MAX_INSTANCE_ID_BYTES
 
 
@@ -86,15 +88,9 @@ def _workspace_archive_timeout_from_env() -> float:
     try:
         timeout = float(raw)
     except ValueError as exc:
-        raise ValueError(
-            "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT must be a positive number, "
-            f"got {raw!r}"
-        ) from exc
+        raise ValueError(f"OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT must be a positive number, got {raw!r}") from exc
     if not math.isfinite(timeout) or timeout <= 0:
-        raise ValueError(
-            "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT must be a positive number, "
-            f"got {raw!r}"
-        )
+        raise ValueError(f"OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT must be a positive number, got {raw!r}")
     return timeout
 
 
@@ -103,9 +99,13 @@ def validate_generation_limits(
     max_steps: object,
     budget: object,
     timeout: object,
-) -> tuple[int, int, float]:
-    values: dict[str, int] = {}
+) -> tuple[int | None, int | None, float]:
+    budget, max_steps = effective_generation_limits(budget=budget, max_steps=max_steps)
+    values: dict[str, int | None] = {}
     for name, value in (("--max-steps", max_steps), ("--budget", budget)):
+        if value is None:
+            values[name] = None
+            continue
         if isinstance(value, bool):
             raise ValueError(f"{name} must be a positive integer")
         try:
@@ -146,8 +146,7 @@ def bind_llm_transport(metrics: dict) -> None:
     if workflow_env_json:
         workflow_env = json.loads(workflow_env_json)
         if not isinstance(workflow_env, dict) or not all(
-            isinstance(key, str) and isinstance(value, str)
-            for key, value in workflow_env.items()
+            isinstance(key, str) and isinstance(value, str) for key, value in workflow_env.items()
         ):
             raise ValueError("OPENCOLLAB_EVAL_WORKFLOW_ENV must be a string mapping")
         metrics["workflow_env"] = dict(sorted(workflow_env.items()))

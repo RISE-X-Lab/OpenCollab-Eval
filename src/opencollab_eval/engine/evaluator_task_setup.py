@@ -13,7 +13,7 @@ from typing import Any
 @dataclass(frozen=True)
 class PreparedEvalRun:
     task: Any
-    max_steps: int
+    max_steps: int | None
     checkpoint_interval: float | None
     cleanup_timeout: float
     start: float
@@ -59,23 +59,21 @@ def _checkpoint_interval(value: float | None) -> float | None:
     return normalized or None
 
 
-def _validate_task(facade: Any, task: Any, max_steps: int) -> tuple[Any, int]:
+def _validate_task(
+    facade: Any,
+    task: Any,
+    max_steps: int | None,
+) -> tuple[Any, int | None]:
     task_id = facade._validate_task_id(task.task_id)
     if not isinstance(task.description, str):
         raise ValueError("task description must be a string")
-    task_max_tokens = _positive_integer(task.max_tokens, name="task max_tokens")
-    normalized_max_steps = _positive_integer(max_steps, name="max_steps")
+    task_max_tokens = None if task.max_tokens is None else _positive_integer(task.max_tokens, name="task max_tokens")
+    normalized_max_steps = None if max_steps is None else _positive_integer(max_steps, name="max_steps")
     if task.extras is not None and not isinstance(task.extras, dict):
         raise ValueError("task extras must be a dictionary or None")
-    if (
-        isinstance(task.extras, dict)
-        and "test_patch" in task.extras
-        and not isinstance(task.extras["test_patch"], str)
-    ):
+    if isinstance(task.extras, dict) and "test_patch" in task.extras and not isinstance(task.extras["test_patch"], str):
         raise ValueError("task extras test_patch must be a string")
-    artifact_paths = facade._validate_harness_artifact_paths(
-        task.harness_artifact_paths
-    )
+    artifact_paths = facade._validate_harness_artifact_paths(task.harness_artifact_paths)
     task_timeout = _positive_finite_number(
         task.timeout,
         message="task timeout must be a finite positive number",
@@ -104,11 +102,7 @@ def _create_tracer(
     tracer = facade.Tracer(
         run_id=task_id,
         output_dir=runtime_dir,
-        filename=(
-            facade.ORCHESTRATION_FILENAME
-            if workflow is not None
-            else "trajectory.jsonl"
-        ),
+        filename=(facade.ORCHESTRATION_FILENAME if workflow is not None else "trajectory.jsonl"),
     )
     return trajectories_dir, run_dir, tracer
 
@@ -119,7 +113,7 @@ def prepare_eval_run(
     task: Any,
     output_dir: str,
     workflow: Any,
-    max_steps: int,
+    max_steps: int | None,
     checkpoint_interval_seconds: float | None,
     cancellation_cleanup_timeout: float,
 ) -> PreparedEvalRun:

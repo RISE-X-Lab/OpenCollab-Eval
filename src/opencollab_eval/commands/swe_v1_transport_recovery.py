@@ -16,9 +16,6 @@ from opencollab_eval.commands.swe_v1_prolite_common import (
     REMOTE_COMPLETION_PROBE_TIMEOUT_SECONDS,
     REMOTE_TERMINAL_STATUSES,
 )
-from opencollab_eval.engine.swe_v1_remote_state import (
-    DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
-)
 from opencollab_eval.engine.swe_v1_runner_claim import runner_claim_sha256
 
 
@@ -43,7 +40,7 @@ def probe_remote_execution_state(
     owner_nonce: str = "",
     timeout: float | None = None,
 ) -> dict[str, Any] | None:
-    probe = r'''import json,os,pathlib,re,stat,subprocess,sys
+    probe = r"""import json,os,pathlib,re,stat,subprocess,sys
 base = pathlib.Path(sys.argv[1])
 expected_nonce = sys.argv[2]
 summary_path = base / "summary.json"
@@ -130,10 +127,8 @@ try:
 except (FileNotFoundError, OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
     summary = None
 print(json.dumps({"runner_state": runner_state, "runner_owner": owner, "summary": summary}, ensure_ascii=False))
-'''
-    probe_timeout = (
-        REMOTE_COMPLETION_PROBE_TIMEOUT_SECONDS if timeout is None else timeout
-    )
+"""
+    probe_timeout = REMOTE_COMPLETION_PROBE_TIMEOUT_SECONDS if timeout is None else timeout
     if isinstance(probe_timeout, bool):
         raise ValueError("remote probe timeout must be finite and positive")
     try:
@@ -146,8 +141,13 @@ print(json.dumps({"runner_state": runner_state, "runner_owner": owner, "summary"
     command = [
         *ssh_command,
         host,
-        remote_interpreter + " -c " + shlex.quote(probe) + " "
-        + shlex.quote(base_run_dir) + " " + shlex.quote(owner_nonce),
+        remote_interpreter
+        + " -c "
+        + shlex.quote(probe)
+        + " "
+        + shlex.quote(base_run_dir)
+        + " "
+        + shlex.quote(owner_nonce),
     ]
     try:
         result = subprocess.run(
@@ -165,9 +165,7 @@ print(json.dumps({"runner_state": runner_state, "runner_owner": owner, "summary"
         observed = json.loads(result.stdout)
     except json.JSONDecodeError:
         return None
-    if observed.get("runner_state") not in {
-        "alive", "dead", "identity_mismatch", "invalid", "missing"
-    }:
+    if observed.get("runner_state") not in {"alive", "dead", "identity_mismatch", "invalid", "missing"}:
         return None
     return observed
 
@@ -189,9 +187,7 @@ def probe_terminal_remote_summary(
         remote_python=remote_python,
         owner_nonce=owner_nonce,
     )
-    if observed is None or observed.get("runner_state") not in {
-        "dead", "identity_mismatch"
-    }:
+    if observed is None or observed.get("runner_state") not in {"dead", "identity_mismatch"}:
         return None
     summary = observed.get("summary")
     if not isinstance(summary, dict):
@@ -214,9 +210,7 @@ def wait_for_remote_ownership_fact(
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise TimeoutError(
-                "remote ownership remained unknown until the task deadline"
-            )
+            raise TimeoutError("remote ownership remained unknown until the task deadline")
         observed = probe_remote_execution_state(
             ssh_command=ssh_command,
             host=host,
@@ -229,20 +223,14 @@ def wait_for_remote_ownership_fact(
             return observed
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise TimeoutError(
-                "remote ownership remained unknown until the task deadline"
-            )
+            raise TimeoutError("remote ownership remained unknown until the task deadline")
         time.sleep(min(REMOTE_COMPLETION_POLL_SECONDS, remaining))
 
 
 def _remote_summary_expectation(payload: dict[str, Any]) -> dict[str, Any]:
     start_index = int(payload["start_index"])
     end_index = start_index + max(int(payload["limit"]), 0) - 1
-    expected_slice = (
-        str(start_index)
-        if end_index <= start_index
-        else f"{start_index}-{end_index}"
-    )
+    expected_slice = str(start_index) if end_index <= start_index else f"{start_index}-{end_index}"
     expected = {
         "slice": expected_slice,
         "base_run_dir": payload["base_run_dir"],
@@ -261,34 +249,22 @@ def _remote_summary_expectation(payload: dict[str, Any]) -> dict[str, Any]:
         "budget": payload["budget"],
         "max_steps": payload["max_steps"],
         "max_task_starts": max(0, min(3, int(payload["max_task_starts"]))),
-        "max_empty_patch_retries": min(
-            1, max(0, int(payload["max_empty_patch_retries"]))
-        ),
+        "max_empty_patch_retries": min(1, max(0, int(payload["max_empty_patch_retries"]))),
         "max_eval_attempts": min(2, max(1, int(payload["max_eval_attempts"]))),
-        "eval_container_bind_timeout": int(
-            payload.get(
-                "eval_container_bind_timeout",
-                DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
-            )
-        ),
         "eval_only": payload["eval_only"],
         "eval_dir_name": payload["eval_dir_name"],
-        "solver_attribution": (
-            "historical_artifact" if payload["eval_only"] else "current_run"
-        ),
+        "solver_attribution": ("historical_artifact" if payload["eval_only"] else "current_run"),
     }
     if payload.get("llm_transport"):
         expected["llm_transport"] = payload["llm_transport"]
+    if payload.get("eval_only_source_base_run_dir"):
+        expected["eval_only_source_base_run_dir"] = payload["eval_only_source_base_run_dir"]
     for field in ("run_id", "runtime_tree_sha256"):
         if payload.get(field):
             expected[field] = payload[field]
     if payload.get("workflow") == "openhands-external":
-        expected["openhands_empty_patch_rejections"] = max(
-            0, int(payload["openhands_empty_patch_rejections"])
-        )
-        expected["openhands_command_sha256"] = hashlib.sha256(
-            payload["openhands_command"].encode("utf-8")
-        ).hexdigest()
+        expected["openhands_empty_patch_rejections"] = max(0, int(payload["openhands_empty_patch_rejections"]))
+        expected["openhands_command_sha256"] = hashlib.sha256(payload["openhands_command"].encode("utf-8")).hexdigest()
     return expected
 
 
@@ -428,9 +404,7 @@ def recover_existing_remote_summary(
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise TimeoutError(
-                "remote ownership remained unknown until the task deadline"
-            )
+            raise TimeoutError("remote ownership remained unknown until the task deadline")
         observed = probe_remote_execution_state(
             ssh_command=ssh_command,
             host=host,
@@ -475,18 +449,16 @@ def recover_existing_remote_summary(
             raise RemoteRunnerUnavailable(observed)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise TimeoutError(
-                "remote ownership remained unknown until the task deadline"
-            )
+            raise TimeoutError("remote ownership remained unknown until the task deadline")
         time.sleep(min(REMOTE_COMPLETION_POLL_SECONDS, remaining))
 
 
 __all__ = [
     "RemoteRunnerUnavailable",
+    "matching_terminal_remote_summary",
     "probe_remote_execution_state",
     "probe_terminal_remote_summary",
     "recover_existing_remote_summary",
-    "matching_terminal_remote_summary",
     "remote_summary_matches_payload",
     "runner_owner_identity",
     "wait_for_remote_ownership_fact",

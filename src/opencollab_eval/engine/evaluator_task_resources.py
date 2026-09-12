@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from opencollab_eval.engine.evidence_recovery import completed_workflow_usage
+
 
 async def persist_manifest(
     facade: Any,
@@ -17,12 +19,7 @@ async def persist_manifest(
     cleanup_timeout: float,
     guard: Any,
 ) -> None:
-    if not (
-        state.execution_quiesced
-        and workflow_ctx is not None
-        and workflow is not None
-        and run_dir is not None
-    ):
+    if not (state.execution_quiesced and workflow_ctx is not None and workflow is not None and run_dir is not None):
         return
     try:
         quiesced, manifest_error, state.manifest_lingering = await guard.wait(
@@ -36,15 +33,11 @@ async def persist_manifest(
         )
     except Exception as exc:
         state.persistence_succeeded = False
-        state.error = facade._append_harness_error(
-            state.error, "workflow manifest failed", exc
-        )
+        state.error = facade._append_harness_error(state.error, "workflow manifest failed", exc)
         return
     if manifest_error is not None:
         state.persistence_succeeded = False
-        state.error = facade._append_harness_error(
-            state.error, "workflow manifest failed", manifest_error
-        )
+        state.error = facade._append_harness_error(state.error, "workflow manifest failed", manifest_error)
     if not quiesced:
         state.persistence_succeeded = False
         state.execution_quiesced = False
@@ -76,11 +69,7 @@ def collect_live_dependencies(
             if owner is execution.checkpoint
             else getattr(owner, "pending_cleanup_tasks", ())
         )
-        dependencies.update(
-            task
-            for task in pending
-            if isinstance(task, asyncio.Task) and not task.done()
-        )
+        dependencies.update(task for task in pending if isinstance(task, asyncio.Task) and not task.done())
     return dependencies
 
 
@@ -101,9 +90,7 @@ async def _defer_live_resources(
                 facade._abort_environment(env, cleanup_timeout=cleanup_timeout)
             )
         except Exception as exc:
-            state.error = facade._append_harness_error(
-                state.error, "environment abort failed", exc
-            )
+            state.error = facade._append_harness_error(state.error, "environment abort failed", exc)
         if not state.environment_revocation_quiesced:
             state.error = facade._append_harness_error(
                 state.error,
@@ -126,9 +113,7 @@ def _close_tracer(facade: Any, state: Any, tracer: Any) -> None:
     try:
         tracer.close()
     except Exception as exc:
-        state.error = facade._append_harness_error(
-            state.error, "tracer close failed", exc
-        )
+        state.error = facade._append_harness_error(state.error, "tracer close failed", exc)
     write_error = getattr(tracer, "write_error", None)
     if write_error:
         state.error = facade._append_harness_error(
@@ -148,15 +133,11 @@ async def _cleanup_environment(
 ) -> None:
     cleanup_raised = False
     try:
-        cleaned = await guard.wait(
-            facade._cleanup_environment_bounded(env, cleanup_timeout=cleanup_timeout)
-        )
+        cleaned = await guard.wait(facade._cleanup_environment_bounded(env, cleanup_timeout=cleanup_timeout))
     except Exception as exc:
         cleanup_raised = True
         cleaned = False
-        state.error = facade._append_harness_error(
-            state.error, "environment cleanup failed", exc
-        )
+        state.error = facade._append_harness_error(state.error, "environment cleanup failed", exc)
     if cleaned:
         return
     state.execution_quiesced = False
@@ -169,9 +150,7 @@ async def _cleanup_environment(
             TimeoutError("environment cleanup hook remained active"),
         )
     try:
-        aborted = await guard.wait(
-            facade._abort_environment(env, cleanup_timeout=cleanup_timeout)
-        )
+        aborted = await guard.wait(facade._abort_environment(env, cleanup_timeout=cleanup_timeout))
         if not aborted:
             state.error = facade._append_harness_error(
                 state.error,
@@ -179,9 +158,7 @@ async def _cleanup_environment(
                 TimeoutError("environment abort hook remained active"),
             )
     except Exception as exc:
-        state.error = facade._append_harness_error(
-            state.error, "environment abort failed", exc
-        )
+        state.error = facade._append_harness_error(state.error, "environment abort failed", exc)
 
 
 async def release_resources(
@@ -234,13 +211,16 @@ def build_eval_result(
         markup_recovered = facade._aggregate_markup_recovery(sessions)
         workflow_error = getattr(workflow_ctx, "workflow_error", None)
         if workflow_error and workflow_error != state.error:
-            state.error = (
-                f"{workflow_error}; {state.error}" if state.error else workflow_error
-            )
+            state.error = f"{workflow_error}; {state.error}" if state.error else workflow_error
     else:
         tokens_used = session.used_tokens if session else 0
         steps = session.step_count if session else 0
         markup_recovered = getattr(session, "markup_recovered", 0) if session else 0
+        if session is None:
+            recovered = completed_workflow_usage(tracer.path)
+            if recovered is not None:
+                tokens_used = recovered["tokens_known"]
+                steps = recovered["completed_model_calls"]
     return facade.EvalResult(
         task_id=task.task_id,
         patch=state.patch,
@@ -251,11 +231,10 @@ def build_eval_result(
         error=state.error,
         trajectory_path=tracer.path,
         markup_recovered=markup_recovered,
-        workflow_result=(
-            getattr(workflow_ctx, "workflow_result", None) if workflow_ctx else None
-        ),
+        workflow_result=(getattr(workflow_ctx, "workflow_result", None) if workflow_ctx else None),
         runtime_status=getattr(workflow_ctx or session, "runtime_status", None),
         runtime_reason=getattr(workflow_ctx or session, "runtime_reason", None),
+        runtime_state=getattr(workflow_ctx or session, "runtime_state", None),
         checkpoint_result=state.checkpoint_result,
         test_patch_isolation_failed=state.test_patch_isolation_failed,
         execution_quiesced=state.execution_quiesced,
@@ -275,11 +254,7 @@ def build_eval_result(
             and not state.test_patch_isolation_failed
             and not state.error
         ),
-        agent_failures=(
-            tuple(getattr(workflow_ctx, "agent_failures", ()))
-            if workflow_ctx is not None
-            else ()
-        ),
+        agent_failures=(tuple(getattr(workflow_ctx, "agent_failures", ())) if workflow_ctx is not None else ()),
     )
 
 
@@ -304,14 +279,10 @@ async def settle_execution(
         )
     except Exception as exc:
         quiesced = False
-        guard.error = facade._append_harness_error(
-            guard.error, "execution teardown failed", exc
-        )
+        guard.error = facade._append_harness_error(guard.error, "execution teardown failed", exc)
     if execution.environment_setup_owner is not None:
         for stage, disposal_error in execution.environment_setup_owner.disposal_errors:
-            guard.error = facade._append_harness_error(
-                guard.error, stage, disposal_error
-            )
+            guard.error = facade._append_harness_error(guard.error, stage, disposal_error)
             quiesced = False
     runtime_record = execution.workflow_ctx or execution.session
     if runtime_record is not None and not runtime_record.execution_quiesced:
@@ -352,9 +323,7 @@ async def _finalize_workflow_sessions(
             for task in execution.workflow_ctx.pending_cleanup_tasks
             if isinstance(task, asyncio.Task) and not task.done()
         )
-        guard.error = facade._append_harness_error(
-            guard.error, "final workflow snapshot failed", exc
-        )
+        guard.error = facade._append_harness_error(guard.error, "final workflow snapshot failed", exc)
     else:
         for persistence_error in persistence_errors:
             persistence_succeeded = False

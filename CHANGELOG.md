@@ -2,6 +2,17 @@
 
 All notable changes to OpenCollab-Eval are recorded in this file.
 
+## [0.5.2.dev0] - Unreleased
+
+### Added
+
+Reusable server-local evaluation packaging, shared provider request limits, native Single configuration, and named collaboration workflows.
+
+### Fixed
+
+Public runtime dependencies and Conda activation are prepared before generation. Failed candidate captures preserve recovery resources, completed response evidence retains known usage, and official evaluation receives a configurable container-binding interval.
+
+
 ## [Unreleased]
 
 ## [0.5.1] - 2026-09-04
@@ -40,3 +51,5 @@ All notable changes to OpenCollab-Eval are recorded in this file.
 [Unreleased]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.5.1...HEAD
 [0.5.1]: https://github.com/RISE-X-Lab/OpenCollab-Eval/releases/tag/v0.5.1
 [0.5.0]: https://github.com/RISE-X-Lab/OpenCollab-Eval/releases/tag/v0.5.0
+
+[0.5.2.dev0]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.5.1...HEAD

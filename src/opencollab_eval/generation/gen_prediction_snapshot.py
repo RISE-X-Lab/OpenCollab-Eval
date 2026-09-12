@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import secrets
 import subprocess
@@ -23,12 +24,11 @@ _COMMIT_RE = re.compile(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}")
 _CONTAINER_HELPER = "/tmp/opencollab_gen_prediction_snapshot.py"
 _CONTAINER_HELPER_SOURCE = Path(__file__).with_name("gen_prediction_snapshot_container.py")
 _CONTAINER_POLICY_HELPER = "/tmp/opencollab_workspace_integrity.py"
-_CONTAINER_POLICY_HELPER_SOURCE = (
-    Path(__file__).parents[1] / "engine" / "workspace_integrity.py"
-)
+_CONTAINER_POLICY_HELPER_SOURCE = Path(__file__).parents[1] / "engine" / "workspace_integrity.py"
 _CONTAINER_SUPPORT_HELPER = "/tmp/opencollab_snapshot_support.py"
 _CONTAINER_SUPPORT_HELPER_SOURCE = Path(__file__).with_name("gen_prediction_snapshot_support.py")
 _MAX_EVIDENCE_BYTES = 256 * 1024
+_ROOTLESS_COPY_FAILURE = "operation not permitted"
 
 
 def _docker_with_stdin(*args: str, input_text: str) -> subprocess.CompletedProcess[str]:
@@ -40,6 +40,35 @@ def _docker_with_stdin(*args: str, input_text: str) -> subprocess.CompletedProce
         timeout=_docker_timeout_from_env(),
         check=False,
     )
+
+
+def _install_snapshot_helper(
+    container_id: str,
+    source: Path,
+    destination: str,
+) -> None:
+    def install_with_exec():
+        return _docker_with_stdin(
+            "exec",
+            "-i",
+            "-w",
+            "/tmp",
+            container_id,
+            "python3",
+            "-c",
+            "import pathlib,sys; pathlib.Path(sys.argv[1]).write_text(sys.stdin.read())",
+            destination,
+            input_text=source.read_text(encoding="utf-8"),
+        )
+
+    if os.environ.get("OPENCOLLAB_DOCKER_ARCHIVE_TRANSPORT") == "exec-python":
+        install = install_with_exec()
+    else:
+        install = _docker("cp", str(source), f"{container_id}:{destination}")
+        detail = f"{install.stderr}\n{install.stdout}".lower()
+        if install.returncode != 0 and _ROOTLESS_COPY_FAILURE in detail:
+            install = install_with_exec()
+    _check_docker(install, "solver Git snapshot helper installation")
 
 
 @dataclass(frozen=True)
@@ -72,10 +101,7 @@ class SolverGitSnapshot:
             "remote_count": self.remote_count,
             "extra_git_metadata": self.extra_git_metadata,
             "removed_git_metadata": self.removed_git_metadata,
-            "removed_gitlinks": [
-                {"path": path, "old_oid": old_oid}
-                for path, old_oid in self.removed_gitlinks
-            ],
+            "removed_gitlinks": [{"path": path, "old_oid": old_oid} for path, old_oid in self.removed_gitlinks],
             "materialized_gitlinks": [
                 {"path": path, "oid": oid, "content_sha256": content_sha256}
                 for path, oid, content_sha256 in self.materialized_gitlinks
@@ -103,16 +129,12 @@ def _parse_snapshot_output(output: str) -> SolverGitSnapshot:
         remote_count=values["remote_count"],
         extra_git_metadata=values["extra_git_metadata"],
         removed_git_metadata=values["removed_git_metadata"],
-        removed_gitlinks=tuple(
-            (item["path"], item["old_oid"].lower())
-            for item in removed_gitlinks
-        ),
+        removed_gitlinks=tuple((item["path"], item["old_oid"].lower()) for item in removed_gitlinks),
         expected_base_commit=values["expected_base_commit"].lower(),
         workspace_integrity=values["workspace_integrity"],
         workspace_sha256=values["workspace_sha256"],
         materialized_gitlinks=tuple(
-            (item["path"], item["oid"].lower(), item["content_sha256"])
-            for item in materialized_gitlinks
+            (item["path"], item["oid"].lower(), item["content_sha256"]) for item in materialized_gitlinks
         ),
     )
     if snapshot.commit_count != 1 or snapshot.remote_count != 0 or snapshot.extra_git_metadata != 0:
@@ -135,8 +157,7 @@ def prepare_solver_git_snapshot(
         (_CONTAINER_SUPPORT_HELPER_SOURCE, _CONTAINER_SUPPORT_HELPER),
         (_CONTAINER_HELPER_SOURCE, _CONTAINER_HELPER),
     ):
-        install = _docker("cp", str(source), f"{container_id}:{destination}")
-        _check_docker(install, "solver Git snapshot helper installation")
+        _install_snapshot_helper(container_id, source, destination)
     result = _docker_with_stdin(
         "exec",
         "-i",

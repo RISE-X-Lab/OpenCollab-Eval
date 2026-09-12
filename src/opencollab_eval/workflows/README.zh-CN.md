@@ -26,11 +26,13 @@ from opencollab.workflows import WorkflowContext, workflow
 | `scout-solve` | 并行只读勘察，随后进行一轮修复 |
 | `analyst-solve` | 由分析员组织勘察、分阶段修复和最终验证 |
 | `team-pro` | `analyst-solve` 的稳定调优别名 |
+| `candidate-tournament-council-v1` | 两份独立补丁候选、一个集成角色和一个公共测试执行角色 |
 | `validation-council-solve` | 面向 SWE 任务的盲审契约与验证委员会 |
 | `swe-committee-v2` | 带有明确证据和测试门禁的委员会工作流 |
 
 生产 Solver 协调器将 `g11` 和 `g1.1` 映射到
-`validation-council-solve`，将 `baseTeam` 映射到 `base-team`，将
+`validation-council-solve`，将 `g20-exp2` 映射到
+`candidate-tournament-council-v1`，将 `baseTeam` 映射到 `base-team`，将
 `TeamPro` 映射到 `team-pro`。`openhands` 和 `claude-code` 是通过共享
 生成与候选路径接入的外部 Solver 配置。其余工作流函数是库级构件，可由单实例
 工作流生成器选择。

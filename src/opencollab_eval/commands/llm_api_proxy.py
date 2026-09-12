@@ -286,6 +286,11 @@ def _configured_http_proxy(target: urllib.parse.SplitResult) -> urllib.parse.Spl
     return proxy
 
 
+def _open_default_upstream(request, _client, timeout):
+    """Open using the server's configured standard HTTP proxy environment."""
+    return urllib.request.urlopen(request, timeout=timeout)
+
+
 def _open_direct_upstream(
     request: urllib.request.Request,
     client: socket.socket,
@@ -482,7 +487,7 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                     response = (
                         _open_direct_upstream(request, self.connection, config.timeout)
                         if config.direct_upstream
-                        else urllib.request.urlopen(request, timeout=config.timeout)
+                        else _open_default_upstream(request, self.connection, config.timeout)
                     )
                 except urllib.error.HTTPError as exc:
                     response = exc
@@ -585,6 +590,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-upstream-request-bytes", type=int, default=0)
     parser.add_argument("--allow-insecure-upstream", action="store_true")
     parser.add_argument("--direct-upstream", action="store_true")
+    parser.add_argument("--provider-limits-file", type=Path, help="Shared provider request-limit policy")
     return parser
 
 
@@ -607,6 +613,10 @@ def main() -> int:
         max_upstream_request_bytes=max(0, args.max_upstream_request_bytes),
         direct_upstream=args.direct_upstream,
     )
+    if args.provider_limits_file:
+        from opencollab_eval.commands.provider_limits import install
+
+        install(sys.modules[__name__], args.provider_limits_file)
     server = ThreadingHTTPServer((args.host, args.port), make_handler(config))
     server.daemon_threads = True
     try:

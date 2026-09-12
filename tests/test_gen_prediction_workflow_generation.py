@@ -25,7 +25,6 @@ from opencollab_eval.runtime_config import resolve_runtime_config
 
 def test_generate_defers_container_patch_extraction(monkeypatch, tmp_path):
     captured = {}
-
     async def fake_run_eval_task(task, **kwargs):
         captured["task"] = task
         captured["kwargs"] = kwargs
@@ -40,10 +39,9 @@ def test_generate_defers_container_patch_extraction(monkeypatch, tmp_path):
             patch_extraction_succeeded=False,
             submission_eligible=False,
         )
-
     monkeypatch.setattr(gpw, "run_eval_task", fake_run_eval_task)
     monkeypatch.setattr(
-        gpw.gp, "start_container", lambda image, name, owner_token: "cid"
+        gpw.gp, "start_container", lambda image, name, owner_token, **kwargs: "cid"
     )
     monkeypatch.setattr(gpw.gp, "remove_container_and_clear_marker", lambda run_dir, cid: True)
     monkeypatch.setattr(
@@ -127,7 +125,7 @@ def test_generate_container_quiescence_failure_prevents_extraction(
     monkeypatch.setattr(
         gpw.gp,
         "start_container_with_marker",
-        lambda image, name, run_dir: "cid",
+        lambda image, name, run_dir, **kwargs: "cid",
     )
     def fail_quiescence(container_id):
         raise RuntimeError("escaped container process")
@@ -175,7 +173,8 @@ def test_generate_container_quiescence_failure_prevents_extraction(
             )
         )
 
-    assert finalized[0]["completed"] is False
+    assert finalized == []
+    assert len(gpw._retained_candidates_for_test) == 1
 
 
 @pytest.mark.parametrize(
@@ -227,7 +226,7 @@ def test_generate_skips_outer_extraction_for_ineligible_eval_result(
     monkeypatch.setattr(
         gpw.gp,
         "start_container_with_marker",
-        lambda image, name, run_dir: "cid",
+        lambda image, name, run_dir, **kwargs: "cid",
     )
     monkeypatch.setattr(
         gpw,
@@ -277,8 +276,7 @@ def test_generate_skips_outer_extraction_for_ineligible_eval_result(
     assert patch == ""
     assert metrics["submission_eligible"] is False
     assert metrics["patch_produced"] is False
-    assert len(finalized) == 1
-    assert finalized[0]["cid"] == "cid"
+    assert finalized == []  # Failed captures remain retained for recovery.
     assert json.loads(output.read_text(encoding="utf-8"))["model_patch"] == ""
 
 
@@ -331,7 +329,7 @@ def test_generate_records_provider_rejection_without_extracting_patch(
     monkeypatch.setattr(
         gpw.gp,
         "start_container_with_marker",
-        lambda image, name, run_dir: "cid",
+        lambda image, name, run_dir, **kwargs: "cid",
     )
     monkeypatch.setattr(
         gpw,
@@ -398,7 +396,8 @@ def test_generate_records_provider_rejection_without_extracting_patch(
     assert metrics["submission_eligible"] is False
     assert metrics["provider_failure"]["http_statuses"] == [403]
     assert "trusted_patch_extraction" not in metrics
-    assert len(finalized) == 1
+    assert finalized == []
+    assert len(gpw._retained_candidates_for_test) == 1
     namespace["ensure_image"] = lambda image: {
         "ok": True,
         "image_id": "sha256:" + "8" * 64,
@@ -451,7 +450,7 @@ def test_generate_persists_completed_patch_only_after_container_cleanup(monkeypa
 
     monkeypatch.setattr(gpw, "run_eval_task", fake_run_eval_task)
     monkeypatch.setattr(
-        gpw.gp, "start_container", lambda image, name, owner_token: "cid"
+        gpw.gp, "start_container", lambda image, name, owner_token, **kwargs: "cid"
     )
     output = tmp_path / "predictions.jsonl"
     metrics_output = tmp_path / "metrics.jsonl"
@@ -518,7 +517,7 @@ def test_generate_output_symlink_race_cleans_active_container(monkeypatch, tmp_p
 
     monkeypatch.setattr(gpw, "run_eval_task", fake_run_eval_task)
     monkeypatch.setattr(
-        gpw.gp, "start_container", lambda image, name, owner_token: "cid"
+        gpw.gp, "start_container", lambda image, name, owner_token, **kwargs: "cid"
     )
     output = tmp_path / "predictions.jsonl"
     victim = tmp_path / "victim.jsonl"
@@ -596,7 +595,7 @@ def test_generate_cleanup_failure_does_not_publish_done(monkeypatch, tmp_path):
 
     monkeypatch.setattr(gpw, "run_eval_task", fake_run_eval_task)
     monkeypatch.setattr(
-        gpw.gp, "start_container", lambda image, name, owner_token: "cid"
+        gpw.gp, "start_container", lambda image, name, owner_token, **kwargs: "cid"
     )
     monkeypatch.setattr(
         gpw.gp, "remove_container_and_clear_marker", lambda run_dir, cid: False
@@ -727,7 +726,7 @@ def test_blind_workflow_extracts_without_a_path_allowlist(monkeypatch):
     monkeypatch.setattr(
         gpw.gp,
         "start_container_with_marker",
-        lambda image, name, run_dir: "cid",
+        lambda image, name, run_dir, **kwargs: "cid",
     )
     monkeypatch.setattr(gpw.gp, "remove_container_and_clear_marker", lambda run_dir, cid: True)
     monkeypatch.setattr(gpw, "extract_patch_guarded", fake_extract)
