@@ -1,0 +1,59 @@
+# 2026-09-12. The forty-task measurement at a 4,000,000-token per-seat cap.
+# Base cell qwen-single40 (2,000,000), which resolved 33 of 40.
+#
+# The question: can the three-role team out-resolve the single agent. Both arms
+# resolve 33 of these 40 tasks at 2M. The reason to expect the cap to separate
+# them is measured, not assumed:
+#
+#   * The team's analyst re-sends a heavier context every turn -- median 20,613
+#     tokens per assistant turn against Single's 15,672, +31% -- and the gap
+#     rises with the delegation rate (primary 18,172 at alpha 0.150, bare
+#     22,295 at 0.950). The collaboration channel is not paid once; it is paid
+#     again on every later turn.
+#   * So the same 2M buys the analyst fewer turns on the tasks that need many.
+#     On the five tasks where plain's analyst stopped on the cap it took 51-61
+#     turns; Single took 52-71 on the same five.
+#   * Five of plain's seven failures ended with the analyst out of tokens.
+#     Only three of Single's seven did; the other four stopped on their own,
+#     one after 0.19M tokens and nineteen steps. A bigger cap cannot help
+#     those, which is where the asymmetry comes from.
+#
+# Both arms are raised together. `budget_per_seat` is the quantity the
+# arm-alignment audit calls `token_budget_per_seat` (arm_audit.py:386); raising
+# it for one arm would put a cross-arm variable on the outcome variable and a
+# win bought that way would mean nothing. `max_steps` and `timeout` move with
+# it because otherwise the run merely stops for another reason -- measured on
+# 2026-09-08, and plain at 2M already had three runs past 5,000 s and one that
+# hit the 5,400 s wall.
+#
+# Unchanged: the three roles, the six directed edges, every role's tool list,
+# all four card files (preflight compares their bytes against the pinned
+# checkout), the task list, the suite, the pins, the scoring dataset, and the
+# endpoint each arm's 2M cell used.
+#
+# Read-out, written before the run:
+#   - team resolve > Single resolve on these forty -> the goal is met; report
+#     the pair with the per-task sign test and both arms' token cost
+#   - team resolve <= Single resolve -> the cap is not the lever; the next
+#     hypothesis is the verification card, and it inherits this operating point
+#   - either arm's gold control short of 40/40 -> no resolve may be read at all
+#
+# Not poolable with qwen-single40: three paid fields differ.
+name: qwen-single40-4m
+host: lthpc
+arm: single
+suite: subset-50
+rows: {start: 1, stop: 40}
+budget_per_seat: 4000000
+max_steps: 200
+timeout: 10800
+concurrency: 10
+model_env: configs/.env.qwen-pg
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "the forty-task measurement at a 4M per-seat cap; base cell qwen-single40 resolved 33/40 at 2M, and both arms are raised together because budget_per_seat is a cross-arm aligned quantity"

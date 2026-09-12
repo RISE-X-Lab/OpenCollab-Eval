@@ -1,0 +1,66 @@
+# 2026-09-12. The forty-task Single measurement at a 4,000,000-token cap, run
+# on dashscope (configs/.env.qwen) rather than on the private gateway
+# (configs/.env.qwen-pg) that the 2M Single cell used.
+#
+# Why the endpoint moves. The qwen cells never shared one: Single and opt-out
+# ran on the gateway, primary/bare/plain on dashscope, all four serving a model
+# named qwen3.8-flash. The owner's 2026-09-10 ruling treats the endpoints as
+# equivalent and declines an equivalence control, which is sound for a claim
+# about adherence -- an input-side quantity. This batch exists to be compared
+# against qwen-plain40-4m on resolve, where an endpoint that varies with the arm
+# would sit upstream of the outcome variable. Putting both arms on one endpoint
+# removes the question instead of adjudicating it.
+#
+# What the six-run probe found, scored 2026-09-12 with a gold control per run
+# (qwen-single40-cap4m-* against qwen-single40-cap4m-dash-*, same arm, same 4M
+# cap, same six tasks, differing in `name` and `model_env` alone):
+#
+#   * both sides carried a patch on 6 of 6, the same set
+#   * censoring state agreed on 5 of 6
+#   * spend did not move in one direction: the median ratio was 1.01, three
+#     tasks below and three above, with two outliers at 1.80 and 2.18
+#   * resolve: gateway 3 of 6, dashscope 2 of 6, differing on exactly one task,
+#     matplotlib__matplotlib-25775
+#
+# By the letter of the probe's own pre-registered rule, a differing resolve set
+# is the "not inert" branch. It is also one task, and that task is the one
+# independently known to flip: the team cell resolved it at 2M and did not at
+# 4M. Six runs cannot separate a one-task endpoint effect from a rerun flip,
+# which is exactly what the rule said they could not do. So the probe is
+# reported as not having refuted equivalence and not having established it, and
+# the head-to-head is run without the difference rather than on top of it.
+#
+# Cost of the choice, stated rather than hidden: this batch is no longer
+# comparable to qwen-single40 on endpoint, so it cannot be read as "what the
+# cap did to Single". A gateway twin at the same cap would answer that, and is
+# deliberately left unlaunched (experiment/batches/qwen-single40-4m.yaml) until
+# the head-to-head is in hand.
+#
+# Everything else is held: the suite, the rows, the pins, the scoring dataset,
+# the three env switches, and the cap/steps/wall-clock triple, which is the same
+# 4,000,000 / 200 / 10,800 the team arm gets.
+#
+# Read-out, written before the run: the paired per-task comparison against
+# qwen-plain40-4m, with the exact two-sided sign test on the discordant pairs
+# and both arms' token cost. Either arm's gold control short of 40/40 -> no
+# resolve may be read at all.
+#
+# Not poolable with qwen-single40: four paid fields differ.
+name: qwen-single40-4m-dash
+host: lthpc
+arm: single
+suite: subset-50
+rows: {start: 1, stop: 40}
+budget_per_seat: 4000000
+max_steps: 200
+timeout: 10800
+concurrency: 8
+model_env: configs/.env.qwen
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "the forty-task Single measurement at a 4M per-seat cap, on dashscope so that it shares an endpoint with qwen-plain40-4m; base cell qwen-single40 resolved 33/40 at 2M on the private gateway"
