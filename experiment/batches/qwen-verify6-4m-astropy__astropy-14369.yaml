@@ -1,0 +1,106 @@
+# The verification cell: `cmd-plain` with the Analyst's closing block changed in
+# one paragraph, run at the same 4M per-seat cap, on the same forty-task list,
+# the same suite, the same endpoint and the same scoring dataset as
+# `qwen-plain40-4m`.
+#
+# WHAT DIFFERS FROM qwen-plain40-4m, EXHAUSTIVELY
+#
+#   cell            cmd-plain -> cmd-verify
+#   opencollab pin  7051275497d9 -> 0a4f1871bc58
+#
+# The pin is the running cell's own pin with one commit cherry-picked onto it,
+# so `git diff` between the two pins is four new files and no deletion:
+# `blocks/cmd-verify.md`, the rendered `analyst.cmd-verify.md`, its entry in
+# `variants.yaml`, and `team.handoff.cmd-verify.yaml`. The Coder's card, the
+# Tester's card, the shared body, all three tool bundles and the six directed
+# edges are byte for byte the running cell's. Recorded proof, to be checked in
+# the metrics of every run here: `role_prompt_sha256.analyst` =
+# 0b436dd8b50df9894a49925fe513909f3f54cb18a291a9e99c7ca66d0a883a43, against
+# e8353bd71aed5846617d590ec134529ce78f2c4fe95281997d4e09a4186c5771 for
+# cmd-plain; `.coder` = 3e2f7cab06d9... and `.tester` = 6a85260af189...
+# unchanged.
+#
+# WHY THIS PARAGRAPH
+#
+# The cap was the first hypothesis and it is already spent: at 4M the Analyst
+# is no longer the seat that runs out (measured on the first five runs of
+# `qwen-plain40-4m`: the Analyst used 0.07-0.47 of its own 4M and every one of
+# the five ended on `submitted`). What is left is that the team's three seats
+# produce work the graded tree never sees. `cmd-plain` asks the Tester for "the
+# tests that should cover the change" and never has to come back for the
+# answer; on the forty 2M runs of that cell, teammates committed and sent a sha
+# in 33 runs and the Analyst checked one out in 13.
+#
+# This card asks for the return trip and states the arithmetic behind it: a
+# seat's budget is its own and is not returned, so a suite the Tester runs is a
+# suite the Analyst did not pay for out of what it has left to think with. That
+# is the only mechanism by which three seats can beat one on this benchmark
+# that the seat-oracle measurement has not already ruled out -- `|C \ A| = 0`
+# said the Coder holds no answer the Analyst does not, so the win has to come
+# from the Analyst being better informed, not from a teammate's patch.
+#
+# WHAT THIS CELL MAY NOT BE USED FOR
+#
+# No adherence number. The card prescribes the `message_agent` call, so a
+# delegation count here is compliance with the file and not a choice; α is
+# defined on cards that leave the alternative open. It is not a rung of the
+# command ladder and is not poolable with one.
+#
+# READ-OUT, WRITTEN BEFORE THE RUN, IDENTICAL IN ALL SIX OF THESE FILES
+#
+# Six rows of the forty. They are the rows the 4M cap smoke used, so the same
+# rows already carry a same-cap, same-endpoint observation under both of the
+# other two cards: `cmd-plain` at 4M resolved rows 1, 18 and 28; Single at 4M
+# resolved rows 1, 18 and 21. Each is 3 of 6.
+#
+# These rows were chosen for a different question (five of them had the
+# Analyst stopped on the 2M cap), so dV is a go/no-go and NOT an estimate of
+# what the full forty would give.
+#
+# (1) BEHAVIOUR -- the reason this is a paid pre-flight rather than an
+#     estimate, and it has to pass before the outcome is read at all:
+#
+#     * in at least 5 of 6 runs the Analyst sends the Tester a sha AND a reply
+#       from the Tester arrives back in the Analyst's conversation;
+#     * no run ends with the Analyst waiting -- `terminal_reason` on seat 0 is
+#       `submitted` or a cap, never a stall;
+#     * the Tester's own cap ends the run in at most 1 of 6 (at 4M under
+#       cmd-plain the Tester already reached 3.9M of its 4M on one row, so
+#       asking it for more work can exhaust it);
+#     * the three `role_prompt_sha256` values are the ones printed above.
+#
+#     Any of these failing -> stop and report; the card is not doing what it
+#     says, and a resolve count would be measuring something else.
+#
+# (2) OUTCOME -- dV = how many of the six rows this cell resolves:
+#
+#     dV >= 4                    -> GO: run the full forty
+#     dV <= 2                    -> STOP: the round trip costs more than it
+#                                   buys on these rows
+#     dV == 3 and it resolves a row neither cmd-plain nor Single resolved at 4M
+#       (rows 14, 21, 23)        -> GO: it is not the same three tasks
+#     dV == 3 otherwise          -> STOP
+#
+# A rerun of one task flips its outcome on its own, so this smoke does not
+# attribute cause and no number from it is reportable. The reportable number is
+# the paired forty-task comparison.
+name: qwen-verify6-4m-astropy__astropy-14369
+host: lthpc
+arm: team
+rung: verify
+cell: cmd-verify
+suite: subset-50
+rows: {start: 23, stop: 23}
+budget_per_seat: 4000000
+max_steps: 200
+timeout: 10800
+concurrency: 1
+model_env: configs/.env.qwen
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 0a4f1871bc587e7a1586c9cfab2e762936f66840
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "verification-card smoke on subset-50 row 23 (astropy__astropy-14369); cmd-plain 4M did not; Single 4M did not"
