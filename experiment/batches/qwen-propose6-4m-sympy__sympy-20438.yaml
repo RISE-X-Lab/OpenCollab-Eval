@@ -89,8 +89,20 @@
 #                   three tasks the other two cards already do
 #     dV == 3 otherwise -> STOP
 #
-# If both intervention cells pass, the one with the larger dV gets the forty,
-# and a tie goes to `cmd-verify` as the smaller change.
+# If both intervention cells pass, the one with the larger dV gets the forty.
+#
+# A tie goes to `cmd-propose`. Amended 2026-09-12 22:05 UTC, before any run of
+# either cell existed, on process evidence rather than outcome: on the nine
+# `qwen-plain40-4m` runs finished by then, all three seats took a turn in 9,
+# a teammate's reply reached the analyst in 9, the analyst had sent a sha in 6,
+# and it checked a teammate's commit into the graded tree in 7. The exchange
+# `cmd-verify` prescribes is therefore already happening at 4M in about two
+# thirds of runs -- the 13-of-33 delivery break that motivated it was measured
+# at 2M -- so it is the closer of the two to a no-op, while `cmd-propose` asks
+# for something no cmd-plain run does: a second independent candidate. Those
+# nine are also the nine fastest runs of that batch, so the fractions are
+# biased toward runs where everything worked; they are enough to order two
+# cards and not enough to report.
 #
 # A rerun of one task flips its own outcome, so this smoke attributes nothing
 # and no number from it is reportable. The reportable number is the paired
