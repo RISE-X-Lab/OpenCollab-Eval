@@ -13,7 +13,9 @@ from pathlib import Path
 from typing import Any
 
 from opencollab_eval.commands import _swe_eval_layer_integrity as _eval_integrity
-from opencollab_eval.commands.swe_v1_prolite_common import normalize_workflow_env_entries
+from opencollab_eval.commands.swe_v1_prolite_common import (
+    normalize_workflow_env_entries,
+)
 from opencollab_eval.engine.solver_backend import (
     KIMI_CODING_BASE_URL,
     default_openai_user_agent,
@@ -38,9 +40,7 @@ DEFAULT_EVAL_WORK_ROOT = os.environ.get("OPENCOLLAB_SWE_EVAL_WORK_ROOT", "").str
 if not DEFAULT_EVAL_WORK_ROOT and DEFAULT_REMOTE_ROOT:
     DEFAULT_EVAL_WORK_ROOT = DEFAULT_REMOTE_ROOT.rstrip("/") + "/eval_work"
 DEFAULT_MODEL_NAME = os.environ.get("OPENCOLLAB_SWE_MODEL_NAME", "").strip()
-DEFAULT_IMAGE_REPOSITORY = os.environ.get(
-    "OPENCOLLAB_SWE_IMAGE_REPOSITORY", ""
-).strip()
+DEFAULT_IMAGE_REPOSITORY = os.environ.get("OPENCOLLAB_SWE_IMAGE_REPOSITORY", "").strip()
 MIN_TASK_CLEANUP_MARGIN_SECONDS = 300
 
 
@@ -63,6 +63,7 @@ class ParallelConfig:
     top_p: float | None
     max_output_tokens: int | None
     session_prefix: str
+    runner_transport: str
     host: str
     ssh_command: str
     remote_python: str
@@ -97,6 +98,7 @@ class ParallelConfig:
     skip_health_checks: bool
     dry_run: bool
     runtime_tree_sha256: str = ""
+    max_technical_recoveries: int = 0
 
 
 @dataclass
@@ -255,10 +257,7 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
     remote_base = str(args.remote_base or "").strip()
     if not remote_base:
         if not remote_eval_work_root:
-            raise ValueError(
-                "pass --remote-base or configure --remote-eval-work-root or "
-                "OPENCOLLAB_SWE_EVAL_WORK_ROOT"
-            )
+            raise ValueError("pass --remote-base or configure --remote-eval-work-root or OPENCOLLAB_SWE_EVAL_WORK_ROOT")
         remote_base = f"{remote_eval_work_root.rstrip('/')}/{run_id}"
     remote_runtime_repo = args.remote_runtime_repo or f"{remote_base}/_runtime/repo"
     output_dir = args.output_dir or (REPO / "docs" / "monitoring" / run_id)
@@ -266,6 +265,7 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
     max_workers = max(1, args.max_workers)
     min_workers = min(max_workers, max(1, args.min_workers))
     host = str(args.host or "").strip()
+    runner_transport = str(getattr(args, "runner_transport", "ssh") or "ssh")
     remote_python = str(getattr(args, "remote_python", "python3") or "").strip()
     remote_root = str(args.remote_root or "").strip()
     image_repository = str(args.image_repository or "").strip()
@@ -275,9 +275,7 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
     workflow = str(args.workflow or "").strip()
     workflow_env = normalize_workflow_env(getattr(args, "workflow_env", ()))
     workflow_env_values = dict(item.split("=", 1) for item in workflow_env)
-    if llm_provider == "openai" and not workflow_env_values.get(
-        "OPENCOLLAB_LLM_USER_AGENT"
-    ):
+    if llm_provider == "openai" and not workflow_env_values.get("OPENCOLLAB_LLM_USER_AGENT"):
         workflow_env_values["OPENCOLLAB_LLM_USER_AGENT"] = default_openai_user_agent()
     if workflow_env_values.get("OPENCOLLAB_WIRE_PROTOCOL") == "responses":
         workflow_env_values.setdefault("OPENCOLLAB_LLM_MAX_RETRIES", "10000")
@@ -303,8 +301,9 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
         raise ValueError("--remote-api-env-file is supported only for direct Kimi models")
     if remote_api_env_file and remote_proxy_base_url.rstrip("/") != KIMI_CODING_BASE_URL:
         raise ValueError(f"Kimi direct mode requires --remote-proxy-base-url {KIMI_CODING_BASE_URL}")
+    if runner_transport not in {"ssh", "local"}:
+        raise ValueError("--runner-transport must be ssh or local")
     required = {
-        "--host or OPENCOLLAB_SWE_HOST": host,
         "--remote-python": remote_python,
         "--remote-root or OPENCOLLAB_SWE_REMOTE_ROOT": remote_root,
         "--image-repository or OPENCOLLAB_SWE_IMAGE_REPOSITORY": image_repository,
@@ -313,6 +312,8 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
         "--llm-provider or OPENCOLLAB_SWE_LLM_PROVIDER": llm_provider,
         "--remote-proxy-base-url or OPENCOLLAB_REMOTE_PROXY_BASE_URL": remote_proxy_base_url,
     }
+    if runner_transport == "ssh":
+        required["--host or OPENCOLLAB_SWE_HOST"] = host
     if not remote_api_env_file:
         required["--proxy-env-file or OPENCOLLAB_PROXY_ENV_FILE"] = proxy_env_file
         required["--local-proxy-base-url or OPENCOLLAB_LOCAL_PROXY_BASE_URL"] = local_proxy_base_url
@@ -320,10 +321,7 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
     if missing:
         raise ValueError("missing required runtime configuration: " + ", ".join(missing))
     if workflow == "openhands-external" and not openhands_command:
-        raise ValueError(
-            "openhands-external requires --openhands-command or a solver entrypoint "
-            "that supplies one"
-        )
+        raise ValueError("openhands-external requires --openhands-command or a solver entrypoint that supplies one")
     if runtime_tree_sha256 and re.fullmatch(r"[0-9a-f]{64}", runtime_tree_sha256) is None:
         raise ValueError("--expected-runtime-tree-sha256 must be a lowercase SHA-256")
     if args.no_sync_runtime and not runtime_tree_sha256:
@@ -346,13 +344,10 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
             f"{MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS} seconds"
         )
     if args.checkpoint_interval != 0:
-        raise ValueError(
-            "--checkpoint-interval must be 0 for trusted host extraction"
-        )
+        raise ValueError("--checkpoint-interval must be 0 for trusted host extraction")
     if args.task_wall_timeout < args.llm_timeout + MIN_TASK_CLEANUP_MARGIN_SECONDS:
         raise ValueError(
-            "--task-wall-timeout must be at least --llm-timeout plus "
-            f"{MIN_TASK_CLEANUP_MARGIN_SECONDS} seconds"
+            f"--task-wall-timeout must be at least --llm-timeout plus {MIN_TASK_CLEANUP_MARGIN_SECONDS} seconds"
         )
     return ParallelConfig(
         indices=indices,
@@ -372,6 +367,7 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
         top_p=top_p,
         max_output_tokens=max_output_tokens,
         session_prefix=session_prefix,
+        runner_transport=runner_transport,
         host=host,
         ssh_command=args.ssh_command,
         remote_python=remote_python,
@@ -380,12 +376,8 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
         workflow=workflow,
         workflow_env=workflow_env,
         openhands_command=openhands_command,
-        openhands_empty_patch_rejections=max(
-            0, getattr(args, "openhands_empty_patch_rejections", 2)
-        ),
-        max_empty_patch_retries=min(
-            1, max(0, getattr(args, "max_empty_patch_retries", 1))
-        ),
+        openhands_empty_patch_rejections=max(0, getattr(args, "openhands_empty_patch_rejections", 2)),
+        max_empty_patch_retries=min(1, max(0, getattr(args, "max_empty_patch_retries", 1))),
         remote_proxy_base_url=remote_proxy_base_url,
         local_proxy_base_url=local_proxy_base_url,
         proxy_env_file=Path(proxy_env_file) if proxy_env_file else None,
@@ -410,6 +402,7 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
         skip_health_checks=args.skip_health_checks,
         dry_run=args.dry_run,
         runtime_tree_sha256=runtime_tree_sha256,
+        max_technical_recoveries=max(0, min(3, int(getattr(args, "max_technical_recoveries", 0)))),
     )
 
 
@@ -431,7 +424,9 @@ SINGLE_TASK_COUNT_FIELDS = (
 
 
 def _expected_summary_identity(
-    config: ParallelConfig, expected_index: int
+    config: ParallelConfig,
+    expected_index: int,
+    overrides: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     expected = {
         "workflow": config.workflow,
@@ -455,38 +450,33 @@ def _expected_summary_identity(
         "base_run_dir": f"{config.remote_base}/task_{expected_index}",
     }
     if config.workflow == "openhands-external":
-        expected["openhands_empty_patch_rejections"] = getattr(
-            config, "openhands_empty_patch_rejections", 2
-        )
-        expected["openhands_command_sha256"] = _openhands_command_sha256(
-            getattr(config, "openhands_command", "")
-        )
+        expected["openhands_empty_patch_rejections"] = getattr(config, "openhands_empty_patch_rejections", 2)
+        expected["openhands_command_sha256"] = _openhands_command_sha256(getattr(config, "openhands_command", ""))
     if config.runtime_tree_sha256:
         expected["runtime_tree_sha256"] = config.runtime_tree_sha256
+    if overrides:
+        expected.update(overrides)
     return expected
 
 
 def _summary_runtime_identity_reasons(
-    summary: dict[str, Any], config: ParallelConfig, expected_index: int
+    summary: dict[str, Any],
+    config: ParallelConfig,
+    expected_index: int,
+    overrides: dict[str, Any] | None = None,
 ) -> list[str]:
     reasons = [
         f"summary_identity_mismatch:{key}"
-        for key, expected in _expected_summary_identity(config, expected_index).items()
+        for key, expected in _expected_summary_identity(config, expected_index, overrides).items()
         if summary.get(key) != expected
     ]
-    expected_workflow_env = {
-        key: value
-        for item in config.workflow_env
-        for key, _, value in [item.partition("=")]
-    }
+    expected_workflow_env = {key: value for item in config.workflow_env for key, _, value in [item.partition("=")]}
     if summary.get("workflow_env") != expected_workflow_env:
         reasons.append("summary_identity_mismatch:workflow_env")
     return reasons
 
 
-def _strict_success_row_reasons(
-    row: Any, config: ParallelConfig, expected_index: int
-) -> list[str]:
+def _strict_success_row_reasons(row: Any, config: ParallelConfig, expected_index: int) -> list[str]:
     if not isinstance(row, dict):
         return ["invalid_task_row"]
     if _eval_integrity.strict_index(row.get("index")) != expected_index:
@@ -516,7 +506,11 @@ def _strict_success_row_reasons(
 
 
 def single_task_summary_validation_reasons(
-    summary: dict[str, Any], config: ParallelConfig, expected_index: int
+    summary: dict[str, Any],
+    config: ParallelConfig,
+    expected_index: int,
+    *,
+    identity_overrides: dict[str, Any] | None = None,
 ) -> tuple[str, ...]:
     """Validate fresh and reusable single-task summaries against one contract."""
     reasons: list[str] = []
@@ -548,7 +542,7 @@ def single_task_summary_validation_reasons(
     if status not in {"done", "done_with_technical_failures"}:
         reasons.append("nonterminal_runner_status")
         return tuple(reasons)
-    reasons.extend(_summary_runtime_identity_reasons(summary, config, expected_index))
+    reasons.extend(_summary_runtime_identity_reasons(summary, config, expected_index, identity_overrides))
     if normalized["tasks"] != 1 or len(rows) != 1:
         reasons.append("terminal_summary_census_conflict")
         return tuple(dict.fromkeys(reasons))
@@ -558,8 +552,7 @@ def single_task_summary_validation_reasons(
             normalized["technical_failed"] != 0
             or normalized["generation_done"] + normalized["empty_patch"] != 1
             or normalized["eval_done"] + normalized["empty_patch"] != 1
-            or normalized["resolved"] + normalized["unresolved"]
-            != normalized["eval_done"]
+            or normalized["resolved"] + normalized["unresolved"] != normalized["eval_done"]
         ):
             reasons.append("done_summary_count_conflict")
         reasons.extend(_strict_success_row_reasons(rows[0], config, expected_index))
@@ -568,9 +561,7 @@ def single_task_summary_validation_reasons(
     row = rows[0] if isinstance(rows[0], dict) else {}
     generation = row.get("generation") if isinstance(row.get("generation"), dict) else {}
     evaluation = row.get("eval") if isinstance(row.get("eval"), dict) else {}
-    evaluation_summary = (
-        evaluation.get("summary") if isinstance(evaluation.get("summary"), dict) else {}
-    )
+    evaluation_summary = evaluation.get("summary") if isinstance(evaluation.get("summary"), dict) else {}
     task = str(row.get("task") or "").strip()
     if (
         normalized["technical_failed"] != 1
@@ -578,8 +569,7 @@ def single_task_summary_validation_reasons(
         or normalized["unresolved"] != 0
         or normalized["empty_patch"] != 0
         or normalized["eval_done"] != 0
-        or normalized["generation_done"]
-        != int(generation.get("status") == "generation_done")
+        or normalized["generation_done"] != int(generation.get("status") == "generation_done")
     ):
         reasons.append("technical_summary_count_conflict")
     if _eval_integrity.strict_index(row.get("index")) != expected_index:
@@ -608,12 +598,22 @@ def single_task_summary_validation_reasons(
 
 
 def report_is_reusable(
-    summary: dict[str, Any], config: ParallelConfig, expected_index: int
+    summary: dict[str, Any],
+    config: ParallelConfig,
+    expected_index: int,
+    *,
+    identity_overrides: dict[str, Any] | None = None,
+    allow_technical: bool = False,
 ) -> bool:
     return bool(
         getattr(config, "runtime_tree_sha256", "")
-        and summary.get("status") == "done"
-        and not single_task_summary_validation_reasons(summary, config, expected_index)
+        and summary.get("status") in ({"done", "done_with_technical_failures"} if allow_technical else {"done"})
+        and not single_task_summary_validation_reasons(
+            summary,
+            config,
+            expected_index,
+            identity_overrides=identity_overrides,
+        )
     )
 
 
@@ -640,18 +640,12 @@ def result_resource_reasons(result: dict[str, Any]) -> list[str]:
             return ["generation_execution_not_quiesced"]
     scope = str(result.get("failure_scope") or "")
     probe = result.get("failure_probe") if isinstance(result.get("failure_probe"), dict) else {}
-    if (
-        scope == "shared_infrastructure"
-        and probe.get("direct") is True
-        and probe.get("status") == "failed"
-    ):
+    if scope == "shared_infrastructure" and probe.get("direct") is True and probe.get("status") == "failed":
         return ["shared_infrastructure_probe_failed"]
     return []
 
 
-def update_scheduler_state(
-    config: ParallelConfig, state: SchedulerState, result: dict[str, Any]
-) -> None:
+def update_scheduler_state(config: ParallelConfig, state: SchedulerState, result: dict[str, Any]) -> None:
     if not config.adaptive_concurrency:
         return
     reasons = result_resource_reasons(result)
@@ -672,10 +666,7 @@ def update_scheduler_state(
         )
         return
     state.clean_streak += 1
-    if (
-        state.current_workers < config.max_workers
-        and state.clean_streak >= config.adaptive_recovery_tasks
-    ):
+    if state.current_workers < config.max_workers and state.clean_streak >= config.adaptive_recovery_tasks:
         old_workers = state.current_workers
         state.current_workers += 1
         state.clean_streak = 0

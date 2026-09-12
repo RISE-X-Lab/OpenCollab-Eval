@@ -23,18 +23,20 @@ MAX_APPROVED_PRE_TESTS = 5
 MAX_APPROVED_POST_TESTS = 4
 WORKFLOW_VARIANT = "G1.1"
 MAX_CODER_ROUNDS = 3
-LOCALIZER_BUDGET = 220_000
-EVIDENCE_BUDGET = 180_000
-VALIDATION_FACTORY_BUDGET = 160_000
-JUDGE_BUDGET = 100_000
-TRIAGE_BUDGET = 180_000
-RISK_BUDGET = 60_000
-VERIFIER_BUDGET = 220_000
+LOCALIZER_BUDGET = int(os.environ.get("OPENCOLLAB_G11_ROLE_BUDGET", "220000"))
+EVIDENCE_BUDGET = int(os.environ.get("OPENCOLLAB_G11_ROLE_BUDGET", "180000"))
+VALIDATION_FACTORY_BUDGET = int(os.environ.get("OPENCOLLAB_G11_ROLE_BUDGET", "160000"))
+JUDGE_BUDGET = int(os.environ.get("OPENCOLLAB_G11_ROLE_BUDGET", "100000"))
+TRIAGE_BUDGET = int(os.environ.get("OPENCOLLAB_G11_ROLE_BUDGET", "180000"))
+RISK_BUDGET = int(os.environ.get("OPENCOLLAB_G11_ROLE_BUDGET", "60000"))
+VERIFIER_BUDGET = int(os.environ.get("OPENCOLLAB_G11_ROLE_BUDGET", "220000"))
 STRUCTURED_ROLE_TIMEOUT_SECONDS = 900
 CODER_ROLE_TIMEOUT_SECONDS = 1800
 
 
-def _llm_aware_role_timeout(default: float) -> float:
+def _llm_aware_role_timeout(default: float) -> float | None:
+    if os.environ.get("OPENCOLLAB_EXTERNAL_PROVIDER_ISOLATION") == "1":
+        return None
     raw = os.environ.get("OPENCOLLAB_LLM_TIMEOUT")
     if raw is None:
         return default
@@ -47,12 +49,12 @@ def _llm_aware_role_timeout(default: float) -> float:
     return max(default, llm_timeout + 60)
 
 
-def structured_role_timeout_seconds() -> float:
+def structured_role_timeout_seconds() -> float | None:
     """Let provider-managed retries finish before the workflow ends a role."""
     return _llm_aware_role_timeout(STRUCTURED_ROLE_TIMEOUT_SECONDS)
 
 
-def coder_role_timeout_seconds() -> float:
+def coder_role_timeout_seconds() -> float | None:
     """Keep the coding role alive through its model client's retry window."""
     return _llm_aware_role_timeout(CODER_ROLE_TIMEOUT_SECONDS)
 
@@ -496,9 +498,7 @@ def _read_tools() -> list[Any]:
 
 
 def _coder_tools() -> list[Any]:
-    return toolset(
-        "bash", "file_read", "file_write", "apply_patch", "run_tests", "grep"
-    )
+    return toolset("bash", "file_read", "file_write", "apply_patch", "run_tests", "grep")
 
 
 def _tester_tools() -> list[Any]:

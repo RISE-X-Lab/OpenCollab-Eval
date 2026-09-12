@@ -29,12 +29,14 @@ services, bootstrap internals, domain modules, harness code, and the retired
 | `scout-solve` | Parallel read-only reconnaissance followed by one repair loop |
 | `analyst-solve` | Analyst-led reconnaissance, phased repair, and final verification |
 | `team-pro` | Stable tuned alias for `analyst-solve` |
+| `candidate-tournament-council-v1` | Two independent patch candidates, one integrator, and one public test owner |
 | `validation-council-solve` | Blind contract and validation council for SWE tasks |
 | `swe-committee-v2` | Committee workflow with explicit evidence and test gates |
 
 The production Solver coordinator maps `g11` and `g1.1` to
-`validation-council-solve`, `baseTeam` to `base-team`, and `TeamPro` to
-`team-pro`. `openhands` and `claude-code` are external Solver configurations
+`validation-council-solve`, `g20-exp2` to `candidate-tournament-council-v1`,
+`baseTeam` to `base-team`, and `TeamPro` to `team-pro`. `openhands` and
+`claude-code` are external Solver configurations
 that enter through the shared generation and candidate path. The remaining
 workflow functions are library-level building blocks and can be selected by
 the single-instance workflow generator.

@@ -103,12 +103,19 @@ def test_candidate_go_dependency_proof_is_part_of_the_plan_contract() -> None:
     )
 
 
-def test_candidate_added_dependency_setup_failure_is_candidate_failure() -> None:
+def test_candidate_added_dependency_network_failure_remains_technical() -> None:
     assert go_failure_proof_matches(
         _proof(),
         LOG,
         expected_command=COMMAND,
         observed_command=COMMAND,
+    ) is False
+
+
+def test_candidate_added_dependency_invalid_revision_is_candidate_failure() -> None:
+    semantic_failure = LOG.replace("dial tcp: network is unreachable", "invalid version: unknown revision v1.1.0")
+    assert go_failure_proof_matches(
+        _proof(), semantic_failure, expected_command=COMMAND, observed_command=COMMAND,
     ) is True
 
 

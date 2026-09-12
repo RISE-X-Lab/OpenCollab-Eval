@@ -76,6 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
         "rejudge-queue",
         help="Resume official evaluation for evidence-bound existing candidates",
     )
+    subparsers.add_parser("package-runtime", help="Package installed OC and OCE sources for server-local execution")
     return parser
 
 
@@ -89,6 +90,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from opencollab_eval.commands.swe_rejudge_queue import main as run_rejudge_queue
 
         return run_rejudge_queue(arguments[1:])
+    if arguments[:1] == ["package-runtime"]:
+        from opencollab_eval.commands.package_runtime import main as run_package_runtime
+
+        return run_package_runtime(arguments[1:])
     args = build_parser().parse_args(arguments)
     if args.command == "inspect":
         identity_key = load_identity_key(args.identity_key_file)

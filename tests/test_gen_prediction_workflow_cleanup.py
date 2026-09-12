@@ -6,7 +6,11 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-from gen_prediction_workflow_support import FIXTURE, gpw
+from gen_prediction_workflow_support import (
+    FIXTURE,
+    gpw,
+    isolated_solver_snapshot,  # noqa: F401
+)
 
 
 def test_generate_preserves_generation_error_when_baseline_cleanup_fails(
@@ -21,8 +25,15 @@ def test_generate_preserves_generation_error_when_baseline_cleanup_fails(
             raise OSError("baseline cleanup failed")
 
     finalized = []
+    retained = []
+
+    def failed_retention(*args, **kwargs):
+        retained.append(kwargs)
+        raise OSError("candidate retention evidence failed")
+
+    monkeypatch.setattr(gpw, "retain_failed_candidate", failed_retention)
     monkeypatch.setattr(gpw, "run_eval_task", fail_run_eval_task)
-    monkeypatch.setattr(gpw.gp, "start_container_with_marker", lambda *args: "cid")
+    monkeypatch.setattr(gpw.gp, "start_container_with_marker", lambda *args, **kwargs: "cid")
     monkeypatch.setattr(gpw.gp, "container_image_id", lambda container_id: "image-id")
     monkeypatch.setattr(
         gpw.gp,
@@ -70,6 +81,6 @@ def test_generate_preserves_generation_error_when_baseline_cleanup_fails(
             )
         )
 
-    assert len(finalized) == 1
-    assert finalized[0]["completed"] is False
-    assert any("baseline cleanup failed" in note for note in raised.value.__notes__)
+    assert finalized == []
+    assert len(retained) == 1
+    assert any("candidate retention evidence failed" in note for note in raised.value.__notes__)

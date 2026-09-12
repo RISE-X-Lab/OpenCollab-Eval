@@ -106,6 +106,7 @@ def test_agent_delegates_to_public_runtime_with_bound_configuration(
             "temperature": 0.7,
             "top_p": 0.8,
             "max_output_tokens": 4096,
+            "llm_timeout": 600.0,
             "thinking": True,
             "thinking_params": {"mode": "enabled"},
             "wire_protocol": "chat_completions",

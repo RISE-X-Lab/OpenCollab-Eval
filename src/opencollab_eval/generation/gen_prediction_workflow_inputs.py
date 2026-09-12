@@ -8,7 +8,26 @@ from opencollab_eval.benchmarks.task_specification import (
     compose_task_specification,
 )
 
-BLIND_BY_DEFAULT_WORKFLOWS = {"validation-council-solve", "swe-committee-v2"}
+BLIND_BY_DEFAULT_WORKFLOWS = {
+    "candidate-tournament-council-v1",
+    "evidence-action-council-v1",
+    "validation-council-dual-coder-contract-v1",
+    "validation-council-g20-coder-contract-v1",
+    "validation-council-g20-coder-red-green-v1",
+    "validation-council-g20-coder-red-green-v2",
+    "validation-council-wired-coder-heavy-v1",
+    "validation-council-wired-conditional-repair-v1",
+    "validation-council-wired-diagnose-repair-v1",
+    "validation-council-wired-dual-contract-v1",
+    "validation-council-wired-dual-g20-v1",
+    "validation-council-wired-plus-v1",
+    "validation-council-wired-resilient-v1",
+    "validation-council-wired-red-rescue-v1",
+    "validation-council-wired-tournament-v1",
+    "validation-council-wired-v1",
+    "validation-council-solve",
+    "swe-committee-v2",
+}
 
 
 def _fail_to_pass_ids(instance: dict) -> list[str]:
@@ -23,11 +42,7 @@ def build_task(instance: dict, *, include_fail_to_pass: bool = True) -> str:
     """Build the solver prompt, optionally including official grading ids."""
     problem = compose_task_specification(instance)
     hints = (instance.get("hints_text") or "").strip()
-    hints_block = (
-        f"\n## Hints (from the issue discussion — may help locate the cause)\n{hints}\n"
-        if hints
-        else ""
-    )
+    hints_block = f"\n## Hints (from the issue discussion — may help locate the cause)\n{hints}\n" if hints else ""
     if include_fail_to_pass:
         fail_to_pass = _fail_to_pass_ids(instance)
         tests = "\n".join(f"- {target}" for target in fail_to_pass)
@@ -38,10 +53,7 @@ def build_task(instance: dict, *, include_fail_to_pass: bool = True) -> str:
             "them; verify the fixed behavior directly instead.\n\n"
         )
     else:
-        tests_block = (
-            "## Blind validation mode\n"
-            "Use only the public issue, repository, tests, and documentation.\n\n"
-        )
+        tests_block = "## Blind validation mode\nUse only the public issue, repository, tests, and documentation.\n\n"
     return (
         f"# Issue to fix in `{instance['repo']}`\n\n"
         f"{problem}\n{hints_block}\n"

@@ -384,7 +384,7 @@ def test_rung_c_forces_a_commit_when_coder_lands_no_edit():
     assert commit_calls[0]["tool_choice"] == "required"
 
 
-def test_forced_write_is_thinking_off_and_clamped_to_seconds_left():
+def test_forced_write_inherits_thinking_and_uses_seconds_left():
     # The forced write is the LAST action and must GUARANTEE a patch lands before
     # the wall: it runs with thinking forced OFF (so its generation is fast even
     # when the run-wide default is thinking-on, e.g. OPENCOLLAB_THINKING=1) and
@@ -403,7 +403,7 @@ def test_forced_write_is_thinking_off_and_clamped_to_seconds_left():
     assert len(forced) == 1
     call = forced[0]
     # change #1 — reasoning forced off for the deadline-sensitive write.
-    assert call["thinking"] is False
+    assert call["thinking"] is None
     # change #2 — per-call timeout clamped to the remaining wall-clock head-room.
     assert call["timeout"] == 90.0
     # still forces a tool call so the write is not skipped (unchanged behavior).
@@ -418,10 +418,10 @@ class _NoDeadlineTimeLowCtx(_TimeLowCtx):
         super().__init__(*args, seconds_left=float("inf"), **kw)
 
 
-def test_forced_write_timeout_is_inf_when_no_deadline_wired():
+def test_forced_write_timeout_is_unbounded_when_no_deadline_wired():
     # CLI / unbounded runs must not impose a timeout — _seconds_left reports inf,
     # which _run_agent treats as "no bound", preserving today's behavior. thinking
-    # is still forced off (that protection is unconditional).
+    # inherits the configured model setting.
     ctx = _NoDeadlineTimeLowCtx(
         replies=[DIMS, "scout", PLAN, "forced-write landed"],
         tree=True,
@@ -430,7 +430,7 @@ def test_forced_write_timeout_is_inf_when_no_deadline_wired():
 
     forced = _forced_calls(ctx)
     assert len(forced) == 1
-    assert forced[0]["thinking"] is False
+    assert forced[0]["thinking"] is None
     assert forced[0]["timeout"] == float("inf")
 
 

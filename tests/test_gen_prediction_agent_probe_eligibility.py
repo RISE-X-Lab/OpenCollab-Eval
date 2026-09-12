@@ -50,7 +50,8 @@ def test_failed_result_remains_ineligible_even_when_session_is_quiescent() -> No
         },
     )
 
-    assert _result_metrics(result)["candidate_probe_eligible"] is False
+    assert _result_metrics(result)["candidate_probe_eligible"] is True
+    assert _result_metrics(result)["submission_eligible"] is False
 
 
 @pytest.mark.parametrize(

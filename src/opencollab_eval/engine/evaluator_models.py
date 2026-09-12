@@ -32,6 +32,7 @@ class EvalResult:
     task_stage_integrity_proven: bool = True
     submission_eligible: bool = True
     agent_failures: tuple[dict[str, Any], ...] = ()
+    runtime_state: dict[str, Any] | None = None
 
 
 @dataclass
@@ -43,7 +44,7 @@ class EvalTask:
     repo_path: str | None = None
     docker_image: str | None = None
     timeout: float = 600.0
-    max_tokens: int = 1_000_000
+    max_tokens: int | None = 1_000_000
     extras: dict | None = None
     harness_artifact_paths: tuple[str, ...] = ()
 

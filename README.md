@@ -298,6 +298,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before changing evaluation behavior.
 
 ---
 
+The paired evaluation development package includes `g20-exp1`, `g20-exp2`, and `g11-wired`. Use `oc-eval package-runtime` to create a server-local source runtime. See the [evaluation suite guide](docs/evaluation-suite.md).
+
 <a id="simplified-chinese"></a>
 
 <h1 align="center">OpenCollab-Eval</h1>
@@ -527,3 +529,5 @@ scripts/run_deterministic_swe_e2e.sh --output /tmp/oce-e2e --runs 1
 wheel 检查会在干净环境中安装两个发行包，并针对打包后的文件运行 Eval 测试。确定性 E2E 会启动本地伪模型服务和临时 SSH 服务，用真实 `rsync` 复制代码，并在 Docker 中运行任务。随后，它会提取补丁，运行官方 SWE-bench harness，检查最终报告，并确认自己创建的资源已经清理。模型响应全部来自本地伪服务。
 
 更改评测行为前，请阅读 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)。
+
+评测开发包包含 `g20-exp1`、`g20-exp2` 和 `g11-wired`，可以使用 `oc-eval package-runtime` 创建服务器运行目录，具体步骤见[评测方案说明](docs/zh-CN/evaluation-suite.md)。

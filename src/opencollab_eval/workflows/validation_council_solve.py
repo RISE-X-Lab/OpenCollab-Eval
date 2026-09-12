@@ -12,14 +12,38 @@ official hidden tests, injected grader patches, or FAIL_TO_PASS node ids.
 
 from __future__ import annotations
 
+from typing import Any
+
+from opencollab.workflows import workflow
+
 from opencollab_eval.workflows import _validation_council_solve_defs as _definitions
 from opencollab_eval.workflows import _validation_council_solve_impl as _implementation
-from opencollab_eval.workflows._validation_council_solve_impl import (
-    validation_council_solve as validation_council_solve,
-)
 
+_read_tools = _definitions._read_tools
+_risk_tools = _definitions._risk_tools
 _coder_tools = _definitions._coder_tools
 _tester_tools = _definitions._tester_tools
+
+
+@workflow(
+    name="validation-council-solve",
+    description=("Blind contract-led SWE workflow with validation judges, diff risk audit, and capped retry"),
+    phases=[
+        "localize",
+        "evidence",
+        "pre-validate",
+        "solve",
+        "diff-risk",
+        "final-verify",
+    ],
+)
+async def validation_council_solve(
+    ctx: Any,
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    """Public-module workflow wrapper used by discovery."""
+    return await _implementation.validation_council_solve(ctx, args)
+
 
 _LEGACY_EXPORTS = tuple(
     sorted({name for module in (_definitions, _implementation) for name in dir(module) if not name.startswith("_")})
@@ -34,3 +58,10 @@ def __getattr__(name: str):
             if hasattr(module, name):
                 return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+for _export in _LEGACY_EXPORTS:
+    for _module in (_definitions, _implementation):
+        if hasattr(_module, _export):
+            globals().setdefault(_export, getattr(_module, _export))
+            break
