@@ -1,0 +1,92 @@
+# The verification cell: `cmd-plain` with the Analyst's closing block changed in
+# one paragraph, run at the same 4M per-seat cap, on the same forty-task list,
+# the same suite, the same endpoint and the same scoring dataset as
+# `qwen-plain40-4m`.
+#
+# WHAT DIFFERS FROM qwen-plain40-4m, EXHAUSTIVELY
+#
+#   cell            cmd-plain -> cmd-verify
+#   opencollab pin  7051275497d9 -> 0a4f1871bc58
+#
+# The pin is the running cell's own pin with one commit cherry-picked onto it,
+# so `git diff` between the two pins is four new files and no deletion:
+# `blocks/cmd-verify.md`, the rendered `analyst.cmd-verify.md`, its entry in
+# `variants.yaml`, and `team.handoff.cmd-verify.yaml`. The Coder's card, the
+# Tester's card, the shared body, all three tool bundles and the six directed
+# edges are byte for byte the running cell's. Recorded proof, to be checked in
+# the metrics of every run here: `role_prompt_sha256.analyst` =
+# 0b436dd8b50df9894a49925fe513909f3f54cb18a291a9e99c7ca66d0a883a43, against
+# e8353bd71aed5846617d590ec134529ce78f2c4fe95281997d4e09a4186c5771 for
+# cmd-plain; `.coder` = 3e2f7cab06d9... and `.tester` = 6a85260af189...
+# unchanged.
+#
+# WHY THIS PARAGRAPH
+#
+# The cap was the first hypothesis and it is already spent: at 4M the Analyst
+# is no longer the seat that runs out (measured on the first five runs of
+# `qwen-plain40-4m`: the Analyst used 0.07-0.47 of its own 4M and every one of
+# the five ended on `submitted`). What is left is that the team's three seats
+# produce work the graded tree never sees. `cmd-plain` asks the Tester for "the
+# tests that should cover the change" and never has to come back for the
+# answer; on the forty 2M runs of that cell, teammates committed and sent a sha
+# in 33 runs and the Analyst checked one out in 13.
+#
+# This card asks for the return trip and states the arithmetic behind it: a
+# seat's budget is its own and is not returned, so a suite the Tester runs is a
+# suite the Analyst did not pay for out of what it has left to think with. That
+# is the only mechanism by which three seats can beat one on this benchmark
+# that the seat-oracle measurement has not already ruled out -- `|C \ A| = 0`
+# said the Coder holds no answer the Analyst does not, so the win has to come
+# from the Analyst being better informed, not from a teammate's patch.
+#
+# WHAT THIS CELL MAY NOT BE USED FOR
+#
+# No adherence number. The card prescribes the `message_agent` call, so a
+# delegation count here is compliance with the file and not a choice; α is
+# defined on cards that leave the alternative open. It is not a rung of the
+# command ladder and is not poolable with one.
+#
+# READ-OUT, WRITTEN BEFORE THE RUN
+#
+# Three cells now exist at the same 4M operating point, same endpoint, same
+# forty tasks: Single (`qwen-single40-4m-dash`), team/cmd-plain
+# (`qwen-plain40-4m`), team/cmd-verify (this one). The goal is stated on resolve
+# and nothing else: does a three-seat team out-resolve one agent.
+#
+#   verify > Single  -> the goal is met. Report the pair per task: b, c, the
+#                       exact two-sided sign test, and both arms' token cost.
+#   verify > plain but <= Single
+#                    -> the return trip helps the team and the team still does
+#                       not beat one agent. Report both contrasts; do not
+#                       report the verify-vs-plain gain alone, which would be
+#                       the same selective reading the project has refused
+#                       elsewhere.
+#   verify <= plain  -> prescribing the return trip does not pay. Stop: the two
+#                       levers that remain (more seats, a different task
+#                       distribution) are not reachable before the freeze.
+#
+# Either arm's gold control short of 40/40 -> no resolve may be read at all.
+#
+# Cost is part of the answer, not a footnote: this cell spends three seats'
+# budget to answer one agent's question, and a win that costs 3x is a different
+# claim from a win.
+name: qwen-verify40-4m
+host: lthpc
+arm: team
+rung: verify
+cell: cmd-verify
+suite: subset-50
+rows: {start: 1, stop: 40}
+budget_per_seat: 4000000
+max_steps: 200
+timeout: 10800
+concurrency: 6
+model_env: configs/.env.qwen
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 0a4f1871bc587e7a1586c9cfab2e762936f66840
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "the forty-task measurement of the closed-verification card at the 4M per-seat operating point; one paragraph of the Analyst card apart from qwen-plain40-4m, whose forty-task result at the same cap is the comparison"
