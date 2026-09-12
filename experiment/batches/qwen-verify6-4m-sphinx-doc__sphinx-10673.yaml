@@ -6,6 +6,15 @@
 #
 #   cell            cmd-plain -> cmd-verify
 #   opencollab pin  7051275497d9 -> ed820840d411
+#   host file       lthpc -> lthpc-b
+#
+# `lthpc-b` is the same machine, the same workdir, the same python, the same
+# docker daemon and the same scoring dataset as `lthpc`: a second pair of git
+# checkouts and nothing else, asserted field by field by
+# `test_the_second_lthpc_checkout_is_the_same_machine`. It exists because a
+# checkout sits at one commit and `sync` refuses to move the one a running
+# driver is using -- with a single pair, this cell could not start until
+# `qwen-plain40-4m` had finished its last thirty-two runs.
 #
 # The pin is the running cell's own pin with two commits cherry-picked onto it,
 # one per intervention cell, so `git diff` between the two pins is seven added
@@ -82,7 +91,7 @@
 # and no number from it is reportable. The reportable number is the paired
 # forty-task comparison against Single.
 name: qwen-verify6-4m-sphinx-doc__sphinx-10673
-host: lthpc
+host: lthpc-b
 arm: team
 rung: verify
 cell: cmd-verify

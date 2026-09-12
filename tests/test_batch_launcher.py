@@ -736,6 +736,24 @@ def test_rung_derives_the_cell_and_refuses_a_mismatch(experiment: dict) -> None:
     }
 
 
+def test_the_second_lthpc_checkout_is_the_same_machine() -> None:
+    """`lthpc-b.yaml` may differ from `lthpc.yaml` in the checkout paths only.
+
+    It exists so a second pin can run while a batch holds the first checkout,
+    and it is only sound while every other field is identical: a second host
+    file that quietly carried a different scoring dataset, python or workdir
+    would turn "which card" into "which machine" without saying so.
+    """
+    import yaml
+
+    a = yaml.safe_load((EXPERIMENT / "hosts" / "lthpc.yaml").read_text(encoding="utf-8"))
+    b = yaml.safe_load((EXPERIMENT / "hosts" / "lthpc-b.yaml").read_text(encoding="utf-8"))
+    differ = {k for k in set(a) | set(b) if a.get(k) != b.get(k)}
+    assert differ == {"name", "opencollab_dir", "eval_dir"}, differ
+    assert b["opencollab_dir"] != a["opencollab_dir"]
+    assert b["eval_dir"] != a["eval_dir"]
+
+
 def test_checked_in_specs_name_rung_and_cell_consistently() -> None:
     # A ``TEMPLATE-`` file is not a spec: it carries `<family>`-style
     # placeholders on purpose, so ``load_spec`` refuses its name and the refusal
