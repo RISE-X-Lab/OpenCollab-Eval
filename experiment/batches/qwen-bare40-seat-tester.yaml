@@ -1,0 +1,54 @@
+# 2026-09-12. Not a batch of runs. The predictions here were reconstructed from
+# qwen-cmdbare40's own per-seat trajectories, and this file exists so that
+# scoring them is addressed the same way scoring a batch is.
+#
+# What it scores. In the Team arm only agent 0's tree is graded: teammates work
+# in worktrees under /opencollab-worktrees, and their work reaches the graded
+# patch only if the analyst runs `git checkout <sha>`. In qwen-cmdbare40 a
+# teammate committed and sent the sha in 33 of 40 runs and the analyst took it
+# in 13, so `pass@1` for that cell is the analyst's tree and nothing else. The
+# tester is the seat this route almost cannot see: it runs `git diff` on
+# /testbed to look at the analyst's work rather than on its own worktree, so
+# `/root/oc-extract/extract_seat_patch.py` recovers a candidate patch for it in
+# 1 of 40 runs. Independently, its own worktree was seen dirty in 7 of the 27
+# runs where it ran `git status` there. This file exists so that "the tester's
+# contribution cannot be scored" is a measured statement with a number in it
+# rather than an omission.
+#
+# The name for this is seat-oracle, not BoN. The paper's BoN is the
+# pre-registered D13 quantity -- best of k=3 Single resamples -- and this is a
+# different thing: selection across seats of one run, by seat identity.
+#
+# Rows with no recoverable patch are kept as empty patches so the denominator
+# stays at forty: 1 of the 40 rows carries a patch.
+#
+# The session's positive control. 2026-09-12 re-scored qwen-cmdbare40's own
+# preds-team.jsonl on this host and this dataset and got 31/40 with a
+# resolved-id set identical to 2026-09-11's, on top of that cell's gold control
+# resolving 40/40. Gold runs here as well, because a score dir with no control
+# in it cannot be read.
+#
+# derived: true -- `launch` refuses it; launching into this out-dir would pay
+# for runs that overwrite the artifact being read. The paid fields are copied
+# from qwen-cmdbare40 so the record says which batch these came out of.
+name: qwen-bare40-seat-tester
+derived: true
+host: lthpc
+arm: team
+rung: bare
+cell: cmd-bare
+suite: subset-50
+rows: {start: 1, stop: 40}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env.qwen
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "derived, not run: qwen-cmdbare40's tester-seat patches recovered from the trajectories and scored as predictions; only 1 of 40 rows carries a patch, which is itself the result"
