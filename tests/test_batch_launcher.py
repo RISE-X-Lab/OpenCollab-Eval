@@ -731,11 +731,19 @@ def test_rung_derives_the_cell_and_refuses_a_mismatch(experiment: dict) -> None:
         "bare": "cmd-bare",
         "plain": "cmd-plain",
         "prohibit": "cmd-prohibit",
+        "verify": "cmd-verify",
     }
 
 
 def test_checked_in_specs_name_rung_and_cell_consistently() -> None:
+    # A ``TEMPLATE-`` file is not a spec: it carries `<family>`-style
+    # placeholders on purpose, so ``load_spec`` refuses its name and the refusal
+    # is the file working as intended. Loading it here turned this gate red for
+    # every checked-in spec at once, which is how a real breakage would have
+    # hidden.
     for path in sorted((EXPERIMENT / "batches").glob("*.yaml")):
+        if path.name.startswith("TEMPLATE-"):
+            continue
         spec = load_spec(path)
         if spec.arm == "team":
             assert spec.rung is not None, f"{path.name}: a team spec names its rung"

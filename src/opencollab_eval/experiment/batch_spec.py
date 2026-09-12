@@ -50,6 +50,15 @@ RUNG_CELLS = {
     "bare": "cmd-bare",
     "plain": "cmd-plain",
     "prohibit": "cmd-prohibit",
+    # Not a rung of that ladder and not poolable with it: `cmd-verify` is
+    # `cmd-plain` with the verification paragraph replaced by the return trip
+    # (commit the candidate, send the Tester the sha, treat a failing reply as
+    # unfinished work). It is named here because a team spec has no other way to
+    # name a card, and the name is the card's own so that nothing reads it as a
+    # rung. No adherence number may be taken from a batch run under it -- the
+    # card prescribes the `message_agent` call, so a delegation count there is
+    # compliance with the file rather than a choice.
+    "verify": "cmd-verify",
 }
 
 # ``pgrep -f`` matches its own caller's command line, so the pattern carries a
