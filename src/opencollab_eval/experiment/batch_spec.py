@@ -59,6 +59,13 @@ RUNG_CELLS = {
     # card prescribes the `message_agent` call, so a delegation count there is
     # compliance with the file rather than a choice.
     "verify": "cmd-verify",
+    # Also not a rung: `cmd-propose` asks the Coder for its own diagnosis
+    # instead of for an implementation of the Analyst's, has the Analyst write a
+    # second fix in parallel, and puts the Tester between them as the selector.
+    # Same two exclusions as `verify` -- no adherence number, not poolable with
+    # the ladder -- plus one more: it is not best-of-n, which in this project is
+    # D13's k=3 samples from one agent selected without a test.
+    "propose": "cmd-propose",
 }
 
 # ``pgrep -f`` matches its own caller's command line, so the pattern carries a
