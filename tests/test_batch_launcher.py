@@ -732,6 +732,7 @@ def test_rung_derives_the_cell_and_refuses_a_mismatch(experiment: dict) -> None:
         "plain": "cmd-plain",
         "prohibit": "cmd-prohibit",
         "verify": "cmd-verify",
+        "propose": "cmd-propose",
     }
 
 

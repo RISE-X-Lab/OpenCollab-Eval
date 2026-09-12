@@ -4,7 +4,7 @@
 #
 # WHAT DIFFERS FROM qwen-plain40-4m, EXHAUSTIVELY
 #
-#   cell            cmd-plain -> cmd-verify
+#   cell            cmd-plain -> cmd-propose
 #   opencollab pin  7051275497d9 -> ed820840d411
 #
 # The pin is the running cell's own pin with two commits cherry-picked onto it,
@@ -16,25 +16,30 @@
 # The Coder's card, the Tester's card, the shared body, all three tool bundles
 # and the six directed edges are byte for byte the running cell's. Proof to
 # check in the metrics of every run here: `role_prompt_sha256.analyst` =
-# 0b436dd8b50df9894a49925fe513909f3f54cb18a291a9e99c7ca66d0a883a43, against
+# c3ce75b43729f9744d64fac72140196e11d4746e7f01d5b2b211a0f7a1a4318a, against
 # e8353bd71aed5846617d590ec134529ce78f2c4fe95281997d4e09a4186c5771 for
 # cmd-plain; `.coder` = 3e2f7cab06d9... and `.tester` = 6a85260af189...
 # unchanged.
 #
 # WHY THIS PARAGRAPH
 #
-# The cap was the first hypothesis and it is spent: at 4M the Analyst is no
-# longer the seat that runs out. Measured on the first five runs of
-# `qwen-plain40-4m`, the Analyst used 0.07-0.47 of its own 4M and all five ended
-# on `submitted`. What is left is that the team's three seats produce work the
-# graded tree never sees. `cmd-plain` asks the Tester for "the tests that should
-# cover the change" and never has to come back for the answer; on the forty 2M
-# runs of that cell, teammates committed and sent a sha in 33 runs and the
-# Analyst checked one out in 13.
+# Under `cmd-plain` the Coder implements a fix the Analyst has already worked
+# out, so its patch is not a second answer -- and measured that way it is not
+# one: the Coder's own tree, reconstructed on forty runs of that cell and
+# scored, resolved 17 and every one of the 17 was a task the Analyst also
+# resolved (`|C \ A| = 0`).
 #
-# This card asks for the return trip and states the arithmetic behind it: a
-# seat's budget is its own and is not returned, so a suite the Tester runs is a
-# suite the Analyst did not pay for out of what it has left to think with.
+# This card asks the Coder for the diagnosis rather than for the edit, has the
+# Analyst write its own fix in parallel, and puts the Tester between them as the
+# selector. That spends the second and third budgets on the two things one agent
+# cannot buy: a second independent candidate, and a test run that is not paid
+# for out of the budget that has to do the thinking. It also names the step that
+# ends a handoff -- `git checkout <sha>` into the tree that is read as the
+# answer.
+#
+# The seat-oracle null does not cover this cell: it was measured under
+# dictation. Nor is this best-of-n, which in this project is D13's k=3 samples
+# from one agent selected without a test.
 #
 # WHAT THIS CELL MAY NOT BE USED FOR
 #
@@ -81,13 +86,13 @@
 # A rerun of one task flips its own outcome, so this smoke attributes nothing
 # and no number from it is reportable. The reportable number is the paired
 # forty-task comparison against Single.
-name: qwen-verify6-4m-sympy__sympy-20438
+name: qwen-propose6-4m-matplotlib__matplotlib-22871
 host: lthpc
 arm: team
-rung: verify
-cell: cmd-verify
+rung: propose
+cell: cmd-propose
 suite: subset-50
-rows: {start: 14, stop: 14}
+rows: {start: 18, stop: 18}
 budget_per_seat: 4000000
 max_steps: 200
 timeout: 10800
@@ -100,4 +105,4 @@ env:
 pins:
   opencollab: ed820840d411856c1c87a916607f2229028669e9
   opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
-note: "cmd-verify smoke on subset-50 row 14 (sympy__sympy-20438); cmd-plain 4M did not; Single 4M did not"
+note: "cmd-propose smoke on subset-50 row 18 (matplotlib__matplotlib-22871); cmd-plain 4M resolved it; Single 4M resolved it"
