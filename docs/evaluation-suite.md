@@ -2,7 +2,7 @@
 
 **English** | [简体中文](zh-CN/evaluation-suite.md)
 
-This development package combines the running evaluation fixes with the maintained OC 0.5 API. Install the paired OC and OCE development branches together. The OC package supplies candidate workspace isolation, explicit unbounded limits, configured reasoning inheritance, request lifecycle traces, and public model and snapshot inspection. OCE owns task delivery, public dependency preparation, trusted candidate extraction, official test execution, and result interpretation.
+This development package combines the running evaluation fixes with the current OC 0.6 main API. Install the paired OC and OCE development revisions together. The OC package supplies candidate workspace isolation, explicit unbounded limits, configured reasoning inheritance, request lifecycle traces, and public model and snapshot inspection. OCE owns task delivery, public dependency preparation, trusted candidate extraction, official test execution, and result interpretation.
 
 ## Install and package
 

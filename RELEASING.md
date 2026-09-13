@@ -38,8 +38,8 @@ Build the OpenCollab wheel from its published tag, then build the evaluator sour
 
 ```bash
 set -euo pipefail
-release_version=0.5.1
-opencollab_release_tag=v0.5.0
+release_version="${RELEASE_VERSION:?set the OCE release version}"
+opencollab_release_tag="${OPENCOLLAB_RELEASE_TAG:?set a compatible signed OC release tag}"
 opencollab_release_sha=963585611ad2a1d0c1fc7f4ba0043af5a3d860bb
 artifact_root="$(mktemp -d -t "opencollab-eval-${release_version}.XXXXXX")"
 mkdir -p "$artifact_root/opencollab" "$artifact_root/sdist" "$artifact_root/wheel" "$artifact_root/assets"

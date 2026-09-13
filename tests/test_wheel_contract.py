@@ -25,7 +25,7 @@ def test_opencollab_sdk_can_come_from_the_built_wheel() -> None:
     if expected_eval_root:
         assert Path(opencollab_eval.__file__).is_relative_to(Path(expected_eval_root))
     sdk_version = Version(distribution_version("opencollab")).release
-    assert (0, 5, 2) <= sdk_version < (0, 6)
+    assert (0, 6, 1) <= sdk_version < (0, 7)
     assert callable(opencollab.tools.builtin_tools)
     assert callable(opencollab.workflows.workflow)
     assert callable(opencollab.environments.attach_container)

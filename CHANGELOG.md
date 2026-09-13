@@ -2,7 +2,7 @@
 
 All notable changes to OpenCollab-Eval are recorded in this file.
 
-## [0.5.2.dev0] - Unreleased
+## [0.6.0.dev0] - Unreleased
 
 ### Added
 
@@ -52,4 +52,4 @@ Public runtime dependencies and Conda activation are prepared before generation.
 [0.5.1]: https://github.com/RISE-X-Lab/OpenCollab-Eval/releases/tag/v0.5.1
 [0.5.0]: https://github.com/RISE-X-Lab/OpenCollab-Eval/releases/tag/v0.5.0
 
-[0.5.2.dev0]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.5.1...HEAD
+[0.6.0.dev0]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.5.1...HEAD

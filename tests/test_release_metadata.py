@@ -19,10 +19,10 @@ def test_release_metadata_keeps_versions_aligned_and_includes_license() -> None:
     license_bytes = (_REPO_ROOT / "LICENSE").read_bytes()
 
     assert opencollab_eval.__version__
-    assert opencollab_eval.__version__ == "0.5.2.dev0"
+    assert opencollab_eval.__version__ == "0.6.0.dev0"
     assert 'requires = ["hatchling==1.31.0"]' in pyproject
     assert f'version = "{opencollab_eval.__version__}"' in pyproject
-    assert 'dependencies = ["opencollab>=0.5.2.dev0,<0.6", "httpx>=0.27"]' in pyproject
+    assert 'dependencies = ["opencollab>=0.6.1.dev0,<0.7", "httpx>=0.27"]' in pyproject
     assert 'license = "MulanPSL-2.0"' in pyproject
     assert (
         'license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"]'
@@ -66,7 +66,7 @@ def test_release_documents_bind_the_051_pair() -> None:
     assert "signed annotated tag" in releasing
     assert "verify_wheel_contract.sh" in releasing
     assert "never move a published tag" in releasing
-    assert "opencollab_release_tag=v0.5.0" in releasing
+    assert 'opencollab_release_tag="${OPENCOLLAB_RELEASE_TAG:?' in releasing
     assert 'rev-parse "${opencollab_release_tag}^{}"' in releasing
     assert 'rev-parse HEAD' in releasing
     assert 'status --porcelain' in releasing
@@ -82,11 +82,11 @@ def test_wheel_contract_discovers_a_sibling_opencollab_checkout() -> None:
     assert '$candidate/opencollab/pyproject.toml' not in script
 
 
-def test_packaged_workflow_guides_match_the_050_runtime_boundary() -> None:
+def test_packaged_workflow_guides_match_the_06_runtime_boundary() -> None:
     package_readme = _PACKAGE_ROOT / "workflows" / "README.md"
     package_readme_zh = _PACKAGE_ROOT / "workflows" / "README.zh-CN.md"
 
     for path in (package_readme, package_readme_zh):
         text = path.read_text(encoding="utf-8")
-        assert "OpenCollab 0.5.0" in text
+        assert "OpenCollab 0.6.1.dev0" in text
         assert "OpenCollab 0.4" not in text
