@@ -2,9 +2,11 @@
 
 All notable changes to OpenCollab-Eval are recorded in this file.
 
-## [0.6.0.dev0] - Unreleased
+## [0.7.0] - 2026-09-14
 
 ### Added
+
+Paired with OpenCollab 0.7.0 and its current public runtime/tool interface.
 
 Reusable server-local evaluation packaging, shared provider request limits, native Single configuration, and named collaboration workflows.
 
@@ -59,8 +61,8 @@ Public runtime dependencies and Conda activation are prepared before generation.
 - Prevented stale checkpoints, malformed streaming responses, duplicate model starts, cleanup races, and parser-specific evidence gaps from producing untrusted terminal results.
 - Raised the deterministic SWE test budget so OpenCollab 0.5.0 can preserve the configured output allowance after conservative input reservation.
 
-[Unreleased]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.7.0...HEAD
 [0.5.1]: https://github.com/RISE-X-Lab/OpenCollab-Eval/releases/tag/v0.5.1
 [0.5.0]: https://github.com/RISE-X-Lab/OpenCollab-Eval/releases/tag/v0.5.0
 
-[0.6.0.dev0]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.5.1...HEAD
+[0.7.0]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.5.1...v0.7.0
