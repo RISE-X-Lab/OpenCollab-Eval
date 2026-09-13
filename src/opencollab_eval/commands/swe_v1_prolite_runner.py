@@ -35,6 +35,10 @@ from opencollab_eval.engine.solver_backend import (
     KIMI_CODING_BASE_URL,
     is_kimi_direct_model,
 )
+from opencollab_eval.engine.swe_v1_remote_state import (
+    DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
+    MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
+)
 
 
 def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
@@ -130,6 +134,11 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--swe-timeout", type=int, default=14_400, help="Remote generation timeout in seconds")
     parser.add_argument("--task-wall-timeout", type=int, default=15_300, help="Whole-task timeout in seconds")
     parser.add_argument("--eval-timeout", type=int, default=7_200, help="Official evaluation timeout in seconds")
+    parser.add_argument(
+        "--eval-container-bind-timeout", type=int,
+        default=DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
+        help="Maximum wait for Docker to publish the official-eval container identity",
+    )
     parser.add_argument("--llm-timeout", type=int, default=900, help="Single model request timeout in seconds")
     parser.add_argument(
         "--checkpoint-interval",
@@ -270,6 +279,11 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
     for option, value in positive_values.items():
         if value <= 0:
             parser.error(f"{option} must be > 0")
+    if not 1 <= args.eval_container_bind_timeout <= MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS:
+        parser.error(
+            "--eval-container-bind-timeout must be between 1 and "
+            f"{MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS} seconds"
+        )
     if not args.eval_only and args.checkpoint_interval != 0:
         parser.error("--checkpoint-interval must be 0 for trusted host extraction")
     if args.remote_api_env_file and (args.llm_provider != "openai" or not is_kimi_direct_model(args.llm_model)):

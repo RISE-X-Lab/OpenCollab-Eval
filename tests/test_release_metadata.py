@@ -19,10 +19,10 @@ def test_release_metadata_keeps_versions_aligned_and_includes_license() -> None:
     license_bytes = (_REPO_ROOT / "LICENSE").read_bytes()
 
     assert opencollab_eval.__version__
-    assert opencollab_eval.__version__ == "0.6.0.dev0"
+    assert opencollab_eval.__version__ == "0.7.0"
     assert 'requires = ["hatchling==1.31.0"]' in pyproject
     assert f'version = "{opencollab_eval.__version__}"' in pyproject
-    assert 'dependencies = ["opencollab>=0.6.1.dev0,<0.7", "httpx>=0.27"]' in pyproject
+    assert 'dependencies = ["opencollab>=0.7.0,<0.8", "httpx>=0.27"]' in pyproject
     assert 'license = "MulanPSL-2.0"' in pyproject
     assert (
         'license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"]'
@@ -82,11 +82,18 @@ def test_wheel_contract_discovers_a_sibling_opencollab_checkout() -> None:
     assert '$candidate/opencollab/pyproject.toml' not in script
 
 
-def test_packaged_workflow_guides_match_the_06_runtime_boundary() -> None:
+def test_packaged_workflow_guides_match_the_07_runtime_boundary() -> None:
     package_readme = _PACKAGE_ROOT / "workflows" / "README.md"
     package_readme_zh = _PACKAGE_ROOT / "workflows" / "README.zh-CN.md"
 
     for path in (package_readme, package_readme_zh):
         text = path.read_text(encoding="utf-8")
-        assert "OpenCollab 0.6.1.dev0" in text
+        assert "OpenCollab 0.7.0" in text
         assert "OpenCollab 0.4" not in text
+
+
+def test_wheel_probe_uses_installed_dependency_metadata():
+    script = (_REPO_ROOT / "scripts" / "verify_wheel_contract.sh").read_text()
+    assert 'requires("opencollab-eval")' in script
+    assert 'version("opencollab") in paired.specifier' in script
+    assert 'opencollab.__version__ == version("opencollab")' in script
