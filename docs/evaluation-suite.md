@@ -60,6 +60,14 @@ Generation starts from the requested base tree in a fresh anonymous Git reposito
 
 Candidate sub-workspaces inherit the permitted runtime dependency view while keeping their source changes separate. Final extraction uses the existing workspace quiescence, ownership, path, and candidate identity checks. Server-local output storage is selected with `OPENCOLLAB_EVAL_OUTPUT_ROOT` and is writable by the official test container.
 
+## Complete role evidence
+
+Role handoffs retain complete public reports, structured fields, path lists, and test records. Validation decisions carry their accepted candidate specifications, including commands, setup, assertions, and contract references. The coder receives localization, requirements, test cartography, and prior findings together and can inspect definitions and run available public verification within its coding pass. The existing role graph, approval counts, and repair-round limits remain the workflow policy.
+
+G11, the G20 variants, G21, Triple, Dual Contract, G20 + Coder Contract, Red-Green, and the evidence/tournament councils use complete handoff text. Long commands remain exact when comparing candidate test evidence. Existing private-field filtering, candidate path checks, patch validation, and official scoring proofs remain active. Base Team already carries full reports and has regression coverage for that behavior. Model context capacity is handled by the configured model runtime.
+
+Completed trajectories are verified incrementally. Total file size can exceed 16 MiB while the existing per-record memory bound, stable-file checks, provider identity, reasoning configuration, and full-file digest are preserved. Historical results retain their original runtime revisions; runs using these handoff fixes identify the updated source revision.
+
 ## Recovery and results
 
 The evaluator binds the actual trajectory directory before invoking the public workflow. Available exception chains are saved with credential redaction. Completed model events provide a known token and turn lower bound after a failed return. Started calls with missing responses remain visible as incomplete usage.

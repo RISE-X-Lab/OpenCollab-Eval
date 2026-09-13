@@ -95,11 +95,10 @@ grader patches, historical results, or model identity."""
 
 
 def _clip_text(value: Any, limit: int) -> tuple[str, bool]:
+    """Preserve complete model-visible evidence, including identity-bearing text."""
+    del limit
     text = "" if value is None else str(value)
-    payload = text.encode("utf-8")
-    if len(payload) <= limit:
-        return text, False
-    return payload[:limit].decode("utf-8", errors="ignore"), True
+    return text, False
 
 
 def _mechanical_choice(
@@ -159,7 +158,7 @@ def _candidate_view(candidate: CandidateRun) -> tuple[dict[str, Any], bool]:
     return {
         "diff": diff,
         "diff_truncated": truncated,
-        "changed_paths": patch_paths(candidate.diff)[:256],
+        "changed_paths": patch_paths(candidate.diff),
         "public_command": dual._candidate_command(candidate),
     }, truncated
 
@@ -340,7 +339,7 @@ async def validation_council_wired_dual_contract_v1(
             label: {
                 "nonempty": bool(candidate.diff.strip()),
                 "diff_bytes": len(candidate.diff.encode("utf-8")),
-                "changed_paths": patch_paths(candidate.diff)[:256],
+                "changed_paths": patch_paths(candidate.diff),
                 "g20_result": dual._candidate_output(candidate).get("g20_result"),
                 "public_command": dual._candidate_command(candidate),
                 "public_test_records": dual._candidate_records(candidate),

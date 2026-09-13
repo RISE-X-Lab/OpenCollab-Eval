@@ -17,7 +17,7 @@ import math
 import os
 from typing import Any
 
-from ._public_api import toolset
+from ._public_api import role_feedback, toolset
 
 MAX_APPROVED_PRE_TESTS = 5
 MAX_APPROVED_POST_TESTS = 4
@@ -378,7 +378,9 @@ Test cartography:
 JUDGE_PROMPT = """\
 You are the read-only Validation Judge for {stage}. Accept at most {cap}
 public-evidence probes. Reject missing contract ids, unsupported assertions,
-implementation-derived or hidden-grader claims.
+implementation-derived or hidden-grader claims. Use each probe's existing
+candidate id in accepted and rejected entries. Contract ids identify
+requirements and must not replace candidate ids.
 
 Goal:
 {goal}
@@ -401,21 +403,34 @@ Accepted validation:
 {judge}"""
 
 CODER_PROMPT = """\
-Coder. Inspect localized files and make the smallest source fix. After a search
-hit, the next call must read at most 20 lines at that exact path. If a definition
-continues, read the next adjacent 20 lines instead of searching again. Use one
-focused tool call per turn and never repeat a successful search. When the issue
-names classes, inspect each matched definition. Use an exact path from tool
-evidence. Use file_write for one unique replacement. For multi-site edits use
-apply_patch with raw ---/+++/@@ text, never a Begin Patch wrapper. End after
-applying a nonempty source diff. A separate verifier runs tests.
+You are the Coder. Implement the source fix using the complete evidence package.
+Inspect the relevant definitions and callers, and address every public behavior
+requirement. Run relevant public tests and accepted validation probes when useful.
+Use the tool schemas for valid edit and command syntax. Continue this coding pass
+until the source fix and its available verification are complete. Report changed
+files, verification results, and any remaining concrete defects.
+
+{rules}
 
 Goal:
 {goal}
 
 Localization:
 {localization}
+
+Contracts:
+{contracts}
+
+Test cartography:
+{cartography}
+
+Pre-patch validation:
+{pre_judge}
+
+Baseline triage:
+{baseline_triage}
 {feedback_block}"""
+
 
 FEEDBACK_BLOCK = """
 Previous attempt feedback:
@@ -520,23 +535,19 @@ def _dump(value: Any) -> str:
 
 
 def _clip(value: Any, limit: int = EVIDENCE_TEXT_BYTES) -> str:
-    text = str(value or "").strip()
-    raw = text.encode("utf-8")
-    if len(raw) <= limit:
-        return text
-    marker = "...[shortened]..."
-    retained = limit - len(marker.encode())
-    head = raw[: retained * 2 // 3].decode("utf-8", errors="ignore")
-    tail = raw[-(retained // 3) :].decode("utf-8", errors="ignore")
-    return head + marker + tail
+    """Retain complete role text; the legacy byte limit is no longer applied."""
+    del limit
+    return "" if value is None else str(value)
 
 
 def _items(value: Any, limit: int = EVIDENCE_LIST_ITEMS) -> list[Any]:
-    return value[:limit] if isinstance(value, list) else []
+    del limit
+    return list(value) if isinstance(value, list) else []
 
 
 def _bounded_dump(value: Any, limit: int) -> str:
-    return _clip(_dump(value), limit)
+    del limit
+    return _dump(value)
 
 
 def _complete_goal(goal: str) -> str:
@@ -545,132 +556,47 @@ def _complete_goal(goal: str) -> str:
 
 
 def _localization_brief(value: dict[str, Any], limit: int = 400) -> str:
-    return _clip(
-        json.dumps(
-            {
-                "files": [_clip(item, 100) for item in _items(value.get("files"))],
-                "root_cause": _clip(value.get("root_cause_hypothesis"), 100),
-                "public_api": [_clip(item, 80) for item in _items(value.get("public_api"))],
-                "done": _clip(value.get("definition_of_done"), 80),
-                "summary": _clip(value.get("summary"), 80),
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-        ),
-        limit,
-    )
+    del limit
+    return _dump(value)
 
 
 def _contracts_brief(value: dict[str, Any], limit: int = 500) -> str:
-    contracts = []
-    for item in _items(value.get("contracts")):
-        if isinstance(item, dict):
-            contracts.append(
-                {
-                    "id": _clip(item.get("id"), 80),
-                    "statement": _clip(item.get("statement"), 140),
-                    "scope": _clip(item.get("scope"), 100),
-                    "kind": _clip(item.get("behavior_kind"), 80),
-                    "testability": _clip(item.get("testability"), 100),
-                }
-            )
-    return _bounded_dump({"contracts": contracts}, limit)
+    del limit
+    return _dump(value)
 
 
 def _cartography_brief(value: dict[str, Any]) -> str:
-    return _bounded_dump(
-        {
-            "framework": _clip(value.get("framework"), 120),
-            "commands": [_clip(item, 120) for item in _items(value.get("runner_commands"), 2)],
-            "test_files": [_clip(item, 100) for item in _items(value.get("test_files"))],
-            "guidance": _clip(value.get("temporary_test_guidance"), 120),
-        },
-        350,
-    )
+    return _dump(value)
 
 
 def _candidates_brief(value: dict[str, Any], cap: int, limit: int = 600) -> str:
-    tests = []
-    for item in _items(value.get("tests"), cap):
-        if isinstance(item, dict):
-            tests.append(
-                {
-                    "id": _clip(item.get("id"), 80),
-                    "contracts": [_clip(ref, 80) for ref in _items(item.get("contract_ids"), 3)],
-                    "type": _clip(item.get("type"), 80),
-                    "setup": _clip(item.get("setup"), 120),
-                    "assertion": _clip(item.get("assertion"), 120),
-                    "base": _clip(item.get("expected_on_base"), 40),
-                    "patch": _clip(item.get("expected_on_patch"), 40),
-                    "command": _clip(item.get("runner_command"), 140),
-                }
-            )
-    return _bounded_dump({"tests": tests, "abstained": bool(value.get("abstained"))}, limit)
+    # The judge's approval cap is applied by _trim_judge, after seeing all proposals.
+    del cap, limit
+    return _dump(value)
 
 
 def _judge_brief(value: dict[str, Any], limit: int = 350) -> str:
-    accepted = []
-    for item in _items(value.get("accepted")):
-        if isinstance(item, dict):
-            accepted.append(
-                {
-                    "id": _clip(item.get("id"), 80),
-                    "priority": item.get("priority"),
-                    "reason": _clip(item.get("reason"), 120),
-                }
-            )
-    return _bounded_dump(
-        {"accepted": accepted, "brief": _clip(value.get("validation_brief"), 160)},
-        limit,
-    )
+    del limit
+    return _dump(value)
 
 
 def _triage_brief(value: dict[str, Any], limit: int = 350) -> str:
-    classifications = []
-    for item in _items(value.get("classifications")):
-        if isinstance(item, dict):
-            classifications.append(
-                {
-                    "id": _clip(item.get("test_id"), 80),
-                    "status": _clip(item.get("status"), 80),
-                    "evidence": _clip(item.get("evidence"), 140),
-                }
-            )
-    return _bounded_dump(
-        {"classifications": classifications, "brief": _clip(value.get("approved_brief"), 160)},
-        limit,
-    )
+    del limit
+    return _dump(value)
 
 
 def _risks_brief(value: dict[str, Any], limit: int = 350) -> str:
-    risks = []
-    for item in _items(value.get("risks"), 3):
-        if isinstance(item, dict):
-            risks.append(
-                {
-                    "id": _clip(item.get("id"), 80),
-                    "area": _clip(item.get("changed_area"), 100),
-                    "risk": _clip(item.get("risk"), 140),
-                    "probe": _clip(item.get("suggested_probe"), 120),
-                }
-            )
-    return _bounded_dump({"risks": risks, "summary": _clip(value.get("summary"), 140)}, limit)
+    del limit
+    return _dump(value)
 
 
 def _verdict_brief(value: dict[str, Any]) -> str:
-    return _bounded_dump(
-        {
-            "verdict": _clip(value.get("verdict"), 40),
-            "findings": _clip(value.get("findings"), 200),
-            "allowed": [_clip(item, 100) for item in _items(value.get("allowed_patch_paths"))],
-            "disallowed": [_clip(item, 100) for item in _items(value.get("disallowed_patch_paths"))],
-        },
-        350,
-    )
+    return _dump(value)
 
 
 def _report_brief(value: Any, limit: int = REPORT_BRIEF_BYTES) -> str:
-    return _clip(value, limit)
+    del limit
+    return _dump(value) if isinstance(value, (dict, list)) else str(value or "")
 
 
 def _dict_or(value: Any, fallback: dict[str, Any]) -> dict[str, Any]:
@@ -706,12 +632,4 @@ async def _source_diff_present(ctx: Any, exclude_paths: list[str]) -> bool | Non
 
 
 def _feedback(*reports: Any) -> str:
-    parts: list[str] = []
-    for report in reports:
-        if isinstance(report, dict):
-            text = report.get("findings") or report.get("approved_brief") or report.get("summary")
-            if text:
-                parts.append(str(text))
-        elif isinstance(report, str) and report.strip():
-            parts.append(report.strip())
-    return "\n\n".join(parts) or "No structured feedback was returned; re-verify from the evidence package."
+    return role_feedback(*reports)

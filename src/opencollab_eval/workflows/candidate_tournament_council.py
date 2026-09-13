@@ -216,13 +216,10 @@ def _forced_write_tools() -> list[Any]:
 
 
 def _clip_text(value: Any, limit: int) -> str:
-    text = str(value or "").strip()
-    payload = text.encode("utf-8")
-    if len(payload) <= limit:
-        return text
-    marker = "...[clipped]..."
-    retained = max(0, limit - len(marker.encode()))
-    return payload[:retained].decode("utf-8", errors="ignore") + marker
+    """Preserve complete model-visible evidence, including identity-bearing text."""
+    del limit
+    text = "" if value is None else str(value)
+    return text
 
 
 def _safe_path(path: str) -> bool:
@@ -275,52 +272,25 @@ def _normalize_candidate(
                     "observation": _clip_text(item.get("observation"), 500),
                 }
             )
-        if len(evidence) >= 8:
-            break
-    risk_tags = [_clip_text(item, 80).lower() for item in (value.get("risk_tags") or [])[:12] if str(item).strip()]
+    risk_tags = [_clip_text(item, 80).lower() for item in (value.get("risk_tags") or []) if str(item).strip()]
     return {
         "candidate_id": candidate_id,
         "valid": not reason,
         "invalid_reason": reason,
         "root_cause": _clip_text(value.get("root_cause"), 1_200),
         "evidence": evidence,
-        "touched_paths": paths[:64],
+        "touched_paths": paths,
         "path_count": len(paths),
         "patch": patch,
-        "test_intent": [_clip_text(item, 400) for item in (value.get("test_intent") or [])[:6] if str(item).strip()],
+        "test_intent": [_clip_text(item, 400) for item in (value.get("test_intent") or []) if str(item).strip()],
         "risk_tags": risk_tags,
         "confidence": str(value.get("confidence") or "low"),
     }
 
 
 def _candidate_handoff(candidates: list[dict[str, Any]]) -> str:
-    rendered = json.dumps(
-        {"candidates": candidates},
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    if len(rendered.encode("utf-8")) > MAX_CANDIDATE_HANDOFF_BYTES:
-        compact = []
-        for candidate in candidates:
-            compact.append(
-                {
-                    **candidate,
-                    "evidence": [],
-                    "test_intent": [],
-                    "touched_paths": list(candidate.get("touched_paths") or [])[:16],
-                    "root_cause": _clip_text(candidate.get("root_cause"), 400),
-                }
-            )
-        rendered = json.dumps(
-            {"candidates": compact},
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-    if len(rendered.encode("utf-8")) > MAX_CANDIDATE_HANDOFF_BYTES:
-        raise ValueError("complete candidate patches exceed handoff bound")
-    return rendered
+    # Candidate path and patch validation is performed before this transport step.
+    return json.dumps({"candidates": candidates}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _needs_arbiter(candidates: list[dict[str, Any]]) -> bool:

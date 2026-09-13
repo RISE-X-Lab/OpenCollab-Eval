@@ -119,7 +119,7 @@ async def _coder_candidate(
     )
     records = [
         dual._public_record(record)
-        for record in raw.test_records[: dual.MAX_PUBLIC_RECORDS]
+        for record in raw.test_records
         if isinstance(record, dict)
     ]
     observed_command = str(records[0].get("command") or "").strip() if records else shared_command
@@ -243,7 +243,7 @@ async def validation_council_dual_coder_contract_v1(
                 "kind": "minimal-root-cause-coder",
                 "nonempty": bool(candidate_a.diff.strip()),
                 "diff_bytes": len(candidate_a.diff.encode("utf-8")),
-                "changed_paths": patch_paths(candidate_a.diff)[:256],
+                "changed_paths": patch_paths(candidate_a.diff),
                 "public_command": dual._candidate_command(candidate_a),
                 "public_test_records": dual._candidate_records(candidate_a),
             },
@@ -251,7 +251,7 @@ async def validation_council_dual_coder_contract_v1(
                 "kind": "cross-component-contract-coder",
                 "nonempty": bool(candidate_b.diff.strip()),
                 "diff_bytes": len(candidate_b.diff.encode("utf-8")),
-                "changed_paths": patch_paths(candidate_b.diff)[:256],
+                "changed_paths": patch_paths(candidate_b.diff),
                 "public_command": dual._candidate_command(candidate_b),
                 "public_test_records": dual._candidate_records(candidate_b),
             },
