@@ -24,6 +24,20 @@ repository. Candidate construction uses controller-owned Git state after
 process quiescence. Official evaluation applies the bound patch to a fresh
 workspace and records exact target execution proof.
 
+Candidate capture and environment disposal are recorded separately. A disposal
+failure retains an already captured patch and its extraction result, while the
+cleanup error and unproven final quiescence keep automatic submission disabled.
+The default teardown wait is 60 seconds. When a successful diff command exceeds
+its output limit, Eval captures a new diff after quiescence into an owned
+file, excludes that file from the diff, and transfers complete byte chunks.
+The existing result-record size limit still applies. A failed or incomplete
+transfer cannot produce a submission.
+
+Single uses current OC built-ins and Bash for project-native tests. Research
+workflows with exact-target requirements use the Eval-owned verification tool
+and preserve its executable-evidence checks. See the
+[workflow tool documentation](../src/opencollab_eval/workflows/README.md).
+
 Single-instance generator modules remain available for operators and tests.
 
 ```bash

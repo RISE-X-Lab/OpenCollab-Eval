@@ -89,7 +89,12 @@ async def my_flow(
 需要 `run_tests`，差异审查使用 `git_diff`。向 `builtin_tools` 传入
 `allow_file_creation=False` 可以阻止 `file_write` 创建新文件。
 
-通过公开辅助函数创建的每个 `run_tests` 实例都会拒绝运行器覆盖值和模型提供
+OpenCollab 已移除内置 `run_tests`。精确测试证据的实现由 Eval 的
+`opencollab_eval.verification` 提供，工作流 `toolset` 将其与当前 OC 公开工具组合。
+默认 Single 和 YAML 团队示例通过 Bash 运行项目原生测试。机械红绿复测保留
+明确的目标、命令与实际测试记录。
+
+为模型角色创建的每个 `run_tests` 实例都会拒绝运行器覆盖值和模型提供
 的额外参数。基准需要精确的目标执行证据时，工作流可以在调用后检查该实例中
 由解析器支持的 `verified_targets`。即使模型写入了 `tests_run` 字段，通过
 门禁仍需可执行证据。

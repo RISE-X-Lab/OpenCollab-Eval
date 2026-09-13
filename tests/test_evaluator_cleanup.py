@@ -257,8 +257,8 @@ def test_environment_cleanup_failure_is_reported(monkeypatch, tmp_path):
         )
     )
 
-    assert result.patch_produced is False
-    assert result.patch == ""
+    assert result.patch_produced is True
+    assert result.patch == env.diff
     assert result.execution_quiesced is False
     assert result.submission_eligible is False
     assert result.error == ("environment cleanup failed: OSError: container removal failed")
@@ -408,8 +408,8 @@ def test_cancelled_environment_cleanup_is_reported_as_timeout(monkeypatch, tmp_p
         )
     )
 
-    assert result.patch_produced is False
-    assert result.patch == ""
+    assert result.patch_produced is True
+    assert result.patch == env.diff
     assert result.execution_quiesced is False
     assert result.submission_eligible is False
     assert env.revoked is True

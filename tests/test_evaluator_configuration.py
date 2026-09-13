@@ -142,25 +142,19 @@ def test_run_eval_task_staged_extraction_includes_new_files(monkeypatch, tmp_pat
     assert result.patch_produced is True
 
 
-def test_default_tools_match_curated_team_surface():
-    # The headless eval agent must exercise the same curated toolset as team
-    # roles — in particular run_tests/git_diff/apply_patch, which the bash
-    # description deflects to. Guards against the two paths drifting apart.
+def test_default_tools_match_current_single_agent_surface():
+    # Single uses current public built-ins; proof-oriented workflow tools are Eval-owned.
     names = [t.name for t in evaluator.default_tools()]
     assert names == [
         "bash",
         "file_read",
         "file_write",
         "apply_patch",
-        "run_tests",
         "git_diff",
         "grep",
     ]
     by_name = {tool.name: tool for tool in evaluator.default_tools()}
     assert by_name["bash"].require_process_isolation is True
-    assert by_name["run_tests"].require_process_isolation is True
-    assert by_name["run_tests"].allow_runner_override is False
-    assert by_name["run_tests"].allow_extra_args is False
 
 
 def test_repository_map_is_utf8_bounded_without_splitting_paths():

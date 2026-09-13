@@ -5,8 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, cast
 
-from opencollab.tools import VerificationTool, builtin_tools
+from opencollab.tools import VerificationTool
 from opencollab.workflows import CandidateRun, workflow
+
+from opencollab_eval.verification import evaluation_tools
 
 from . import validation_council_dual_coder_contract as coders
 from . import validation_council_g20_coder_red_green as v1
@@ -43,7 +45,7 @@ class _MechanicalRunTests:
     disable_outer_timeout = False
 
     def __init__(self) -> None:
-        self._delegate = builtin_tools("run_tests", headless=False)[0]
+        self._delegate = evaluation_tools("run_tests", headless=False)[0]
 
     @property
     def verified_targets(self) -> frozenset[str]:

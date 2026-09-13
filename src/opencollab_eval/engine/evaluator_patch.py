@@ -5,6 +5,8 @@ import time
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
+from opencollab_eval.engine.patch_capture import capture_complete_diff
+
 
 async def cleanup_injected_paths_and_extract_patch(
     facade: Any,
@@ -83,7 +85,26 @@ async def cleanup_injected_paths_and_extract_patch(
                 )
             )
             patch = patch_result.stdout
-            if patch_result.stdout_truncated or patch_result.stderr_truncated:
+            if patch_result.stdout_truncated and patch_result.returncode == 0 and not patch_result.stderr_truncated:
+                patch = ""
+                try:
+                    patch, artifact_cleanup_error = await capture_complete_diff(
+                        env,
+                        lambda extra: facade.worktree_diff_command((*injected_paths, *harness_artifact_paths, *extra)),
+                        max_bytes=facade.MAX_RESULT_RECORD_BYTES,
+                        await_teardown=await_teardown,
+                    )
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"diff output truncated: stdout dropped {patch_result.stdout_dropped_bytes} bytes; "
+                        f"complete capture failed: {exc}"
+                    ) from exc
+                extraction_succeeded = True
+                if artifact_cleanup_error is not None:
+                    error = facade._append_harness_error(
+                        error, "captured diff temporary-file cleanup failed", artifact_cleanup_error
+                    )
+            elif patch_result.stdout_truncated or patch_result.stderr_truncated:
                 patch = ""
                 failure = RuntimeError(
                     "diff output truncated: "
@@ -100,13 +121,13 @@ async def cleanup_injected_paths_and_extract_patch(
                 error = facade._append_harness_error(error, "patch extraction failed", failure)
             else:
                 extraction_succeeded = True
-                if (
-                    test_patch_isolation_failed
-                    or not harness_artifact_exclusion_proven
-                    or not checkpoint_restore_integrity_proven
-                    or not task_stage_integrity_proven
-                ):
-                    patch = ""
+            if (
+                test_patch_isolation_failed
+                or not harness_artifact_exclusion_proven
+                or not checkpoint_restore_integrity_proven
+                or not task_stage_integrity_proven
+            ):
+                patch = ""
         except Exception as exc:
             error = facade._append_harness_error(error, "patch extraction failed", exc)
     return cleanup_proven, patch, extraction_succeeded, error

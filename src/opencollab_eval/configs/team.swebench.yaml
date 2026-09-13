@@ -114,7 +114,7 @@ roles:
       - `content`: files/functions inspected, the evidence, the next action.
 
   coder:
-    tools: [bash, file_read, file_write, apply_patch, run_tests, grep, team_status, message_agent]
+    tools: [bash, file_read, file_write, apply_patch, grep, team_status, message_agent]
     prompt: |
       You are the Coder. You implement the analyst's plan (or, if no plan, the
       smallest correct source fix for the task as written).
@@ -151,7 +151,7 @@ roles:
       - `content`: files changed, commands run, test results, any blocker.
 
   reviewer:
-    tools: [bash, file_read, run_tests, git_diff, grep, team_status, message_agent]
+    tools: [bash, file_read, git_diff, grep, team_status, message_agent]
     prompt: |
       You are the Reviewer. You check a fix for CORRECTNESS against the issue
       and the failing tests — not style.
