@@ -183,6 +183,7 @@ def _remote_payload(
         "swe_timeout": args.swe_timeout,
         "task_wall_timeout": args.task_wall_timeout,
         "eval_timeout": args.eval_timeout,
+        "eval_container_bind_timeout": getattr(args, "eval_container_bind_timeout", 120),
         "llm_timeout": args.llm_timeout,
         "checkpoint_interval": args.checkpoint_interval,
         "max_task_starts": args.max_task_starts,

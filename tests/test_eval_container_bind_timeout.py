@@ -209,3 +209,33 @@ def test_binding_rejects_marker_with_foreign_owner(tmp_path):
     assert result["ok"] is False
     assert result["status"] == "invalid_marker_ownership"
     assert json.loads(marker.read_text(encoding="utf-8"))["state"] == "pending"
+
+
+@pytest.mark.parametrize("value", [1, 120, 300])
+def test_single_cli_accepts_valid_binding_wait_and_delivers_it_to_worker(monkeypatch, value):
+    from opencollab_eval.commands import swe_v1_prolite_controller as controller
+
+    observed = []
+    monkeypatch.setattr(prolite_runner, "configure_run_paths", lambda args: None)
+    monkeypatch.setattr(prolite_runner, "write_local_report", lambda *args: None)
+    monkeypatch.setattr(controller, "get_proxy_token", lambda path: "test-token")
+
+    def capture(args):
+        payload = controller._remote_payload(
+            args, owner_nonce="owner", invocation_id="invocation", runtime_tree_sha256="a" * 64,
+            remote_proxy_base_url=args.remote_proxy_base_url,
+        )
+        observed.append(payload["eval_container_bind_timeout"])
+        return {"status": "dry_run"}
+
+    monkeypatch.setattr(prolite_runner, "run_remote", capture)
+    assert prolite_runner.main(argv=[
+        "--host", "worker", "--workflow", "single-agent", "--llm-model", "test-model",
+        "--llm-provider", "openai", "--no-ensure-remote-proxy", "--dry-run",
+        "--remote-root", "/worker/benchmark", "--remote-runtime-repo", "/worker/runtime",
+        "--model-name", "test-model", "--image-repository", "fixture/images",
+        "--session-prefix", "test-binding",
+        "--remote-proxy-base-url", "http://127.0.0.1:19045/v1",
+        "--eval-container-bind-timeout", str(value),
+    ]) == 0
+    assert observed == [value]
