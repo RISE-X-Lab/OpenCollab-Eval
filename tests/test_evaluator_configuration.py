@@ -217,3 +217,11 @@ def test_eval_task_round_trips_extras():
     extras = {"test_patch": "diff...", "fail_to_pass": ["pkg::test_a"]}
     task = EvalTask(task_id="t", description="d", extras=extras)
     assert task.extras == extras
+
+
+@pytest.mark.parametrize("window", [0, -1, True, 1.5, "4096"])
+def test_context_window_rejects_invalid_values_before_task_setup(tmp_path, window):
+    with pytest.raises(ValueError, match="context_window must be a positive integer"):
+        run(run_eval_task(EvalTask(task_id="invalid-window", description="fix"),
+                          output_dir=str(tmp_path / "out"), context_window=window))
+    assert not (tmp_path / "out").exists()

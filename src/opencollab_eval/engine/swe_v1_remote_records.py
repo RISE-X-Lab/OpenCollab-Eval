@@ -5,7 +5,7 @@
 import shutil
 
 from opencollab_eval.engine.swe_eval_records import SUBMISSION_INTEGRITY_PROVEN
-from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid
+from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid, reusable_intrinsic_role_failures
 from opencollab_eval.engine.swe_v1_remote_core import *
 from opencollab_eval.engine.swe_v1_remote_health import http_health  # noqa: F401
 from opencollab_eval.engine.swe_v1_remote_state import *
@@ -438,8 +438,7 @@ def completed_generation_identity(prediction, metric, task, *, require_submissio
             and metric.get("runtime_status") == "completed"
             and "error" in metric
             and (metric["error"] is None or metric["error"] == "")
-            and isinstance(metric.get("agent_failures"), list)
-            and not metric["agent_failures"]
+            and reusable_intrinsic_role_failures(metric.get("agent_failures"))
             and "provider_failure" not in metric
             and metric.get("submission_eligible") is True
             and current_generation_proof_valid(metric, original_patch)

@@ -38,7 +38,7 @@ SCHEMA = "opencollab.eval_only_queue.v1"
 _SHA256_RE = re.compile(r"[0-9a-fA-F]{64}\Z")
 _RUN_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _BLOCKED_RUNNER_OPTIONS = set(
-    "--base-run-dir --eval-dir-name --eval-only --json-output --limit "
+    "--base-run-dir --eval-dir-name --eval-only --eval-only-source-base-run-dir --json-output --limit "
     "--markdown-output --max-empty-patch-retries --max-task-starts "
     "--parent-output-dir --remote-runtime-repo --run-id --start-index".split()
 )
@@ -128,6 +128,9 @@ def _read_plan(path: Path) -> dict[str, Any]:
         base_run_dir = raw.get("base_run_dir")
         if not isinstance(base_run_dir, str) or not base_run_dir.startswith("/"):
             raise ValueError("base_run_dir must be an absolute worker path")
+        source_base_run_dir = raw.get("source_base_run_dir", base_run_dir)
+        if not isinstance(source_base_run_dir, str) or not source_base_run_dir.startswith("/"):
+            raise ValueError("source_base_run_dir must be an absolute worker path")
         remote_runtime_repo = raw.get("remote_runtime_repo")
         if not isinstance(remote_runtime_repo, str) or not remote_runtime_repo.startswith("/"):
             raise ValueError("remote_runtime_repo must be an absolute worker path")
@@ -174,6 +177,7 @@ def _read_plan(path: Path) -> dict[str, Any]:
             "index": index,
             "parent_output_dir": str(parent),
             "base_run_dir": base_run_dir,
+            "source_base_run_dir": source_base_run_dir,
             "remote_runtime_repo": remote_runtime_repo,
             "run_id": run_id,
             "eval_dir_name": eval_dir_name,
@@ -420,6 +424,8 @@ def _child_argv(
         job["parent_output_dir"],
         "--base-run-dir",
         job["base_run_dir"],
+        "--eval-only-source-base-run-dir",
+        job["source_base_run_dir"],
         "--remote-runtime-repo",
         job["remote_runtime_repo"],
         "--run-id",

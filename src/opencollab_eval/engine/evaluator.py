@@ -422,6 +422,7 @@ async def run_eval_task(
     resume_from_checkpoint: bool = False,
     cancellation_cleanup_timeout: float = DEFAULT_EXECUTION_CLEANUP_TIMEOUT,
     defer_patch_extraction: bool = False,
+    context_window: int | None = None,
 ) -> EvalResult:
     """Run one isolated evaluation task in session or workflow mode."""
     return await run_eval_task_impl(
@@ -451,6 +452,7 @@ async def run_eval_task(
         resume_from_checkpoint,
         cancellation_cleanup_timeout,
         defer_patch_extraction,
+        context_window=context_window,
     )
 
 

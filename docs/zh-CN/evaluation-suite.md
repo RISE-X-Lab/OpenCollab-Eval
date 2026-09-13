@@ -83,3 +83,13 @@ G11、G20 各变体、G21、Triple、Dual Contract、G20 + Coder Contract、Red-
 恢复时同时使用回执中的 recovery_environment 与 recovery_argv，确保解释器加载选定运行目录。网关在途名额覆盖连接建立和响应读取，供应商后台的计算并发另外记录。
 
 需要服务器出口代理时，设置 HTTPS_PROXY 并移除 direct-upstream 参数。共享请求限额同样覆盖该路径。
+
+## 运行时与恢复配置
+
+显式 `--context-window` 会传入原生 Agent 与工作流运行时，实际值继续记录在生成身份中。G1.1 在每次角色调用时读取 `OPENCOLLAB_VALIDATION_COUNCIL_ROLE_BUDGET`，支持正整数或 `unbounded`，旧变量 `OPENCOLLAB_G11_ROLE_BUDGET` 保留为别名。`OPENCOLLAB_VALIDATION_COUNCIL_MAX_CODER_ROUNDS` 可以调整修复轮数，默认保持三轮。外部服务恢复时间计入角色外层等待，正常模型调用时限保持原值。
+
+仅评分队列的任务可以通过 `source_base_run_dir` 指定与 `base_run_dir` 不同的原候选目录，省略时保留原同目录行为。该参数由队列管理并传递给单题运行器。只读健康检查及同一运行包的重复传输可以在原有次数和总时间限制内重试传输超时。
+
+候选采集使用控制器拥有的路径视图解释可信忽略规则，Solver 的只读目录与缓存控制文件保持原样。Gitlink 全树扫描使用已有的完整目录扫描额度，与较小的 Gitlink 清单大小限制分开。已证明身份完整、因明确 OC 内部原因停止的候选可以继续评分而无需再次生成，未知错误及服务方错误继续保留原拒绝行为。
+
+pytest 收集失败需要绑定到固定测试中的调用位置及对应候选模块，才能判定为候选失败。JavaScript 缺失模块错误需要证明相应导入由候选新增。离线补判可以使用预期测试补丁摘要，从已保存评测输入中恢复同样的对应关系，缺少这些证据的失败仍归为技术问题。

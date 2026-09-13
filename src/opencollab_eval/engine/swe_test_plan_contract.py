@@ -12,6 +12,9 @@ from typing import Any
 from opencollab_eval.engine.swe_v1_candidate_go_dependencies import (
     valid_candidate_added_go_modules,
 )
+from opencollab_eval.engine.swe_v1_pytest_candidate_callsites import (
+    candidate_call_bindings,
+)
 from opencollab_eval.engine.swe_v1_remote_target_proof import (
     declared_js_test_files,
     go_test_command,
@@ -181,6 +184,7 @@ def _valid_pytest_plan(plan: dict[str, Any]) -> bool:
             "targets",
             "parameter_fallback_parents",
             "candidate_source_paths",
+            "candidate_test_callsites",
             "target_imports",
             "repo",
             "command_sha256",
@@ -207,6 +211,13 @@ def _valid_pytest_plan(plan: dict[str, Any]) -> bool:
             return False
         digest = hashlib.sha256("\0".join(shlex.split(command)).encode("utf-8")).hexdigest()
         if proof.get("command_sha256") != digest:
+            return False
+        candidate_callsites = proof.get("candidate_test_callsites")
+        if candidate_callsites is not None and not _valid_candidate_test_callsites(
+            candidate_callsites,
+            batch,
+            proof.get("candidate_source_paths"),
+        ):
             return False
     return has_parameter_fallback == (plan["coverage"] == "parameter_parent_targets")
 
@@ -359,6 +370,115 @@ def _valid_candidate_source_paths(value: Any) -> bool:
     return True
 
 
+def _valid_candidate_module_bindings(value: Any, candidate_paths: Any) -> bool:
+    if not isinstance(value, list) or not value or len(value) > 1024:
+        return False
+    if not isinstance(candidate_paths, list):
+        return False
+    paths = []
+    for binding in value:
+        if not isinstance(binding, dict) or set(binding) != {"path", "modules"}:
+            return False
+        path, modules = binding["path"], binding["modules"]
+        if (
+            path not in candidate_paths
+            or path in paths
+            or not isinstance(modules, list)
+            or not modules
+            or len(modules) > 256
+            or len(set(modules)) != len(modules)
+            or any(
+                not isinstance(module, str)
+                or not module
+                or len(module.encode("utf-8")) > 4096
+                or any(
+                    unicodedata.category(character).startswith("C")
+                    for character in module
+                )
+                for module in modules
+            )
+        ):
+            return False
+        paths.append(path)
+    return True
+
+
+def _valid_candidate_test_callsites(value: Any, targets: list[str], paths: Any) -> bool:
+    if (
+        not _valid_candidate_source_paths(paths)
+        or not isinstance(value, list)
+        or not value
+        or len(value) > 1024
+    ):
+        return False
+    target_files = {
+        target.split("::", 1)[0].replace("\\", "/").removeprefix("./")
+        for target in targets
+    }
+    alias_paths: dict[str, list[str]] = {}
+    for raw_path in paths:
+        path = pathlib.PurePosixPath(raw_path)
+        alias = path.parent.name if path.name == "__init__.py" else path.stem
+        if re.fullmatch(r"[A-Za-z_]\w*", alias) is None:
+            return False
+        alias_paths.setdefault(alias, []).append(raw_path)
+    seen = set()
+    total_bytes = 0
+    for binding in value:
+        if not isinstance(binding, dict) or set(binding) != {
+            "test_file",
+            "source",
+            "candidate_alias",
+            "methods",
+        }:
+            return False
+        test_file = binding.get("test_file")
+        source = binding.get("source")
+        alias = binding.get("candidate_alias")
+        methods = binding.get("methods")
+        if (
+            test_file not in target_files
+            or not isinstance(source, str)
+            or not source
+            or source != source.strip()
+            or len(source.encode("utf-8")) > 4096
+            or any(unicodedata.category(char).startswith("C") for char in source)
+            or not isinstance(alias, str)
+            or len(alias_paths.get(alias, [])) != 1
+            or not isinstance(methods, list)
+            or not methods
+            or methods != sorted(set(methods))
+            or any(re.fullmatch(r"[A-Za-z_]\w*", method) is None for method in methods)
+        ):
+            return False
+        call_bindings = candidate_call_bindings(source)
+        if call_bindings is None:
+            return False
+        calls = [call for call in call_bindings if call is not None]
+        if (
+            sorted({method for call_alias, method in calls if call_alias == alias})
+            != methods
+            or {
+                call_alias
+                for call_alias, _ in calls
+                if len(alias_paths.get(call_alias, [])) == 1
+            }
+            != {alias}
+        ):
+            return False
+        identity = (test_file, source, alias, tuple(methods))
+        if identity in seen:
+            return False
+        seen.add(identity)
+        total_bytes += sum(
+            len(str(item).encode("utf-8"))
+            for item in (test_file, source, alias, *methods)
+        )
+        if total_bytes > 128 * 1024:
+            return False
+    return True
+
+
 def _valid_javascript_plan(plan: dict[str, Any]) -> bool:
     if plan["target_batches"] != [plan["declared_targets"]] or len(plan["commands"]) != 1 or len(plan["proofs"]) != 1:
         return False
@@ -379,6 +499,7 @@ def _valid_javascript_plan(plan: dict[str, Any]) -> bool:
             "test_files",
             "target_file",
             "candidate_source_paths",
+            "candidate_module_bindings",
         }
     ):
         return False
@@ -389,6 +510,7 @@ def _valid_javascript_plan(plan: dict[str, Any]) -> bool:
     language = proof.get("repo_language")
     repo = proof.get("repo")
     candidate_paths = proof.get("candidate_source_paths")
+    candidate_module_bindings = proof.get("candidate_module_bindings")
     if (
         not declared_files
         or not isinstance(test_files, list)
@@ -409,6 +531,8 @@ def _valid_javascript_plan(plan: dict[str, Any]) -> bool:
         or repo != repo.strip().lower()
         or candidate_paths is not None
         and not _valid_candidate_source_paths(candidate_paths)
+        or candidate_module_bindings is not None
+        and not _valid_candidate_module_bindings(candidate_module_bindings, candidate_paths)
     ):
         return False
     adapter = plan["adapter"]

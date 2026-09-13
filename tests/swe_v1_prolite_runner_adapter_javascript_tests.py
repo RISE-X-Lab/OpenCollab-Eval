@@ -499,3 +499,105 @@ def test_jest_candidate_source_failure_is_bound_to_target_and_patch(tmp_path):
         command,
         command,
     )
+
+
+def test_jest_candidate_import_failure_accepts_workspace_relative_source_path(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    suite = "packages/components/containers/payments/RenewalNotice.test.tsx"
+    source = "packages/components/containers/payments/RenewalNotice.tsx"
+    target = suite + " | regular subscription renew should render"
+    plan = namespace["prolite_test_plan"](
+        {
+            "repo_language": "typescript",
+            "repo": "example/widgets",
+            "selected_test_files_to_run": json.dumps([suite]),
+        },
+        [target],
+        candidate_source_paths=[source],
+        candidate_patch=(
+            f"diff --git a/{source} b/{source}\n"
+            f"--- a/{source}\n+++ b/{source}\n@@ -1 +1,2 @@\n"
+            "+import { missing } from '@example/missing';\n"
+            " export const value = 1;\n"
+        ),
+    )
+    proof = plan["proofs"][0]
+    command = plan["commands"][0]
+    result = {
+        "numFailedTestSuites": 1,
+        "numRuntimeErrorTestSuites": 1,
+        "numTotalTestSuites": 1,
+        "numTotalTests": 0,
+        "success": False,
+        "testResults": [
+            {
+                "assertionResults": [],
+                "name": "/app/" + suite,
+                "status": "failed",
+                "message": (
+                    "Test suite failed to run\n"
+                    "Cannot find module '@example/missing' from "
+                    "'containers/payments/RenewalNotice.tsx'"
+                ),
+            }
+        ],
+    }
+    log = f"FAIL {suite}\n" + json.dumps(result) + "\n"
+
+    assert namespace["_plan_log_failure_proof_matches"](
+        proof,
+        log,
+        "",
+        command,
+        command,
+    )
+    proof_without_import = dict(proof)
+    proof_without_import.pop("candidate_module_bindings")
+    assert not namespace["_plan_log_failure_proof_matches"](
+        proof_without_import,
+        log,
+        "",
+        command,
+        command,
+    )
+    assert not namespace["_plan_log_failure_proof_matches"](
+        proof,
+        log.replace("@example/missing", "@env/missing"),
+        "",
+        command,
+        command,
+    )
+    reordered_plan = namespace["prolite_test_plan"](
+        {
+            "repo_language": "typescript",
+            "repo": "example/widgets",
+            "selected_test_files_to_run": json.dumps([suite]),
+        },
+        [target],
+        candidate_source_paths=[source],
+        candidate_patch=(
+            f"diff --git a/{source} b/{source}\n"
+            f"--- a/{source}\n+++ b/{source}\n@@ -1 +1 @@\n"
+            "-import { oldName } from '@env/missing';\n"
+            "+import { newName } from '@env/missing';\n"
+        ),
+    )
+    reordered_proof = reordered_plan["proofs"][0]
+    assert "candidate_module_bindings" not in reordered_proof
+    assert not namespace["_plan_log_failure_proof_matches"](
+        reordered_proof,
+        log.replace("@example/missing", "@env/missing"),
+        "",
+        reordered_plan["commands"][0],
+        reordered_plan["commands"][0],
+    )
+    assert not namespace["_plan_log_failure_proof_matches"](
+        proof,
+        log.replace(
+            "'containers/payments/RenewalNotice.tsx'",
+            "'containers/payments/Unrelated.tsx'",
+        ),
+        "",
+        command,
+        command,
+    )

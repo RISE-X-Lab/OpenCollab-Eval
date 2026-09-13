@@ -2,6 +2,15 @@
 
 # ruff: noqa: E501, F403, F405
 
+from opencollab_eval.engine.swe_v1_pytest_candidate_callsites import (
+    pytest_candidate_callsite_failure_matches as _pytest_candidate_callsite_failure_matches,
+)
+from opencollab_eval.engine.swe_v1_pytest_candidate_callsites import (
+    pytest_plan_with_test_patch_callsites,
+)
+from opencollab_eval.engine.swe_v1_pytest_candidate_callsites import (
+    python_test_patch_candidate_callsites as _python_test_patch_candidate_callsites,
+)
 from opencollab_eval.engine.swe_v1_remote_records import *
 from opencollab_eval.engine.swe_v1_remote_state import *
 from opencollab_eval.engine.swe_v1_remote_target_proof import *
@@ -402,6 +411,7 @@ def _pytest_collection_failure_proof_matches(
     expected_command,
     observed_command,
     candidate_source_paths=None,
+    candidate_test_callsites=None,
     target_imports=None,
     repo="",
     command_sha256="",
@@ -485,9 +495,16 @@ def _pytest_collection_failure_proof_matches(
         r"(?m)^(?:.*?/)?(?:test|tests)(?:/[^/:]+)*/conftest\.py:[0-9]+(?::|$)",
         log_text,
     )
+    candidate_callsite_failure = _pytest_candidate_callsite_failure_matches(
+        target_files,
+        log_text,
+        candidate_source_paths,
+        candidate_test_callsites,
+    )
     return bool(
-        (target_traceback or collection_bootstrap_traceback)
-        and ((semantic_exception and candidate_traceback) or candidate_module_failure)
+        ((target_traceback or collection_bootstrap_traceback)
+         and ((semantic_exception and candidate_traceback) or candidate_module_failure))
+        or (target_traceback and candidate_callsite_failure)
     )
 
 
@@ -644,7 +661,9 @@ __all__ = [
     "_python_module_is_repo_local",
     "_python_repo_module_roots",
     "_python_test_patch_import_bindings",
+    "_python_test_patch_candidate_callsites",
     "compact_python_test_targets",
+    "pytest_plan_with_test_patch_callsites",
     "prolite_pytest_proof_plugin_source",
     "python_parameter_fallback_batches",
     "python_test_target_batches",

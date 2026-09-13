@@ -447,7 +447,7 @@ def test_runtime_sync_cleanup_timeout_preserves_transfer_error(monkeypatch):
         subprocess.TimeoutExpired(["rsync"], 300),
     ],
 )
-def test_runtime_sync_does_not_retry_unproven_transfer_failure(
+def test_runtime_sync_retries_only_idempotent_timeouts_or_proven_transport_errors(
     monkeypatch,
     failure,
 ):
@@ -468,7 +468,9 @@ def test_runtime_sync_does_not_retry_unproven_transfer_failure(
             remote_runtime_repo="/remote/runtime",
         )
 
-    assert len(transfers) == 1
+    expected_attempts = 3 if isinstance(failure, subprocess.TimeoutExpired) else 1
+    assert len(transfers) == expected_attempts
+    assert all(command == transfers[0] for command in transfers)
 
 
 def test_ssh_checked_records_timeout_without_retry(monkeypatch):

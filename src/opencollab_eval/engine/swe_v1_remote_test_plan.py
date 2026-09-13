@@ -211,6 +211,7 @@ def _plan_log_failure_proof_matches(
                     expected_command,
                     observed_command,
                     proof.get("candidate_source_paths"),
+                    proof.get("candidate_test_callsites"),
                     proof.get("target_imports"),
                     proof.get("repo") or "",
                     proof.get("command_sha256"),
@@ -330,6 +331,7 @@ def prolite_test_plan(
     target_file="",
     candidate_source_paths=None,
     candidate_added_go_modules=None,
+    candidate_patch="",
 ):
     language = str(row.get("repo_language") or "").lower()
     repo = str(row.get("repo") or "").lower()
@@ -388,6 +390,13 @@ def prolite_test_plan(
                 proof["parameter_fallback_parents"] = fallback_parents
             if python_candidate_paths:
                 proof["candidate_source_paths"] = python_candidate_paths
+                candidate_callsites = _python_test_patch_candidate_callsites(
+                    row,
+                    batch,
+                    python_candidate_paths,
+                )
+                if candidate_callsites:
+                    proof["candidate_test_callsites"] = candidate_callsites
             target_imports = _python_test_patch_import_bindings(row, batch)
             if target_imports:
                 proof["repo"] = repo
@@ -487,6 +496,12 @@ def prolite_test_plan(
         }
         if candidate_source_paths:
             proof["candidate_source_paths"] = list(candidate_source_paths)
+            module_bindings = _js_candidate_module_bindings(
+                candidate_patch,
+                candidate_source_paths,
+            )
+            if module_bindings:
+                proof["candidate_module_bindings"] = module_bindings
         if files != declared_js_test_files(tests):
             proof["selected_test_files"] = selected
             proof["test_patch_files"] = test_patch_files

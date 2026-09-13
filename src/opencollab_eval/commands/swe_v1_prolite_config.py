@@ -484,7 +484,7 @@ def sync_runtime(
         transfer_attempts: list[dict[str, object]] = []
         try:
             _run_ssh_with_deadline(
-                transfer_command, timeout=300, retry_log=transfer_attempts,
+                transfer_command, timeout=300, idempotent=True, retry_log=transfer_attempts,
                 deadline=deadline,
             )
         except (RuntimeError, TimeoutError, subprocess.TimeoutExpired):

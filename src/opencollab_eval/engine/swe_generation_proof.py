@@ -373,6 +373,17 @@ def trusted_patch_extraction_valid(
     )
 
 
+def reusable_intrinsic_role_failures(failures: Any) -> bool:
+    """Allow known OC stops only; candidate identity is checked by the caller."""
+    return isinstance(failures, list) and all(
+        isinstance(failure, dict)
+        and failure.get("exception_type") in {"ContextOverflow", "SessionStopped"}
+        and failure.get("status_code") is None
+        and failure.get("provider_error_type") is None
+        for failure in failures
+    )
+
+
 def current_generation_proof_valid(metric: Any, patch: str) -> bool:
     """Validate the two proofs required by every current generation record."""
     if not isinstance(metric, dict):
@@ -410,6 +421,7 @@ def current_generation_summary_proof_valid(metric: Any) -> bool:
 
 
 __all__ = [
+    "reusable_intrinsic_role_failures",
     "TRUSTED_PATCH_EXTRACTION_SCHEMA",
     "MAX_TRUSTED_PATCH_BYTES",
     "MAX_WORKSPACE_ARCHIVE_BYTES",

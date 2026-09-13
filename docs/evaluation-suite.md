@@ -83,3 +83,32 @@ The package contains regression tests for public task secrecy, candidate identit
 Use the receipt recovery_environment with recovery_argv so the interpreter loads the selected runtime. Active gateway slots cover connection establishment and response reading; supplier-side processing concurrency is recorded separately.
 
 For a server-side egress proxy, set HTTPS_PROXY and omit the direct-upstream option. Shared request limits cover that route as well.
+
+## Runtime and recovery configuration
+
+An explicit `--context-window` reaches both the native agent and workflow
+runtime, and the effective value remains part of generation identity. G1.1
+reads `OPENCOLLAB_VALIDATION_COUNCIL_ROLE_BUDGET` for each role invocation and
+accepts a positive integer or `unbounded`. The older `OPENCOLLAB_G11_ROLE_BUDGET`
+remains an alias. `OPENCOLLAB_VALIDATION_COUNCIL_MAX_CODER_ROUNDS` changes the
+repair-round allowance while retaining the default of three. Provider recovery
+time is added to the outer role wait without extending normal model-call time.
+
+An eval-only queue job may set `source_base_run_dir` separately from
+`base_run_dir`; omission preserves the original same-directory behavior. The
+queue owns the source option and forwards it to the single-instance runner.
+Read-only health checks and repeated transfer of one runtime archive can retry
+transport timeouts within their existing attempt and overall time bounds.
+
+Candidate capture interprets trusted ignore rules in a controller-owned path
+view, so read-only Solver directories and cache control files remain untouched.
+The Gitlink census uses the existing complete-tree scan allowance, independently
+of the much smaller resulting Gitlink manifest. Verified candidates stopped by
+known intrinsic OC failures can proceed to scoring without another generation;
+unknown or provider failures retain the existing rejection behavior.
+
+Pytest collection failures require a fixed-test callsite and matching candidate
+module before they can establish candidate failure. JavaScript missing-module
+failures require the missing import to have been introduced by the candidate.
+An optional trusted test-patch digest lets offline reconciliation recover the
+same binding from saved evaluator inputs. Unbound failures remain technical.
