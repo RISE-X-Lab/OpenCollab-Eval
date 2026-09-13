@@ -97,7 +97,13 @@ Tool lists should match the role. Read-only roles normally use `file_read` and
 use `git_diff`. Passing `allow_file_creation=False` to `builtin_tools` prevents
 `file_write` from creating new files.
 
-Every `run_tests` instance created through the public helper rejects runner
+OpenCollab no longer ships a built-in `run_tests`. Eval owns the proof-oriented
+implementation in `opencollab_eval.verification`; workflow `toolset` composes
+it with the current public OC built-ins. The default Single and YAML team
+examples use Bash for native project tests. Mechanical red-green replay retains
+its explicit target, command and executed-test records.
+
+Every `run_tests` instance created for a model role rejects runner
 overrides and extra model-supplied arguments. A workflow may inspect the
 instance's parser-backed `verified_targets` after the call when a benchmark
 requires exact target execution evidence. Passing still requires that

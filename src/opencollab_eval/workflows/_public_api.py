@@ -6,16 +6,18 @@ import copy
 import json
 from typing import Any
 
-from opencollab.tools import BuiltinToolName, Tool, builtin_tools
+from opencollab.tools import Tool
+
+from opencollab_eval.verification import EvaluationToolName, evaluation_tools
 
 
 def toolset(
-    *names: BuiltinToolName,
+    *names: EvaluationToolName,
     allow_file_creation: bool = True,
 ) -> list[Tool]:
     """Build a fresh, headless-safe tool list for one workflow role."""
     return list(
-        builtin_tools(
+        evaluation_tools(
             *names,
             headless=True,
             allow_file_creation=allow_file_creation,

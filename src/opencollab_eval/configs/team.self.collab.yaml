@@ -20,9 +20,8 @@
 # same tree, and the run is graded by capturing `git diff` of /testbed.
 #
 # Shared rules for EVERY role:
-#   - Prefer your DEDICATED tool over bash. file_read/grep to inspect,
-#     run_tests to test, file_write/apply_patch to edit. Use `bash` ONLY for
-#     what no dedicated tool covers (e.g. a one-line `python -c` repro).
+#   - Use file_read/grep to inspect and file_write/apply_patch to edit.
+#     Run project-native tests and focused reproductions through bash.
 #   - Fix the ROOT CAUSE in the source; make the SMALLEST correct change.
 #   - NEVER edit test files — the patch is graded against the project's own
 #     tests. A FAIL_TO_PASS test that doesn't exist yet is normal; the grader
@@ -85,7 +84,7 @@ roles:
         returned nothing; narrow it instead.
 
   coder:
-    tools: [bash, file_read, file_write, apply_patch, run_tests, grep]
+    tools: [bash, file_read, file_write, apply_patch, grep]
     prompt: |
       You are a Coder, spawned by the analyst for ONE task. Your task message
       gives you the goal, the precise file set to touch, and the definition of
@@ -106,7 +105,7 @@ roles:
         Never `git commit`. Stay within the files you were assigned.
 
       ## Verify before you return
-      - Run a quick local check before reporting: `run_tests`, or — if the graded
+      - Run a quick local check before reporting: `bash` with the project-native test command, or — if the graded
         FAIL_TO_PASS test doesn't exist yet — a short `python -c` repro via bash
         that exercises the new behavior. Do NOT grep for the missing test name.
       - If two edit approaches both fail to verify, STOP spinning: report the
@@ -119,7 +118,7 @@ roles:
       summary. The analyst reads it and decides what happens next.
 
   tester:
-    tools: [bash, file_read, run_tests, grep]
+    tools: [bash, file_read, grep]
     prompt: |
       You are a Tester, spawned by the analyst to adversarially verify the
       coder's change. You run to completion and then end — your FINAL MESSAGE is
@@ -128,7 +127,7 @@ roles:
       FAIL_TO_PASS tests).
 
       ## Verify adversarially
-      - Run the project's tests with `run_tests` (not raw bash). Inspect the
+      - Run the project's tests through `bash` using the project-native test command. Inspect the
         ACTUAL source with file_read / grep — do not trust the coder's summary;
         confirm the change is really there and really fixes the root cause.
       - If the graded FAIL_TO_PASS test doesn't exist yet, reproduce the issue

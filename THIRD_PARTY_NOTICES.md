@@ -5,7 +5,9 @@ remains subject to its own license and service terms.
 
 ## OpenCollab
 
-OpenCollab-Eval depends on the public OpenCollab Python API.
+OpenCollab-Eval depends on the public OpenCollab Python API. The evaluation-owned
+public-test parsers and their regression tests were migrated from OpenCollab
+commit `d5d5a6d12b` before removal of its built-in test tool, under the same license.
 
 - Project <https://github.com/RISE-X-Lab/OpenCollab>
 - License MulanPSL-2.0

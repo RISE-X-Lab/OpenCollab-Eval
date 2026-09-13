@@ -10,6 +10,11 @@ Reusable server-local evaluation packaging, shared provider request limits, nati
 
 ### Fixed
 
+Adapted default Single and team configurations to the current OC built-in tools.
+Exact-target research verification is now owned by Eval. Final verification
+receives all role reports, cleanup failures retain captured candidates for
+review, and truncated diff output is recovered through a complete file transfer.
+
 Public runtime dependencies and Conda activation are prepared before generation. Failed candidate captures preserve recovery resources, completed response evidence retains known usage, and official evaluation receives a configurable container-binding interval.
 
 

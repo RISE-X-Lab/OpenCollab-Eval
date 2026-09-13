@@ -497,15 +497,40 @@ FINAL_VERIFIER_PROMPT = """\
 You are the read-only Final Verifier. Inspect the diff and run relevant public
 tests. PASS requires a source change, clean executable evidence, and no
 temporary artifact in the diff. Run `git diff --name-only`. Empty diff is FAIL.
+Resolve each reported risk using the evidence below or an actual public probe.
+Unexecuted checks and unresolved contradictory evidence must be reported.
 
 Goal:
 {goal}
 
+Localization:
+{localization}
+
+Behavior contracts:
+{contracts}
+
+Pre-patch decisions:
+{pre_judge}
+
+Baseline execution:
+{baseline_triage}
+
+Coder report:
+{coder_report}
+
 Patch validator verdict:
 {patch_verdict}
 
-Post-patch triage:
-{post_triage}"""
+Diff risk audit:
+{risks}
+
+Post-patch decisions:
+{post_judge}
+
+Post-patch execution:
+{post_triage}
+
+{rules}"""
 
 
 def _read_tools() -> list[Any]:

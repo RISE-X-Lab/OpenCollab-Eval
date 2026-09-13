@@ -141,8 +141,8 @@ async def _cleanup_environment(
     if cleaned:
         return
     state.execution_quiesced = False
-    state.patch = ""
-    state.patch_extraction_succeeded = False
+    # Capture and disposal are separate facts. Retain the candidate for review;
+    # cleanup errors and unproven quiescence still prevent automatic submission.
     if not cleanup_raised:
         state.error = facade._append_harness_error(
             state.error,

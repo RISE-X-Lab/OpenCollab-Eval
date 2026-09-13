@@ -146,7 +146,7 @@ Rules:
 """
 
 DEFAULT_MAX_STEPS = 80
-DEFAULT_EXECUTION_CLEANUP_TIMEOUT = 10.0
+DEFAULT_EXECUTION_CLEANUP_TIMEOUT = 60.0
 MAX_TASK_ID_BYTES = 240
 RESULT_TEMP_DIRECTORY = ".opencollab-results-tmp"
 MAX_LEGACY_RESULT_TEMP_ARTIFACTS = 256
@@ -312,7 +312,7 @@ def default_tools() -> list[Tool]:
 
     Mirrors the curated single-agent surface used by team roles (coder +
     reviewer tools) so headless eval exercises the same toolset: the bash
-    description deflects to run_tests/git_diff/grep, and apply_patch is the
+    description uses native commands for tests and git_diff/grep for inspection, and apply_patch is the
     fallback when str_replace edits fail to match.
     """
     return list(
@@ -321,7 +321,6 @@ def default_tools() -> list[Tool]:
             "file_read",
             "file_write",
             "apply_patch",
-            "run_tests",
             "git_diff",
             "grep",
             headless=True,
