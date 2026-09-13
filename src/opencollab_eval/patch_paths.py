@@ -26,7 +26,7 @@ def is_generated_python_bytecode_path(path: str) -> bool:
 def is_generated_python_test_artifact_path(path: str) -> bool:
     normalized = str(path or "").replace("\\", "/").lstrip("/")
     parts = [part for part in normalized.split("/") if part]
-    return any(part in {".hypothesis", ".pytest_cache"} for part in parts)
+    return any(part in {".hypothesis", ".pytest_cache", ".ruff_cache"} for part in parts)
 
 
 def is_generated_runtime_artifact_path(path: str) -> bool:

@@ -1,10 +1,8 @@
-"""Expose baseline ignore rules without granting Solver ignore files authority."""
+"""Project trusted baseline ignore rules into a controller-owned view."""
 
 from __future__ import annotations
 
 import os
-import shutil
-import stat
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -19,8 +17,10 @@ from .candidate_patch_git import git_command, git_output
 
 @dataclass(frozen=True, slots=True)
 class TrustedIgnoreState:
-    added_paths: tuple[str, ...]
-    changed_paths: tuple[str, ...]
+    worktree: Path
+    ignore_worktree: Path
+    ignored_paths: tuple[str, ...]
+    nested_roots: tuple[str, ...]
 
 
 def trusted_ignore_entries(
@@ -135,19 +135,20 @@ def _materialize_baseline_ignores(
     return frozenset(paths)
 
 
-def _visible_ignore_files(
+def _materialize_candidate_namespace(
     git: str,
     git_dir: Path,
-    view: Path,
+    ignore_view: Path,
+    namespace: Path,
     worktree: Path,
     *,
     env: dict[str, str],
     timeout: float,
     byte_limit: int,
     entry_limit: int,
-    control_names: frozenset[str],
-) -> frozenset[str]:
-    discovered: set[str] = set()
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    ignored_paths: set[str] = set()
+    nested_roots: set[str] = set()
     entries = 0
 
     def onerror(error: OSError) -> None:
@@ -157,8 +158,13 @@ def _visible_ignore_files(
         worktree, topdown=True, followlinks=False, onerror=onerror
     ):
         relative_root = Path(current).relative_to(worktree)
+        has_nested_marker = relative_root != Path(".") and ".git" in {
+            *directories,
+            *files,
+        }
         retained: list[str] = []
-        candidates: list[str] = []
+        directory_candidates: list[str] = []
+        leaf_candidates: list[str] = []
         for name in directories:
             relative = (relative_root / name).as_posix()
             parts = PurePosixPath(relative).parts
@@ -171,80 +177,63 @@ def _visible_ignore_files(
             if entries > entry_limit:
                 raise CandidateConstructionError("filesystem census exceeded its entry limit")
             if (worktree / relative).is_symlink():
+                leaf_candidates.append(relative)
                 continue
             retained.append(name)
-            candidates.append(relative + "/")
-        ignored = _ignored(
+            directory_candidates.append(relative + "/")
+        ignored_directories = _ignored(
             git,
             git_dir,
-            view,
-            tuple(candidates),
+            ignore_view,
+            tuple(directory_candidates),
             env=env,
             timeout=timeout,
             byte_limit=byte_limit,
         )
-        directories[:] = [
-            name
-            for name in retained
-            if (relative_root / name).as_posix() + "/" not in ignored
-        ]
+        ignored_paths.update(ignored_directories)
+        directories[:] = []
+        for name in retained:
+            relative = (relative_root / name).as_posix()
+            if relative + "/" in ignored_directories:
+                continue
+            (namespace / relative).mkdir(parents=True, exist_ok=True)
+            directories.append(name)
         entries += len(files)
         if entries > entry_limit:
             raise CandidateConstructionError("filesystem census exceeded its entry limit")
-        discovered.update(
+        leaf_candidates.extend(
             (relative_root / name).as_posix()
-            for name in control_names.intersection(files)
-            if not is_generated_runtime_artifact_path((relative_root / name).as_posix())
+            for name in files
+            if not any(
+                part in {".git", ".opencollab"} or part.startswith(".opencollab-retired-")
+                for part in PurePosixPath((relative_root / name).as_posix()).parts
+            )
+            and not is_generated_runtime_artifact_path((relative_root / name).as_posix())
         )
-    return frozenset(discovered)
-
-
-def _remove(path: Path) -> None:
-    if path.is_symlink() or not path.is_dir():
-        path.unlink()
-    else:
-        shutil.rmtree(path)
-
-
-def _copy_ignore(source: Path, destination: Path) -> None:
-    if source.is_symlink():
-        os.symlink(os.readlink(source), destination)
-    else:
-        destination.write_bytes(source.read_bytes())
-        os.chmod(destination, stat.S_IMODE(source.stat().st_mode))
-
-
-def _same_ignore(left: Path, right: Path, byte_limit: int) -> bool:
-    if not os.path.lexists(left) or not os.path.lexists(right):
-        return False
-    left_info, right_info = left.lstat(), right.lstat()
-    if stat.S_IFMT(left_info.st_mode) != stat.S_IFMT(right_info.st_mode):
-        return False
-    if stat.S_ISLNK(left_info.st_mode):
-        return os.readlink(left) == os.readlink(right)
-    if not stat.S_ISREG(left_info.st_mode):
-        return False
-    if left_info.st_size > byte_limit or right_info.st_size > byte_limit:
-        raise CandidateConstructionError("candidate ignore file exceeded its byte limit")
-    try:
-        return left.read_bytes() == right.read_bytes()
-    except OSError as exc:
-        raise CandidateConstructionError(f"candidate ignore file is unreadable: {exc}") from exc
-
-
-def _validate_existing_parents(worktree: Path, path: str) -> None:
-    current = worktree
-    for part in PurePosixPath(path).parts[:-1]:
-        current /= part
-        if not os.path.lexists(current):
-            return
-        info = current.lstat()
-        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
-            raise CandidateConstructionError(f"candidate path {path} has an unsafe parent")
+        ignored_files = _ignored(
+            git,
+            git_dir,
+            ignore_view,
+            tuple(leaf_candidates),
+            env=env,
+            timeout=timeout,
+            byte_limit=byte_limit,
+        )
+        ignored_paths.update(ignored_files)
+        for relative in leaf_candidates:
+            if relative in ignored_files:
+                continue
+            destination = namespace / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if not os.path.lexists(destination):
+                destination.touch()
+        if has_nested_marker:
+            nested_roots.add(relative_root.as_posix())
+    return tuple(sorted(ignored_paths)), tuple(sorted(nested_roots))
 
 
 @contextmanager
-def trusted_ignore_overlay(
+def trusted_ignore_view(
     git: str,
     git_dir: Path,
     worktree: Path,
@@ -256,80 +245,39 @@ def trusted_ignore_overlay(
     entry_limit: int,
     control_names: tuple[str, ...] = (".gitignore",),
 ) -> Iterator[TrustedIgnoreState]:
-    """Temporarily expose trusted baseline Git control files."""
+    """Build a controller-owned path view governed by baseline ignore files."""
     names = frozenset(control_names)
     if not names or not names.issubset({".gitignore", ".gitattributes"}):
         raise CandidateConstructionError("trusted control-file selection is invalid")
     with tempfile.TemporaryDirectory(
         prefix=".opencollab-ignore-", dir=worktree.parent
     ) as temporary:
-        view, backup = Path(temporary) / "view", Path(temporary) / "backup"
-        view.mkdir()
-        backup.mkdir()
-        baseline = _materialize_baseline_ignores(
+        ignore_view = Path(temporary) / "ignore"
+        namespace = Path(temporary) / "namespace"
+        ignore_view.mkdir()
+        namespace.mkdir()
+        _materialize_baseline_ignores(
             git,
             git_dir,
-            view,
+            ignore_view,
             entries,
             env=env,
             timeout=timeout,
             byte_limit=byte_limit,
             control_names=names,
         )
-        visible = _visible_ignore_files(
+        ignored_paths, nested_roots = _materialize_candidate_namespace(
             git,
             git_dir,
-            view,
+            ignore_view,
+            namespace,
             worktree,
             env=env,
             timeout=timeout,
             byte_limit=byte_limit,
             entry_limit=entry_limit,
-            control_names=names,
         )
-        replaced: list[tuple[Path, Path | None]] = []
-        created_directories: list[Path] = []
-        try:
-            changed = {
-                path
-                for path in baseline
-                if not _same_ignore(worktree / path, view / path, byte_limit)
-            }
-            for path in sorted(baseline | visible):
-                _validate_existing_parents(worktree, path)
-                target, saved = worktree / path, backup / path
-                if os.path.lexists(target):
-                    saved.parent.mkdir(parents=True, exist_ok=True)
-                    os.replace(target, saved)
-                    saved_path: Path | None = saved
-                else:
-                    saved_path = None
-                parent = target.parent
-                missing: list[Path] = []
-                while parent != worktree and not parent.exists():
-                    missing.append(parent)
-                    parent = parent.parent
-                for directory in reversed(missing):
-                    directory.mkdir()
-                    created_directories.append(directory)
-                source = view / path
-                if os.path.lexists(source):
-                    _copy_ignore(source, target)
-                replaced.append((target, saved_path))
-            added = tuple(sorted(path for path in visible if path not in baseline))
-            yield TrustedIgnoreState(added, tuple(sorted(changed | set(added))))
-        finally:
-            for target, saved in reversed(replaced):
-                if os.path.lexists(target):
-                    _remove(target)
-                if saved is not None and os.path.lexists(saved):
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    os.replace(saved, target)
-            for directory in reversed(created_directories):
-                try:
-                    directory.rmdir()
-                except OSError:
-                    pass
+        yield TrustedIgnoreState(namespace, ignore_view, ignored_paths, nested_roots)
 
 
-__all__ = ["TrustedIgnoreState", "trusted_ignore_entries", "trusted_ignore_overlay"]
+__all__ = ["TrustedIgnoreState", "trusted_ignore_entries", "trusted_ignore_view"]

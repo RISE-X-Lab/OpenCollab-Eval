@@ -142,6 +142,7 @@ def run_remote_health_checks(
                 command,
                 timeout=120,
                 cwd=repo,
+                idempotent=True,
                 retry_log=attempts,
             )
     except subprocess.TimeoutExpired as exc:

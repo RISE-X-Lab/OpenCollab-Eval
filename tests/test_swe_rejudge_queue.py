@@ -71,6 +71,7 @@ def _plan(tmp_path: Path, *, patch_sha256: str = "a" * 64) -> tuple[Path, Path]:
                         "index": 25,
                         "parent_output_dir": str(parent),
                         "base_run_dir": "/worker/run/task_25",
+                        "source_base_run_dir": "/worker/origin/task_25",
                         "remote_runtime_repo": "/worker/runtime/task_25",
                         "run_id": "rejudge-task-25",
                         "eval_dir_name": "official_eval_rejudge",

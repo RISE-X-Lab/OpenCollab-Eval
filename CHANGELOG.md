@@ -10,6 +10,12 @@ Reusable server-local evaluation packaging, shared provider request limits, nati
 
 ### Fixed
 
+Completed context-window and recovery-source propagation, bounded retries for
+idempotent setup operations, candidate capture with read-only ignore views,
+and proof-bound Python/JavaScript candidate-failure classification. Role limits
+are resolved per invocation, and explicit provider recovery time reaches the
+outer role wait.
+
 Adapted default Single and team configurations to the current OC built-in tools.
 Exact-target research verification is now owned by Eval. Final verification
 receives all role reports, cleanup failures retain captured candidates for

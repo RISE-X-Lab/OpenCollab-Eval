@@ -28,7 +28,6 @@ from ._validation_council_solve_defs import (
     LOCALIZER_PROMPT,
     MAX_APPROVED_POST_TESTS,
     MAX_APPROVED_PRE_TESTS,
-    MAX_CODER_ROUNDS,
     PATCH_VALIDATOR_PROMPT,
     POST_TRIAGE_PROMPT,
     POST_VALIDATION_FACTORY_PROMPT,
@@ -65,6 +64,8 @@ from ._validation_council_solve_defs import (
     _trim_judge,
     _verdict_brief,
     coder_role_timeout_seconds,
+    max_coder_rounds,
+    role_budget,
     structured_role_timeout_seconds,
 )
 
@@ -90,7 +91,7 @@ async def _judge_candidates(
         schema=JUDGE_SCHEMA,
         label=f"{stage}-validation-judge",
         tools=_read_tools(),
-        budget=JUDGE_BUDGET,
+        budget=role_budget(JUDGE_BUDGET),
         timeout=structured_role_timeout_seconds(),
     )
     decision = _trim_judge(
@@ -148,7 +149,7 @@ async def _run_attempt(
         schema=VERDICT_SCHEMA,
         label=f"patch-validator:r{attempt}",
         tools=_tester_tools(),
-        budget=VERIFIER_BUDGET,
+        budget=role_budget(VERIFIER_BUDGET),
         timeout=structured_role_timeout_seconds(),
     )
     patch_verdict = _dict_or(
@@ -183,7 +184,7 @@ async def _run_attempt(
         schema=DIFF_RISK_SCHEMA,
         label=f"diff-risk-auditor:r{attempt}",
         tools=_risk_tools(),
-        budget=RISK_BUDGET,
+        budget=role_budget(RISK_BUDGET),
         timeout=structured_role_timeout_seconds(),
     )
     risks = _dict_or(risks, {"risks": [], "summary": "Diff risk auditor returned no structured report."})
@@ -198,7 +199,7 @@ async def _run_attempt(
         schema=CANDIDATE_TESTS_SCHEMA,
         label=f"post-validation-factory:r{attempt}",
         tools=_read_tools(),
-        budget=VALIDATION_FACTORY_BUDGET,
+        budget=role_budget(VALIDATION_FACTORY_BUDGET),
         timeout=structured_role_timeout_seconds(),
     )
     post_candidates = _dict_or(
@@ -224,7 +225,7 @@ async def _run_attempt(
         schema=TRIAGE_SCHEMA,
         label=f"post-validation-triage:r{attempt}",
         tools=_tester_tools(),
-        budget=TRIAGE_BUDGET,
+        budget=role_budget(TRIAGE_BUDGET),
         timeout=structured_role_timeout_seconds(),
     )
     post_triage = _dict_or(
@@ -250,7 +251,7 @@ async def _run_attempt(
         schema=VERDICT_SCHEMA,
         label=f"final-verifier:r{attempt}",
         tools=_tester_tools(),
-        budget=VERIFIER_BUDGET,
+        budget=role_budget(VERIFIER_BUDGET),
         timeout=structured_role_timeout_seconds(),
     )
     final_verdict = _dict_or(
@@ -303,7 +304,7 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
         schema=LOCALIZATION_SCHEMA,
         label="analyst-localizer",
         tools=_read_tools(),
-        budget=LOCALIZER_BUDGET,
+        budget=role_budget(LOCALIZER_BUDGET),
         timeout=structured_role_timeout_seconds(),
     )
     localization = _dict_or(
@@ -330,7 +331,7 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
                 schema=CONTRACT_SCHEMA,
                 label="contract-miner",
                 tools=_read_tools(),
-                budget=EVIDENCE_BUDGET,
+                budget=role_budget(EVIDENCE_BUDGET),
                 timeout=structured_role_timeout_seconds(),
             ),
             lambda: ctx.agent(
@@ -342,7 +343,7 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
                 schema=TEST_CARTOGRAPHY_SCHEMA,
                 label="test-cartographer",
                 tools=_read_tools(),
-                budget=EVIDENCE_BUDGET,
+                budget=role_budget(EVIDENCE_BUDGET),
                 timeout=structured_role_timeout_seconds(),
             ),
         ]
@@ -372,7 +373,7 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
         schema=CANDIDATE_TESTS_SCHEMA,
         label="pre-validation-factory",
         tools=_read_tools(),
-        budget=VALIDATION_FACTORY_BUDGET,
+        budget=role_budget(VALIDATION_FACTORY_BUDGET),
         timeout=structured_role_timeout_seconds(),
     )
     pre_candidates = _dict_or(
@@ -397,7 +398,7 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
             schema=TRIAGE_SCHEMA,
             label="baseline-triage",
             tools=_tester_tools(),
-            budget=TRIAGE_BUDGET,
+            budget=role_budget(TRIAGE_BUDGET),
             timeout=structured_role_timeout_seconds(),
         )
         baseline_triage = _dict_or(
@@ -413,7 +414,7 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
 
     attempts: list[dict[str, Any]] = []
     feedback = ""
-    for attempt in range(1, MAX_CODER_ROUNDS + 1):
+    for attempt in range(1, max_coder_rounds() + 1):
         await ctx.phase(f"solve:r{attempt}")
         report = await _run_attempt(
             ctx,
@@ -465,7 +466,7 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
 
     return {
         "status": "incomplete",
-        "rounds": MAX_CODER_ROUNDS,
+        "rounds": max_coder_rounds(),
         "contracts": len(contracts.get("contracts", [])),
         "pre_validation_accepted": _accepted_count(pre_judge),
         "post_validation_accepted": _accepted_count(attempts[-1]["post_judge"]) if attempts else 0,

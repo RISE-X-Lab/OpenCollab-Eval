@@ -39,6 +39,7 @@ class ExecutionConfig:
     llm_first_event_timeout: float
     llm_stream_idle_timeout: float
     resume_from_checkpoint: bool
+    context_window: int | None = None
 
 
 @dataclass
@@ -253,6 +254,7 @@ async def run_session_or_workflow(
             temperature=config.temperature,
             top_p=config.top_p,
             max_output_tokens=config.max_output_tokens,
+            context_window=config.context_window,
             thinking=config.thinking,
             thinking_params=config.thinking_params,
             wire_protocol=config.wire_protocol,
@@ -284,6 +286,7 @@ async def run_session_or_workflow(
         temperature=config.temperature,
         top_p=config.top_p,
         max_output_tokens=config.max_output_tokens,
+            context_window=config.context_window,
         thinking=config.thinking,
         thinking_params=config.thinking_params,
         wire_protocol=config.wire_protocol,

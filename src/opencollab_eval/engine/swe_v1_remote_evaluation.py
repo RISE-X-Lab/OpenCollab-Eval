@@ -80,6 +80,7 @@ def eval_for_task_once(row, patch_selection=None):
         target_file="/eval_input/f2p.targets.json",
         candidate_source_paths=candidate_source_paths,
         candidate_added_go_modules=candidate_go_modules,
+        candidate_patch=eval_model_patch(prediction),
     )
     p2p_plan = prolite_test_plan(
         row,
@@ -87,6 +88,7 @@ def eval_for_task_once(row, patch_selection=None):
         target_file="/eval_input/p2p.targets.json",
         candidate_source_paths=candidate_source_paths,
         candidate_added_go_modules=candidate_go_modules,
+        candidate_patch=eval_model_patch(prediction),
     )
     runtime_dependency_specs = plan_runtime_dependency_specs(f2p_plan, p2p_plan)
     eval_timeout = configured_eval_timeout = resolve_eval_timeout(globals().get("eval_timeout") or None)

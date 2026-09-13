@@ -280,6 +280,8 @@ def configure(config: dict[str, Any]) -> None:
     workflow_env = {str(key): str(value) for key, value in (cfg.get("workflow_env") or {}).items()}
     allowed_workflow_env = {
         "OPENCOLLAB_G11_ROLE_BUDGET",
+        "OPENCOLLAB_VALIDATION_COUNCIL_ROLE_BUDGET",
+        "OPENCOLLAB_VALIDATION_COUNCIL_MAX_CODER_ROUNDS",
         "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES",
         "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY",
         "OPENCOLLAB_EVAL_NO_PROGRESS_TIMEOUT",

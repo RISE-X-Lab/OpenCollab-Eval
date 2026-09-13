@@ -16,6 +16,9 @@ from pathlib import Path
 from opencollab_eval.commands import _swe_eval_layer_integrity
 from opencollab_eval.engine.swe_eval_records import direct_eval_done_has_execution_proof
 from opencollab_eval.engine.swe_test_plan_contract import validated_test_plan_kind
+from opencollab_eval.engine.swe_v1_pytest_candidate_callsites import (
+    pytest_plan_with_test_patch_callsites,
+)
 from opencollab_eval.engine.swe_v1_remote_artifacts import (
     derive_eval_verdict,
     read_eval_output_artifacts,
@@ -198,7 +201,25 @@ def _validate_execution_plan(plan: dict, *, label: str, require_commands: bool) 
         raise RuntimeError(f"{label} plan does not satisfy the executable plan contract")
 
 
-def rejudge(eval_dir: Path, output_dir: Path) -> dict:
+def _read_trusted_test_patch(input_dir: Path, expected_sha256: str) -> tuple[str, str]:
+    if _SHA256_RE.fullmatch(expected_sha256) is None:
+        raise RuntimeError("invalid expected test patch SHA-256")
+    raw = _read_regular_bytes(input_dir / "test.patch", limit=8 * 1024 * 1024)
+    observed_sha256 = _sha256(raw)
+    if observed_sha256 != expected_sha256:
+        raise RuntimeError("test patch SHA-256 does not match trusted expectation")
+    try:
+        return raw.decode("utf-8"), observed_sha256
+    except UnicodeDecodeError as exc:
+        raise RuntimeError("test patch is not UTF-8") from exc
+
+
+def rejudge(
+    eval_dir: Path,
+    output_dir: Path,
+    *,
+    expected_test_patch_sha256: str = "",
+) -> dict:
     eval_dir = eval_dir.resolve()
     output_dir = output_dir.absolute()
     if output_dir.exists() or output_dir.is_symlink():
@@ -247,6 +268,25 @@ def rejudge(eval_dir: Path, output_dir: Path) -> dict:
         runtime_dependency_identities = None
     _validate_execution_plan(f2p_plan, label="fail-to-pass", require_commands=True)
     _validate_execution_plan(p2p_plan, label="pass-to-pass", require_commands=False)
+    artifact_f2p_plan = f2p_plan
+    test_patch_sha256 = ""
+    if expected_test_patch_sha256:
+        test_patch, test_patch_sha256 = _read_trusted_test_patch(
+            input_dir,
+            expected_test_patch_sha256,
+        )
+        try:
+            artifact_f2p_plan = pytest_plan_with_test_patch_callsites(
+                f2p_plan,
+                test_patch,
+            )
+        except ValueError as exc:
+            raise RuntimeError("test patch disagrees with persisted pytest proof") from exc
+        _validate_execution_plan(
+            artifact_f2p_plan,
+            label="enriched fail-to-pass",
+            require_commands=True,
+        )
     proof_nonce = _read_regular_bytes(input_dir / "proof.nonce", limit=256).decode("ascii").strip()
     if re.fullmatch(r"[0-9a-f]{32}", proof_nonce) is None:
         raise RuntimeError("invalid proof nonce")
@@ -260,7 +300,7 @@ def rejudge(eval_dir: Path, output_dir: Path) -> dict:
     report_dir = eval_dir / "reports" / task
     artifacts = read_eval_output_artifacts(
         report_dir,
-        f2p_plan,
+        artifact_f2p_plan,
         p2p_plan,
         proof_nonce,
         runtime_dependency_identities=runtime_dependency_identities,
@@ -328,6 +368,11 @@ def rejudge(eval_dir: Path, output_dir: Path) -> dict:
                 "matching_eval_attempts": len(matching),
                 "added_eval_attempts": 0,
                 "attempt_identity": attempt_identity,
+                **(
+                    {"trusted_test_patch_sha256": test_patch_sha256}
+                    if test_patch_sha256
+                    else {}
+                ),
             },
         }
     )
@@ -461,6 +506,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--launcher-report", type=Path)
     parser.add_argument("--reconciliation-output", type=Path)
+    parser.add_argument("--expected-test-patch-sha256", default="")
     return parser
 
 
@@ -468,7 +514,11 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if bool(args.launcher_report) != bool(args.reconciliation_output):
         raise SystemExit("--launcher-report and --reconciliation-output must be used together")
-    result = rejudge(args.eval_dir, args.output_dir)
+    result = rejudge(
+        args.eval_dir,
+        args.output_dir,
+        expected_test_patch_sha256=args.expected_test_patch_sha256,
+    )
     if args.launcher_report is not None:
         reconciled = reconcile_launcher_report(
             args.launcher_report,
