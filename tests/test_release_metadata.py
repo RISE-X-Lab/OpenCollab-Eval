@@ -90,3 +90,10 @@ def test_packaged_workflow_guides_match_the_07_runtime_boundary() -> None:
         text = path.read_text(encoding="utf-8")
         assert "OpenCollab 0.7.0" in text
         assert "OpenCollab 0.4" not in text
+
+
+def test_wheel_probe_uses_installed_dependency_metadata():
+    script = (_REPO_ROOT / "scripts" / "verify_wheel_contract.sh").read_text()
+    assert 'requires("opencollab-eval")' in script
+    assert 'version("opencollab") in paired.specifier' in script
+    assert 'opencollab.__version__ == version("opencollab")' in script

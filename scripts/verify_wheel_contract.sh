@@ -60,8 +60,21 @@ cp -R "$repo_root/tests" "$venv_dir/eval-tests"
 
 (
   cd "$venv_dir"
-  "$venv_dir/bin/python" -I -c \
-    "import opencollab, opencollab.environments, opencollab.tools, opencollab.workflows, opencollab_eval; from packaging.version import Version; version = Version(opencollab.__version__).release; assert (0, 6, 1) <= version < (0, 7)"
+  "$venv_dir/bin/python" -I - <<'PYCODE'
+from importlib.metadata import requires, version
+from packaging.requirements import Requirement
+import opencollab
+import opencollab.environments
+import opencollab.tools
+import opencollab.workflows
+import opencollab_eval
+
+paired = next(Requirement(item) for item in requires("opencollab-eval")
+              if Requirement(item).name == "opencollab")
+assert version("opencollab") in paired.specifier
+assert opencollab.__version__ == version("opencollab")
+assert opencollab_eval.__version__ == version("opencollab-eval")
+PYCODE
   "$venv_dir/bin/python" -I -m opencollab_eval --help >/dev/null
   "$venv_dir/bin/oc-eval" --help >/dev/null
 )
