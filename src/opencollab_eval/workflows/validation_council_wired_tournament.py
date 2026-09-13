@@ -197,13 +197,10 @@ submitted diff."""
 
 
 def _clip_text(value: Any, limit: int) -> str:
-    text = str(value or "")
-    payload = text.encode("utf-8")
-    if len(payload) <= limit:
-        return text
-    marker = "...[clipped]..."
-    retained = max(0, limit - len(marker.encode("utf-8")))
-    return payload[:retained].decode("utf-8", errors="ignore") + marker
+    """Preserve complete model-visible evidence, including identity-bearing text."""
+    del limit
+    text = "" if value is None else str(value)
+    return text
 
 
 def _public_value(value: Any) -> Any:
@@ -216,27 +213,15 @@ def _public_value(value: Any) -> Any:
             result[str(key)] = _public_value(item)
         return result
     if isinstance(value, list | tuple):
-        return [_public_value(item) for item in value[:24]]
+        return [_public_value(item) for item in value]
     if value is None or isinstance(value, bool | int | float | str):
         return value
     return str(value)
 
 
 def _bounded_json(value: Any, limit: int = MAX_EVIDENCE_BYTES) -> str:
-    rendered = json.dumps(
-        _public_value(value),
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    if len(rendered.encode("utf-8")) <= limit:
-        return rendered
-    return json.dumps(
-        {"summary": _clip_text(rendered, limit - 64)},
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
+    del limit
+    return json.dumps(_public_value(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _empty_localization() -> dict[str, Any]:
@@ -329,7 +314,7 @@ def _candidate_view(candidate: CandidateRun) -> dict[str, Any]:
             "exit_code": record.get("exit_code"),
             "verified": record.get("verified") is True,
         }
-        for record in candidate.test_records[:MAX_TEST_RECORDS]
+        for record in candidate.test_records
         if isinstance(record, dict)
     ]
     output = json.dumps(
@@ -343,7 +328,7 @@ def _candidate_view(candidate: CandidateRun) -> dict[str, Any]:
         "output": _clip_text(output, MAX_OUTPUT_BYTES),
         "diff": _clip_text(candidate.diff, MAX_DIFF_BYTES),
         "diff_bytes": len(candidate.diff.encode("utf-8")),
-        "changed_paths": patch_paths(candidate.diff)[:128],
+        "changed_paths": patch_paths(candidate.diff),
         "test_records": records,
         "verified_targets": list(candidate.verified_targets),
     }

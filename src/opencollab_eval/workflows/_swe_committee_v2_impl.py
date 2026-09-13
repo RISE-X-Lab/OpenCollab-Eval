@@ -7,7 +7,7 @@ from typing import Any
 
 from opencollab.workflows import workflow
 
-from ._public_api import toolset
+from ._public_api import role_feedback, toolset, validation_execution_evidence
 from ._swe_committee_v2_defs import (
     BASELINE_JUDGE_PROMPT,
     BASELINE_JUDGE_SCHEMA,
@@ -100,16 +100,7 @@ def _accepted_count(judge: Any) -> int:
 
 
 def _feedback(*reports: Any) -> str:
-    parts: list[str] = []
-    for report in reports:
-        if isinstance(report, dict):
-            for key in ("findings", "approved_brief", "summary", "rationale", "next_action"):
-                value = report.get(key)
-                if isinstance(value, str) and value.strip():
-                    parts.append(value.strip())
-        elif isinstance(report, str) and report.strip():
-            parts.append(report.strip())
-    return "\n\n".join(parts) or "No structured feedback."
+    return role_feedback(*reports)
 
 
 def _judge_default() -> dict[str, Any]:
@@ -143,7 +134,7 @@ async def _judge_candidates(
         label=f"{stage}-validation-judge",
         tools=_read_tools(),
     )
-    return _trim(_dict_or(judge, _judge_default()), cap)
+    return validation_execution_evidence(_trim(_dict_or(judge, _judge_default()), cap), candidates)
 
 
 def _merge_risks(*risks: Any) -> dict[str, Any]:

@@ -172,32 +172,14 @@ keep tests, caches, logs, and generated files outside the submitted diff."""
 
 
 def _bounded_json(value: Any, limit: int = MAX_WIRING_CONTEXT_BYTES) -> str:
-    text = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    payload = text.encode("utf-8")
-    if len(payload) <= limit:
-        return text
-    marker = "...[wiring evidence clipped]..."
-    if limit <= len(marker.encode("utf-8")):
-        raise ValueError("wiring context limit is too small")
-    retained = limit - len(marker.encode("utf-8"))
-    head = payload[: retained * 3 // 4].decode("utf-8", errors="ignore")
-    tail_bytes = retained // 4
-    tail = payload[-tail_bytes:].decode("utf-8", errors="ignore") if tail_bytes else ""
-    return head + marker + tail
+    """Serialize complete role evidence without positional truncation."""
+    del limit
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _bounded_text(value: Any, limit: int) -> str:
-    text = "" if value is None else str(value)
-    payload = text.encode("utf-8")
-    if len(payload) <= limit:
-        return text
-    marker = "\n...[diagnostic report clipped]...\n"
-    retained = limit - len(marker.encode("utf-8"))
-    if retained <= 0:
-        raise ValueError("diagnostic report limit is too small")
-    head = payload[: retained * 3 // 4].decode("utf-8", errors="ignore")
-    tail = payload[-(retained // 4) :].decode("utf-8", errors="ignore")
-    return head + marker + tail
+    del limit
+    return "" if value is None else str(value)
 
 
 class _WiringContext:

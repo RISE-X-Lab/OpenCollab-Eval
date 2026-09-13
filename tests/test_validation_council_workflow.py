@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -237,15 +238,14 @@ async def test_happy_path_passes_first_round(validation_council_solve):
     assert "do not search for write tools" in all_prompts
     coder_prompt = next(call["prompt"] for call in ctx.agent_calls if call["label"] == "coder:r1")
     assert "widget.py" in coder_prompt
-    assert "next call must read at most 20 lines" in coder_prompt
-    assert "read the next adjacent 20" in coder_prompt
-    assert "lines instead of searching again" in coder_prompt
-    assert "Use one\nfocused tool call per turn" in coder_prompt
-    assert "never repeat a successful search" in coder_prompt
-    assert "raw ---/+++/@@ text" in coder_prompt
-    assert "never a Begin Patch" in coder_prompt
-    assert "file_write for one unique replacement" in coder_prompt
-    assert len(coder_prompt.encode()) < 850
+    assert "Run relevant public tests" in coder_prompt
+    assert "Test cartography:" in coder_prompt
+    assert "Contracts:" in coder_prompt
+    assert CARTOGRAPHY["runner_commands"][0] in coder_prompt
+    assert CONTRACTS["contracts"][0]["statement"] in coder_prompt
+    validation = json.loads(coder_prompt.split("Pre-patch validation:\n")[1].split("\n\nBaseline triage:")[0])
+    assert validation["accepted_candidates"][0]["runner_command"] == CANDIDATES["tests"][0]["runner_command"]
+
 
 
 async def test_every_role_receives_the_complete_public_task_specification(
@@ -321,15 +321,14 @@ async def test_role_timeouts_reject_invalid_provider_timeout(
         await validation_council_solve(ctx, {"goal": "fix empty widget"})
 
 
-async def test_retry_feedback_is_bounded(validation_council_solve):
+async def test_retry_feedback_preserves_complete_failure(validation_council_solve):
     long_failure = {**FAIL, "findings": "specific failure " * 200}
     ctx = ScriptedCtx(_base_replies(long_failure) + _base_replies(PASS)[6:])
 
     await validation_council_solve(ctx, {"goal": "fix empty widget"})
 
     retry_prompt = next(call["prompt"] for call in ctx.agent_calls if call["label"] == "coder:r2")
-    assert "...[shortened]..." in retry_prompt
-    assert len(retry_prompt.encode()) < 1200
+    assert long_failure["findings"] in retry_prompt
 
 
 async def test_coder_prompt_keeps_localized_path_ahead_of_long_prose(

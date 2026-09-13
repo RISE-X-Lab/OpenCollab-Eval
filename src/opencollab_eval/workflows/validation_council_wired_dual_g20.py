@@ -55,11 +55,10 @@ results, hidden tests, FAIL_TO_PASS identifiers, or grader patches."""
 
 
 def _clip_text(value: Any, limit: int) -> str:
+    """Preserve complete model-visible evidence, including identity-bearing text."""
+    del limit
     text = "" if value is None else str(value)
-    payload = text.encode("utf-8")
-    if len(payload) <= limit:
-        return text
-    return payload[:limit].decode("utf-8", errors="ignore")
+    return text
 
 
 def _probe_tools() -> list[Any]:
@@ -82,7 +81,7 @@ def _verification_records(tools: list[Any]) -> list[dict[str, Any]]:
         for record in getattr(tool, "verification_records", ()):
             if isinstance(record, dict):
                 records.append(_public_record(record))
-    return records[:MAX_PUBLIC_RECORDS]
+    return records
 
 
 def _first_public_command(cartography: Any) -> str:
@@ -188,7 +187,7 @@ def _candidate_records(candidate: CandidateRun) -> list[dict[str, Any]]:
     records = _candidate_output(candidate).get("public_test_records")
     if not isinstance(records, list):
         return []
-    return [_public_record(record) for record in records[:MAX_PUBLIC_RECORDS] if isinstance(record, dict)]
+    return [_public_record(record) for record in records if isinstance(record, dict)]
 
 
 def _record_key(record: dict[str, Any]) -> tuple[str, str, str]:

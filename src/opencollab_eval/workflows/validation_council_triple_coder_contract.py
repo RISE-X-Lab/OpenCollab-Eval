@@ -179,7 +179,7 @@ async def _candidate(
     )
     records = [
         dual._public_record(record)
-        for record in raw.test_records[: dual.MAX_PUBLIC_RECORDS]
+        for record in raw.test_records
         if isinstance(record, dict)
     ]
     command = str(records[0].get("command") or "").strip() if records else shared_command
@@ -237,11 +237,10 @@ def _mechanical_choice(
 
 
 def _clip(value: Any, limit: int) -> tuple[str, bool]:
+    """Preserve complete model-visible evidence, including identity-bearing text."""
+    del limit
     text = "" if value is None else str(value)
-    payload = text.encode()
-    if len(payload) <= limit:
-        return text, False
-    return payload[:limit].decode(errors="ignore"), True
+    return text, False
 
 
 def _candidate_view(candidate: CandidateRun) -> tuple[dict[str, Any], bool]:
@@ -249,7 +248,7 @@ def _candidate_view(candidate: CandidateRun) -> tuple[dict[str, Any], bool]:
     return {
         "diff": diff,
         "diff_truncated": truncated,
-        "changed_paths": patch_paths(candidate.diff)[:256],
+        "changed_paths": patch_paths(candidate.diff),
         "public_command": dual._candidate_command(candidate),
     }, truncated
 
@@ -454,7 +453,7 @@ async def validation_council_triple_coder_contract_v1(
                 "kind": kind,
                 "nonempty": bool(candidate.diff.strip()),
                 "diff_bytes": len(candidate.diff.encode()),
-                "changed_paths": patch_paths(candidate.diff)[:256],
+                "changed_paths": patch_paths(candidate.diff),
                 "public_command": dual._candidate_command(candidate),
                 "public_test_records": dual._candidate_records(candidate),
             }

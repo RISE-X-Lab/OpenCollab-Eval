@@ -191,15 +191,9 @@ or edit files."""
 
 
 def _bounded_json(value: Any, limit: int = MAX_HANDOFF_BYTES) -> str:
-    raw = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    payload = raw.encode("utf-8")
-    if len(payload) <= limit:
-        return raw
-    marker = "...[handoff clipped]..."
-    retained = limit - len(marker.encode("utf-8"))
-    head = payload[: retained * 3 // 4].decode("utf-8", errors="ignore")
-    tail = payload[-(retained // 4) :].decode("utf-8", errors="ignore")
-    return head + marker + tail
+    """Serialize complete role evidence without positional truncation."""
+    del limit
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _empty_root_cause() -> dict[str, Any]:

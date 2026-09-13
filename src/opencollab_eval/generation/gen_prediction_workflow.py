@@ -42,10 +42,10 @@ from opencollab_eval.engine.evaluator import EvalTask, run_eval_task  # noqa: E4
 from opencollab_eval.engine.provider_failures import (  # noqa: E402
     summarize_terminal_provider_failures,
 )
-from opencollab_eval.engine.swe_eval_records import open_regular_binary  # noqa: E402
 from opencollab_eval.engine.swe_generation_proof import (  # noqa: E402
     current_generation_proof_valid,
 )
+from opencollab_eval.generation.trajectory_identity import verified_provider_models as _verified_provider_models
 from opencollab_eval.patch_diff import (
     patch_paths as _patch_paths,
 )
@@ -165,71 +165,6 @@ def _result_metrics(result) -> dict:
     return {field.name: _json_safe(getattr(result, field.name)) for field in fields(result) if field.name != "patch"}
 
 
-def _verified_provider_models(
-    trajectory_path: str | None,
-    *,
-    artifact_root: Path,
-    expected_model: str,
-    expected_reasoning_effort: str | None,
-    wire_protocol: str,
-) -> tuple[list[str], str | None]:
-    if wire_protocol != "responses":
-        return [], None
-    if not trajectory_path:
-        raise RuntimeError("Responses execution did not produce a trajectory")
-    path = Path(trajectory_path)
-    try:
-        resolved = path.resolve(strict=True)
-        if not resolved.is_relative_to(artifact_root.resolve(strict=True)):
-            raise RuntimeError("Responses trajectory is outside the current artifact root")
-        with open_regular_binary(path) as handle:
-            before = os.fstat(handle.fileno())
-            raw = handle.read(16 * 1024 * 1024 + 1)
-            after = os.fstat(handle.fileno())
-        if (
-            before.st_size,
-            before.st_mtime_ns,
-            before.st_ctime_ns,
-        ) != (
-            after.st_size,
-            after.st_mtime_ns,
-            after.st_ctime_ns,
-        ):
-            raise RuntimeError("Responses trajectory changed while reading")
-        if len(raw) > 16 * 1024 * 1024:
-            raise RuntimeError("Responses trajectory exceeds 16 MiB")
-        lines = raw.decode("utf-8").splitlines()
-    except (OSError, UnicodeDecodeError) as exc:
-        raise RuntimeError("Responses trajectory cannot be read") from exc
-    models: list[str] = []
-    for line in lines:
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("Responses trajectory contains invalid JSON") from exc
-        if not isinstance(record, dict) or record.get("type") != "llm_call":
-            continue
-        payload = record.get("payload")
-        if not isinstance(payload, dict):
-            raise RuntimeError("Responses llm_call is missing its payload")
-        if payload.get("wire_protocol") != "responses":
-            raise RuntimeError("Responses trajectory contains a mixed wire protocol")
-        observed = payload.get("provider_model")
-        if observed != expected_model:
-            raise RuntimeError(f"Responses provider model mismatch expected {expected_model!r} got {observed!r}")
-        observed_effort = payload.get("reasoning_effort")
-        effort_policy = payload.get("reasoning_effort_policy")
-        if effort_policy not in {"configured", "suppressed"}:
-            raise RuntimeError("Responses llm_call is missing its reasoning effort policy")
-        expected_effort = None if effort_policy == "suppressed" else expected_reasoning_effort
-        if observed_effort != expected_effort:
-            raise RuntimeError(
-                f"Responses reasoning effort mismatch expected {expected_effort!r} got {observed_effort!r}"
-            )
-        models.append(observed)
-    if not models:
-        raise RuntimeError("Responses trajectory contains no verified LLM call")
-    return sorted(set(models)), hashlib.sha256(raw).hexdigest()
 
 
 def _workflow_status_for_result(result, patch: str) -> str:

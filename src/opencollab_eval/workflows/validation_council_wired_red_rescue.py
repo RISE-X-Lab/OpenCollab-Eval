@@ -83,17 +83,10 @@ identifiers, or grader patches."""
 
 
 def _clip_text(value: Any, limit: int) -> str:
+    """Preserve complete model-visible evidence, including identity-bearing text."""
+    del limit
     text = "" if value is None else str(value)
-    payload = text.encode("utf-8")
-    if len(payload) <= limit:
-        return text
-    marker = "\n...[public evidence clipped]...\n"
-    retained = limit - len(marker.encode("utf-8"))
-    if retained <= 0:
-        raise ValueError("public evidence limit is too small")
-    head = payload[: retained * 3 // 4].decode("utf-8", errors="ignore")
-    tail = payload[-(retained // 4) :].decode("utf-8", errors="ignore")
-    return head + marker + tail
+    return text
 
 
 def _probe_tools() -> list[Any]:
@@ -148,7 +141,7 @@ def _failed_public_records(tools: list[Any]) -> list[dict[str, Any]]:
             and record.get("verified") is False
         ):
             failed.append(_public_record(record))
-    return failed[:MAX_PUBLIC_RECORDS]
+    return failed
 
 
 def _record_key(record: dict[str, Any]) -> tuple[str, str, str]:
@@ -317,7 +310,7 @@ async def validation_council_wired_red_rescue_v1(
         "rescue_used": adopted,
         "rescue_candidate_nonempty": bool(candidate.diff.strip()),
         "rescue_candidate_tests": [
-            _public_record(record) for record in candidate.test_records[:MAX_PUBLIC_RECORDS] if isinstance(record, dict)
+            _public_record(record) for record in candidate.test_records if isinstance(record, dict)
         ],
         "tokens_spent": ctx.tokens_spent(),
     }

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from opencollab.workflows import workflow
 
+from ._public_api import validation_execution_evidence
 from ._validation_council_solve_defs import (
     BASELINE_TRIAGE_PROMPT,
     CANDIDATE_TESTS_SCHEMA,
@@ -45,7 +46,6 @@ from ._validation_council_solve_defs import (
     _accepted_count,
     _candidates_brief,
     _cartography_brief,
-    _clip,
     _coder_tools,
     _complete_goal,
     _contracts_brief,
@@ -93,7 +93,7 @@ async def _judge_candidates(
         budget=JUDGE_BUDGET,
         timeout=structured_role_timeout_seconds(),
     )
-    return _trim_judge(
+    decision = _trim_judge(
         _dict_or(
             judge,
             {
@@ -105,6 +105,7 @@ async def _judge_candidates(
         ),
         cap,
     )
+    return validation_execution_evidence(decision, candidates)
 
 
 async def _run_attempt(
@@ -120,13 +121,16 @@ async def _run_attempt(
     feedback: str,
     injected_test_paths: list[str],
 ) -> dict[str, Any]:
-    feedback_block = FEEDBACK_BLOCK.format(feedback=_clip(feedback, 220)) if feedback else ""
+    feedback_block = FEEDBACK_BLOCK.format(feedback=feedback) if feedback else ""
     coder_report = await ctx.agent(
         CODER_PROMPT.format(
             rules=SHARED_RULES,
             goal=_complete_goal(goal),
             localization=_localization_brief(localization, 180),
             cartography=_cartography_brief(cartography),
+            contracts=_contracts_brief(contracts),
+            pre_judge=_judge_brief(pre_judge),
+            baseline_triage=_triage_brief(baseline_triage),
             feedback_block=feedback_block,
         ),
         label=f"coder:r{attempt}",

@@ -277,33 +277,18 @@ def _challenger_tools() -> list[Any]:
 
 
 def _compact(value: Any, text_limit: int = 1_200) -> Any:
+    del text_limit
     if isinstance(value, dict):
-        return {str(key): _compact(item, text_limit) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_compact(item, text_limit) for item in value[:12]]
-    if isinstance(value, str):
-        raw = value.encode("utf-8")
-        if len(raw) <= text_limit:
-            return value
-        marker = "...[clipped]..."
-        kept = text_limit - len(marker.encode())
-        return raw[:kept].decode("utf-8", errors="ignore") + marker
-    if value is None or isinstance(value, bool | int | float):
+        return {str(key): _compact(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_compact(item) for item in value]
+    if value is None or isinstance(value, (bool, int, float, str)):
         return value
-    return _compact(str(value), text_limit)
+    return str(value)
 
 
 def _bounded_json(value: Any) -> str:
-    for text_limit in (1_200, 600, 300, 150):
-        rendered = json.dumps(
-            _compact(value, text_limit),
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        if len(rendered.encode("utf-8")) <= MAX_EVIDENCE_BYTES:
-            return rendered
-    raise ValueError("typed evidence package exceeds 16 KiB")
+    return json.dumps(_compact(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _empty_framer() -> dict[str, Any]:
