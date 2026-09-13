@@ -72,6 +72,7 @@ def test_incomplete_or_oversized_transfer_is_rejected_and_disposed(mode):
                 return ExecResult(0, "", "")
             if command.startswith("wc"):
                 return ExecResult(0, "100" if mode == "oversized" else "4", "")
+            assert command.startswith("bash -o pipefail -c ")
             return ExecResult(0, "invalid!" if mode == "bad_encoding" else "YQ==", "", mode == "truncated")
 
         async def remove_file(self, path):

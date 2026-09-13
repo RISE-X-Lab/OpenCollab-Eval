@@ -16,7 +16,11 @@ CHUNK_BYTES = 64 * 1024
 
 def _checked_stdout(result: Any) -> str:
     if result.returncode != 0 or result.stdout_truncated or result.stderr_truncated:
-        raise RuntimeError("complete diff transfer failed or was truncated")
+        raise RuntimeError(
+            f"complete diff transfer failed or was truncated: exit={result.returncode}, "
+            f"stdout_truncated={result.stdout_truncated}, stderr_truncated={result.stderr_truncated}; "
+            f"{result.stderr[:500]}"
+        )
     return result.stdout
 
 
@@ -47,10 +51,12 @@ async def capture_complete_diff(
             raise ValueError(f"captured diff exceeds result record limit of {max_bytes} bytes")
         chunks = []
         for offset in range(0, size, CHUNK_BYTES):
-            result = await await_teardown(env.exec_cmd(
-                f"set -o pipefail; dd if={quoted} bs={CHUNK_BYTES} "
+            pipeline = (
+                f"dd if={quoted} bs={CHUNK_BYTES} "
                 f"skip={offset // CHUNK_BYTES} count=1 2>/dev/null | base64"
-            ))
+            )
+            # Local and custom environments may dispatch through POSIX sh.
+            result = await await_teardown(env.exec_cmd(f"bash -o pipefail -c {shlex.quote(pipeline)}"))
             encoded = "".join(_checked_stdout(result).split())
             try:
                 chunk = base64.b64decode(encoded, validate=True)
