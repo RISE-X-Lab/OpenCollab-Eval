@@ -32,7 +32,7 @@ _PUBLIC_NAMES = {
     "opencollab.tools": frozenset(
         {"BuiltinToolName", "Tool", "VerificationTool", "builtin_tools"}
     ),
-    "opencollab.workflows": frozenset({"WorkflowContext", "workflow"}),
+    "opencollab.workflows": frozenset({"WorkflowContext", "CandidateRun", "workflow"}),
 }
 
 
@@ -433,7 +433,10 @@ def test_single_agent_generation_delegates_lifecycle_to_public_facade() -> None:
     assert forbidden_names.isdisjoint(imported_names)
     assert lifecycle_calls == []
     assert helper_definitions == []
-    assert {"OpenCollab", "RunResult", "attach_container", "builtin_tools"} <= imported_names
+    assert {"OpenCollab", "RunResult", "attach_container"} <= imported_names
+    assert any(isinstance(node, ast.keyword) and node.arg == "tools"
+               and isinstance(node.value, ast.Constant) and node.value.value == "coding"
+               for node in ast.walk(tree))
 
 
 def test_workflow_documentation_uses_packaged_layout() -> None:

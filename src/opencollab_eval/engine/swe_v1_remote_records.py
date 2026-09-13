@@ -10,6 +10,7 @@ from opencollab_eval.engine.swe_v1_remote_core import *
 from opencollab_eval.engine.swe_v1_remote_health import http_health  # noqa: F401
 from opencollab_eval.engine.swe_v1_remote_state import *
 from opencollab_eval.patch_diff import *
+from opencollab_eval.runtime_config import effective_generation_limits, resolve_generation_environment
 
 
 def now():
@@ -115,8 +116,6 @@ def append_jsonl(path, value):
                 fcntl.flock(fd, fcntl.LOCK_UN)
         finally:
             os.close(fd)
-
-
 def run(args, timeout=60):
     try:
         result = subprocess.run(args, text=True, capture_output=True, timeout=timeout)
@@ -127,8 +126,6 @@ def run(args, timeout=60):
         "stdout": result.stdout.strip(),
         "stderr": result.stderr.strip(),
     }
-
-
 def load_dataset(selected_start, selected_limit):
     if not dataset_path.exists():
         raise RuntimeError(f"missing dataset: {dataset_path}")
@@ -151,8 +148,6 @@ def load_dataset(selected_start, selected_limit):
         if len(rows) >= selected_limit:
             break
     return rows
-
-
 def validate_task_identity(value):
     if not isinstance(value, str) or not value or value in {".", ".."}:
         raise ValueError("instance_id must be one non-empty path component")
@@ -168,8 +163,6 @@ def validate_task_identity(value):
     if len(encoded) > MAX_TASK_ID_BYTES:
         raise ValueError(f"instance_id exceeds {MAX_TASK_ID_BYTES} UTF-8 bytes")
     return value
-
-
 def parse_literal_list(value):
     if isinstance(value, list):
         return [str(item) for item in value if str(item)]
@@ -186,11 +179,8 @@ def parse_literal_list(value):
         if isinstance(parsed, list):
             return [str(item) for item in parsed if str(item)]
     return [text]
-
-
 def eval_model_patch(prediction):
     return filter_model_patch_for_eval(prediction_patch(prediction))
-
 
 def eval_candidate_source_paths(prediction):
     paths = []
@@ -204,9 +194,7 @@ def eval_candidate_source_paths(prediction):
 
 
 def eval_python_source_paths(prediction):
-    return [
-        path for path in eval_candidate_source_paths(prediction) if path.endswith(".py")
-    ]
+    return [path for path in eval_candidate_source_paths(prediction) if path.endswith(".py")]
 
 
 def model_patch_filter_evidence(prediction):
@@ -247,6 +235,12 @@ def latest_pair(run_dir, task):
             return prediction, None, "record_id_patch_sha_mismatch"
         if current_sha and not metric_sha:
             return prediction, None, "record_id_patch_sha_missing"
+        if metric.get("agent_status") in {"stopped", "failed"}:
+            from opencollab_eval.generation.gen_prediction_recovery import evaluation_candidate_pair
+
+            candidate_pair = evaluation_candidate_pair(run_dir, prediction, metric)
+            if candidate_pair is not None:
+                return *candidate_pair, "recovered_record_id"
         return prediction, metric, "record_id"
     if current_sha:
         for metric in reversed(metrics):
@@ -262,14 +256,14 @@ def latest_pair(run_dir, task):
         return prediction, None, "missing_metric_for_patch_sha"
     return prediction, metrics[-1] if metrics else None, "legacy_latest"
 
+
 def generation_runtime_identity():
+    limits = effective_generation_limits(budget=budget, max_steps=max_steps, environment=effective_workflow_env())
     identity = {
-        "budget": budget,
+        "budget": limits[0],
         "invocation_id": invocation_id,
-        "max_steps": max_steps,
-        "llm_base_url_sha256": hashlib.sha256(
-            remote_proxy_base_url.encode("utf-8")
-        ).hexdigest(),
+        "max_steps": limits[1],
+        "llm_base_url_sha256": hashlib.sha256(remote_proxy_base_url.encode("utf-8")).hexdigest(),
         "workflow_env": effective_workflow_env(),
     }
     if run_id:
@@ -296,9 +290,7 @@ def generation_runtime_identity():
         if value:
             identity[key] = value
     if workflow == "openhands-external":
-        identity["openhands_empty_patch_rejections"] = (
-            openhands_empty_patch_rejections
-        )
+        identity["openhands_empty_patch_rejections"] = openhands_empty_patch_rejections
         identity["openhands_command_sha256"] = openhands_command_sha256
     return identity
 
@@ -308,7 +300,7 @@ def effective_workflow_env():
         "OPENCOLLAB_THINKING": "false",
         "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT": "900",
     }
-    values.update({str(key): str(value) for key, value in workflow_env.items()})
+    values.update(resolve_generation_environment(workflow_env))
     return dict(sorted(values.items()))
 
 
@@ -340,9 +332,7 @@ def empty_patch_retry_count(run_dir, task):
     return sum(
         1
         for row in read_jsonl(base_run_dir / "events.jsonl")
-        if row.get("phase") == "empty_patch_retry"
-        and row.get("task") == task
-        and row.get("run_dir") == str(run_dir)
+        if row.get("phase") == "empty_patch_retry" and row.get("task") == task and row.get("run_dir") == str(run_dir)
     )
 
 
@@ -351,7 +341,12 @@ def generation_done(run_dir, task, *, require_identity=True):
     identity_status = historical_generation_identity_status(prediction, metric, task)
     completed = identity_status != "invalid"
     if completed and require_identity:
-        completed = identity_status == "verified" and generation_identity_matches(
+        capture_verified = False
+        if identity_status == "interrupted_verified" and metric.get("recovery_kind") == "failed_quiesced_capture":
+            from opencollab_eval.generation.gen_prediction_recovery import failed_capture_recovery_valid
+
+            capture_verified = failed_capture_recovery_valid(prediction, metric)
+        completed = (identity_status == "verified" or capture_verified) and generation_identity_matches(
             prediction,
             metric,
         )
@@ -359,6 +354,10 @@ def generation_done(run_dir, task, *, require_identity=True):
 
 
 def historical_generation_identity_status(prediction, metric, task):
+    if isinstance(metric, dict) and metric.get("recovery_kind") == "failed_quiesced_capture":
+        from opencollab_eval.generation.gen_prediction_recovery import failed_capture_recovery_valid
+
+        return "interrupted_verified" if failed_capture_recovery_valid(prediction, metric) else "invalid"
     """Classify a historical generation artifact using full patch identity."""
     if not isinstance(prediction, dict) or not isinstance(metric, dict):
         return "invalid"
@@ -398,6 +397,7 @@ def historical_generation_identity_status(prediction, metric, task):
     return "invalid"
 
 
+
 def completed_generation_identity(prediction, metric, task, *, require_submission_integrity=True):
     if not isinstance(prediction, dict) or not isinstance(metric, dict):
         return False
@@ -416,8 +416,7 @@ def completed_generation_identity(prediction, metric, task, *, require_submissio
         return False
     submission_integrity = metric_submission_integrity(metric)
     if submission_integrity == SUBMISSION_INTEGRITY_INELIGIBLE or (
-        require_submission_integrity
-        and submission_integrity != SUBMISSION_INTEGRITY_PROVEN
+        require_submission_integrity and submission_integrity != SUBMISSION_INTEGRITY_PROVEN
     ):
         return False
     if require_submission_integrity and not current_generation_proof_valid(
@@ -448,37 +447,41 @@ def completed_generation_identity(prediction, metric, task, *, require_submissio
     return False
 
 
-GENERATION_INTEGRITY_FIELDS = (
-    "generation_image_id",
-    "submission_eligible",
-    "execution_quiesced",
-    "patch_extraction_succeeded",
-    "injected_path_cleanup_proven",
-    "harness_artifact_exclusion_proven",
-    "checkpoint_restore_integrity_proven",
-    "task_stage_integrity_proven",
-    "test_patch_isolation_failed",
-    "worktree_integrity_proven",
-    "patch_produced",
-    "checkpoint_result",
-    "solver_git_snapshot",
-    "trusted_patch_extraction",
-)
 
+def terminal_generation_result(prediction, metric, task, pairing):
+    """Classify a saved explicit terminal outcome that has no evaluable capture."""
+    outcome = generation_outcome_evidence(metric, prediction_patch(prediction))
+    if not outcome or row_record_id(prediction) != row_record_id(metric):
+        return None
+    if not generation_identity_matches(prediction, metric, require_patch=False):
+        return None
+    if outcome["technical_failure"]:
+        status = "technical_generation_adapter_or_api_failure"
+    elif not prediction_patch(prediction).strip() and current_generation_proof_valid(metric, ""):
+        status = "intrinsic_unresolved"
+    elif outcome["oc_failure"]:
+        status = "intrinsic_unresolved"
+        outcome.update(candidate_capture_available=False, candidate_capture_status="unavailable_after_oc_failure")
+    else:
+        return None
+    return dict(
+        status=status,
+        task=task,
+        pairing=pairing,
+        record_id=row_record_id(prediction),
+        patch_sha256=row_patch_sha(prediction),
+        workflow_status=workflow_status(metric),
+        patch_len=len(prediction_patch(prediction)),
+        **outcome,
+    )
 
-def generation_integrity_evidence(metric):
-    if not isinstance(metric, dict):
-        return {}
-    return {
-        field: metric[field]
-        for field in GENERATION_INTEGRITY_FIELDS
-        if field in metric
-    }
 
 
 def generation_done_result(task, prediction, metric, pairing, **extra):
     result = {
-        "status": "generation_done",
+        "status": "generation_candidate_captured"
+        if metric.get("recovery_kind") == "failed_quiesced_capture"
+        else "generation_done",
         "task": task,
         "pairing": pairing,
         "patch_len": len(eval_model_patch(prediction)),
@@ -488,6 +491,7 @@ def generation_done_result(task, prediction, metric, pairing, **extra):
         "patch_sha256": row_patch_sha(prediction),
         "submission_integrity": metric_submission_integrity(metric),
     }
+    result.update(generation_outcome_evidence(metric, prediction_patch(prediction)))
     result.update(model_patch_filter_evidence(prediction))
     result.update(generation_integrity_evidence(metric))
     result.update({key: value for key, value in extra.items() if value is not None})
@@ -518,12 +522,9 @@ def empty_patch_result(task, prediction, metric, pairing, **extra):
         "workflow_status": workflow_status(metric),
         "record_id": row_record_id(prediction),
         "patch_sha256": hashlib.sha256(b"").hexdigest(),
-        "submission_integrity": (
-            "empty_patch_proven"
-            if empty_patch_integrity_proven
-            else "empty_patch_unproven"
-        ),
+        "submission_integrity": ("empty_patch_proven" if empty_patch_integrity_proven else "empty_patch_unproven"),
     }
+    result.update(generation_outcome_evidence(metric, prediction_patch(prediction)))
     result.update(generation_integrity_evidence(metric))
     result.update({key: value for key, value in extra.items() if value is not None})
     return result
@@ -545,9 +546,7 @@ def eval_attempt_count(
     if expected_eval_spec_sha256 and re.fullmatch(r"[0-9a-f]{64}", expected_eval_spec_sha256) is None:
         expected_eval_spec_sha256 = ""
     source_patch_sha256 = row_patch_sha(prediction)
-    eval_patch_sha256 = str(
-        expected_eval_patch_sha256 or patch_sha(eval_model_patch(prediction))
-    )
+    eval_patch_sha256 = str(expected_eval_patch_sha256 or patch_sha(eval_model_patch(prediction)))
     record_id = row_record_id(prediction)
     return sum(
         1
@@ -555,10 +554,7 @@ def eval_attempt_count(
         if item.get("phase") == "eval_attempt_started"
         and item.get("task") == task
         and item.get("eval_image_id") == expected_eval_image_id
-        and (
-            not expected_eval_spec_sha256
-            or item.get("eval_spec_sha256") == expected_eval_spec_sha256
-        )
+        and (not expected_eval_spec_sha256 or item.get("eval_spec_sha256") == expected_eval_spec_sha256)
         and patch_sha_matches(
             str(item.get("eval_patch_sha256") or item.get("patch_sha256") or ""),
             eval_patch_sha256,
@@ -796,3 +792,8 @@ exit 2
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]
+
+from opencollab_eval.engine.swe_v1_generation_outcomes import (  # noqa: E402, F401
+    generation_integrity_evidence,
+    generation_outcome_evidence,
+)

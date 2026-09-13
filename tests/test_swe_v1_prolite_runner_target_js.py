@@ -100,7 +100,6 @@ def test_nodebb_target_file_with_colons_stays_on_mocha_path(tmp_path: Path):
         json.dumps(["test/topics.js | suite::case should pass"]),
         encoding="utf-8",
     )
-
     command = namespace["prolite_test_command"](
         {
             "repo": "NodeBB/NodeBB",
@@ -110,7 +109,6 @@ def test_nodebb_target_file_with_colons_stays_on_mocha_path(tmp_path: Path):
         ["test/topics.js | suite::case should pass"],
         str(target_file),
     )
-
     assert "python3 -m pytest" not in command
     assert str(target_file) in command
     assert "missing declared Mocha titles" in command
@@ -773,9 +771,10 @@ def test_tutanota_uses_real_test_runner_and_proves_completed_suites():
     assert "ServiceExecutor" in command
     assert "opencollabResults" in command
     assert command.endswith("&& npm_config_nodedir=/usr/local npm run test:app")
-    assert command.index("const errCount = o.report(results, stats)") < command.index(
-        "OPENCOLLAB_OSPEC_RESULTS"
-    )
+    from opencollab_eval.engine.swe_v1_remote_target_proof import _patch_tutanota_suite
+
+    patched = _patch_tutanota_suite("const errCount = o.report(results, stats)\n", expected)
+    assert patched.index("const errCount = o.report(results, stats)") < patched.index("OPENCOLLAB_OSPEC_RESULTS")
     assert command_namespace["prolite_test_command"](
         {"repo": "tutao/tutanota", "repo_language": "ts", "selected_test_files_to_run": []},
         [],

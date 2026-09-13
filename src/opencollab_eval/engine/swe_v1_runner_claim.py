@@ -6,10 +6,6 @@ import hashlib
 import json
 from typing import Any
 
-from opencollab_eval.engine.swe_v1_remote_state import (
-    DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
-)
-
 
 def runner_claim_identity(config: dict[str, Any]) -> dict[str, Any]:
     """Return the stable fields that may identify a recoverable remote run."""
@@ -26,10 +22,7 @@ def runner_claim_identity(config: dict[str, Any]) -> dict[str, Any]:
         "start_index": int(config.get("start_index") or 0),
         "limit": int(config.get("limit") or 0),
         "workflow": str(config.get("workflow") or ""),
-        "workflow_env": {
-            str(key): str(value)
-            for key, value in sorted((config.get("workflow_env") or {}).items())
-        },
+        "workflow_env": {str(key): str(value) for key, value in sorted((config.get("workflow_env") or {}).items())},
         "model_name": str(config.get("model_name") or ""),
         "llm_model": str(config.get("llm_model") or ""),
         "llm_provider": str(config.get("llm_provider") or ""),
@@ -43,35 +36,19 @@ def runner_claim_identity(config: dict[str, Any]) -> dict[str, Any]:
         "swe_timeout": int(config.get("swe_timeout") or 0),
         "task_wall_timeout": int(config.get("task_wall_timeout") or 0),
         "eval_timeout": int(config.get("eval_timeout") or 0),
-        "eval_container_bind_timeout": int(
-            config.get(
-                "eval_container_bind_timeout",
-                DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
-            )
-        ),
         "llm_timeout": int(config.get("llm_timeout") or 0),
         "max_task_starts": max(0, min(3, int(config.get("max_task_starts") or 0))),
-        "max_empty_patch_retries": max(
-            0, min(1, int(config.get("max_empty_patch_retries") or 0))
-        ),
-        "max_eval_attempts": max(
-            1, min(2, int(config.get("max_eval_attempts") or 1))
-        ),
+        "max_empty_patch_retries": max(0, min(1, int(config.get("max_empty_patch_retries") or 0))),
+        "max_eval_attempts": max(1, min(2, int(config.get("max_eval_attempts") or 1))),
         "eval_only": bool(config.get("eval_only", False)),
         "eval_dir_name": str(config.get("eval_dir_name") or "official_eval"),
         "dry_run": bool(config.get("dry_run", False)),
         "expected_task": str(config.get("expected_task") or ""),
         "expected_record_id": str(config.get("expected_record_id") or ""),
-        "expected_source_patch_sha256": str(
-            config.get("expected_source_patch_sha256") or ""
-        ),
-        "expected_eval_patch_sha256": str(
-            config.get("expected_eval_patch_sha256") or ""
-        ),
+        "expected_source_patch_sha256": str(config.get("expected_source_patch_sha256") or ""),
+        "expected_eval_patch_sha256": str(config.get("expected_eval_patch_sha256") or ""),
         "openhands_command_sha256": (
-            hashlib.sha256(openhands_command.encode("utf-8")).hexdigest()
-            if openhands_command
-            else ""
+            hashlib.sha256(openhands_command.encode("utf-8")).hexdigest() if openhands_command else ""
         ),
     }
 

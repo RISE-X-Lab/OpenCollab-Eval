@@ -45,7 +45,7 @@ _ADAPTER_COVERAGE = {
     "pytest": "exact_targets",
 }
 _JAVASCRIPT_LANGUAGES = {"js", "javascript", "ts", "typescript"}
-_GO_TEST_ROOT = re.compile(r"Test[A-Za-z0-9_]*")
+_GO_TEST_ROOT = re.compile(r"(?:Test|Fuzz)[A-Za-z0-9_]*")
 
 
 def javascript_runtime_dependencies(adapter: str) -> list[dict[str, Any]]:
@@ -56,7 +56,7 @@ def javascript_runtime_dependencies(adapter: str) -> list[dict[str, Any]]:
         if adapter == "mocha-json-stream"
         else "node_modules"
     )
-    return [
+    dependencies = [
         {
             "root": "node_modules",
             "required_paths": [runner],
@@ -76,6 +76,31 @@ def javascript_runtime_dependencies(adapter: str) -> list[dict[str, Any]]:
             "candidate_protected": False,
         },
     ]
+
+    if adapter == "mocha-json-stream":
+        dependencies.extend(
+            [
+                {
+                    "root": "build/public",
+                    "required_paths": ["build/public/templates"],
+                    "kind": "directory",
+                    "candidate_protected": True,
+                },
+                {
+                    "root": "build/cache-buster",
+                    "required_paths": ["build/cache-buster"],
+                    "kind": "file",
+                    "candidate_protected": True,
+                },
+                {
+                    "root": "build/active_plugins.json",
+                    "required_paths": ["build/active_plugins.json"],
+                    "kind": "file",
+                    "candidate_protected": True,
+                },
+            ]
+        )
+    return dependencies
 
 
 def previous_javascript_runtime_dependencies(adapter: str) -> list[dict[str, Any]]:
@@ -106,8 +131,7 @@ def is_go_test_name(value: str) -> bool:
 def dynamic_go_targets_supported(values: list[str]) -> bool:
     declared = set(values)
     return all(
-        target.split("/", 1)[0] in declared
-        or all(component for component in target.split("/")[1:])
+        target.split("/", 1)[0] in declared or all(component for component in target.split("/")[1:])
         for target in values
     )
 
@@ -149,9 +173,7 @@ def _valid_pytest_plan(plan: dict[str, Any]) -> bool:
     if plan["coverage"] not in {"exact_targets", "parameter_parent_targets"}:
         return False
     has_parameter_fallback = False
-    for batch, command, proof in zip(
-        plan["target_batches"], plan["commands"], plan["proofs"], strict=True
-    ):
+    for batch, command, proof in zip(plan["target_batches"], plan["commands"], plan["proofs"], strict=True):
         if proof.get("kind") != "pytest_structured_reports" or proof.get("targets") != batch:
             return False
         allowed = {
@@ -179,17 +201,11 @@ def _valid_pytest_plan(plan: dict[str, Any]) -> bool:
         has_parameter_fallback = has_parameter_fallback or bool(parents)
         prefixes = (
             "pytest -p opencollab_pytest_proof -q -rA -o addopts= ",
-            "xvfb-run -a python -m pytest --no-xvfb "
-            "-p opencollab_pytest_proof -q -rA -o addopts= ",
+            "xvfb-run -a python -m pytest --no-xvfb -p opencollab_pytest_proof -q -rA -o addopts= ",
         )
-        if command not in {
-            prefix + " ".join(shlex.quote(target) for target in execution)
-            for prefix in prefixes
-        }:
+        if command not in {prefix + " ".join(shlex.quote(target) for target in execution) for prefix in prefixes}:
             return False
-        digest = hashlib.sha256(
-            "\0".join(shlex.split(command)).encode("utf-8")
-        ).hexdigest()
+        digest = hashlib.sha256("\0".join(shlex.split(command)).encode("utf-8")).hexdigest()
         if proof.get("command_sha256") != digest:
             return False
     return has_parameter_fallback == (plan["coverage"] == "parameter_parent_targets")
@@ -214,12 +230,7 @@ def _exact_go_binding(target: str) -> tuple[str, str, str, str] | None:
     parent = pathlib.PurePosixPath(path).parent.as_posix()
     package = "." if parent in {"", "."} else "./" + parent.strip("/")
     pattern = "^" + re.escape(test) + "$"
-    command = (
-        "go test -count=1 -json "
-        + shlex.quote(package)
-        + " -run "
-        + shlex.quote(pattern)
-    )
+    command = "go test -count=1 -json " + shlex.quote(package) + " -run " + shlex.quote(pattern)
     return test, package, path, command
 
 
@@ -349,18 +360,15 @@ def _valid_candidate_source_paths(value: Any) -> bool:
 
 
 def _valid_javascript_plan(plan: dict[str, Any]) -> bool:
-    if (
-        plan["target_batches"] != [plan["declared_targets"]]
-        or len(plan["commands"]) != 1
-        or len(plan["proofs"]) != 1
-    ):
+    if plan["target_batches"] != [plan["declared_targets"]] or len(plan["commands"]) != 1 or len(plan["proofs"]) != 1:
         return False
     proof = plan["proofs"][0]
     if (
         not isinstance(proof, dict)
         or proof.get("kind") != "js_parser_backed_targets"
         or proof.get("targets") != plan["declared_targets"]
-        or set(proof) - {
+        or set(proof)
+        - {
             "kind",
             "targets",
             "repo_language",
@@ -393,14 +401,8 @@ def _valid_javascript_plan(plan: dict[str, Any]) -> bool:
         or not isinstance(test_patch_files, list)
         or any(not isinstance(path, str) or not path for path in test_patch_files)
         or len(set(test_patch_files)) != len(test_patch_files)
-        or test_files != verified_js_test_files(
-            plan["declared_targets"], selected_files, test_patch_files
-        )
-        or (test_files == declared_files)
-        != (
-            "selected_test_files" not in proof
-            and "test_patch_files" not in proof
-        )
+        or test_files != verified_js_test_files(plan["declared_targets"], selected_files, test_patch_files)
+        or (test_files == declared_files) != ("selected_test_files" not in proof and "test_patch_files" not in proof)
         or not isinstance(language, str)
         or language not in _JAVASCRIPT_LANGUAGES
         or not isinstance(repo, str)
@@ -471,35 +473,33 @@ def validated_test_plan_kind(
     if not commands:
         if require_commands:
             return None
-        return EMPTY_PLAN_KIND if plan == {
-            "schema": PLAN_SCHEMA,
-            "adapter": "unsupported",
-            "coverage": "none",
-            "coverage_verified": False,
-            "declared_targets": [],
-            "target_batches": [],
-            "commands": [],
-            "proofs": [],
-            "runtime_dependencies": [],
-        } else None
+        return (
+            EMPTY_PLAN_KIND
+            if plan
+            == {
+                "schema": PLAN_SCHEMA,
+                "adapter": "unsupported",
+                "coverage": "none",
+                "coverage_verified": False,
+                "declared_targets": [],
+                "target_batches": [],
+                "commands": [],
+                "proofs": [],
+                "runtime_dependencies": [],
+            }
+            else None
+        )
     adapter = plan.get("adapter")
     if (
         adapter not in _ADAPTER_COVERAGE
-        or (
-            adapter != "pytest"
-            and plan.get("coverage") != _ADAPTER_COVERAGE[adapter]
-        )
+        or (adapter != "pytest" and plan.get("coverage") != _ADAPTER_COVERAGE[adapter])
         or plan.get("coverage_verified") is not True
         or not declared
         or len(set(declared)) != len(declared)
         or len(commands) != len(target_batches)
         or len(commands) != len(proofs)
         or any(not isinstance(batch, list) or not batch for batch in target_batches)
-        or any(
-            not isinstance(item, str) or not item
-            for batch in target_batches
-            for item in batch
-        )
+        or any(not isinstance(item, str) or not item for batch in target_batches for item in batch)
         or [item for batch in target_batches for item in batch] != declared
         or any(not isinstance(proof, dict) or not proof for proof in proofs)
         or not _valid_runtime_dependencies(runtime_dependencies)

@@ -281,19 +281,14 @@ def test_single_agent_builds_stable_runtime_request(monkeypatch, tmp_path):
     request = runtime.requests[0]
     assert request.prompt == "task"
     assert request.name == "swe_agent"
-    assert request.system_prompt == gp.AGENT_PROMPT.strip()
+    assert getattr(request, "system_prompt", None) is None
     assert request.trace is True
     assert request.artifacts == artifact_dir
     assert request.max_steps == 4
     assert request.budget == 100
     assert request.timeout == 12.5
     assert request.cleanup_timeout == gp.AGENT_CANCELLATION_GRACE_SECONDS
-    assert [type(tool).__name__ for tool in request.tools] == [
-        "BashTool",
-        "FileReadTool",
-        "FileWriteTool",
-        "GrepTool",
-    ]
+    assert request.tools == "coding"
     assert metrics["workflow_status"] == "done"
 
 
@@ -432,7 +427,7 @@ def test_single_agent_failed_done_phase_cannot_become_submission_eligible(
     assert metrics["workflow_status"] == "error"
     assert metrics["session_quiesced"] is True
     assert metrics["execution_quiesced"] is False
-    assert metrics["candidate_probe_eligible"] is False
+    assert metrics["candidate_probe_eligible"] is True
     assert metrics["submission_eligible"] is False
     assert metrics["error_type"] == "RuntimeError"
 

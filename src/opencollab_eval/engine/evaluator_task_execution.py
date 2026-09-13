@@ -14,6 +14,7 @@ from opencollab_eval.engine.async_runtime import (
     CallerTimeoutError,
     abandon_on_timeout,
 )
+from opencollab_eval.engine.evidence_recovery import record_exception
 
 
 @dataclass(frozen=True)
@@ -24,7 +25,7 @@ class ExecutionConfig:
     base_url: str | None
     output_dir: str
     prompt: str
-    max_steps: int
+    max_steps: int | None
     workflow: Any
     temperature: float
     top_p: float | None
@@ -33,6 +34,7 @@ class ExecutionConfig:
     thinking_params: dict | None
     wire_protocol: str
     reasoning_effort: str | None
+    llm_timeout: float
     llm_connect_timeout: float
     llm_first_event_timeout: float
     llm_stream_idle_timeout: float
@@ -133,9 +135,7 @@ def resolve_harness_artifacts(
     output_dir: str,
     trajectories_dir: str,
 ) -> None:
-    candidates: list[str | os.PathLike[str]] = list(
-        state.task.harness_artifact_paths
-    )
+    candidates: list[str | os.PathLike[str]] = list(state.task.harness_artifact_paths)
     output_relative = facade._workspace_relative_host_path(state.env, output_dir)
     if output_relative is not None and output_relative != Path("."):
         candidates.append(output_dir)
@@ -155,9 +155,7 @@ def resolve_harness_artifacts(
         state.env,
         candidates,
     )
-    bound_error = facade._mapped_artifact_path_bound_error(
-        state.harness_artifact_paths
-    )
+    bound_error = facade._mapped_artifact_path_bound_error(state.harness_artifact_paths)
     if bound_error:
         state.harness_artifact_exclusion_proven = False
         raise RuntimeError(bound_error)
@@ -188,13 +186,9 @@ async def prepare_checkpoint_and_test_patch(
                 ),
             )
             state.checkpoint_result = {"restore": restore_result.to_dict()}
-            state.checkpoint_restore_integrity_proven = (
-                restore_result.worktree_integrity_proven
-            )
+            state.checkpoint_restore_integrity_proven = restore_result.worktree_integrity_proven
             if not state.checkpoint_restore_integrity_proven:
-                raise RuntimeError(
-                    "checkpoint restore left worktree integrity unproven"
-                )
+                raise RuntimeError("checkpoint restore left worktree integrity unproven")
     await _inject_test_patch(facade, state, controller)
     if state.checkpoint is not None:
         controller.remaining_time()
@@ -263,6 +257,7 @@ async def run_session_or_workflow(
             thinking_params=config.thinking_params,
             wire_protocol=config.wire_protocol,
             reasoning_effort=config.reasoning_effort,
+            llm_timeout=config.llm_timeout,
             llm_connect_timeout=config.llm_connect_timeout,
             llm_first_event_timeout=config.llm_first_event_timeout,
             llm_stream_idle_timeout=config.llm_stream_idle_timeout,
@@ -293,6 +288,7 @@ async def run_session_or_workflow(
         thinking_params=config.thinking_params,
         wire_protocol=config.wire_protocol,
         reasoning_effort=config.reasoning_effort,
+        llm_timeout=config.llm_timeout,
         llm_connect_timeout=config.llm_connect_timeout,
         llm_first_event_timeout=config.llm_first_event_timeout,
         llm_stream_idle_timeout=config.llm_stream_idle_timeout,
@@ -357,5 +353,5 @@ async def execute_eval_run(
     except CallerTimeoutError:
         state.error = f"Task timed out after {state.task.timeout}s"
     except Exception as exc:
-        state.error = f"{type(exc).__name__}: {exc}"
+        state.error = record_exception(prepared.tracer, exc)
     return state

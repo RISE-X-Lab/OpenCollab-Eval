@@ -41,9 +41,7 @@ def kimi_response_model_matches(requested: str, actual: object) -> bool:
     if requested_model == "k3":
         return actual_model == "k3"
     if requested_model == "kimi-for-coding":
-        return actual_model in {"kimi-for-coding", "kimi-k2.7"} or actual_model.startswith(
-            ("kimi-k2.7-", "kimi-k2.7_")
-        )
+        return actual_model in {"kimi-for-coding", "kimi-k2.7"} or actual_model.startswith(("kimi-k2.7-", "kimi-k2.7_"))
     return False
 
 
@@ -73,6 +71,29 @@ DEFAULT_WORKFLOW_SOLVERS: dict[str, WorkflowSolverSpec] = {
         name="g1.1",
         workflow_name="validation-council-solve",
         description="G1.1 validation council cooperation strategy.",
+        max_attempts=3,
+        required_runtime_options=_MODEL_RUNTIME_OPTIONS,
+    ),
+    "g20-exp1": WorkflowSolverSpec(
+        name="g20-exp1",
+        workflow_name="evidence-action-council-v1",
+        description="Experimental evidence-carrying repair council.",
+        max_attempts=1,
+        default_budget_tokens=1_600_000,
+        required_runtime_options=_MODEL_RUNTIME_OPTIONS,
+    ),
+    "g20-exp2": WorkflowSolverSpec(
+        name="g20-exp2",
+        workflow_name="candidate-tournament-council-v1",
+        description="Adaptive dual-candidate repair tournament.",
+        max_attempts=1,
+        default_budget_tokens=1_600_000,
+        required_runtime_options=_MODEL_RUNTIME_OPTIONS,
+    ),
+    "g11-wired": WorkflowSolverSpec(
+        name="g11-wired",
+        workflow_name="validation-council-wired-v1",
+        description="G1.1 wiring ablation with complete evidence handoffs.",
         max_attempts=3,
         required_runtime_options=_MODEL_RUNTIME_OPTIONS,
     ),

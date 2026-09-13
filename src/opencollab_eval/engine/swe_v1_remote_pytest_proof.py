@@ -45,8 +45,7 @@ def _pytest_controller_proof_matches(events, command_sha256):
             raw_event.pop("controller", None)
         raw_events.append(raw_event)
     raw_payload = b"".join(
-        (json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
-        for event in raw_events
+        (json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8") for event in raw_events
     )
     return finish_controller.get("event_stream_sha256") == hashlib.sha256(raw_payload).hexdigest()
 
@@ -127,15 +126,10 @@ def _pytest_structured_execution(
     ):
         return None
     fallback_parents = fallback_parents or []
-    if fallback_parents and not _pytest_fallback_parents_match_targets(
-        targets, fallback_parents
-    ):
+    if fallback_parents and not _pytest_fallback_parents_match_targets(targets, fallback_parents):
         return None
     allowed_targets = [*targets, *fallback_parents]
-    if any(
-        not any(_pytest_target_matches_node(target, node) for target in allowed_targets)
-        for node in nodeids
-    ):
+    if any(not any(_pytest_target_matches_node(target, node) for target in allowed_targets) for node in nodeids):
         return None
     reports = {}
     for event in events:
@@ -155,9 +149,7 @@ def _pytest_structured_execution(
         reports.setdefault(node, {})[phase] = outcome
     target_nodes = {}
     for target in targets:
-        matching = [
-            node for node in nodeids if _pytest_target_matches_node(target, node)
-        ]
+        matching = [node for node in nodeids if _pytest_target_matches_node(target, node)]
         if not matching:
             parent = _pytest_parameter_parent(target)
             if not parent or parent not in fallback_parents:
@@ -186,14 +178,8 @@ def _pytest_structured_proof_matches(
         return False
     exitstatus, reports, target_nodes = execution
     complete_pass = {"setup": "passed", "call": "passed", "teardown": "passed"}
-    declared_nodes = {
-        node for matching in target_nodes.values() for node in matching
-    }
-    if not all(
-        reports.get(node) == complete_pass
-        for matching in target_nodes.values()
-        for node in matching
-    ):
+    declared_nodes = {node for matching in target_nodes.values() for node in matching}
+    if not all(reports.get(node) == complete_pass for matching in target_nodes.values() for node in matching):
         return False
     if exitstatus == 0:
         return True
@@ -223,9 +209,7 @@ def _pytest_structured_failure_proof_matches(
         return False
     exitstatus, reports, target_nodes = execution
     return exitstatus != 0 and any(
-        "failed" in reports.get(node, {}).values()
-        for matching in target_nodes.values()
-        for node in matching
+        "failed" in reports.get(node, {}).values() for matching in target_nodes.values() for node in matching
     )
 
 
@@ -244,11 +228,7 @@ def _pytest_structured_skip_proof_matches(
     if execution is None:
         return False
     exitstatus, reports, target_nodes = execution
-    selected = [
-        reports.get(node, {})
-        for matching in target_nodes.values()
-        for node in matching
-    ]
+    selected = [reports.get(node, {}) for matching in target_nodes.values() for node in matching]
     complete_pass = {"setup": "passed", "call": "passed", "teardown": "passed"}
     return bool(
         exitstatus == 0
@@ -280,10 +260,7 @@ def _python_repo_module_roots(repo, target_file):
     slug = str(repo or "").rsplit("/", 1)[-1].replace("-", "_").lower()
     if re.fullmatch(r"[a-z_][a-z0-9_]*", slug):
         roots.add(slug)
-    parts = [
-        part.replace("-", "_").lower()
-        for part in pathlib.PurePosixPath(str(target_file or "")).parts[:-1]
-    ]
+    parts = [part.replace("-", "_").lower() for part in pathlib.PurePosixPath(str(target_file or "")).parts[:-1]]
     candidate = ""
     if parts and parts[0] in _PYTHON_TEST_ROOTS:
         candidate = ""
@@ -299,16 +276,11 @@ def _python_repo_module_roots(repo, target_file):
 def _python_module_is_repo_local(module, repo, target_file):
     if not re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", str(module or "")):
         return False
-    return module.split(".", 1)[0].lower() in _python_repo_module_roots(
-        repo, target_file
-    )
+    return module.split(".", 1)[0].lower() in _python_repo_module_roots(repo, target_file)
 
 
 def _python_test_patch_import_bindings(row, targets):
-    target_files = {
-        str(target).split("::", 1)[0].replace("\\", "/").removeprefix("./")
-        for target in targets
-    }
+    target_files = {str(target).split("::", 1)[0].replace("\\", "/").removeprefix("./") for target in targets}
     if len(target_files) != 1:
         return []
     target_file = next(iter(target_files))
@@ -419,11 +391,7 @@ def _pytest_candidate_module_failure_matches(log_text, candidate_source_paths):
     stem = next(iter(modules)).replace(".", "/")
     base_expected = (stem + ".py", stem + "/__init__.py")
     expected = set(base_expected)
-    expected.update(
-        root + "/" + suffix
-        for root in _PYTHON_SOURCE_LAYOUT_ROOTS
-        for suffix in base_expected
-    )
+    expected.update(root + "/" + suffix for root in _PYTHON_SOURCE_LAYOUT_ROOTS for suffix in base_expected)
     return any(path in expected for path in candidate_source_paths)
 
 
@@ -448,8 +416,7 @@ def _pytest_collection_failure_proof_matches(
         len(events) != 3
         or any(not isinstance(event, dict) for event in events)
         or not _pytest_controller_proof_matches(events, command_sha256)
-        or [event.get("event") for event in events]
-        != ["session_start", "collection_finish", "session_finish"]
+        or [event.get("event") for event in events] != ["session_start", "collection_finish", "session_finish"]
         or events[1].get("nodeids") != []
         or isinstance(events[2].get("exitstatus"), bool)
         or not isinstance(events[2].get("exitstatus"), int)
@@ -460,12 +427,7 @@ def _pytest_collection_failure_proof_matches(
     for target in targets:
         path = target.split("::", 1)[0].replace("\\", "/").removeprefix("./")
         pure = pathlib.PurePosixPath(path)
-        if (
-            not path.endswith(".py")
-            or pure.is_absolute()
-            or ".." in pure.parts
-            or "\x00" in path
-        ):
+        if not path.endswith(".py") or pure.is_absolute() or ".." in pure.parts or "\x00" in path:
             return False
         if path not in target_files:
             target_files.append(path)
@@ -484,8 +446,7 @@ def _pytest_collection_failure_proof_matches(
         or not candidate_source_paths
         or len(candidate_source_paths) > 1024
         or len(set(candidate_source_paths)) != len(candidate_source_paths)
-        or sum(len(str(path).encode("utf-8")) for path in candidate_source_paths)
-        > 128 * 1024
+        or sum(len(str(path).encode("utf-8")) for path in candidate_source_paths) > 128 * 1024
         or any(
             not isinstance(path, str)
             or not path.endswith(".py")
@@ -499,16 +460,20 @@ def _pytest_collection_failure_proof_matches(
         return False
 
     def traceback_has(path):
-        return re.search(
+        colon_frame = re.search(
             r"(?m)^(?:.*?/)?" + re.escape(path) + r":[0-9]+(?::|$)",
             log_text,
-        ) is not None
+        )
+        file_frame = re.search(
+            r"(?m)^\s*(?:E\s+)?File [\"'](?:.*?/)?" + re.escape(path) + r"[\"'], line [0-9]+(?:,|$)",
+            log_text,
+        )
+        return colon_frame is not None or file_frame is not None
 
     target_traceback = any(traceback_has(path) for path in target_files)
     semantic_exception = re.search(
-        r"(?m)^(?:E\s+)?(?:AssertionError|AttributeError|ImportError|KeyError|"
-        r"ModuleNotFoundError|NameError|NotImplementedError|RuntimeError|"
-        r"SyntaxError|TypeError|ValueError)(?::|$)",
+        r"(?m)^(?:E\s+)?(?:[A-Za-z_]\w*\.)*"
+        r"[A-Za-z_]\w*(?:Error|Exception)(?::|$)",
         log_text,
     )
     candidate_traceback = any(traceback_has(path) for path in candidate_source_paths)
@@ -516,11 +481,14 @@ def _pytest_collection_failure_proof_matches(
         log_text,
         candidate_source_paths,
     )
+    collection_bootstrap_traceback = re.search(
+        r"(?m)^(?:.*?/)?(?:test|tests)(?:/[^/:]+)*/conftest\.py:[0-9]+(?::|$)",
+        log_text,
+    )
     return bool(
-        target_traceback
+        (target_traceback or collection_bootstrap_traceback)
         and ((semantic_exception and candidate_traceback) or candidate_module_failure)
     )
-
 
 
 def _bounded_command_batches(items, command_prefix, max_args=80, max_chars=24000):
@@ -563,9 +531,7 @@ def python_parameter_fallback_batches(tests, max_args=80, max_chars=24000):
         candidate_command = "pytest -p opencollab_pytest_proof -q -rA -o addopts= " + " ".join(
             shlex.quote(value) for value in candidate_execution
         )
-        if current_declared and (
-            len(candidate_execution) > max_args or len(candidate_command) > max_chars
-        ):
+        if current_declared and (len(candidate_execution) > max_args or len(candidate_command) > max_chars):
             declared_batches.append(current_declared)
             execution_batches.append(current_execution)
             current_declared = []
@@ -600,12 +566,16 @@ def compact_python_test_targets(tests, selected, max_args=80, max_chars=24000):
 def prolite_pytest_proof_plugin_source():
     """Return the worker plugin that streams bounded events to the controller."""
 
-    return r'''import json
+    return r"""import json
 import os
 
 _fd = int(os.environ.pop("OPENCOLLAB_PYTEST_EVENT_FD"))
+_os_write = os.write
 _payload_bytes = 0
 _MAX_PROOF_BYTES = 8 * 1024 * 1024
+_session_started = False
+_collection_finished = False
+_session_finished = False
 
 
 def _emit(event):
@@ -615,19 +585,39 @@ def _emit(event):
         raise OSError("pytest proof exceeds the bounded size")
     view = memoryview(payload)
     while view:
-        written = os.write(_fd, view)
+        written = _os_write(_fd, view)
         if written <= 0:
             raise OSError("pytest event write made no progress")
         view = view[written:]
     _payload_bytes += len(payload)
 
 
+def opencollab_begin():
+    global _session_started
+    if not _session_started:
+        _emit({"event": "session_start"})
+        _session_started = True
+
+
+def opencollab_finalize(exitstatus):
+    global _collection_finished, _session_finished
+    opencollab_begin()
+    if not _collection_finished:
+        _emit({"event": "collection_finish", "nodeids": []})
+        _collection_finished = True
+    if not _session_finished:
+        _emit({"event": "session_finish", "exitstatus": int(exitstatus)})
+        _session_finished = True
+
+
 def pytest_sessionstart(session):
-    _emit({"event": "session_start"})
+    opencollab_begin()
 
 
 def pytest_collection_finish(session):
+    global _collection_finished
     _emit({"event": "collection_finish", "nodeids": [item.nodeid for item in session.items]})
+    _collection_finished = True
 
 
 def pytest_runtest_logreport(report):
@@ -635,9 +625,8 @@ def pytest_runtest_logreport(report):
 
 
 def pytest_sessionfinish(session, exitstatus):
-    _emit({"event": "session_finish", "exitstatus": exitstatus})
-'''
-
+    opencollab_finalize(exitstatus)
+"""
 
 
 __all__ = [

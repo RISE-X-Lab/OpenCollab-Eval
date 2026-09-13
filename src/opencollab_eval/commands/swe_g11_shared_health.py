@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
+import math
+import os
 import re
 import shlex
 import subprocess
@@ -26,6 +29,18 @@ from opencollab_eval.engine.solver_backend import (
 _REMOTE_ERROR_TYPES = frozenset({"access_terminated_error"})
 _TRANSIENT_MODEL_PROBE_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 _MAX_MODEL_PROBE_DELAY_SECONDS = 60.0
+_MIN_MODEL_PROBE_DELAY_SECONDS = 30.0
+
+
+def _model_probe_budget(config: Any) -> float:
+    values = dict(item.split("=", 1) for item in getattr(config, "workflow_env", ()))
+    budget = float(values.get("OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET", "600"))
+    if not math.isfinite(budget) or budget <= 0:
+        budget = 600.0
+    total_timeout = getattr(config, "total_timeout", None)
+    if isinstance(total_timeout, (int, float)) and not isinstance(total_timeout, bool) and math.isfinite(total_timeout):
+        budget = min(budget, max(0.0, float(total_timeout)))
+    return budget
 
 
 def response_model_matches(provider: str, requested: str, actual: object) -> bool:
@@ -62,8 +77,8 @@ def remote_health_script(config: Any) -> str:
             f"probe=$(mktemp {remote_base}/.opencollab-health.XXXXXX)",
             "trap 'rm -f \"$probe\"' EXIT HUP INT TERM",
             "printf 'opencollab-health' > \"$probe\"",
-            "test \"$(cat \"$probe\")\" = opencollab-health",
-            "rm -f \"$probe\"",
+            'test "$(cat "$probe")" = opencollab-health',
+            'rm -f "$probe"',
             "trap - EXIT HUP INT TERM",
         ]
     )
@@ -86,19 +101,49 @@ def run_remote_health_checks(
         }
         write_json(json_path, result)
         return result
-    command = [
-        *shlex.split(config.ssh_command),
-        config.host,
-        "bash -lc " + shlex.quote(remote_health_script(config)),
-    ]
+    local_transport = getattr(config, "runner_transport", "ssh") == "local"
+    command = (
+        ["bash", "-lc", remote_health_script(config)]
+        if local_transport
+        else [
+            *shlex.split(config.ssh_command),
+            config.host,
+            "bash -lc " + shlex.quote(remote_health_script(config)),
+        ]
+    )
     attempts: list[dict[str, object]] = []
     try:
-        proc = run_ssh_checked(
-            command,
-            timeout=120,
-            cwd=repo,
-            retry_log=attempts,
-        )
+        if local_transport:
+            proc = subprocess.run(
+                command,
+                text=True,
+                capture_output=True,
+                timeout=120,
+                cwd=repo,
+                check=False,
+            )
+            if proc.returncode != 0:
+                write_text(stdout_path, proc.stdout)
+                write_text(stderr_path, proc.stderr)
+                result = {
+                    "status": "failed",
+                    "direct": True,
+                    "scope": "shared_infrastructure",
+                    "returncode": proc.returncode,
+                    "transport": "local",
+                    "attempts": attempts,
+                    "stdout_log": str(stdout_path),
+                    "stderr_log": str(stderr_path),
+                }
+                write_json(json_path, result)
+                raise SharedProbeFailure(f"local health check failed rc={proc.returncode}", result)
+        else:
+            proc = run_ssh_checked(
+                command,
+                timeout=120,
+                cwd=repo,
+                retry_log=attempts,
+            )
     except subprocess.TimeoutExpired as exc:
         result = {
             "status": "failed",
@@ -133,6 +178,7 @@ def run_remote_health_checks(
         "direct": True,
         "scope": "shared_infrastructure",
         "returncode": proc.returncode,
+        "transport": "local" if local_transport else "ssh",
         "attempts": attempts,
         "stdout_log": str(stdout_path),
         "stderr_log": str(stderr_path),
@@ -149,26 +195,14 @@ def run_remote_model_probe(config: Any, *, get_token=get_proxy_token) -> dict[st
             "reason": "disabled" if config.skip_health_checks else "dry_run",
         }
     workflow_env = dict(item.split("=", 1) for item in config.workflow_env)
-    wire_protocol = workflow_env.get(
-        "OPENCOLLAB_WIRE_PROTOCOL", "chat_completions"
-    ).strip().lower()
+    wire_protocol = workflow_env.get("OPENCOLLAB_WIRE_PROTOCOL", "chat_completions").strip().lower()
     if wire_protocol not in {"chat_completions", "responses"}:
         raise ValueError(f"unsupported wire protocol: {wire_protocol}")
     if config.llm_provider != "openai" and wire_protocol != "chat_completions":
-        raise ValueError(
-            f"{config.llm_provider} does not support wire protocol {wire_protocol}"
-        )
-    legacy_thinking = workflow_env.get("OPENCOLLAB_THINKING", "").strip().lower() in {
-        "1", "true", "yes", "on"
-    }
-    thinking_params = (
-        json.loads(workflow_env.get("OPENCOLLAB_THINKING_PARAMS", "{}"))
-        if legacy_thinking
-        else {}
-    )
-    reasoning_effort = (
-        workflow_env.get("OPENCOLLAB_REASONING_EFFORT", "").strip() or None
-    )
+        raise ValueError(f"{config.llm_provider} does not support wire protocol {wire_protocol}")
+    legacy_thinking = workflow_env.get("OPENCOLLAB_THINKING", "").strip().lower() in {"1", "true", "yes", "on"}
+    thinking_params = json.loads(workflow_env.get("OPENCOLLAB_THINKING_PARAMS", "{}")) if legacy_thinking else {}
+    reasoning_effort = workflow_env.get("OPENCOLLAB_REASONING_EFFORT", "").strip() or None
     if (
         reasoning_effort is None
         and wire_protocol == "responses"
@@ -191,12 +225,30 @@ def run_remote_model_probe(config: Any, *, get_token=get_proxy_token) -> dict[st
         if config.llm_provider == "anthropic" and claude_version
         else "Anthropic/Python opencollab-eval"
         if config.llm_provider == "anthropic"
-        else workflow_env.get("OPENCOLLAB_LLM_USER_AGENT")
-        or default_openai_user_agent()
+        else workflow_env.get("OPENCOLLAB_LLM_USER_AGENT") or default_openai_user_agent()
     )
-    script = r'''import datetime,email.utils,json,math,os,sys,urllib.error,urllib.request
+    deadline = getattr(config, "_model_probe_deadline", None)
+    remaining = _model_probe_budget(config) if deadline is None else deadline - time.monotonic()
+    if remaining <= 0:
+        raise SharedProbeFailure(
+            "remote model probe retry deadline exhausted",
+            {
+                "status": "failed",
+                "failure_kind": "retry_deadline_exhausted",
+            },
+        )
+    configured_timeout = float(config.llm_timeout)
+    if not math.isfinite(configured_timeout) or configured_timeout <= 0:
+        raise ValueError("model probe llm_timeout must be positive and finite")
+    request_timeout = min(configured_timeout, remaining)
+    script = r"""import datetime,email.utils,json,math,os,signal,sys,urllib.error,urllib.request
 from opencollab_eval.engine.swe_v1_remote_state import bind_remote_api_network_environment,read_remote_api_environment
 base,provider,model,wire,thinking_text,options_text,env_path,user_agent=sys.argv[1:9]
+request_timeout=float(sys.argv[9])
+def stop_probe(*_args):
+    raise TimeoutError("model probe request deadline exhausted")
+signal.signal(signal.SIGALRM,stop_probe)
+signal.setitimer(signal.ITIMER_REAL,request_timeout)
 thinking=thinking_text == "true"
 options=json.loads(options_text)
 remote=read_remote_api_environment(env_path) if env_path else {"token":sys.stdin.readline().strip(),"network_env":{}}
@@ -230,10 +282,22 @@ else:
 if user_agent:
     headers["User-Agent"]=user_agent
 request=urllib.request.Request(base.rstrip("/")+path,data=json.dumps(payload).encode(),headers=headers,method="POST")
+http_status=None
+content_type=None
+def brief_error(error):
+    message=str(error)
+    if token:
+        message=message.replace(token,"[redacted]")
+    return message[:400]
 try:
-    with urllib.request.urlopen(request,timeout=120) as response:
+    with urllib.request.urlopen(request,timeout=request_timeout) as response:
+        http_status=response.status
+        content_type=response.headers.get("Content-Type")
         value=json.load(response)
+        if not isinstance(value,dict):
+            raise ValueError("model probe response must be a JSON object")
 except urllib.error.HTTPError as exc:
+    content_type=exc.headers.get("Content-Type")
     retry_after_seconds=None
     retry_after=exc.headers.get("Retry-After")
     if retry_after is not None:
@@ -256,10 +320,12 @@ except urllib.error.HTTPError as exc:
         error_type=candidate if candidate in {"access_terminated_error"} else ""
     except Exception:
         error_type=""
-    print(json.dumps({"status":"http_error","code":exc.code,"error_type":error_type,"retry_after_seconds":retry_after_seconds}))
+    print(json.dumps({"status":"http_error","code":exc.code,"error_type":error_type,"retry_after_seconds":retry_after_seconds,
+        "exception_type":type(exc).__name__,"error_message":brief_error(exc),"content_type":content_type}))
     raise SystemExit(3)
-except Exception:
-    print(json.dumps({"status":"transport_error"}))
+except Exception as exc:
+    print(json.dumps({"status":"transport_error","exception_type":type(exc).__name__,
+        "error_message":brief_error(exc),"code":http_status,"content_type":content_type}))
     raise SystemExit(3)
 if provider == "anthropic":
     valid=bool(value.get("content"))
@@ -307,6 +373,7 @@ valid=valid and (thinking_proven if provider == "anthropic" else thinking_reques
 probe_status="ok" if valid else "invalid_response"
 if wire == "responses" and value.get("status") == "completed" and value.get("output") == []:
     probe_status="empty_output"
+response_error=value.get("error") if isinstance(value.get("error"),dict) else {}
 print(json.dumps({
     "status":probe_status,
     "thinking_proven":thinking_proven,
@@ -316,43 +383,70 @@ print(json.dumps({
     ),
     "actual_model":actual_model,
     "wire_protocol":wire,
+    "usage":value.get("usage") if isinstance(value.get("usage"),dict) else None,
+    "code":http_status,
+    "content_type":content_type,
+    "response_status":value.get("status"),
+    "response_error_code":response_error.get("code") or response_error.get("type"),
+    "error_message":brief_error(response_error.get("message","")),
 }))
 raise SystemExit(0 if valid else 3)
-'''
-    command = [
-        *shlex.split(config.ssh_command),
-        "-o",
-        "BatchMode=yes",
-        config.host,
-        "env PYTHONPATH="
-        + shlex.quote(str(Path(config.remote_runtime_repo) / "src"))
-        + " "
-        + shlex.quote(config.remote_python)
-        + " -c "
-        + shlex.quote(script)
-        + " "
-        + " ".join(
-            shlex.quote(value)
-            for value in (
-                config.remote_proxy_base_url,
-                config.llm_provider,
-                config.llm_model,
-                wire_protocol,
-                "true" if thinking else "false",
-                json.dumps(options, separators=(",", ":")),
-                config.remote_api_env_file,
-                probe_user_agent,
-            )
-        ),
+"""
+    probe_arguments = [
+        config.remote_proxy_base_url,
+        config.llm_provider,
+        config.llm_model,
+        wire_protocol,
+        "true" if thinking else "false",
+        json.dumps(options, separators=(",", ":")),
+        config.remote_api_env_file,
+        probe_user_agent,
+        str(request_timeout),
     ]
+    local_transport = getattr(config, "runner_transport", "ssh") == "local"
+    if local_transport:
+        command = [config.remote_python, "-c", script, *probe_arguments]
+        probe_environment = {
+            **os.environ,
+            "PYTHONPATH": str(Path(config.remote_runtime_repo) / "src"),
+        }
+    else:
+        command = [
+            *shlex.split(config.ssh_command),
+            "-o",
+            "BatchMode=yes",
+            config.host,
+            "env PYTHONPATH="
+            + shlex.quote(str(Path(config.remote_runtime_repo) / "src"))
+            + " "
+            + shlex.quote(config.remote_python)
+            + " -c "
+            + shlex.quote(script)
+            + " "
+            + " ".join(shlex.quote(value) for value in probe_arguments),
+        ]
+        probe_environment = None
     probe_input = "" if config.remote_api_env_file else get_token(config.proxy_env_file) + "\n"
+    process_timeout = remaining
+    if deadline is not None:
+        process_timeout = min(process_timeout, deadline - time.monotonic())
+    if process_timeout <= 0:
+        raise SharedProbeFailure(
+            "remote model probe retry deadline exhausted",
+            {
+                "status": "failed",
+                "failure_kind": "retry_deadline_exhausted",
+            },
+        )
     try:
         result = subprocess.run(
             command,
+            env=probe_environment,
             input=probe_input,
             text=True,
             capture_output=True,
-            timeout=150,
+            timeout=process_timeout,
+            check=False,
         )
     except subprocess.TimeoutExpired as exc:
         summary = {
@@ -383,6 +477,11 @@ raise SystemExit(0 if valid else 3)
         "direct": True,
         "scope": "shared_infrastructure",
         "http_status": payload.get("code"),
+        "content_type": payload.get("content_type"),
+        "exception_type": payload.get("exception_type"),
+        "error_message": payload.get("error_message"),
+        "response_status": payload.get("response_status"),
+        "response_error_code": payload.get("response_error_code"),
         "retry_after_seconds": payload.get("retry_after_seconds"),
         "remote_error_type": error_type,
         "provider": config.llm_provider,
@@ -396,6 +495,8 @@ raise SystemExit(0 if valid else 3)
         "thinking_proven": payload.get("thinking_proven") is True,
         "thinking_request_bound": payload.get("thinking_request_bound") is True,
         "thinking_evidence": payload.get("thinking_evidence"),
+        "usage": payload.get("usage"),
+        "transport": "local" if local_transport else "ssh",
         "base_url_sha256": hashlib.sha256(config.remote_proxy_base_url.encode()).hexdigest(),
     }
     if (
@@ -417,16 +518,17 @@ def _model_probe_failure_is_transient(result: dict[str, Any]) -> bool:
         result.get("status") == "empty_output"
         and result.get("model_matches") is True
         and result.get("wire_protocol_matches") is True
-        and (
-            result.get("thinking_enabled") is not True
-            or result.get("thinking_request_bound") is True
-        )
+        and (result.get("thinking_enabled") is not True or result.get("thinking_request_bound") is True)
     )
     return (
         status in _TRANSIENT_MODEL_PROBE_HTTP_STATUSES
         or result.get("failure_kind") == "timeout"
         or empty_output
         or result.get("status") == "transport_error"
+        or (
+            result.get("status") == "invalid_response"
+            and result.get("response_error_code") == "service_unavailable_error"
+        )
     )
 
 
@@ -450,13 +552,24 @@ def wait_for_remote_model_probe(
 ) -> dict[str, Any]:
     """Wait through transient provider outages before starting any task."""
     started = time.monotonic()
+    deadline = started + _model_probe_budget(config)
+    probe_config = copy.copy(config)
+    object.__setattr__(probe_config, "_model_probe_deadline", deadline)
     attempts: list[dict[str, Any]] = []
     ledger_path = config.output_dir / "model_probe_attempts.json"
     while True:
         if interrupted():
             raise InterruptedError("parallel evaluation interrupted")
+        if time.monotonic() >= deadline:
+            exhausted = {
+                "status": "failed",
+                "failure_kind": "retry_deadline_exhausted",
+                "probe_attempts": len(attempts),
+            }
+            write_json(ledger_path, {"status": "retry_deadline_exhausted", "attempts": attempts})
+            raise SharedProbeFailure("remote model probe retry deadline exhausted", exhausted)
         try:
-            result = run_probe(config)
+            result = run_probe(probe_config)
         except SharedProbeFailure as exc:
             elapsed = max(0.0, time.monotonic() - started)
             attempts.append(
@@ -469,7 +582,6 @@ def wait_for_remote_model_probe(
             if not _model_probe_failure_is_transient(exc.result):
                 write_json(ledger_path, {"status": "failed", "attempts": attempts})
                 raise
-            deadline = started + max(0, getattr(config, "total_timeout", 0))
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 exhausted = {
@@ -487,15 +599,24 @@ def wait_for_remote_model_probe(
                     exhausted,
                 ) from exc
             retry_after = exc.result.get("retry_after_seconds")
-            if not isinstance(retry_after, (int, float)) or isinstance(retry_after, bool):
-                retry_after = getattr(config, "retry_delay_seconds", 60) * (
-                    2 ** min(len(attempts) - 1, 6)
+            if (
+                isinstance(retry_after, (int, float))
+                and not isinstance(retry_after, bool)
+                and math.isfinite(retry_after)
+                and retry_after >= 0
+            ):
+                delay = max(_MIN_MODEL_PROBE_DELAY_SECONDS, float(retry_after))
+            else:
+                delay = min(
+                    _MAX_MODEL_PROBE_DELAY_SECONDS,
+                    max(
+                        _MIN_MODEL_PROBE_DELAY_SECONDS,
+                        getattr(config, "retry_delay_seconds", 60) * (2 ** min(len(attempts) - 1, 6)),
+                    ),
                 )
-            delay = min(
-                max(0.0, float(retry_after)),
-                _MAX_MODEL_PROBE_DELAY_SECONDS,
-                remaining,
-            )
+            if getattr(config, "retry_delay_seconds", 60) == 0:
+                delay = 0.0
+            delay = min(delay, remaining)
             write_json(
                 ledger_path,
                 {

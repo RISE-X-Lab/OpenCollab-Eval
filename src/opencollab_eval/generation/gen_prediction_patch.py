@@ -57,6 +57,7 @@ from .gen_prediction_snapshot import SolverGitSnapshot
 from .gen_prediction_snapshot_support import workspace_sha256
 from .workspace_archive import (
     _copy_workspace_archive,
+    _workspace_archive_transport_from_env,
     _WorkspaceArchiveTimeout,
     _WorkspaceArchiveTruncated,
 )
@@ -117,10 +118,7 @@ class TrustedPatchExtraction:
             "patch_bytes": self.patch_bytes,
             "candidate_tree": self.candidate_tree,
             "changed_paths": list(self.changed_paths),
-            "path_modes": [
-                {"path": path, "old_mode": old, "new_mode": new}
-                for path, old, new in self.path_modes
-            ],
+            "path_modes": [{"path": path, "old_mode": old, "new_mode": new} for path, old, new in self.path_modes],
             "workspace_integrity": integrity,
         }
 
@@ -150,15 +148,23 @@ def _copy_frozen_workspace(
     destination = parent / name
     if destination.exists():
         raise RuntimeError("trusted workspace copy destination already exists")
+    archive_transport = _workspace_archive_transport_from_env()
     for attempt in range(2):
         root = parent / f".{name}-copy-{attempt + 1}"
         root.mkdir()
         try:
-            if attempt:
+            if archive_transport == "exec-python":
                 require_container_quiescence(container_id)
-            with frozen_container(container_id):
-                archive = _copy_workspace_archive(container_id, root)
-            require_container_quiescence(container_id)
+                try:
+                    archive = _copy_workspace_archive(container_id, root)
+                finally:
+                    require_container_quiescence(container_id)
+            else:
+                if attempt:
+                    require_container_quiescence(container_id)
+                with frozen_container(container_id):
+                    archive = _copy_workspace_archive(container_id, root)
+                require_container_quiescence(container_id)
         except (_WorkspaceArchiveTruncated, _WorkspaceArchiveTimeout):
             _discard_incomplete_workspace(root)
             if attempt:
@@ -202,9 +208,7 @@ def _copy_object_store(source_git: Path, clean_git: Path, object_id_length: int)
     copied = 0
     suffix_length = object_id_length - 2
     loose_object = re.compile(rf"[0-9a-f]{{2}}/[0-9a-f]{{{suffix_length}}}\Z")
-    packed_object = re.compile(
-        rf"pack/pack-[0-9a-f]{{{object_id_length}}}\.(?:idx|pack)\Z"
-    )
+    packed_object = re.compile(rf"pack/pack-[0-9a-f]{{{object_id_length}}}\.(?:idx|pack)\Z")
     for source in source_objects.rglob("*"):
         if source.is_dir() and not source.is_symlink():
             continue
@@ -269,9 +273,7 @@ def _construct_candidate_from_copy(root: Path, baseline: TrustedPatchBaseline) -
         (home / "xdg").mkdir()
         template.mkdir()
         env = _git_environment(home, template)
-        projections = _visible_gitlink_projections(
-            root, baseline, git, env=env, timeout=timeout
-        )
+        projections = _visible_gitlink_projections(root, baseline, git, env=env, timeout=timeout)
     return construct_candidate_patch(
         git_dir=baseline.git_dir,
         worktree=root,
@@ -320,9 +322,7 @@ def prepare_trusted_patch_baseline(
         (home / "xdg").mkdir()
         template.mkdir()
         env = _git_environment(home, template)
-        object_format_args = (
-            ["--object-format=sha256"] if len(snapshot.anonymous_head) == 64 else []
-        )
+        object_format_args = ["--object-format=sha256"] if len(snapshot.anonymous_head) == 64 else []
         timeout = _docker_timeout_from_env()
         gitlink_state_repositories = _prepare_gitlink_state_repositories(
             root,
@@ -497,9 +497,7 @@ def _new_generated_artifact_paths(patch: str) -> set[str]:
         if len(entries) != 1:
             continue
         endpoints = {path for path in entries[0] if path}
-        if len(endpoints) == 1 and all(
-            is_generated_runtime_artifact_path(path) for path in endpoints
-        ):
+        if len(endpoints) == 1 and all(is_generated_runtime_artifact_path(path) for path in endpoints):
             generated.update(endpoints)
     return generated
 
@@ -536,10 +534,7 @@ def extract_patch_guarded(
         pre_sanitization_candidate_tree=pre_tree,
         candidate_tree=tree,
         changed_paths=list(paths),
-        path_modes=[
-            {"path": path, "old_mode": old, "new_mode": new}
-            for path, old, new in modes
-        ],
+        path_modes=[{"path": path, "old_mode": old, "new_mode": new} for path, old, new in modes],
         patch_sha256=hashlib.sha256(encoded).hexdigest(),
         patch_bytes=len(encoded),
     )

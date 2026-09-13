@@ -19,6 +19,8 @@ from opencollab_eval.commands import _swe_g11_config as _config
 from opencollab_eval.commands import _swe_g11_reports as _reports
 from opencollab_eval.commands import swe_g11_parallel_process as _parallel_process
 from opencollab_eval.commands import swe_g11_shared_health as _shared_health
+from opencollab_eval.commands import swe_g11_task_execution as _task_execution
+from opencollab_eval.commands import swe_g11_technical_queue as _technical_queue
 from opencollab_eval.commands.swe_v1_prolite_common import (
     ALLOWED_WORKFLOW_ENV_KEYS as _ALLOWED_WORKFLOW_ENV_KEYS,
 )
@@ -42,9 +44,7 @@ normalize_workflow_env = _config.normalize_workflow_env
 default_run_id = _config.default_run_id
 resolve_config = _config.resolve_config
 report_is_reusable = _config.report_is_reusable
-single_task_summary_validation_reasons = (
-    _config.single_task_summary_validation_reasons
-)
+single_task_summary_validation_reasons = _config.single_task_summary_validation_reasons
 normalize_legacy_empty_patch_summary = _config.normalize_legacy_empty_patch_summary
 result_resource_reasons = _config.result_resource_reasons
 update_scheduler_state = _config.update_scheduler_state
@@ -68,244 +68,25 @@ def _run_task_process(command: list[str]) -> subprocess.CompletedProcess[str]:
     return _parallel_process.run_task_process(command, cwd=REPO)
 
 
-def task_paths(config: ParallelConfig, index: int) -> dict[str, Path]:
-    return {
-        "json_report": config.output_dir / f"task_{index}_report.json",
-        "markdown_report": config.output_dir / f"task_{index}_report.md",
-        "stdout_log": config.output_dir / f"task_{index}.stdout.log",
-        "stderr_log": config.output_dir / f"task_{index}.stderr.log",
-    }
+task_paths = _task_execution.task_paths
+task_command = _task_execution.task_command
+task_result_from_summary = _task_execution.task_result_from_summary
 
 
-def task_command(config: ParallelConfig, index: int) -> list[str]:
-    paths = task_paths(config, index)
-    command = [
-        sys.executable,
-        "-m",
-        "opencollab_eval.commands.swe_g11_prolite_runner",
-        "--host",
-        config.host,
-        "--ssh-command",
-        config.ssh_command,
-        "--remote-python",
-        config.remote_python,
-        "--remote-root",
-        config.remote_root,
-        "--image-repository",
-        config.image_repository,
-        "--run-id",
-        f"{config.run_id}_task{index}",
-        "--session-prefix",
-        config.session_prefix,
-        "--model-name",
-        config.model_name,
-        "--llm-provider",
-        config.llm_provider,
-        "--start-index",
-        str(index),
-        "--limit",
-        "1",
-        "--base-run-dir",
-        f"{config.remote_base}/task_{index}",
-        "--remote-runtime-repo",
-        config.remote_runtime_repo,
-        "--workflow",
-        config.workflow,
-        "--remote-proxy-base-url",
-        config.remote_proxy_base_url,
-        "--budget",
-        str(config.budget),
-        "--max-steps",
-        str(config.max_steps),
-        "--openhands-empty-patch-rejections",
-        str(config.openhands_empty_patch_rejections),
-        "--max-empty-patch-retries",
-        str(config.max_empty_patch_retries),
-        "--swe-timeout",
-        str(config.swe_timeout),
-        "--task-wall-timeout",
-        str(config.task_wall_timeout),
-        "--eval-timeout",
-        str(config.eval_timeout),
-        "--eval-container-bind-timeout",
-        str(config.eval_container_bind_timeout),
-        "--llm-timeout",
-        str(config.llm_timeout),
-        "--checkpoint-interval",
-        str(config.checkpoint_interval),
-        "--max-task-starts",
-        str(config.max_task_starts),
-        "--max-eval-attempts",
-        str(config.max_eval_attempts),
-        "--total-timeout",
-        str(config.total_timeout),
-        "--json-output",
-        str(paths["json_report"]),
-        "--markdown-output",
-        str(paths["markdown_report"]),
-    ]
-    if config.remote_api_env_file:
-        command += ["--remote-api-env-file", config.remote_api_env_file]
-    else:
-        command += [
-            "--local-proxy-base-url", config.local_proxy_base_url,
-            "--proxy-env-file", str(config.proxy_env_file),
-        ]
-    for option, value in (
-        ("--llm-model", config.llm_model),
-        ("--context-window", config.context_window),
-        ("--temperature", config.temperature),
-        ("--top-p", config.top_p),
-        ("--max-output-tokens", config.max_output_tokens),
-    ):
-        if value not in (None, ""):
-            command += [option, str(value)]
-    for item in config.workflow_env:
-        command += ["--workflow-env", item]
-    if config.openhands_command:
-        command += ["--openhands-command", config.openhands_command]
-    if config.no_sync_runtime:
-        command += ["--no-sync-runtime", "--expected-runtime-tree-sha256", config.runtime_tree_sha256]
-    if config.no_ensure_remote_proxy:
-        command.append("--no-ensure-remote-proxy")
-    if config.dry_run:
-        command.append("--dry-run")
-    return command
-
-
-def task_result_from_summary(
+def run_one(
     config: ParallelConfig,
     index: int,
-    summary: dict[str, Any],
-    *,
-    reused: bool,
-    elapsed: float,
-    process_returncode: int | None = None,
+    attempt: _technical_queue.RecoveryAttempt | None = None,
 ) -> dict[str, Any]:
-    paths = task_paths(config, index)
-    counts = summary.get("counts") if isinstance(summary.get("counts"), dict) else {}
-    rows = summary.get("rows") if isinstance(summary.get("rows"), list) else []
-    status = str(summary.get("status") or "")
-    reasons = list(
-        single_task_summary_validation_reasons(summary, config, index)
+    return _task_execution.run_one(
+        config,
+        index,
+        attempt,
+        run_task_process=_run_task_process,
+        load_json=load_json,
+        write_text=write_text,
+        ensure_directory=ensure_directory,
     )
-    expected_returncodes = {
-        "done": 0,
-        "done_with_technical_failures": 1,
-        "preflight_failed": 2,
-        "invalid_config": 2,
-    }
-    expected_returncode = expected_returncodes.get(status)
-    if expected_returncode is None:
-        reasons.append("nonterminal_runner_status")
-    actual_returncode = expected_returncode if process_returncode is None else process_returncode
-    if isinstance(actual_returncode, bool) or not isinstance(actual_returncode, int):
-        reasons.append("invalid_runner_returncode")
-    elif expected_returncode is not None and actual_returncode != expected_returncode:
-        reasons.append("returncode_status_conflict")
-    accepted_counts = {
-        field: counts.get(field, 0)
-        for field in _config.SINGLE_TASK_COUNT_FIELDS
-    }
-    if reasons:
-        accepted_counts = dict.fromkeys(_config.SINGLE_TASK_COUNT_FIELDS, 0)
-        accepted_counts["technical_failed"] = 1
-    failure_scope = str(summary.get("failure_scope") or "")
-    if failure_scope not in {"task", "image", "shared_infrastructure"}:
-        failure_scope = "task" if reasons or accepted_counts["technical_failed"] else "none"
-    failure_probe = summary.get("failure_probe") if isinstance(summary.get("failure_probe"), dict) else {}
-    if failure_scope == "shared_infrastructure" and not (
-        failure_probe.get("direct") is True and failure_probe.get("status") == "failed"
-    ):
-        failure_scope = "task"
-        failure_probe = {}
-    return {
-        "index": index,
-        "returncode": actual_returncode if actual_returncode is not None else 1,
-        "elapsed_seconds": round(elapsed, 1),
-        "json_report": str(paths["json_report"]),
-        "markdown_report": str(paths["markdown_report"]),
-        "stdout_log": str(paths["stdout_log"]),
-        "stderr_log": str(paths["stderr_log"]),
-        "runner_status": status,
-        "tasks": accepted_counts["tasks"],
-        "generation_done": accepted_counts["generation_done"],
-        "empty_patch": accepted_counts["empty_patch"],
-        "eval_done": accepted_counts["eval_done"],
-        "eval_attempts": accepted_counts["eval_attempts"],
-        "eval_retry_tasks": accepted_counts["eval_retry_tasks"],
-        "resolved": accepted_counts["resolved"],
-        "unresolved": accepted_counts["unresolved"],
-        "technical_failed": accepted_counts["technical_failed"],
-        "rows": rows,
-        "completed": not reasons,
-        "summary_validation_reasons": reasons,
-        "reused_existing_report": reused,
-        "failure_scope": failure_scope,
-        "failure_probe": failure_probe,
-    }
-
-
-def run_one(config: ParallelConfig, index: int) -> dict[str, Any]:
-    started = time.time()
-    paths = task_paths(config, index)
-    if paths["json_report"].exists():
-        summary = load_json(paths["json_report"])
-        if report_is_reusable(summary, config, index):
-            result = task_result_from_summary(
-                config,
-                index,
-                summary,
-                reused=True,
-                elapsed=0.0,
-            )
-            result["attempts"] = 0
-            return result
-
-    ensure_directory(paths["stdout_log"].parent)
-    proc: subprocess.CompletedProcess[str] | None = None
-    for attempt in range(1, config.runner_attempts + 1):
-        proc = _run_task_process(task_command(config, index))
-        write_text(paths["stdout_log"], proc.stdout)
-        write_text(paths["stderr_log"], proc.stderr)
-        summary = load_json(paths["json_report"])
-        if not summary:
-            return {
-                "index": index,
-                "returncode": proc.returncode,
-                "elapsed_seconds": round(time.time() - started, 1),
-                "json_report": str(paths["json_report"]),
-                "markdown_report": str(paths["markdown_report"]),
-                "stdout_log": str(paths["stdout_log"]),
-                "stderr_log": str(paths["stderr_log"]),
-                "runner_status": "missing_report",
-                "completed": False,
-                "attempts": attempt,
-                "failure_scope": "task",
-                "failure_probe": {},
-            }
-        result = task_result_from_summary(
-            config,
-            index,
-            summary,
-            reused=False,
-            elapsed=time.time() - started,
-            process_returncode=proc.returncode,
-        )
-        result["attempts"] = attempt
-        if (
-            str(summary.get("status") or "") not in RETRYABLE_TASK_REPORT_STATUSES
-            or attempt >= config.runner_attempts
-        ):
-            return result
-        if attempt < config.runner_attempts and config.retry_delay_seconds:
-            if _parallel_process.interrupted():
-                break
-            time.sleep(config.retry_delay_seconds * attempt)
-        elif _parallel_process.interrupted():
-            break
-
-    raise AssertionError("unreachable task retry state")
 
 
 def prepare_runtime(config: ParallelConfig) -> str:
@@ -322,6 +103,8 @@ def prepare_runtime(config: ParallelConfig) -> str:
         config.host,
         "--ssh-command",
         config.ssh_command,
+        "--runner-transport",
+        getattr(config, "runner_transport", "ssh"),
         "--remote-python",
         config.remote_python,
         "--remote-root",
@@ -370,8 +153,10 @@ def prepare_runtime(config: ParallelConfig) -> str:
         command += ["--remote-api-env-file", config.remote_api_env_file]
     else:
         command += [
-            "--local-proxy-base-url", config.local_proxy_base_url,
-            "--proxy-env-file", str(config.proxy_env_file),
+            "--local-proxy-base-url",
+            config.local_proxy_base_url,
+            "--proxy-env-file",
+            str(config.proxy_env_file),
         ]
     for option, value in (
         ("--llm-model", config.llm_model),
@@ -395,10 +180,7 @@ def prepare_runtime(config: ParallelConfig) -> str:
     write_text(config.output_dir / "shared_runtime_preflight.stderr.log", proc.stderr)
     summary = load_json(preflight_json)
     if proc.returncode != 0 or summary.get("status") != "dry_run":
-        raise RuntimeError(
-            f"shared runtime preflight failed rc={proc.returncode} "
-            f"status={summary.get('status')}"
-        )
+        raise RuntimeError(f"shared runtime preflight failed rc={proc.returncode} status={summary.get('status')}")
     expected_limits = {
         "openhands_empty_patch_rejections": config.openhands_empty_patch_rejections,
         "max_empty_patch_retries": config.max_empty_patch_retries,
@@ -451,7 +233,7 @@ def confirm_shared_runtime_after_task_failure(
             "error_type": type(exc).__name__,
         }
         return result
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - probe setup failure stays task-scoped
         result.setdefault("failure_scope", "task")
         result["failure_probe"] = {
             "direct": False,
@@ -467,6 +249,18 @@ def confirm_shared_runtime_after_task_failure(
         "model": model_probe,
     }
     return result
+
+
+def confirm_eval_only_runtime_after_task_failure(
+    config: ParallelConfig,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    return _technical_queue.confirm_eval_only_runtime_after_failure(
+        config,
+        result,
+        run_runtime_health=run_remote_health_checks,
+        shared_probe_failure=_shared_health.SharedProbeFailure,
+    )
 
 
 def run_remote_model_probe(config: ParallelConfig) -> dict[str, Any]:
@@ -506,6 +300,196 @@ def run_parallel(config: ParallelConfig) -> dict[str, Any]:
         _parallel_process.restore_signal_handlers(signal_handlers)
 
 
+def _run_technical_recovery_tail(
+    config: ParallelConfig,
+    per_task_config: ParallelConfig,
+    results: list[dict[str, Any]],
+    scheduler: SchedulerState,
+    remote_health: dict[str, Any],
+) -> None:
+    if not config.max_technical_recoveries or scheduler.halted:
+        return
+    selected = {int(result["index"]): result for result in results}
+    events = _technical_queue.load_manifest_events(config.output_dir)
+    for ordinal in range(1, config.max_technical_recoveries + 1):
+        attempts: list[_technical_queue.RecoveryAttempt] = []
+        for index in config.indices:
+            result = selected[index]
+            if not int(result.get("technical_failed") or 0):
+                continue
+            blocked = _technical_queue.recovery_block_reason(result)
+            if blocked:
+                _technical_queue.record_event(
+                    events,
+                    {
+                        "state": "blocked",
+                        "index": index,
+                        "ordinal": ordinal,
+                        "reason": blocked,
+                    },
+                )
+                continue
+            attempt = _technical_queue.plan_recovery_attempt(
+                config=config,
+                result=result,
+                ordinal=ordinal,
+            )
+            if attempt is None:
+                continue
+            _technical_queue.write_decision_once(
+                attempt.decision_path,
+                _technical_queue.decision_payload(
+                    attempt,
+                    result=result,
+                    runtime_tree_sha256=per_task_config.runtime_tree_sha256,
+                ),
+            )
+            _technical_queue.record_event(
+                events,
+                {
+                    "state": "scheduled",
+                    "attempt_id": attempt.attempt_id,
+                    "index": index,
+                    "ordinal": ordinal,
+                    "mode": attempt.mode,
+                    "run_id": attempt.run_id,
+                    "decision": str(attempt.decision_path),
+                },
+            )
+            attempts.append(attempt)
+        _technical_queue.write_manifest(config.output_dir, events)
+        if not attempts:
+            break
+
+        results[:] = [selected[index] for index in config.indices]
+        save_progress(
+            config,
+            results,
+            [attempt.index for attempt in attempts],
+            scheduler=scheduler_snapshot(
+                config,
+                scheduler,
+                pending=[attempt.index for attempt in attempts],
+            ),
+            remote_health=remote_health,
+        )
+        pending = list(attempts)
+        futures: dict[
+            concurrent.futures.Future[dict[str, Any]],
+            _technical_queue.RecoveryAttempt,
+        ] = {}
+
+        def submit_ready(
+            executor: concurrent.futures.ThreadPoolExecutor,
+            pending: list[_technical_queue.RecoveryAttempt] = pending,
+            futures: dict[
+                concurrent.futures.Future[dict[str, Any]],
+                _technical_queue.RecoveryAttempt,
+            ] = futures,
+        ) -> None:
+            while pending and not scheduler.halted and len(futures) < scheduler.current_workers:
+                attempt = pending.pop(0)
+                futures[
+                    executor.submit(
+                        run_one,
+                        per_task_config,
+                        attempt.index,
+                        attempt,
+                    )
+                ] = attempt
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as executor:
+            submit_ready(executor)
+            while futures:
+                done, _ = concurrent.futures.wait(
+                    futures,
+                    return_when=concurrent.futures.FIRST_COMPLETED,
+                )
+                for future in done:
+                    attempt = futures.pop(future)
+                    previous = selected[attempt.index]
+                    try:
+                        result = future.result()
+                    except Exception as exc:  # noqa: BLE001 - one recovery task cannot kill the queue
+                        result = {
+                            "index": attempt.index,
+                            "returncode": 99,
+                            "runner_status": "orchestrator_exception",
+                            "error": str(exc),
+                            "completed": False,
+                            "technical_failed": 1,
+                            "failure_scope": "task",
+                            "failure_probe": {},
+                            "json_report": str(attempt.json_report),
+                        }
+                    result = (
+                        confirm_eval_only_runtime_after_task_failure(config, result)
+                        if attempt.mode == "eval_only"
+                        else confirm_shared_runtime_after_task_failure(config, result)
+                    )
+                    result = _technical_queue.select_recovery_result(
+                        result,
+                        previous=previous,
+                        attempt=attempt,
+                    )
+                    selected[attempt.index] = result
+                    _technical_queue.record_event(
+                        events,
+                        {
+                            "state": "completed",
+                            "attempt_id": attempt.attempt_id,
+                            "index": attempt.index,
+                            "ordinal": attempt.ordinal,
+                            "mode": attempt.mode,
+                            "report": str(attempt.json_report),
+                            "report_sha256": (_technical_queue.artifact_sha256(attempt.json_report)),
+                            "runner_status": result.get("runner_status"),
+                            "technical_failed": int(result.get("technical_failed") or 0),
+                        },
+                    )
+                    update_scheduler_state(config, scheduler, result)
+                    halt_reasons = systemic_failure_reasons(result)
+                    if halt_reasons and not scheduler.halted:
+                        scheduler.halted = True
+                        scheduler.halt_index = attempt.index
+                        scheduler.halt_reasons = halt_reasons
+                        scheduler.not_started = [item.index for item in pending]
+                        scheduler.events.append(
+                            {
+                                "time": time.strftime("%Y-%m-%d %H:%M:%S %z"),
+                                "index": attempt.index,
+                                "action": "halt_technical_recovery",
+                                "reasons": halt_reasons,
+                                "not_started": list(scheduler.not_started),
+                            }
+                        )
+                    submit_ready(executor)
+                    results[:] = [selected[index] for index in config.indices]
+                    _technical_queue.write_manifest(config.output_dir, events)
+                    save_progress(
+                        config,
+                        results,
+                        sorted(item.index for item in futures.values()),
+                        scheduler=scheduler_snapshot(
+                            config,
+                            scheduler,
+                            pending=[item.index for item in pending],
+                        ),
+                        remote_health=remote_health,
+                    )
+        if scheduler.halted:
+            break
+    if not scheduler.halted:
+        _technical_queue.record_exhausted(
+            events,
+            selected,
+            config.indices,
+            config.max_technical_recoveries,
+        )
+        _technical_queue.write_manifest(config.output_dir, events)
+    results[:] = [selected[index] for index in config.indices]
+
+
 def _run_parallel(config: ParallelConfig) -> dict[str, Any]:
     ensure_directory(config.output_dir)
     runtime_prepared = False
@@ -514,7 +498,7 @@ def _run_parallel(config: ParallelConfig) -> dict[str, Any]:
     try:
         runtime_tree_sha256 = prepare_runtime(config)
         runtime_prepared = True
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - task preflight failure is reported structurally
         preflight_error = {"type": type(exc).__name__, "message": str(exc)}
     remote_health = run_remote_health_checks(config)
     remote_health["model_probe"] = wait_for_remote_model_probe(config)
@@ -525,9 +509,7 @@ def _run_parallel(config: ParallelConfig) -> dict[str, Any]:
             "error": preflight_error,
         }
     per_task_config = (
-        replace(config, runtime_tree_sha256=runtime_tree_sha256)
-        if runtime_prepared and runtime_tree_sha256
-        else config
+        replace(config, runtime_tree_sha256=runtime_tree_sha256) if runtime_prepared and runtime_tree_sha256 else config
     )
     if runtime_prepared and (not config.no_sync_runtime or not config.no_ensure_remote_proxy):
         per_task_config = replace(
@@ -548,9 +530,7 @@ def _run_parallel(config: ParallelConfig) -> dict[str, Any]:
             index = pending.pop(0)
             futures[executor.submit(run_one, per_task_config, index)] = index
 
-    with concurrent.futures.ThreadPoolExecutor(
-        max_workers=config.max_workers
-    ) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as executor:
         submit_ready(executor)
         while futures or pending:
             if not futures:
@@ -567,7 +547,7 @@ def _run_parallel(config: ParallelConfig) -> dict[str, Any]:
                 index = futures.pop(future)
                 try:
                     result = future.result()
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - one task cannot kill the batch
                     result = {
                         "index": index,
                         "returncode": 99,
@@ -575,6 +555,15 @@ def _run_parallel(config: ParallelConfig) -> dict[str, Any]:
                         "runner_status": "orchestrator_exception",
                         "error": str(exc),
                         "completed": False,
+                        "tasks": 0,
+                        "generation_done": 0,
+                        "empty_patch": 0,
+                        "eval_done": 0,
+                        "eval_attempts": 0,
+                        "eval_retry_tasks": 0,
+                        "resolved": 0,
+                        "unresolved": 0,
+                        "technical_failed": 1,
                         "failure_scope": "task",
                         "failure_probe": {},
                     }
@@ -618,6 +607,13 @@ def _run_parallel(config: ParallelConfig) -> dict[str, Any]:
                     json.dumps(compact_progress(progress), ensure_ascii=False),
                     flush=True,
                 )
+    _run_technical_recovery_tail(
+        config,
+        per_task_config,
+        results,
+        scheduler,
+        remote_health,
+    )
     token_cost = build_token_summary(config)
     save_progress(
         config,
@@ -626,9 +622,7 @@ def _run_parallel(config: ParallelConfig) -> dict[str, Any]:
         scheduler=current_scheduler(),
         remote_health=remote_health,
     )
-    incomplete = [
-        result["index"] for result in results if result.get("completed") is not True
-    ]
+    incomplete = [result["index"] for result in results if result.get("completed") is not True]
     if scheduler.halted and scheduler.not_started:
         clear_stale_fact_report(config)
         fact_report = {
@@ -663,9 +657,7 @@ def _run_parallel(config: ParallelConfig) -> dict[str, Any]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Run G1.1 Pro-Lite tasks in parallel and produce final reports."
-    )
+    parser = argparse.ArgumentParser(description="Run G1.1 Pro-Lite tasks in parallel and produce final reports.")
     parser.add_argument("--start-index", type=int)
     parser.add_argument("--end-index", type=int)
     parser.add_argument("--indices", default="")
@@ -690,6 +682,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--session-prefix", default="")
     parser.add_argument("--host", default=os.environ.get("OPENCOLLAB_SWE_HOST", ""))
     parser.add_argument("--ssh-command", default="ssh")
+    parser.add_argument(
+        "--runner-transport",
+        choices=("ssh", "local"),
+        default="ssh",
+    )
     parser.add_argument("--remote-python", default="python3")
     parser.add_argument("--remote-root", default=DEFAULT_REMOTE_ROOT)
     parser.add_argument(
@@ -713,9 +710,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--proxy-env-file",
         type=Path,
         default=(
-            Path(os.environ["OPENCOLLAB_PROXY_ENV_FILE"])
-            if os.environ.get("OPENCOLLAB_PROXY_ENV_FILE")
-            else None
+            Path(os.environ["OPENCOLLAB_PROXY_ENV_FILE"]) if os.environ.get("OPENCOLLAB_PROXY_ENV_FILE") else None
         ),
     )
     parser.add_argument(
@@ -727,17 +722,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--swe-timeout", type=int, default=14_400)
     parser.add_argument("--task-wall-timeout", type=int, default=15_300)
     parser.add_argument("--eval-timeout", type=int, default=7_200)
-    parser.add_argument(
-        "--eval-container-bind-timeout",
-        type=int,
-        default=_config.DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
-    )
+    parser.add_argument("--eval-container-bind-timeout", type=int,
+                        default=_config.DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS)
     parser.add_argument("--llm-timeout", type=int, default=900)
     parser.add_argument("--checkpoint-interval", type=int, default=0)
     parser.add_argument("--max-task-starts", type=int, default=3)
     parser.add_argument("--max-eval-attempts", type=int, default=2)
     parser.add_argument("--total-timeout", type=int, default=240_000)
     parser.add_argument("--runner-attempts", type=int, default=3)
+    parser.add_argument(
+        "--max-technical-recoveries",
+        type=int,
+        default=0,
+        help="Append up to this many task-level technical recoveries after the primary queue",
+    )
     parser.add_argument("--retry-delay-seconds", type=int, default=60)
     parser.add_argument("--usd-cny", type=float)
     parser.add_argument("--no-sync-runtime", action="store_true")
@@ -758,7 +756,7 @@ def main() -> int:
         final = run_parallel(config)
     except KeyboardInterrupt:
         return 130
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - CLI converts failures to exit status
         print(str(exc), file=sys.stderr)
         return 2
     print(json.dumps(compact_progress(final), ensure_ascii=False, indent=2))

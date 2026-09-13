@@ -83,12 +83,13 @@ max_steps = 0
 swe_timeout = 0
 task_wall_timeout = 0
 eval_timeout = 0
-eval_container_bind_timeout = 30
+eval_container_bind_timeout = 120
 checkpoint_interval = 0
 max_task_starts = 0
 max_eval_attempts = 2
 eval_only = False
 eval_dir_name = ""
+eval_only_source_base_run_dir = None
 expected_task = ""
 expected_record_id = ""
 expected_source_patch_sha256 = ""
@@ -110,6 +111,7 @@ def resolve_eval_timeout(value: Any = None) -> Any:
     if isinstance(cfg, dict) and "eval_timeout" in cfg:
         return cfg["eval_timeout"]
     return eval_timeout
+
 
 ACTIVE_CHILD_PGIDS: set[int] = set()
 ACTIVE_FIFO_PATHS: set[pathlib.Path] = set()
@@ -137,15 +139,17 @@ MAX_EXIT_STATUS_BYTES = 128
 SAFE_FILE_OPEN_RETRIES = 8
 HARNESS_LOCK_TIMEOUT_SECONDS = 10.0
 MAX_REMOTE_API_ENV_BYTES = 64 * 1024
-DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS = 30
+DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS = 120
 MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS = 300
-REMOTE_API_TOKEN_KEYS = frozenset({
-    "OPENCOLLAB_API_KEY",
-    "OPENCOLLAB_UPSTREAM_API_KEY",
-    "KIMI_API_KEY",
-    "OPENAI_API_KEY",
-    "ANTHROPIC_API_KEY",
-})
+REMOTE_API_TOKEN_KEYS = frozenset(
+    {
+        "OPENCOLLAB_API_KEY",
+        "OPENCOLLAB_UPSTREAM_API_KEY",
+        "KIMI_API_KEY",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+    }
+)
 REMOTE_API_NETWORK_KEYS = frozenset({"HTTPS_PROXY"})
 
 
@@ -202,9 +206,7 @@ def read_remote_api_token(path_value: str) -> str:
     return str(read_remote_api_environment(path_value)["token"])
 
 
-def bind_remote_api_network_environment(
-    target: dict[str, str], network_env: dict[str, str]
-) -> None:
+def bind_remote_api_network_environment(target: dict[str, str], network_env: dict[str, str]) -> None:
     for key in REMOTE_API_NETWORK_KEYS:
         target.pop(key, None)
         target.pop(key.lower(), None)
@@ -222,9 +224,10 @@ def configure(config: dict[str, Any]) -> None:
     global top_p, max_output_tokens, invocation_id, run_id, runtime_tree_sha256, session_prefix
     global image_repository
     global remote_proxy_base_url, start_index, limit, budget, max_steps
-    global swe_timeout, task_wall_timeout, eval_timeout
-    global eval_container_bind_timeout, checkpoint_interval
+    global swe_timeout, task_wall_timeout, eval_timeout, checkpoint_interval
+    global eval_container_bind_timeout
     global max_task_starts, max_eval_attempts, eval_only, eval_dir_name
+    global eval_only_source_base_run_dir
     global expected_task, expected_record_id, expected_source_patch_sha256, expected_eval_patch_sha256
     global dry_run
     global ACTIVE_CHILD_PGIDS, ACTIVE_FIFO_PATHS
@@ -274,12 +277,15 @@ def configure(config: dict[str, Any]) -> None:
         sys.path.insert(0, str(package_root))
     dataset_path = remote_root / "datasets" / "swe-batch-pro-lite" / "instances.jsonl"
     workflow = str(cfg["workflow"])
-    workflow_env = {
-        str(key): str(value) for key, value in (cfg.get("workflow_env") or {}).items()
-    }
+    workflow_env = {str(key): str(value) for key, value in (cfg.get("workflow_env") or {}).items()}
     allowed_workflow_env = {
+        "OPENCOLLAB_G11_ROLE_BUDGET",
         "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES",
         "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY",
+        "OPENCOLLAB_EVAL_NO_PROGRESS_TIMEOUT",
+        "OPENCOLLAB_UNBOUNDED_LIMITS",
+        "OPENCOLLAB_EXTERNAL_PROVIDER_ISOLATION",
+        "OPENCOLLAB_DOCKER_ARCHIVE_TRANSPORT",
         "OPENCOLLAB_MAX_OUTPUT_TOKENS",
         "OPENCOLLAB_TEMPERATURE",
         "OPENCOLLAB_THINKING",
@@ -302,25 +308,15 @@ def configure(config: dict[str, Any]) -> None:
     }
     unsupported_workflow_env = sorted(set(workflow_env) - allowed_workflow_env)
     if unsupported_workflow_env:
-        raise ValueError(
-            "unsupported workflow env: " + ", ".join(unsupported_workflow_env)
-        )
+        raise ValueError("unsupported workflow env: " + ", ".join(unsupported_workflow_env))
     if "OPENCOLLAB_LLM_USER_AGENT" in workflow_env:
-        workflow_env["OPENCOLLAB_LLM_USER_AGENT"] = normalize_llm_user_agent(
-            workflow_env["OPENCOLLAB_LLM_USER_AGENT"]
-        )
+        workflow_env["OPENCOLLAB_LLM_USER_AGENT"] = normalize_llm_user_agent(workflow_env["OPENCOLLAB_LLM_USER_AGENT"])
     openhands_command = str(cfg.get("openhands_command") or "")
     openhands_command_sha256 = (
-        hashlib.sha256(openhands_command.encode("utf-8")).hexdigest()
-        if openhands_command
-        else ""
+        hashlib.sha256(openhands_command.encode("utf-8")).hexdigest() if openhands_command else ""
     )
-    openhands_empty_patch_rejections = max(
-        0, int(cfg.get("openhands_empty_patch_rejections", 2))
-    )
-    max_empty_patch_retries = min(
-        1, max(0, int(cfg.get("max_empty_patch_retries", 1)))
-    )
+    openhands_empty_patch_rejections = max(0, int(cfg.get("openhands_empty_patch_rejections", 2)))
+    max_empty_patch_retries = min(1, max(0, int(cfg.get("max_empty_patch_retries", 1))))
     model_name = str(cfg["model_name"])
     llm_model = str(cfg.get("llm_model") or "")
     llm_provider = str(cfg.get("llm_provider") or "")
@@ -328,9 +324,7 @@ def configure(config: dict[str, Any]) -> None:
     llm_transport = requested_transport
     if llm_transport not in {"direct", "reverse_proxy"}:
         raise ValueError("llm_transport must be direct or reverse_proxy")
-    if llm_transport == "direct" and (
-        llm_provider != "openai" or not is_kimi_direct_model(llm_model)
-    ):
+    if llm_transport == "direct" and (llm_provider != "openai" or not is_kimi_direct_model(llm_model)):
         raise ValueError("direct transport is supported only for OpenAI-compatible Kimi models")
     if llm_transport == "direct" and remote_proxy_base_url != KIMI_CODING_BASE_URL:
         raise ValueError("Kimi direct transport requires the official coding API base URL")
@@ -360,25 +354,20 @@ def configure(config: dict[str, Any]) -> None:
             DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
         )
     )
-    if (
-        eval_container_bind_timeout <= 0
-        or eval_container_bind_timeout > MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS
-    ):
+    if eval_container_bind_timeout <= 0 or eval_container_bind_timeout > MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS:
         raise ValueError(
-            "eval_container_bind_timeout must be between 1 and "
-            f"{MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS} seconds"
+            f"eval_container_bind_timeout must be between 1 and {MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS} seconds"
         )
     checkpoint_interval = int(cfg["checkpoint_interval"])
     max_task_starts = min(3, int(cfg["max_task_starts"]))
     max_eval_attempts = min(2, int(cfg.get("max_eval_attempts", 2)))
     eval_only = bool(cfg.get("eval_only", False))
+    eval_only_source_text = str(cfg.get("eval_only_source_base_run_dir") or "").strip()
+    if eval_only_source_text and (not eval_only or not pathlib.Path(eval_only_source_text).is_absolute()):
+        raise ValueError("invalid eval-only source base run directory")
+    eval_only_source_base_run_dir = pathlib.Path(eval_only_source_text) if eval_only_source_text else None
     eval_dir_name = str(cfg.get("eval_dir_name") or "official_eval").strip()
-    if (
-        not eval_dir_name
-        or "/" in eval_dir_name
-        or "\\" in eval_dir_name
-        or eval_dir_name in {".", ".."}
-    ):
+    if not eval_dir_name or "/" in eval_dir_name or "\\" in eval_dir_name or eval_dir_name in {".", ".."}:
         raise ValueError("eval_dir_name must be a single directory name")
     expected_task = str(cfg.get("expected_task") or "")
     expected_record_id = str(cfg.get("expected_record_id") or "")
@@ -397,12 +386,16 @@ def configure(config: dict[str, Any]) -> None:
         or any(ord(character) < 32 for character in expected_task)
         or any(ord(character) < 32 for character in expected_record_id)
         or re.fullmatch(r"[0-9a-f]{64}", expected_source_patch_sha256) is None
-        or (
-            expected_eval_patch_sha256
-            and re.fullmatch(r"[0-9a-f]{64}", expected_eval_patch_sha256) is None
-        )
+        or (expected_eval_patch_sha256 and re.fullmatch(r"[0-9a-f]{64}", expected_eval_patch_sha256) is None)
     ):
         raise ValueError("invalid expected eval-only candidate identity")
+    if eval_only_source_base_run_dir is not None and not all((*expected_candidate_fields, expected_eval_patch_sha256)):
+        raise ValueError("eval-only isolation requires complete candidate identity")
+    if (
+        eval_only_source_base_run_dir is not None
+        and eval_only_source_base_run_dir.absolute() == base_run_dir.absolute()
+    ):
+        raise ValueError("eval-only source and target base run directories must differ")
     dry_run = bool(cfg["dry_run"])
     ACTIVE_CHILD_PGIDS = set()
     ACTIVE_FIFO_PATHS = set()

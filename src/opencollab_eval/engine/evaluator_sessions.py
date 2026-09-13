@@ -13,6 +13,8 @@ from opencollab import OpenCollab, RunResult
 from opencollab.tools import Tool
 
 from opencollab_eval.engine.environment import ExecutionEnvironment
+from opencollab_eval.engine.native_failure_attribution import classify_failure
+from opencollab_eval.engine.native_progress_watch import guarded_workflow, timeout_seconds
 from opencollab_eval.usage import DEFAULT_MAX_OUTPUT_TOKENS
 
 if TYPE_CHECKING:
@@ -23,9 +25,7 @@ DEFAULT_TEMPERATURE = 0.2
 DEFAULT_TOP_P: float | None = None
 DEFAULT_THINKING = False
 DEFAULT_THINKING_PARAMS = {"enable_thinking": True}
-_CONTROLLED_STOP_REASONS = frozenset(
-    {"budget_exceeded", "context_overflow", "step_limit_exceeded", "timeout"}
-)
+_CONTROLLED_STOP_REASONS = frozenset({"budget_exceeded", "context_overflow", "step_limit_exceeded", "timeout"})
 _CONTROLLED_STOP_REASON_PREFIXES = (
     "budget exceeded:",
     "budget exceeded after model call:",
@@ -42,9 +42,7 @@ def _is_controlled_stop_reason(reason: object) -> bool:
     if not isinstance(reason, str):
         return False
     normalized = reason.strip().lower()
-    return normalized in _CONTROLLED_STOP_REASONS or normalized.startswith(
-        _CONTROLLED_STOP_REASON_PREFIXES
-    )
+    return normalized in _CONTROLLED_STOP_REASONS or normalized.startswith(_CONTROLLED_STOP_REASON_PREFIXES)
 
 
 def _workflow_concurrency() -> int:
@@ -128,6 +126,33 @@ class _EvalRunRecord:
         return self.result.reason
 
     @property
+    def runtime_state(self) -> dict[str, Any]:
+        error = self.result.error
+        chain: list[dict[str, str]] = []
+        seen: set[int] = set()
+        current = error
+        while current is not None and id(current) not in seen:
+            seen.add(id(current))
+            chain.append(
+                {
+                    "type": type(current).__name__,
+                    "module": type(current).__module__,
+                }
+            )
+            current = current.__cause__ or current.__context__
+        attribution = classify_failure(error)
+        return {
+            "status": self.result.status,
+            "reason": self.result.reason,
+            "metrics": dict(self.result.metrics),
+            "error_chain": chain,
+            "failure_attribution": attribution,
+            "external_error": attribution["origin"] == "provider_transport",
+            "external_error_retryable": attribution["retryable"],
+            "usage_complete": self.result.tokens is not None,
+        }
+
+    @property
     def execution_quiesced(self) -> bool:
         return _runtime_session_quiesced(self.result)
 
@@ -137,9 +162,7 @@ class _EvalRunRecord:
             return "OpenCollab session did not quiesce"
         if self.result.status == "completed":
             return None
-        if self.result.status == "stopped" and _is_controlled_stop_reason(
-            self.result.reason
-        ):
+        if self.result.status == "stopped" and _is_controlled_stop_reason(self.result.reason):
             return None
         return self.result.reason or self.result.status
 
@@ -162,6 +185,7 @@ def _client(
     thinking_params: dict | None,
     wire_protocol: str,
     reasoning_effort: str | None,
+    llm_timeout: float,
     llm_connect_timeout: float,
     llm_first_event_timeout: float,
     llm_stream_idle_timeout: float,
@@ -177,13 +201,10 @@ def _client(
             "top_p": top_p,
             "max_output_tokens": max_output_tokens,
             "thinking": thinking,
-            "thinking_params": (
-                dict(DEFAULT_THINKING_PARAMS)
-                if thinking_params is None
-                else dict(thinking_params)
-            ),
+            "thinking_params": (dict(DEFAULT_THINKING_PARAMS) if thinking_params is None else dict(thinking_params)),
             "wire_protocol": wire_protocol,
             "reasoning_effort": reasoning_effort,
+            "llm_timeout": llm_timeout,
             "llm_connect_timeout": llm_connect_timeout,
             "llm_first_event_timeout": llm_first_event_timeout,
             "llm_stream_idle_timeout": llm_stream_idle_timeout,
@@ -203,7 +224,7 @@ async def _run_single_session(
     provider: str,
     api_key: str | None,
     base_url: str | None,
-    max_steps: int,
+    max_steps: int | None,
     temperature: float = DEFAULT_TEMPERATURE,
     top_p: float | None = DEFAULT_TOP_P,
     max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
@@ -211,6 +232,7 @@ async def _run_single_session(
     thinking_params: dict | None = None,
     wire_protocol: str = "chat_completions",
     reasoning_effort: str | None = None,
+    llm_timeout: float = 600.0,
     llm_connect_timeout: float = 30.0,
     llm_first_event_timeout: float = 180.0,
     llm_stream_idle_timeout: float = 180.0,
@@ -219,6 +241,8 @@ async def _run_single_session(
 ) -> _EvalRunRecord:
     """Run one task-bound public OpenCollab agent."""
     artifacts = _reserve_artifacts(save_dir)
+    if artifacts is not None:
+        tracer.bind_artifacts(artifacts, workflow=False)
     result = await _client(
         env=env,
         model=model,
@@ -232,6 +256,7 @@ async def _run_single_session(
         thinking_params=thinking_params,
         wire_protocol=wire_protocol,
         reasoning_effort=reasoning_effort,
+        llm_timeout=llm_timeout,
         llm_connect_timeout=llm_connect_timeout,
         llm_first_event_timeout=llm_first_event_timeout,
         llm_stream_idle_timeout=llm_stream_idle_timeout,
@@ -246,8 +271,6 @@ async def _run_single_session(
         artifacts=artifacts,
         trace=True,
     )
-    if artifacts is not None:
-        tracer.bind_artifacts(artifacts, workflow=False)
     return _EvalRunRecord(result)
 
 
@@ -261,7 +284,7 @@ async def _run_workflow_mode(
     provider: str,
     api_key: str | None,
     base_url: str | None,
-    max_steps: int,
+    max_steps: int | None,
     workflow: Any,
     injected_paths: Sequence[str] | None = None,
     temperature: float = DEFAULT_TEMPERATURE,
@@ -271,6 +294,7 @@ async def _run_workflow_mode(
     thinking_params: dict | None = None,
     wire_protocol: str = "chat_completions",
     reasoning_effort: str | None = None,
+    llm_timeout: float = 600.0,
     llm_connect_timeout: float = 30.0,
     llm_first_event_timeout: float = 180.0,
     llm_stream_idle_timeout: float = 180.0,
@@ -284,6 +308,12 @@ async def _run_workflow_mode(
     if injected_paths:
         args["injected_test_paths"] = list(injected_paths)
     artifacts = _reserve_artifacts(save_dir)
+    if artifacts is not None:
+        tracer.bind_artifacts(artifacts, workflow=True)
+    progress_timeout = timeout_seconds()
+    if progress_timeout is not None:
+        progress_root = Path(os.environ["OPENCOLLAB_EVAL_WORKFLOW_LOG_DIR"]).parent
+        workflow = guarded_workflow(workflow, progress_root, orchestration_path=artifacts / "orchestration.jsonl")
     result = await _client(
         env=env,
         model=model,
@@ -297,6 +327,7 @@ async def _run_workflow_mode(
         thinking_params=thinking_params,
         wire_protocol=wire_protocol,
         reasoning_effort=reasoning_effort,
+        llm_timeout=llm_timeout,
         llm_connect_timeout=llm_connect_timeout,
         llm_first_event_timeout=llm_first_event_timeout,
         llm_stream_idle_timeout=llm_stream_idle_timeout,
@@ -305,14 +336,12 @@ async def _run_workflow_mode(
         args,
         budget=task.max_tokens,
         concurrency=_workflow_concurrency(),
-        timeout=task.timeout,
+        timeout=None if progress_timeout is not None else task.timeout,
         max_steps=max_steps,
         system_prompt=prompt,
         artifacts=artifacts,
         trace=True,
     )
-    if artifacts is not None:
-        tracer.bind_artifacts(artifacts, workflow=True)
     return _EvalRunRecord(result, workflow=True)
 
 

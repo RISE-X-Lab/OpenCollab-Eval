@@ -191,59 +191,34 @@ def _validate_harness_artifact_paths(paths: object) -> tuple[str, ...]:
     if not isinstance(paths, tuple):
         raise ValueError("harness_artifact_paths must be a tuple of non-empty strings")
     if len(paths) > MAX_TASK_HARNESS_ARTIFACT_PATHS:
-        raise ValueError(
-            "harness_artifact_paths exceeds the path-count safety bound"
-        )
+        raise ValueError("harness_artifact_paths exceeds the path-count safety bound")
     normalized: list[str] = []
     total_bytes = 0
     for path in paths:
-        if (
-            not isinstance(path, str)
-            or not path
-            or "\0" in path
-            or any(0xD800 <= ord(char) <= 0xDFFF for char in path)
-        ):
-            raise ValueError(
-                "harness_artifact_paths must contain filesystem-safe strings"
-            )
+        if not isinstance(path, str) or not path or "\0" in path or any(0xD800 <= ord(char) <= 0xDFFF for char in path):
+            raise ValueError("harness_artifact_paths must contain filesystem-safe strings")
         try:
             encoded = os.fsencode(path)
         except UnicodeEncodeError as exc:
-            raise ValueError(
-                "harness_artifact_paths must contain filesystem-safe strings"
-            ) from exc
+            raise ValueError("harness_artifact_paths must contain filesystem-safe strings") from exc
         total_bytes += len(encoded)
         if total_bytes > MAX_TASK_HARNESS_ARTIFACT_PATH_BYTES:
-            raise ValueError(
-                "harness_artifact_paths exceeds the aggregate-byte safety bound"
-            )
+            raise ValueError("harness_artifact_paths exceeds the aggregate-byte safety bound")
         normalized.append(path)
     return tuple(normalized)
 
 
 def _mapped_artifact_path_bound_error(paths: Sequence[str]) -> str | None:
     if len(paths) > MAX_MAPPED_HARNESS_ARTIFACT_PATHS:
-        return (
-            f"mapped artifact path count {len(paths)} exceeds "
-            f"{MAX_MAPPED_HARNESS_ARTIFACT_PATHS}"
-        )
-    total_bytes = sum(
-        len(path.encode("utf-8", errors="surrogatepass")) for path in paths
-    )
+        return f"mapped artifact path count {len(paths)} exceeds {MAX_MAPPED_HARNESS_ARTIFACT_PATHS}"
+    total_bytes = sum(len(path.encode("utf-8", errors="surrogatepass")) for path in paths)
     if total_bytes > MAX_MAPPED_HARNESS_ARTIFACT_PATH_BYTES:
-        return (
-            f"mapped artifact path bytes {total_bytes} exceed "
-            f"{MAX_MAPPED_HARNESS_ARTIFACT_PATH_BYTES}"
-        )
+        return f"mapped artifact path bytes {total_bytes} exceed {MAX_MAPPED_HARNESS_ARTIFACT_PATH_BYTES}"
     return None
 
 
 def _host_workspace_root(env: ExecutionEnvironment) -> Path | None:
-    raw_workspace = (
-        env.workspace
-        if env.local_filesystem
-        else getattr(env, "host_workspace", None)
-    )
+    raw_workspace = env.workspace if env.local_filesystem else getattr(env, "host_workspace", None)
     if not raw_workspace:
         return None
     try:
@@ -268,9 +243,7 @@ def _workspace_relative_host_paths(
     raw_source_workspace = getattr(env, "source_workspace", None)
     if raw_source_workspace:
         try:
-            source_workspace = Path(
-                os.path.abspath(os.fspath(raw_source_workspace))
-            )
+            source_workspace = Path(os.path.abspath(os.fspath(raw_source_workspace)))
         except (OSError, TypeError, ValueError):
             source_workspace = None
         if source_workspace is not None and source_workspace not in roots:
@@ -278,9 +251,7 @@ def _workspace_relative_host_paths(
     for root in roots:
         pairs = [(target, root)]
         try:
-            pairs.append(
-                (target.resolve(strict=False), root.resolve(strict=False))
-            )
+            pairs.append((target.resolve(strict=False), root.resolve(strict=False)))
         except (OSError, RuntimeError):
             pass
         for candidate, candidate_root in pairs:
@@ -326,10 +297,7 @@ def _legacy_result_temp_paths(output_dir: str) -> tuple[list[str], bool]:
     try:
         with os.scandir(output_dir) as entries:
             for entry in entries:
-                if not (
-                    entry.name.startswith(".results.jsonl.")
-                    and entry.name.endswith(".tmp")
-                ):
+                if not (entry.name.startswith(".results.jsonl.") and entry.name.endswith(".tmp")):
                     continue
                 if len(matches) >= MAX_LEGACY_RESULT_TEMP_ARTIFACTS:
                     return matches, False
@@ -420,8 +388,7 @@ async def default_env_factory(task: EvalTask) -> ExecutionEnvironment:
             except BaseException as cleanup_exc:
                 add_exception_note(
                     original,
-                    "isolated Docker environment cleanup failed: "
-                    f"{type(cleanup_exc).__name__}: {cleanup_exc}",
+                    f"isolated Docker environment cleanup failed: {type(cleanup_exc).__name__}: {cleanup_exc}",
                 )
             raise original
     env = WorktreeEnvironment(task.repo_path or ".")
@@ -448,6 +415,7 @@ async def run_eval_task(
     thinking_params: dict | None = None,
     wire_protocol: str = "chat_completions",
     reasoning_effort: str | None = None,
+    llm_timeout: float = 600.0,
     llm_connect_timeout: float = 30.0,
     llm_first_event_timeout: float = 180.0,
     llm_stream_idle_timeout: float = 180.0,
@@ -476,6 +444,7 @@ async def run_eval_task(
         thinking_params,
         wire_protocol,
         reasoning_effort,
+        llm_timeout,
         llm_connect_timeout,
         llm_first_event_timeout,
         llm_stream_idle_timeout,
@@ -548,10 +517,7 @@ async def run_eval_batch(
                     f"Unhandled: {type(exc).__name__}: {exc}",
                 )
 
-    workers = [
-        asyncio.create_task(run_one(task))
-        for task in tasks
-    ]
+    workers = [asyncio.create_task(run_one(task)) for task in tasks]
     try:
         return await asyncio.gather(*workers)
     except BaseException:
@@ -598,32 +564,20 @@ def save_results(results: list[EvalResult], output_path: str) -> None:
                 "test_patch_isolation_failed": result.test_patch_isolation_failed,
                 "execution_quiesced": result.execution_quiesced,
                 "patch_extraction_succeeded": result.patch_extraction_succeeded,
-                "injected_path_cleanup_proven": (
-                    result.injected_path_cleanup_proven
-                ),
-                "harness_artifact_exclusion_proven": (
-                    result.harness_artifact_exclusion_proven
-                ),
-                "checkpoint_restore_integrity_proven": (
-                    result.checkpoint_restore_integrity_proven
-                ),
-                "task_stage_integrity_proven": (
-                    result.task_stage_integrity_proven
-                ),
+                "injected_path_cleanup_proven": (result.injected_path_cleanup_proven),
+                "harness_artifact_exclusion_proven": (result.harness_artifact_exclusion_proven),
+                "checkpoint_restore_integrity_proven": (result.checkpoint_restore_integrity_proven),
+                "task_stage_integrity_proven": (result.task_stage_integrity_proven),
                 "submission_eligible": result.submission_eligible,
             }
             if result.checkpoint_result is not None:
                 record["checkpoint_result"] = result.checkpoint_result
             line = (json.dumps(record) + "\n").encode("utf-8")
             if len(line) > MAX_RESULT_RECORD_BYTES:
-                raise ValueError(
-                    f"evaluation result record exceeds {MAX_RESULT_RECORD_BYTES} bytes"
-                )
+                raise ValueError(f"evaluation result record exceeds {MAX_RESULT_RECORD_BYTES} bytes")
             total_bytes += len(line)
             if total_bytes > MAX_RESULTS_FILE_BYTES:
-                raise ValueError(
-                    f"evaluation results exceed {MAX_RESULTS_FILE_BYTES} bytes"
-                )
+                raise ValueError(f"evaluation results exceed {MAX_RESULTS_FILE_BYTES} bytes")
             written = handle.write(line)
             if written != len(line):
                 raise OSError("evaluation results write made no progress")
@@ -633,9 +587,7 @@ def save_results(results: list[EvalResult], output_path: str) -> None:
         write_jsonl,
         max_bytes=MAX_RESULTS_FILE_BYTES,
         expected_parent_identity=expected_parent_identity,
-        expected_target_identity=(
-            (existing.st_dev, existing.st_ino) if existing is not None else None
-        ),
+        expected_target_identity=((existing.st_dev, existing.st_ino) if existing is not None else None),
         require_target_absent=existing is None,
         context="evaluation results",
     )

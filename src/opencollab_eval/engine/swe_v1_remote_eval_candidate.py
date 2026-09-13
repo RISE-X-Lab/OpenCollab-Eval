@@ -15,11 +15,15 @@ from opencollab_eval.engine.swe_generation_proof import current_generation_proof
 from opencollab_eval.engine.swe_v1_remote_records import (
     embedded_workflow_metric,
     generation_done,
+    generation_identity_matches,
+    generation_runtime_identity,
     historical_generation_identity_status,
     latest_pair,
     prediction_patch,
     read_jsonl,
+    row_record_id,
 )
+from opencollab_eval.engine.swe_v1_remote_state import stable_runtime_identity
 
 _BLOCKED_IDENTITY_FIELDS = (
     "invocation_id",
@@ -507,6 +511,11 @@ def eval_only_generation_identity_status(
     *,
     matching_official_eval_attempts,
 ):
+    if isinstance(metric, dict) and metric.get("recovery_kind") == "failed_quiesced_capture":
+        from opencollab_eval.generation.gen_prediction_recovery import failed_capture_recovery_valid
+
+        if not failed_capture_recovery_valid(prediction, metric):
+            return "invalid"
     identity_metric = metric
     if (
         isinstance(metric, dict)
@@ -559,3 +568,83 @@ def generation_done_for_mode(run_dir, task, *, eval_only):
         ),
     )
     return status != "invalid", prediction, metric, pairing
+
+
+def reconcile_expected_candidate_identity(result, expected):
+    """Keep immutable candidate bindings strict and derive the eval patch binding."""
+    if not any(expected.values()):
+        return result
+    observed = {
+        "task": str(result.get("task") or ""),
+        "record_id": str(result.get("record_id") or ""),
+        "source_patch_sha256": str(result.get("source_patch_sha256") or result.get("patch_sha256") or ""),
+        "eval_patch_sha256": str(result.get("eval_patch_sha256") or result.get("patch_sha256") or ""),
+    }
+    immutable_fields = ("task", "record_id", "source_patch_sha256")
+    mismatched = [
+        field for field in immutable_fields if observed[field] != expected[field]
+    ]
+    if mismatched:
+        return {
+            "status": "candidate_identity_mismatch",
+            "task": result.get("task"),
+            "eval_only": True,
+            "identity_mismatch_fields": mismatched,
+            "expected_candidate_identity": expected,
+            "observed_candidate_identity": observed,
+        }
+    eval_patch_matches = (
+        not expected["eval_patch_sha256"]
+        or observed["eval_patch_sha256"] == expected["eval_patch_sha256"]
+    )
+    if eval_patch_matches:
+        return result
+    reconciled = dict(result)
+    reconciled["artifact_identity_warnings"] = [
+        "stale_expected_eval_patch_sha256"
+    ]
+    reconciled["candidate_identity_reconciliation"] = {
+        "status": "accepted_recomputed_eval_patch",
+        "expected_candidate_identity": expected,
+        "observed_candidate_identity": observed,
+    }
+    return reconciled
+
+
+
+def generation_readiness_failure(task, prediction, metric, pairing, *, require_identity):
+    """Describe a failed existing readiness check while preserving patch existence."""
+    result = {"task": task, "pairing": pairing, "executed": False}
+    patch = prediction_patch(prediction)
+    if not patch.strip():
+        return {**result, "status": "skipped_no_generation_patch", "reason": "missing_or_empty_prediction"}
+    result.update(
+        patch_len=len(patch), record_id=row_record_id(prediction), patch_sha256=prediction.get("patch_sha256")
+    )
+    if not isinstance(metric, dict):
+        return {**result, "status": "technical_generation_identity_failed", "reason": "missing_paired_metric"}
+    historical = historical_generation_identity_status(prediction, metric, task)
+    result["artifact_identity_status"] = historical
+    if historical == "invalid":
+        proof_valid = current_generation_proof_valid(metric, patch)
+        return {
+            **result,
+            "status": (
+                "technical_generation_identity_failed" if proof_valid else "technical_generation_evidence_invalid"
+            ),
+            "reason": "historical_generation_identity_invalid" if proof_valid else "generation_proof_invalid",
+        }
+    if require_identity:
+        expected = stable_runtime_identity(generation_runtime_identity())
+        mismatches = [key for key, value in expected.items() if metric.get(key) != value]
+        if mismatches:
+            return {
+                **result, "status": "technical_generation_identity_failed",
+                "reason": "generation_runtime_identity_mismatch", "mismatched_identity_fields": sorted(mismatches),
+            }
+        if not generation_identity_matches(prediction, metric, require_patch=False):
+            return {
+                **result, "status": "technical_generation_identity_failed",
+                "reason": "generation_model_workflow_or_invocation_identity_mismatch",
+            }
+    return {**result, "status": "technical_generation_evidence_invalid", "reason": "generation_mode_evidence_invalid"}

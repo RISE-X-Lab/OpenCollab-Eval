@@ -10,7 +10,7 @@ from opencollab_eval.engine.swe_v1_remote_pytest_proof import (
 def prolite_pytest_controller_source() -> str:
     """Return a small controller that publishes proof outside candidate permissions."""
 
-    source = r'''#!/usr/bin/env python3
+    source = r"""#!/usr/bin/env python3
 import argparse
 import hashlib
 import importlib.util
@@ -212,11 +212,14 @@ def _trusted_pytest_worker(argv):
     plugin = importlib.util.module_from_spec(spec)
     sys.modules["opencollab_pytest_proof"] = plugin
     spec.loader.exec_module(plugin)
+    plugin.opencollab_begin()
     import pytest
 
     sys.path.insert(0, str(cwd))
     _release_candidate_modules(candidate_source_paths, cwd)
-    return int(pytest.main(pytest_args, plugins=[plugin]))
+    returncode = int(pytest.main(pytest_args, plugins=[plugin]))
+    plugin.opencollab_finalize(returncode)
+    return returncode
 
 
 def _drop_privileges():
@@ -458,7 +461,7 @@ if __name__ == "__main__":
             print(str(exc), file=sys.stderr)
             raise SystemExit(TECHNICAL_EXIT)
     raise SystemExit(main())
-'''
+"""
     return source.replace(
         "SOURCE_LAYOUT_ROOTS = ()",
         f"SOURCE_LAYOUT_ROOTS = {tuple(sorted(_PYTHON_SOURCE_LAYOUT_ROOTS))!r}",

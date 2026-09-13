@@ -3,17 +3,22 @@
 # ruff: noqa: E501, F403, F405
 
 from opencollab_eval.engine import swe_v1_remote_cleanup as remote_cleanup
-from opencollab_eval.engine.swe_v1_candidate_go_dependencies import candidate_added_go_modules
+from opencollab_eval.engine.swe_v1_candidate_go_dependencies import (
+    candidate_added_go_modules,
+)
 from opencollab_eval.engine.swe_v1_remote_artifacts import *
 from opencollab_eval.engine.swe_v1_remote_commands import *
 from opencollab_eval.engine.swe_v1_remote_core import *
 from opencollab_eval.engine.swe_v1_remote_eval_candidate import *
+from opencollab_eval.engine.swe_v1_remote_eval_candidate import generation_readiness_failure
 from opencollab_eval.engine.swe_v1_remote_eval_patch import *
 from opencollab_eval.engine.swe_v1_remote_eval_retry import *
-from opencollab_eval.engine.swe_v1_remote_eval_script import direct_eval_script, eval_workspace_helper_sources
+from opencollab_eval.engine.swe_v1_remote_eval_script import (
+    direct_eval_script,
+    eval_workspace_helper_sources,
+)
 from opencollab_eval.engine.swe_v1_remote_generation import *
 from opencollab_eval.engine.swe_v1_remote_gitlink_probe import *
-from opencollab_eval.engine.swe_v1_remote_health import http_health
 from opencollab_eval.engine.swe_v1_remote_pytest_controller import prolite_pytest_controller_source
 from opencollab_eval.engine.swe_v1_remote_records import *
 from opencollab_eval.engine.swe_v1_remote_runtime_dependencies import *
@@ -26,9 +31,7 @@ def eval_for_task_once(row, patch_selection=None):
     eval_dir = run_dir / eval_dir_name
     report_path = eval_dir / "reports" / task / "report.json"
     summary_path = eval_dir / "summary.json"
-    done, prediction, metric, pairing = generation_done_for_mode(
-        run_dir, task, eval_only=eval_only
-    )
+    done, prediction, metric, pairing = generation_done_for_mode(run_dir, task, eval_only=eval_only)
     if not done:
         if prediction is not None and metric is not None:
             original_model_patch = prediction_patch(prediction)
@@ -53,7 +56,7 @@ def eval_for_task_once(row, patch_selection=None):
                 }
                 write_json(summary_path, summary)
                 return {"status": "empty_eval_patch_invalid", "task": task, "summary": summary}
-        return {"status": "skipped_no_generation_patch", "task": task, "pairing": pairing}
+        return generation_readiness_failure(task, prediction, metric, pairing, require_identity=not eval_only)
     fail_to_pass = parse_literal_list(row.get("fail_to_pass") or row.get("FAIL_TO_PASS"))
     if not fail_to_pass:
         summary = {
@@ -191,9 +194,7 @@ def eval_for_task_once(row, patch_selection=None):
     atomic_write_bytes(input_dir / "model.patch", model_patch.encode("utf-8"))
     atomic_write_bytes(input_dir / "test.patch", test_patch.encode("utf-8"))
     atomic_write_bytes(input_dir / "service_bootstrap.sh", service_bootstrap.encode("utf-8"))
-    atomic_write_bytes(
-        input_dir / "before_repo.sh", str(row.get("before_repo_set_cmd") or "").encode("utf-8")
-    )
+    atomic_write_bytes(input_dir / "before_repo.sh", str(row.get("before_repo_set_cmd") or "").encode("utf-8"))
     atomic_write_bytes(
         input_dir / "base_commit",
         (str(row.get("base_commit") or row.get("commit") or "").strip() + "\n").encode("utf-8"),
@@ -215,8 +216,26 @@ def eval_for_task_once(row, patch_selection=None):
     atomic_write_bytes(input_dir / "opencollab_pytest_proof.py", prolite_pytest_proof_plugin_source().encode("utf-8"))
     atomic_write_bytes(controller_path, prolite_pytest_controller_source().encode("utf-8"))
     atomic_write_bytes(input_dir / "proof.nonce", (proof_nonce + "\n").encode("ascii"))
-    atomic_write_bytes(input_dir / "f2p.sh", prolite_test_plan_script(f2p_plan, "f2p", proof_nonce, controller_timeout=configured_eval_timeout, shared_deadline_env="OPENCOLLAB_EVAL_DEADLINE").encode("utf-8"))
-    atomic_write_bytes(input_dir / "p2p.sh", prolite_test_plan_script(p2p_plan, "p2p", proof_nonce, controller_timeout=configured_eval_timeout, shared_deadline_env="OPENCOLLAB_EVAL_DEADLINE").encode("utf-8"))
+    atomic_write_bytes(
+        input_dir / "f2p.sh",
+        prolite_test_plan_script(
+            f2p_plan,
+            "f2p",
+            proof_nonce,
+            controller_timeout=configured_eval_timeout,
+            shared_deadline_env="OPENCOLLAB_EVAL_DEADLINE",
+        ).encode("utf-8"),
+    )
+    atomic_write_bytes(
+        input_dir / "p2p.sh",
+        prolite_test_plan_script(
+            p2p_plan,
+            "p2p",
+            proof_nonce,
+            controller_timeout=configured_eval_timeout,
+            shared_deadline_env="OPENCOLLAB_EVAL_DEADLINE",
+        ).encode("utf-8"),
+    )
     write_json(input_dir / "f2p.plan.json", f2p_plan)
     write_json(input_dir / "p2p.plan.json", p2p_plan)
     inner = direct_eval_script()
@@ -293,6 +312,8 @@ def eval_for_task_once(row, patch_selection=None):
         *timeout_prefix,
         "docker",
         "run",
+        "--tmpfs",
+        "/tmp:rw,exec,nosuid,nodev,size=8g,mode=1777",
         "--rm",
         "--name",
         container_name,
@@ -368,18 +389,40 @@ def eval_for_task_once(row, patch_selection=None):
         else:
             ACTIVE_CHILD_PGIDS.add(proc.pid)
             try:
-                binding = bind_eval_container_marker(cidfile, marker_path, container_name, proc, timeout=eval_container_bind_timeout)
+                binding = bind_eval_container_marker(
+                    cidfile, marker_path, container_name, proc, timeout=eval_container_bind_timeout
+                )
             except Exception as exc:
-                binding = {"ok": False, "status": "container_identity_binding_exception", "details": f"{type(exc).__name__}: {exc}"}
+                binding = {
+                    "ok": False,
+                    "status": "container_identity_binding_exception",
+                    "details": f"{type(exc).__name__}: {exc}",
+                }
             except BaseException:
-                cleanup_eval_binding_interruption(proc, cidfile, marker_path, container_name, temporary_output, spawn_signal_state, cleanup_eval_container, clear_pending_eval_marker, cleanup_temporary_output)
+                cleanup_eval_binding_interruption(
+                    proc,
+                    cidfile,
+                    marker_path,
+                    container_name,
+                    temporary_output,
+                    spawn_signal_state,
+                    cleanup_eval_container,
+                    clear_pending_eval_marker,
+                    cleanup_temporary_output,
+                )
                 raise
             if not binding.get("ok"):
                 try:
                     cleanup_quiesced = terminate_process_group_bounded(proc)
                     cleanup = safe_eval_container_cleanup(cleanup_eval_container, cidfile, marker_path, container_name)
-                    pending_cleanup = clear_pending_eval_marker(cidfile, marker_path, container_name) if cleanup_quiesced and not cleanup.get("ok") else None
-                    cleanup = pending_cleanup if isinstance(pending_cleanup, dict) and pending_cleanup.get("ok") else cleanup
+                    pending_cleanup = (
+                        clear_pending_eval_marker(cidfile, marker_path, container_name)
+                        if cleanup_quiesced and not cleanup.get("ok")
+                        else None
+                    )
+                    cleanup = (
+                        pending_cleanup if isinstance(pending_cleanup, dict) and pending_cleanup.get("ok") else cleanup
+                    )
                     if cleanup_quiesced:
                         ACTIVE_CHILD_PGIDS.discard(proc.pid)
                     summary = {
@@ -417,7 +460,7 @@ def eval_for_task_once(row, patch_selection=None):
                     cleanup_quiesced = False
                     try:
                         cleanup_quiesced = terminate_process_group_bounded(proc)
-                    except BaseException:
+                    except BaseException:  # noqa: BLE001, S110 - preserve original failure
                         pass
                     try:
                         cleanup_eval_container(
@@ -425,13 +468,14 @@ def eval_for_task_once(row, patch_selection=None):
                             marker_path,
                             container_name,
                         )
-                    except BaseException:
+                    except BaseException:  # noqa: BLE001, S110 - preserve original failure
                         pass
                     cleanup_temporary_output(temporary_output)
                     raise
             finally:
                 if cleanup_quiesced:
                     ACTIVE_CHILD_PGIDS.discard(proc.pid)
+
     if container_cleanup is None:
         container_cleanup = cleanup_eval_container(
             cidfile,
@@ -439,14 +483,19 @@ def eval_for_task_once(row, patch_selection=None):
             container_name,
         )
     artifacts = publish_and_read_eval_output_artifacts(
-        container_output_dir, output_dir, f2p_plan, p2p_plan, proof_nonce, temporary_output,
+        container_output_dir,
+        output_dir,
+        f2p_plan,
+        p2p_plan,
+        proof_nonce,
+        temporary_output,
         str(row.get("base_commit") or row.get("commit") or ""),
         runtime_dependency_identities,
-        str(patch_selection.get("image_id") or ""), patch_selection["candidate_expectation"],
+        str(patch_selection.get("image_id") or ""),
+        patch_selection["candidate_expectation"],
     )
     verdict = derive_eval_verdict(
-        artifacts, docker_exit=docker_exit, cleanup_quiesced=cleanup_quiesced,
-        container_cleanup=container_cleanup
+        artifacts, docker_exit=docker_exit, cleanup_quiesced=cleanup_quiesced, container_cleanup=container_cleanup
     )
     output_artifact_errors = verdict["output_artifact_errors"]
     diagnostic_artifact_errors = artifacts["diagnostic_artifact_errors"]
@@ -470,7 +519,11 @@ def eval_for_task_once(row, patch_selection=None):
     model_patch_log_tail = artifacts["model_patch_log_tail"]
     test_patch_log_tail = artifacts["test_patch_log_tail"]
     technical_reasons = verdict["technical_reasons"]
-    technical_error, resolved, summary_status = verdict["technical_error"], verdict["resolved"], verdict["summary_status"]
+    technical_error, resolved, summary_status = (
+        verdict["technical_error"],
+        verdict["resolved"],
+        verdict["summary_status"],
+    )
     outcome_fields = {key: verdict[key] for key in ("outcome", "outcome_basis", "operational_warnings")}
     report = {
         "schema": "opencollab.prolite_direct_eval.v2",
@@ -487,11 +540,14 @@ def eval_for_task_once(row, patch_selection=None):
         "cleanup_quiesced": cleanup_quiesced,
         "container_cleanup": container_cleanup,
         "patch_sha256": row_patch_sha(prediction),
-        "base_snapshot_integrity": artifacts["base_snapshot"], "candidate_projection_failure": artifacts["candidate_projection_failure"], "candidate_projection": artifacts["candidate_projection"], "source_candidate_projection": artifacts["source_candidate_projection"],
-        "runtime_dependencies": artifacts["runtime_dependencies"], "runtime_dependency_identities": runtime_dependency_identities,
+        "base_snapshot_integrity": artifacts["base_snapshot"],
+        "candidate_projection_failure": artifacts["candidate_projection_failure"],
+        "candidate_projection": artifacts["candidate_projection"],
+        "source_candidate_projection": artifacts["source_candidate_projection"],
+        "runtime_dependencies": artifacts["runtime_dependencies"],
+        "runtime_dependency_identities": runtime_dependency_identities,
         **patch_evidence,
         "record_id": row_record_id(prediction),
-        "eval_container_bind_timeout": eval_container_bind_timeout,
         "eval_spec_sha256": eval_spec_sha256,
         "model_patch_chars": len(original_model_patch),
         "eval_model_patch_chars": len(model_patch),
@@ -531,7 +587,6 @@ def eval_for_task_once(row, patch_selection=None):
         "patch_sha256": row_patch_sha(prediction),
         **patch_evidence,
         "record_id": row_record_id(prediction),
-        "eval_container_bind_timeout": eval_container_bind_timeout,
         "eval_spec_sha256": eval_spec_sha256,
         "model_patch_chars": len(original_model_patch),
         "eval_model_patch_chars": len(model_patch),
@@ -541,9 +596,13 @@ def eval_for_task_once(row, patch_selection=None):
         "docker_exit": docker_exit,
         "cleanup_quiesced": cleanup_quiesced,
         "container_cleanup": container_cleanup,
-        "report_path": str(report_path), "command_log": str(command_log),
-        "base_snapshot_integrity": artifacts["base_snapshot"], "runtime_dependencies": artifacts["runtime_dependencies"],
-        "candidate_projection_failure": artifacts["candidate_projection_failure"], "candidate_projection": artifacts["candidate_projection"], "source_candidate_projection": artifacts["source_candidate_projection"],
+        "report_path": str(report_path),
+        "command_log": str(command_log),
+        "base_snapshot_integrity": artifacts["base_snapshot"],
+        "runtime_dependencies": artifacts["runtime_dependencies"],
+        "candidate_projection_failure": artifacts["candidate_projection_failure"],
+        "candidate_projection": artifacts["candidate_projection"],
+        "source_candidate_projection": artifacts["source_candidate_projection"],
         "runtime_dependency_identities": runtime_dependency_identities,
         "tests_status": report["tests_status"],
     }
@@ -556,245 +615,19 @@ def eval_for_task_once(row, patch_selection=None):
         "executed": True,
         "eval_patch_sha256": patch_selection["eval_patch_sha256"],
     }
+
+
 def eval_for_task(row):
-    return eval_for_task_with_retries(row, eval_for_task_once, resolve_eval_timeout(globals().get("eval_timeout") or None), resolve_eval_timeout(globals().get("eval_timeout") or None))
-def write_markdown(summary):
-    lines = [
-        f"# SWE G1.1 Pro-Lite {summary.get('slice', slice_label())} Report",
-        "",
-        f"- generated_at: `{summary['generated_at']}`",
-        f"- base_run_dir: `{summary['base_run_dir']}`",
-        f"- remote_runtime_repo: `{summary['remote_runtime_repo']}`",
-        f"- workflow: `{summary['workflow']}`",
-        f"- solver_attribution: `{summary['solver_attribution']}`",
-        f"- llm_model: `{summary['llm_model']}`",
-        f"- tasks: `{summary['counts']['tasks']}`",
-        f"- generation_done: `{summary['counts']['generation_done']}`",
-        f"- eval_done: `{summary['counts']['eval_done']}`",
-        f"- resolved: `{summary['counts']['resolved']}`",
-        f"- unresolved: `{summary['counts']['unresolved']}`",
-        f"- technical_failed: `{summary['counts']['technical_failed']}`",
-        "",
-        "| idx | task | generation | eval | resolved | patch | report |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
-    ]
-    for row in summary["rows"]:
-        report = row.get("eval", {}).get("report_path") or ""
-        patch_sha = (
-            row.get("generation", {}).get("patch_sha256")
-            or (row.get("eval", {}).get("summary") or {}).get("patch_sha256")
-            or ""
-        )
-        lines.append(
-            "| {idx} | `{task}` | `{gen}` | `{ev}` | `{resolved}` | `{patch}` | `{report}` |".format(
-                idx=row["index"],
-                task=row["task"],
-                gen=row.get("generation", {}).get("status", ""),
-                ev=row.get("eval", {}).get("status", ""),
-                resolved=(row.get("eval", {}).get("summary") or {}).get("resolved", ""),
-                patch=patch_sha[:12],
-                report=report,
-            )
-        )
-    summary["markdown"] = "\n".join(lines) + "\n"
-def main():
-    config_errors = validate_runner_config()
-    if config_errors:
-        summary = {
-            "schema": "opencollab.swe_g11_prolite_runner.v1",
-            "status": "invalid_config",
-            "generated_at": now(),
-            "slice": slice_label(),
-            "base_run_dir": str(base_run_dir),
-            "remote_runtime_repo": str(remote_repo),
-            "workflow": workflow,
-            "config_errors": config_errors,
-            "counts": {
-                "tasks": 0,
-                "generation_done": 0,
-                "empty_patch": 0,
-                "eval_done": 0,
-                "eval_attempts": 0,
-                "eval_retry_tasks": 0,
-                "resolved": 0,
-                "unresolved": 0,
-                "technical_failed": 1,
-            },
-            "rows": [],
-        }
-        write_json(base_run_dir / "summary.json", summary)
-        print(json.dumps(summary, ensure_ascii=False, indent=2))
-        return 2
-    preflight = {
-        "dataset_exists": dataset_path.exists(),
-        "remote_root_exists": remote_root.exists(),
-        "remote_repo_exists": remote_repo.exists(),
-        "remote_runtime_required": not eval_only,
-        "proxy_health": (
-            {"ok": True, "status": "skipped_eval_only"}
-            if eval_only
-            else ({"ok": True, "status": "not_applicable_direct"} if llm_transport == "direct"
-                  else http_health(proxy_health_url(remote_proxy_base_url), timeout=45))
-        ),
-    }
-    if not all(
-        [
-            preflight["dataset_exists"],
-            preflight["remote_root_exists"],
-            preflight["remote_repo_exists"] or not preflight["remote_runtime_required"],
-            preflight["proxy_health"].get("ok"),
-        ]
-    ):
-        summary = {
-            "schema": "opencollab.swe_g11_prolite_runner.v1",
-            "status": "preflight_failed",
-            "generated_at": now(),
-            "slice": slice_label(),
-            "base_run_dir": str(base_run_dir),
-            "remote_runtime_repo": str(remote_repo),
-            "workflow": workflow,
-            "preflight": preflight,
-            "counts": {
-                "tasks": 0,
-                "generation_done": 0,
-                "empty_patch": 0,
-                "eval_done": 0,
-                "eval_attempts": 0,
-                "eval_retry_tasks": 0,
-                "resolved": 0,
-                "unresolved": 0,
-                "technical_failed": 1,
-            },
-            "rows": [],
-        }
-        write_json(base_run_dir / "summary.json", summary)
-        print(json.dumps(summary, ensure_ascii=False, indent=2))
-        return 2
-    selected = load_dataset(start_index, limit)
-    base_run_dir.mkdir(parents=True, exist_ok=True)
-    result_rows = []
-    for offset, row in enumerate(selected, start_index):
-        task = row["instance_id"]
-        if eval_only:
-            run_dir = base_run_dir / task
-            done, prediction, metric, pairing = generation_done_for_mode(
-                run_dir, task, eval_only=True
-            )
-            if done:
-                matching_attempts = _matching_official_eval_attempt_count(run_dir, task)
-                identity_status = eval_only_generation_identity_status(
-                    prediction, metric, task, matching_official_eval_attempts=matching_attempts
-                )
-                gen = reconcile_eval_only_candidate_identity(
-                    generation_done_result(
-                        task, prediction, metric, pairing,
-                        eval_only=True,
-                        artifact_identity_status=identity_status,
-                    )
-                )
-            else:
-                gen = {
-                    "status": "skipped_no_generation_patch",
-                    "task": task,
-                    "pairing": pairing,
-                    "eval_only": True,
-                }
-            generation_phase = "generation_observed"
-        else:
-            gen = generation_for_task(row)
-            generation_phase = "generation"
-        append_jsonl(base_run_dir / "events.jsonl", {"time": now(), "phase": generation_phase, "task": task, "result": gen})
-        if gen.get("status") == "empty_patch":
-            ev = {
-                "status": "skipped_empty_patch",
-                "task": task,
-                "pairing": gen.get("pairing"),
-                "attempt_count": 0,
-                "max_eval_attempts": max_eval_attempts,
-            }
-        elif dry_run and gen.get("status") in {"would_generate", "generation_done"}:
-            ev = {"status": "would_eval", "task": task}
-        elif gen.get("status") == "generation_done":
-            ev = eval_for_task(row)
-        else:
-            ev = {
-                "status": "skipped_generation_not_ready",
-                "task": task,
-                "generation_status": gen.get("status"),
-                "reason": "generation_not_ready",
-            }
-        append_jsonl(base_run_dir / "events.jsonl", {"time": now(), "phase": "eval", "task": task, "result": ev})
-        result_rows.append({"index": offset, "task": task, "generation": gen, "eval": ev})
-    generation_ok_statuses = {"generation_done", "empty_patch"}
-    eval_ok_statuses = {"eval_done", "skipped_empty_patch"}
-    if dry_run:
-        generation_ok_statuses.add("would_generate")
-        eval_ok_statuses.add("would_eval")
-    counts = {
-        "tasks": len(result_rows),
-        "generation_done": sum(1 for row in result_rows if row["generation"].get("status") == "generation_done"),
-        "empty_patch": sum(1 for row in result_rows if row["generation"].get("status") == "empty_patch"),
-        "would_generate": sum(1 for row in result_rows if row["generation"].get("status") == "would_generate"),
-        "eval_done": sum(1 for row in result_rows if row["eval"].get("status") == "eval_done"),
-        "would_eval": sum(1 for row in result_rows if row["eval"].get("status") == "would_eval"),
-        **eval_attempt_summary(result_rows),
-        "resolved": sum(1 for row in result_rows if (row["eval"].get("summary") or {}).get("resolved") is True),
-        "unresolved": sum(
-            1
-            for row in result_rows
-            if row["eval"].get("status") == "eval_done"
-            and (row["eval"].get("summary") or {}).get("resolved") is False
-        ),
-        "technical_failed": sum(
-            1
-            for row in result_rows
-            if row["generation"].get("status") not in generation_ok_statuses
-            or row["eval"].get("status") not in eval_ok_statuses
-        ),
-    }
-    status = "done" if counts["technical_failed"] == 0 else "done_with_technical_failures"
-    if dry_run and counts["technical_failed"] == 0:
-        status = "dry_run"
-    summary = {
-        "schema": "opencollab.swe_g11_prolite_runner.v1",
-        "status": status,
-        "generated_at": now(),
-        "slice": slice_label(),
-        "base_run_dir": str(base_run_dir),
-        "remote_runtime_repo": str(remote_repo),
-        "remote_python": str(cfg.get("remote_python") or "python3"),
-        "workflow": workflow,
-        "workflow_env": workflow_env,
-        "openhands_command_sha256": openhands_command_sha256,
-        "openhands_empty_patch_rejections": openhands_empty_patch_rejections,
-        "max_empty_patch_retries": max_empty_patch_retries,
-        "model_name": model_name,
-        "llm_model": llm_model,
-        "llm_provider": llm_provider,
-        "llm_transport": llm_transport,
-        "context_window": context_window,
-        "temperature": temperature,
-        "top_p": top_p,
-        "max_output_tokens": max_output_tokens,
-        "invocation_id": invocation_id,
-        "run_id": run_id,
-        "runtime_tree_sha256": runtime_tree_sha256,
-        "budget": budget,
-        "max_steps": max_steps,
-        "max_task_starts": max_task_starts,
-        "max_eval_attempts": max_eval_attempts,
-        "eval_container_bind_timeout": eval_container_bind_timeout,
-        "eval_only": eval_only,
-        "eval_dir_name": eval_dir_name,
-        "solver_attribution": "historical_artifact" if eval_only else "current_run",
-        "preflight": preflight,
-        "counts": counts,
-        "rows": result_rows,
-        "failure_scope": result_failure_scope(result_rows, counts["technical_failed"]),
-    }
-    write_markdown(summary)
-    write_json(base_run_dir / "summary.json", summary)
-    atomic_write_bytes(base_run_dir / "summary.md", summary["markdown"].encode("utf-8"))
-    print(json.dumps(summary, ensure_ascii=False, indent=2))
-    return 0 if counts["technical_failed"] == 0 else 1
-__all__ = [name for name in globals() if not name.startswith("__")]
+    return eval_for_task_with_retries(
+        row,
+        eval_for_task_once,
+        resolve_eval_timeout(globals().get("eval_timeout") or None),
+        resolve_eval_timeout(globals().get("eval_timeout") or None),
+    )
+
+
+from opencollab_eval.engine.swe_v1_remote_execution import (  # noqa: E402, F401
+    main,
+    task_outcome,
+    write_markdown,
+)

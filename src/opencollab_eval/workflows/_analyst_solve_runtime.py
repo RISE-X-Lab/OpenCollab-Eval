@@ -456,9 +456,7 @@ async def _forced_final_write(
     ``over_budget_ok=True`` skips ``WorkflowContext.agent``'s pre-call budget raise
     so the write still runs after the meter hits zero — without it the forced write
     self-aborted on an exhausted budget and no coder round ran at all (sympy-11400);
-    ``thinking=False`` forces reasoning off so the generation is fast and cannot
-    blow the deadline margin even when the run-wide default is thinking-on
-    (analyst-solve eval runs with OPENCOLLAB_THINKING=1); and ``timeout`` clamps
+    ``thinking=None`` retains the run's configured reasoning policy, and ``timeout`` clamps
     the call to whatever wall-clock time is left, so a stalled call is cancelled
     inside the workflow — its on-disk edits survive — instead of being truncated
     by the outer wall (which lost django-11564).
@@ -477,7 +475,7 @@ async def _forced_final_write(
         label="coder:forced-write",
         tools=_coder_tools(enforcement_strength),
         tool_choice="required",
-        thinking=False,
+        thinking=None,
         timeout=_seconds_left(ctx),
         over_budget_ok=True,
         budget=FORCED_WRITE_BUDGET,

@@ -9,11 +9,7 @@ from opencollab_eval.engine.swe_v1_remote_state import *
 def _js_path_matches(left, right):
     left = str(left or "").replace("\\", "/").removeprefix("./")
     right = str(right or "").replace("\\", "/").removeprefix("./")
-    return bool(
-        left
-        and right
-        and (left == right or left.endswith("/" + right) or right.endswith("/" + left))
-    )
+    return bool(left and right and (left == right or left.endswith("/" + right) or right.endswith("/" + left)))
 
 
 def _js_suite_module_mock_bindings(row, target_files):
@@ -30,11 +26,7 @@ def _js_suite_module_mock_bindings(row, target_files):
             if not match:
                 continue
             module = match.group(2)
-            if (
-                module
-                and len(module.encode("utf-8")) <= 4096
-                and module not in modules
-            ):
+            if module and len(module.encode("utf-8")) <= 4096 and module not in modules:
                 modules.append(module)
         if modules:
             bindings.append({"suite": path, "modules": modules})
@@ -68,19 +60,14 @@ def _js_suite_load_failure_proof_matches(
         or not targets
     ):
         return False
-    target_suites = {
-        str(target).split(" | ", 1)[0].replace("\\", "/").removeprefix("./")
-        for target in targets
-    }
+    target_suites = {str(target).split(" | ", 1)[0].replace("\\", "/").removeprefix("./") for target in targets}
     if len(target_suites) != 1:
         return False
     target_suite = next(iter(target_suites))
     bound_modules = []
     bound_suite = ""
     for binding in bindings:
-        if not isinstance(binding, dict) or not _js_path_matches(
-            binding.get("suite"), target_suite
-        ):
+        if not isinstance(binding, dict) or not _js_path_matches(binding.get("suite"), target_suite):
             continue
         modules = binding.get("modules")
         if (
@@ -90,10 +77,7 @@ def _js_suite_load_failure_proof_matches(
             or len(modules) > 128
             or len(set(modules)) != len(modules)
             or any(
-                not isinstance(module, str)
-                or not module
-                or len(module.encode("utf-8")) > 4096
-                for module in modules
+                not isinstance(module, str) or not module or len(module.encode("utf-8")) > 4096 for module in modules
             )
         ):
             return False
@@ -139,10 +123,13 @@ def _js_suite_load_failure_proof_matches(
         or not _js_path_matches(missing.group(2), target_suite)
     ):
         return False
-    return re.search(
-        r"(?m)^FAIL\s+" + re.escape(bound_suite) + r"\s*$",
-        str(log_text or ""),
-    ) is not None
+    return (
+        re.search(
+            r"(?m)^FAIL\s+" + re.escape(bound_suite) + r"\s*$",
+            str(log_text or ""),
+        )
+        is not None
+    )
 
 
 def _js_candidate_failure_proof_matches(
@@ -155,17 +142,9 @@ def _js_candidate_failure_proof_matches(
         return False
     targets = proof.get("targets")
     candidate_paths = proof.get("candidate_source_paths")
-    if (
-        not isinstance(targets, list)
-        or not targets
-        or not isinstance(candidate_paths, list)
-        or not candidate_paths
-    ):
+    if not isinstance(targets, list) or not targets or not isinstance(candidate_paths, list) or not candidate_paths:
         return False
-    target_suites = {
-        str(target).split(" | ", 1)[0].replace("\\", "/").removeprefix("./")
-        for target in targets
-    }
+    target_suites = {str(target).split(" | ", 1)[0].replace("\\", "/").removeprefix("./") for target in targets}
     reports = []
     for line in str(log_text or "").splitlines():
         try:
@@ -193,16 +172,25 @@ def _js_candidate_failure_proof_matches(
         "TypeError",
         "Test suite failed to run",
     )
+
+    def candidate_path_matches(message, path):
+        normalized = str(path or "").replace("\\", "/").removeprefix("./")
+        if not normalized:
+            return False
+        variants = {normalized}
+        for suffix in (".tsx", ".ts", ".jsx", ".js"):
+            if normalized.endswith(suffix):
+                variants.add(normalized[: -len(suffix)])
+        return any(variant in message for variant in variants)
+
     return bool(
         messages
         and any(
-            any(path in message for path in candidate_paths)
+            any(candidate_path_matches(message, path) for path in candidate_paths)
             and any(marker in message for marker in error_markers)
             for message in messages
         )
     )
-
-
 
 
 __all__ = [

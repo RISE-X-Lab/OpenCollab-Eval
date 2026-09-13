@@ -7,8 +7,8 @@ Python code defines the control flow, including agent fan-out and repair rounds.
 It also owns the verification gates and stop conditions. Models inspect and
 edit the repository within that control flow.
 
-The package depends on the workflow-authoring surface in OpenCollab 0.5.0 or a
-later 0.5.x release.
+The package depends on the workflow-authoring surface in OpenCollab 0.6.1.dev0 or a
+later 0.6.x release.
 
 ```python
 from opencollab.tools import Tool, builtin_tools
@@ -29,12 +29,14 @@ services, bootstrap internals, domain modules, harness code, and the retired
 | `scout-solve` | Parallel read-only reconnaissance followed by one repair loop |
 | `analyst-solve` | Analyst-led reconnaissance, phased repair, and final verification |
 | `team-pro` | Stable tuned alias for `analyst-solve` |
+| `candidate-tournament-council-v1` | Two independent patch candidates, one integrator, and one public test owner |
 | `validation-council-solve` | Blind contract and validation council for SWE tasks |
 | `swe-committee-v2` | Committee workflow with explicit evidence and test gates |
 
 The production Solver coordinator maps `g11` and `g1.1` to
-`validation-council-solve`, `baseTeam` to `base-team`, and `TeamPro` to
-`team-pro`. `openhands` and `claude-code` are external Solver configurations
+`validation-council-solve`, `g20-exp2` to `candidate-tournament-council-v1`,
+`baseTeam` to `base-team`, and `TeamPro` to `team-pro`. `openhands` and
+`claude-code` are external Solver configurations
 that enter through the shared generation and candidate path. The remaining
 workflow functions are library-level building blocks and can be selected by
 the single-instance workflow generator.

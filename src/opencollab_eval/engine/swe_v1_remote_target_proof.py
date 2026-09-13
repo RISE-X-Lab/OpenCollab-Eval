@@ -4,11 +4,16 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import pathlib
 import re
 import shlex
 
+from opencollab_eval.engine.python_test_commands import (
+    normalize_python_test_target,
+    python_test_command,
+)
 from opencollab_eval.engine.swe_v1_remote_nodebb_mocha import (
     NODEBB_MOCHA_FILE_MARKER,
     nodebb_mocha_runtime_title,
@@ -17,35 +22,6 @@ from opencollab_eval.engine.swe_v1_remote_nodebb_mocha import (
     nodebb_mocha_titles_are_unambiguous,
 )
 
-
-def normalize_python_test_target(target):
-    target = str(target)
-    if "[" in target and not target.endswith("]"):
-        return target.split("[", 1)[0]
-    return target
-
-def python_test_command(targets, max_args=40, max_chars=12000):
-    batches = []
-    current = []
-    current_chars = 0
-    for target in targets:
-        quoted = shlex.quote(target)
-        if current and (
-            len(current) >= max_args or current_chars + len(quoted) + 1 > max_chars
-        ):
-            batches.append(current)
-            current = []
-            current_chars = 0
-        current.append(target)
-        current_chars += len(quoted) + 1
-    if current:
-        batches.append(current)
-    commands = [
-        "python3 -m pytest -vv "
-        + " ".join(shlex.quote(target) for target in batch)
-        for batch in batches
-    ]
-    return " && ".join(commands)
 
 def python_batch_test_command(target_file, repo):
     batch_runner = """import json
@@ -79,8 +55,10 @@ raise SystemExit(status)
 """ % (repo == "qutebrowser/qutebrowser")
     return "python3 -c " + shlex.quote(batch_runner) + " " + shlex.quote(target_file)
 
+
 def js_runner_command(binary, package_script, target, extra_args=""):
     local_binary = f"./node_modules/.bin/{binary}"
+
     def quoted_words(value, label):
         if not value:
             return []
@@ -94,22 +72,25 @@ def js_runner_command(binary, package_script, target, extra_args=""):
     argument_part = " " + " ".join(argument_words) if argument_words else ""
     pnpm_args = f" -- {' '.join(argument_words)}" if argument_words else ""
     package_script = shlex.quote(package_script)
-    return "\n".join([
-        "if [ -x " + shlex.quote(local_binary) + " ]; then",
-        "  " + shlex.quote(local_binary) + argument_part,
-        "elif command -v yarn >/dev/null 2>&1; then",
-        f"  yarn {package_script}{argument_part}",
-        "elif command -v npx >/dev/null 2>&1; then",
-        f"  npx {shlex.quote(binary)}{argument_part}",
-        "elif command -v pnpm >/dev/null 2>&1; then",
-        f"  pnpm {package_script}{pnpm_args}",
-        "elif command -v corepack >/dev/null 2>&1; then",
-        f"  corepack pnpm {package_script}{pnpm_args}",
-        "else",
-        f"  echo 'No supported JS test runner found for {binary}' >&2",
-        "  exit 127",
-        "fi",
-    ])
+    return "\n".join(
+        [
+            "if [ -x " + shlex.quote(local_binary) + " ]; then",
+            "  " + shlex.quote(local_binary) + argument_part,
+            "elif command -v yarn >/dev/null 2>&1; then",
+            f"  yarn {package_script}{argument_part}",
+            "elif command -v npx >/dev/null 2>&1; then",
+            f"  npx {shlex.quote(binary)}{argument_part}",
+            "elif command -v pnpm >/dev/null 2>&1; then",
+            f"  pnpm {package_script}{pnpm_args}",
+            "elif command -v corepack >/dev/null 2>&1; then",
+            f"  corepack pnpm {package_script}{pnpm_args}",
+            "else",
+            f"  echo 'No supported JS test runner found for {binary}' >&2",
+            "  exit 127",
+            "fi",
+        ]
+    )
+
 
 def raw_plan_runtime_dependency_specs(*plans):
     """Combine dependency declarations without rewriting persisted plan evidence."""
@@ -120,6 +101,7 @@ def raw_plan_runtime_dependency_specs(*plans):
             if spec not in specs:
                 specs.append(spec)
     return specs
+
 
 def plan_runtime_dependency_specs(*plans):
     """Combine runtime requirements and normalize the original v2 JS shape."""
@@ -135,26 +117,20 @@ def plan_runtime_dependency_specs(*plans):
             specs.append(spec)
     return specs
 
+
 def canonical_js_test_files(tests, selected):
     selected_files = [str(item) for item in selected if str(item)]
-    requested = [
-        str(item).split(" | ", 1)[0]
-        for item in tests
-        if str(item) and ("/" in str(item) or "." in str(item))
-    ]
+    requested = [str(item).split(" | ", 1)[0] for item in tests if str(item) and ("/" in str(item) or "." in str(item))]
     if not requested:
         requested = list(selected_files)
     canonical = []
     for item in requested:
-        matches = [
-            candidate
-            for candidate in selected_files
-            if candidate == item or candidate.endswith("/" + item)
-        ]
+        matches = [candidate for candidate in selected_files if candidate == item or candidate.endswith("/" + item)]
         resolved = max(matches, key=len) if matches else item
         if resolved not in canonical:
             canonical.append(resolved)
     return canonical
+
 
 def declared_js_test_files(tests):
     declared = []
@@ -166,6 +142,7 @@ def declared_js_test_files(tests):
             declared.append(test_file)
     return declared
 
+
 def verified_js_test_files(tests, selected, test_patch_files=()):
     """Resolve declared JS suites through an unambiguous dataset file mapping."""
     declared = declared_js_test_files(tests)
@@ -176,9 +153,7 @@ def verified_js_test_files(tests, selected, test_patch_files=()):
         relative = pathlib.PurePosixPath(test_file)
         if relative.is_absolute() or ".." in relative.parts:
             return []
-        aliases = [
-            candidate for candidate in selected_files if candidate.endswith("/" + test_file)
-        ]
+        aliases = [candidate for candidate in selected_files if candidate.endswith("/" + test_file)]
         if len(aliases) > 1:
             return []
         if aliases and aliases[0] in patched_files:
@@ -193,11 +168,13 @@ def verified_js_test_files(tests, selected, test_patch_files=()):
         resolved.append(candidate)
     return resolved
 
+
 def js_workspace_root(test_file):
     parts = pathlib.PurePosixPath(test_file).parts
     if len(parts) >= 3 and parts[0] in {"applications", "packages"}:
         return "/".join(parts[:2])
     return ""
+
 
 def jest_test_command(test_files):
     grouped = {}
@@ -212,6 +189,7 @@ def jest_test_command(test_files):
             extra_args = "--config " + config + " " + extra_args
         commands.append(js_runner_command("jest", "test", target, extra_args))
     return " &&\n".join(commands)
+
 
 def mocha_test_command(tests, selected, target_file=""):
     if not nodebb_mocha_titles_are_unambiguous(
@@ -254,28 +232,86 @@ def mocha_test_command(tests, selected, target_file=""):
         )
     return " &&\n".join(commands)
 
-def tutanota_test_command(tests):
-    suite_names = []
-    for item in tests:
-        file_name = str(item).split(" | ", 1)[0].rsplit("/", 1)[-1].rsplit(".", 1)[0]
-        suite_name = file_name[:-4] if file_name.endswith("Test") else file_name
-        if suite_name and suite_name not in suite_names:
-            suite_names.append(suite_name)
-    suites_json = json.dumps(suite_names, ensure_ascii=True)
-    reporter_patch = """from pathlib import Path
-path = Path("test/tests/Suite.ts")
-text = path.read_text(encoding="utf-8")
-needle = "\tconst errCount = o.report(results, stats)"
-injected = "\tconst errCount = o.report(results, stats)\\n\tconst opencollabSuites = " + __OPENCOLLAB_SUITE_JSON__ + "\\n\tconst opencollabResults = results.filter((result) => opencollabSuites.some((suite) => JSON.stringify({task: result.task, context: result.context}).includes(suite)))\\n\tconsole.log(\\\"OPENCOLLAB_OSPEC_RESULTS \\\" + JSON.stringify(opencollabResults.map((result) => ({task: result.task, context: result.context, pass: result.pass}))))"
-if needle not in text:
-    raise SystemExit("missing ospec reporter insertion point")
-path.write_text(text.replace(needle, injected, 1), encoding="utf-8")
-""".replace("__OPENCOLLAB_SUITE_JSON__", repr(suites_json), 1)
-    return (
-        "python3 -I -c "
-        + shlex.quote(reporter_patch)
-        + " && npm_config_nodedir=/usr/local npm run test:app"
+
+def _patch_tutanota_suite(text, targets):
+    text = re.sub(r"(?ms)^[ \t]*// OPENCOLLAB_OSPEC_BEGIN[ \t]*$.*?^[ \t]*// OPENCOLLAB_OSPEC_END[ \t]*$\n?", "", text)
+    legacy = list(
+        re.finditer(
+            r"(?m)^(?P<i>[ \t]*)(?P<s>(?:(?:const|let)\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*)?o\.report\s*\([^\n]*\)\s*;?)[ \t]*$",
+            text,
+        )
     )
+
+    def block(indent, lines):
+        return (
+            "\n".join(indent + line for line in ["// OPENCOLLAB_OSPEC_BEGIN", *lines, "// OPENCOLLAB_OSPEC_END"]) + "\n"
+        )
+
+    if len(legacy) == 1:
+        match = legacy[0]
+        addition = block(
+            match["i"],
+            [
+                "const opencollabTargets = " + json.dumps(targets),
+                "const opencollabResults = results.map((result) => ({task: result.task, context: result.context, pass: result.pass}))",
+                'console.log("OPENCOLLAB_OSPEC_RESULTS " + JSON.stringify({targets: opencollabTargets, results: opencollabResults}))',
+            ],
+        )
+        return text[: match.end()] + "\n" + addition + text[match.end() :]
+    if legacy:
+        raise ValueError("legacy ospec report call is not unique")
+    runs = list(
+        re.finditer(r"(?m)^(?P<i>[ \t]*)const (?P<var>[A-Za-z_$][A-Za-z0-9_$]*) = await o\.run\([^\n]*\)[ \t]*$", text)
+    )
+    prints = list(re.finditer(r"(?m)^(?P<i>[ \t]*)o\.printReport\((?P<var>[A-Za-z_$][A-Za-z0-9_$]*)\)[ \t]*$", text))
+    if len(runs) != 1 or len(prints) != 1 or runs[0]["var"] != prints[0]["var"] or runs[0].end() >= prints[0].start():
+        raise ValueError("cannot locate a unique OTest execution and reporting call")
+    run, report = runs[0], prints[0]
+    before = block(
+        run["i"],
+        [
+            "let opencollabRootResult: any = null",
+            "const opencollabO: any = o",
+            "const opencollabOriginalRunSpec = opencollabO.runSpec",
+            "opencollabO.runSpec = async function (...args: any[]) {",
+            "  const value = await opencollabOriginalRunSpec.apply(this, args)",
+            "  if (Array.isArray(args[1]) && args[1].length === 0) opencollabRootResult = value",
+            "  return value",
+            "}",
+        ],
+    )
+    after = block(
+        report["i"],
+        [
+            "opencollabO.runSpec = opencollabOriginalRunSpec",
+            'if (!opencollabRootResult) throw new Error("OTest root result was not captured")',
+            "const opencollabResults: any[] = []",
+            "function opencollabVisit(spec: any, parents: string[]) {",
+            "  const context = parents.concat(spec.name)",
+            "  for (const child of spec.specResults) opencollabVisit(child, context)",
+            "  for (const result of spec.testResults) {",
+            '    if (!Array.isArray(result.errors) || typeof result.skipped !== "boolean") throw new Error("Unexpected OTest result")',
+            "    opencollabResults.push({task: result.name, context, pass: result.errors.length === 0 && !result.skipped, skipped: result.skipped})",
+            "  }",
+            "}",
+            "opencollabVisit(opencollabRootResult, [])",
+            'console.log("OPENCOLLAB_OSPEC_RESULTS " + JSON.stringify({targets: '
+            + json.dumps(targets)
+            + ", results: opencollabResults}))",
+        ],
+    )
+    return text[: run.start()] + before + text[run.start() : report.end()] + "\n" + after + text[report.end() :]
+
+
+def tutanota_test_command(tests):
+    patcher = "import re,json\nfrom pathlib import Path\n" + inspect.getsource(_patch_tutanota_suite)
+    patcher += (
+        '\np=Path("test/tests/Suite.ts")\np.write_text(_patch_tutanota_suite(p.read_text(), '
+        + repr([str(x) for x in tests])
+        + "))\n"
+    )
+    return "python3 -I -c " + shlex.quote(patcher) + " && npm_config_nodedir=/usr/local npm run test:app"
+
 
 def go_test_packages_from_patch(row):
     packages = []
@@ -289,6 +325,7 @@ def go_test_packages_from_patch(row):
         if package not in packages:
             packages.append(package)
     return packages or ["./..."]
+
 
 def go_test_command(tests):
     declared = []
@@ -383,6 +420,7 @@ raise SystemExit(status)
 """.replace("__OPENCOLLAB_GO_NAMES__", repr(json.dumps(declared)), 1)
     return "python3 -I -c " + shlex.quote(discovery)
 
+
 def ansible_python_test_command(targets, target_file=""):
     probe = """from pathlib import Path
 import ansible
@@ -400,7 +438,9 @@ if expected not in loaded.parents:
         + (python_batch_test_command(target_file, "ansible/ansible") if target_file else python_test_command(targets))
     )
 
+
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
 
 def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
     expected = [str(item) for item in tests if str(item)]
@@ -419,7 +459,7 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
     text = ANSI_ESCAPE_RE.sub("", str(log_text or ""))
     language = str(row.get("repo_language") or "").lower()
     repo = str(row.get("repo") or "").lower()
-    if language == "go" or repo.endswith("/vuls") or repo.endswith("/teleport") or repo.endswith("/navidrome"):
+    if language == "go" or repo.endswith(("/vuls", "/teleport", "/navidrome")):
         executed = set()
         passed = set()
         failed = set()
@@ -456,18 +496,33 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
                 continue
             if isinstance(parsed, list):
                 results.extend(item for item in parsed if isinstance(item, dict))
+            elif (
+                isinstance(parsed, dict)
+                and parsed.get("targets") == expected
+                and isinstance(parsed.get("results"), list)
+            ):
+                results.extend(item for item in parsed["results"] if isinstance(item, dict))
         observed = []
         passed = []
         failed = []
         for item in expected:
+            ordinal_match = re.search(r"(?:^|\s|\|)test_([1-9][0-9]*)$", item)
+            if ordinal_match:
+                ordinal = int(ordinal_match.group(1))
+                matching = (
+                    [results[ordinal - 1]] if ordinal <= len(results) and isinstance(results[ordinal - 1], dict) else []
+                )
+            else:
+                matching = []
             file_name = item.split(" | ", 1)[0].rsplit("/", 1)[-1].rsplit(".", 1)[0]
-            suite_name = file_name[:-4] if file_name.endswith("Test") else file_name
-            matching = [
-                result
-                for result in results
-                if suite_name in str(result.get("task") or "")
-                or suite_name in json.dumps(result.get("context"), ensure_ascii=False)
-            ]
+            suite_name = file_name.removesuffix("Test")
+            if not ordinal_match and not matching:
+                matching = [
+                    result
+                    for result in results
+                    if suite_name in str(result.get("task") or "")
+                    or suite_name in json.dumps(result.get("context"), ensure_ascii=False)
+                ]
             if not matching:
                 continue
             observed.append(item)
@@ -482,16 +537,11 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
         not_passed = [item for item in expected if item not in proof["passed"]]
     elif language in {"js", "javascript", "typescript", "ts"} or repo == "nodebb/nodebb":
         expected_titles = {
-            item: " ".join(part.strip() for part in item.split(" | ")[1:] if part.strip())
-            if " | " in item
-            else item
+            item: " ".join(part.strip() for part in item.split(" | ")[1:] if part.strip()) if " | " in item else item
             for item in expected
         }
         if repo == "nodebb/nodebb":
-            expected_titles = {
-                item: nodebb_mocha_runtime_title(title)
-                for item, title in expected_titles.items()
-            }
+            expected_titles = {item: nodebb_mocha_runtime_title(title) for item, title in expected_titles.items()}
         expected_title_parts = {
             item: [expected_titles[item]]
             if repo == "nodebb/nodebb"
@@ -505,6 +555,7 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
         jest_passed_fragments = set()
         jest_failed_fragments = set()
         current_mocha_file = ""
+        structured_js_results = False
 
         def title_part_matches(expected_part, observed_part):
             expected_value = " ".join(str(expected_part).split())
@@ -535,22 +586,11 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
             )
 
         def hierarchy_suffix_title_matches(expected_title, observed_parts):
-            observed_values = [
-                " ".join(str(part).split())
-                for part in observed_parts
-                if str(part).strip()
-            ]
-            return any(
-                " ".join(observed_values[offset:]) == expected_title
-                for offset in range(len(observed_values))
-            )
+            observed_values = [" ".join(str(part).split()) for part in observed_parts if str(part).strip()]
+            return any(" ".join(observed_values[offset:]) == expected_title for offset in range(len(observed_values)))
 
         def canonical_expected_item(fragment, test_file=""):
-            fragment_parts = (
-                [" ".join(str(part).split()) for part in fragment]
-                if isinstance(fragment, list)
-                else []
-            )
+            fragment_parts = [" ".join(str(part).split()) for part in fragment] if isinstance(fragment, list) else []
             normalized = " ".join(str(fragment).split()) if not fragment_parts else ""
 
             def file_candidates(candidates):
@@ -561,14 +601,9 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
                     item
                     for item in candidates
                     if (
-                        normalized_file
-                        == item.split(" | ", 1)[0].replace("\\", "/")
-                        or normalized_file.endswith(
-                            "/" + item.split(" | ", 1)[0].replace("\\", "/")
-                        )
-                        or item.split(" | ", 1)[0]
-                        .replace("\\", "/")
-                        .endswith("/" + normalized_file)
+                        normalized_file == item.split(" | ", 1)[0].replace("\\", "/")
+                        or normalized_file.endswith("/" + item.split(" | ", 1)[0].replace("\\", "/"))
+                        or item.split(" | ", 1)[0].replace("\\", "/").endswith("/" + normalized_file)
                     )
                 ]
 
@@ -581,8 +616,7 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
                     fragment_parts
                     and (
                         any(
-                            parts
-                            == fragment_parts[offset : offset + len(parts)]
+                            parts == fragment_parts[offset : offset + len(parts)]
                             for offset in range(len(fragment_parts) - len(parts) + 1)
                         )
                         or hierarchy_suffix_title_matches(
@@ -592,20 +626,12 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
                     )
                 )
                 exact_full_name_match = bool(
-                    not fragment_parts
-                    and (
-                        expected_title == normalized
-                        or normalized.endswith(" " + expected_title)
-                    )
+                    not fragment_parts and (expected_title == normalized or normalized.endswith(" " + expected_title))
                 )
                 if exact_part_match or exact_full_name_match:
                     exact_candidates.append(item)
-                elif (
-                    fragment_parts
-                    and contiguous_title_parts_match(parts, fragment_parts)
-                ) or (
-                    not fragment_parts
-                    and expected_title.endswith(" " + normalized)
+                elif (fragment_parts and contiguous_title_parts_match(parts, fragment_parts)) or (
+                    not fragment_parts and expected_title.endswith(" " + normalized)
                 ):
                     abbreviated_candidates.append(item)
             exact_candidates = file_candidates(exact_candidates)
@@ -621,9 +647,7 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
         for line in text.splitlines():
             if repo == "nodebb/nodebb" and line.startswith(NODEBB_MOCHA_FILE_MARKER):
                 try:
-                    marker_file = json.loads(
-                        line[len(NODEBB_MOCHA_FILE_MARKER) :].strip()
-                    )
+                    marker_file = json.loads(line[len(NODEBB_MOCHA_FILE_MARKER) :].strip())
                 except (TypeError, ValueError, json.JSONDecodeError):
                     marker_file = ""
                 current_mocha_file = marker_file if isinstance(marker_file, str) else ""
@@ -657,13 +681,10 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
                 match = re.match(r"^●\s+(.+)$", stripped)
                 if match:
                     fragment = re.sub(r"\s*[›>]\s*", " ", match.group(1)).strip()
-                    jest_failed_fragments.add(
-                        (current_mocha_file, fragment)
-                        if repo == "nodebb/nodebb"
-                        else fragment
-                    )
+                    jest_failed_fragments.add((current_mocha_file, fragment) if repo == "nodebb/nodebb" else fragment)
                 continue
             if isinstance(event, dict) and isinstance(event.get("testResults"), list):
+                structured_js_results = True
                 for test_result in event["testResults"]:
                     if not isinstance(test_result, dict):
                         continue
@@ -671,9 +692,7 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
                         if not isinstance(assertion, dict):
                             continue
                         ancestor_titles = (
-                            assertion.get("ancestorTitles")
-                            if isinstance(assertion.get("ancestorTitles"), list)
-                            else []
+                            assertion.get("ancestorTitles") if isinstance(assertion.get("ancestorTitles"), list) else []
                         )
                         assertion_title = assertion.get("title") or ""
                         title_value = (
@@ -693,13 +712,11 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
                 continue
             if not isinstance(event, list) or len(event) != 2 or not isinstance(event[1], dict):
                 continue
+            if event[0] in ("pass", "fail"):
+                structured_js_results = True
             item = canonical_expected_item(
                 event[1].get("fullTitle") or "",
-                (
-                    event[1].get("file") or current_mocha_file
-                    if repo == "nodebb/nodebb"
-                    else ""
-                ),
+                (event[1].get("file") or current_mocha_file if repo == "nodebb/nodebb" else ""),
             )
             if not item:
                 continue
@@ -708,26 +725,20 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
             elif event[0] == "fail":
                 failed_items.add(item)
 
-        for fragment in jest_passed_fragments:
-            marker_file, fragment_value = (
-                fragment if repo == "nodebb/nodebb" else ("", fragment)
-            )
+        for fragment in () if structured_js_results else jest_passed_fragments:
+            marker_file, fragment_value = fragment if repo == "nodebb/nodebb" else ("", fragment)
             item = canonical_expected_item(fragment_value, marker_file)
             if item:
                 passed_items.add(item)
-        for fragment in jest_failed_fragments:
-            marker_file, fragment_value = (
-                fragment if repo == "nodebb/nodebb" else ("", fragment)
-            )
+        for fragment in () if structured_js_results else jest_failed_fragments:
+            marker_file, fragment_value = fragment if repo == "nodebb/nodebb" else ("", fragment)
             item = canonical_expected_item(fragment_value, marker_file)
             if item:
                 failed_items.add(item)
         observed_items = passed_items | failed_items
         proof["observed"] = [item for item in expected if item in observed_items]
         proof["missing"] = [item for item in expected if item not in proof["observed"]]
-        proof["passed"] = [
-            item for item in expected if item in passed_items and item not in failed_items
-        ]
+        proof["passed"] = [item for item in expected if item in passed_items and item not in failed_items]
         proof["failed"] = [item for item in expected if item in failed_items]
         not_passed = [item for item in expected if item not in proof["passed"]]
     elif language == "python" or any("::" in item for item in expected):
@@ -761,11 +772,7 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
         observed = [item for item in expected if python_expected_status(item) is not None]
         proof["observed"] = observed
         proof["missing"] = [item for item in expected if item not in observed]
-        proof["passed"] = [
-            item
-            for item in observed
-            if python_expected_status(item) == "PASSED"
-        ]
+        proof["passed"] = [item for item in observed if python_expected_status(item) == "PASSED"]
         proof["failed"] = [item for item in observed if item not in proof["passed"]]
         not_passed = [item for item in expected if item not in proof["passed"]]
     else:
@@ -785,5 +792,6 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
     proof["not_passed"] = not_passed
     proof["ok"] = exit_status == 0 and not not_passed
     return proof
+
 
 __all__ = [name for name in globals() if not name.startswith("__")]

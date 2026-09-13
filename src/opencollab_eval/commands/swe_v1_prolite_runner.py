@@ -25,16 +25,15 @@ from opencollab_eval.commands import swe_v1_prolite_process as _process
 from opencollab_eval.commands import swe_v1_prolite_report as _report
 from opencollab_eval.commands import swe_v1_proxy as _proxy
 from opencollab_eval.commands import swe_v1_transport_recovery as _transport_recovery
-from opencollab_eval.commands.swe_v1_prolite_common import *  # noqa: F403
-from opencollab_eval.commands.swe_v1_prolite_config import *  # noqa: F403
-from opencollab_eval.commands.swe_v1_prolite_controller import *  # noqa: F403
-from opencollab_eval.commands.swe_v1_prolite_process import *  # noqa: F403
-from opencollab_eval.commands.swe_v1_prolite_report import *  # noqa: F403
-from opencollab_eval.commands.swe_v1_transport_recovery import *  # noqa: F403
-from opencollab_eval.engine.solver_backend import KIMI_CODING_BASE_URL, is_kimi_direct_model
-from opencollab_eval.engine.swe_v1_remote_state import (
-    DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
-    MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
+from opencollab_eval.commands.swe_v1_prolite_common import *
+from opencollab_eval.commands.swe_v1_prolite_config import *
+from opencollab_eval.commands.swe_v1_prolite_controller import *
+from opencollab_eval.commands.swe_v1_prolite_process import *
+from opencollab_eval.commands.swe_v1_prolite_report import *
+from opencollab_eval.commands.swe_v1_transport_recovery import *
+from opencollab_eval.engine.solver_backend import (
+    KIMI_CODING_BASE_URL,
+    is_kimi_direct_model,
 )
 
 
@@ -43,8 +42,14 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
         prog=prog,
         description="Generate and officially evaluate one bounded SWE Pro-Lite slice.",
     )
-    parser.add_argument("--host", default=DEFAULT_HOST, help="SSH destination for the Linux worker")  # noqa: F405
+    parser.add_argument("--host", default=DEFAULT_HOST, help="SSH destination for the Linux worker")
     parser.add_argument("--ssh-command", default="ssh", help="SSH executable or command wrapper")
+    parser.add_argument(
+        "--runner-transport",
+        choices=("ssh", "local"),
+        default="ssh",
+        help="Worker launch transport; local starts the server-resident runner directly",
+    )
     parser.add_argument("--remote-python", default="python3", help="Worker interpreter used for synchronized modules")
     parser.add_argument(
         "--remote-path-entry",
@@ -52,7 +57,7 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
         default=[],
         help="Additional worker PATH entry, repeatable for multiple entries",
     )
-    parser.add_argument("--remote-root", default=DEFAULT_REMOTE_ROOT, help="Worker evaluation and trusted dataset root")  # noqa: F405
+    parser.add_argument("--remote-root", default=DEFAULT_REMOTE_ROOT, help="Worker evaluation and trusted dataset root")
     parser.add_argument("--remote-runtime-repo", default="", help="Worker directory receiving the runtime source tree")
     parser.add_argument("--run-id", default="", help="Run-scoped identity used in reports and ownership records")
     parser.add_argument("--base-run-dir", default="", help="Worker directory for this bounded slice")
@@ -82,7 +87,7 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
         default=1,
         help="Maximum authorized retries after an empty candidate",
     )
-    parser.add_argument("--model-name", default=DEFAULT_MODEL_NAME, help="Recorded experiment model identity")  # noqa: F405
+    parser.add_argument("--model-name", default=DEFAULT_MODEL_NAME, help="Recorded experiment model identity")
     parser.add_argument("--llm-model", default="", help="Model identifier sent to the provider")
     parser.add_argument("--llm-provider", default="anthropic", help="OpenCollab provider adapter")
     parser.add_argument("--context-window", type=int, help="Recorded and enforced model context window")
@@ -91,28 +96,28 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--max-output-tokens", type=int, help="Maximum tokens in one model response")
     parser.add_argument(
         "--session-prefix",
-        default=DEFAULT_SESSION_PREFIX,  # noqa: F405
+        default=DEFAULT_SESSION_PREFIX,
         help="Prefix for run-owned remote sessions and containers",
     )
     parser.add_argument(
         "--image-repository",
-        default=DEFAULT_IMAGE_REPOSITORY,  # noqa: F405
+        default=DEFAULT_IMAGE_REPOSITORY,
         help="Repository prefix for SWE task images",
     )
     parser.add_argument(
         "--remote-proxy-base-url",
-        default=DEFAULT_REMOTE_PROXY_BASE_URL,  # noqa: F405
+        default=DEFAULT_REMOTE_PROXY_BASE_URL,
         help="Provider or authenticated relay URL visible to the worker",
     )
     parser.add_argument(
         "--local-proxy-base-url",
-        default=DEFAULT_LOCAL_PROXY_BASE_URL,  # noqa: F405
+        default=DEFAULT_LOCAL_PROXY_BASE_URL,
         help="Controller relay URL used to establish remote transport",
     )
     parser.add_argument(
         "--proxy-env-file",
-        type=Path,  # noqa: F405
-        default=DEFAULT_PROXY_ENV_FILE,  # noqa: F405
+        type=Path,
+        default=DEFAULT_PROXY_ENV_FILE,
         help="Protected controller relay environment file",
     )
     parser.add_argument(
@@ -125,12 +130,6 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--swe-timeout", type=int, default=14_400, help="Remote generation timeout in seconds")
     parser.add_argument("--task-wall-timeout", type=int, default=15_300, help="Whole-task timeout in seconds")
     parser.add_argument("--eval-timeout", type=int, default=7_200, help="Official evaluation timeout in seconds")
-    parser.add_argument(
-        "--eval-container-bind-timeout",
-        type=int,
-        default=DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
-        help="Maximum wait for Docker to publish the official-eval container identity",
-    )
     parser.add_argument("--llm-timeout", type=int, default=900, help="Single model request timeout in seconds")
     parser.add_argument(
         "--checkpoint-interval",
@@ -151,13 +150,20 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--expected-eval-patch-sha256",
         default="",
-        help=(
-            "Optional evaluation patch SHA-256 assertion; the runner recomputes "
-            "the canonical value from the bound source patch"
-        ),
+        help="Required evaluation patch SHA-256 for an eval-only candidate",
     )
     parser.add_argument("--eval-dir-name", default="official_eval", help="Official evaluation directory name")
     parser.add_argument("--parent-output-dir", type=Path, help="Bound parent run used by eval-only mode")
+    parser.add_argument(
+        "--eval-only-source-base-run-dir",
+        default="",
+        help="Immutable source run copied into the isolated eval-only base",
+    )
+    parser.add_argument(
+        "--defer-parent-fact-report",
+        action="store_true",
+        help="Leave cumulative parent fact-report rebuilding to the parallel controller",
+    )
     parser.add_argument("--usd-cny", type=float, help="Optional exchange rate for cost reports")
     parser.add_argument(
         "--total-timeout",
@@ -165,11 +171,11 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
         default=240_000,
         help="Bounded remote controller timeout in seconds",
     )
-    parser.add_argument("--json-output", type=Path, default=DEFAULT_REPORT_JSON, help="Local JSON report path")  # noqa: F405
-    parser.add_argument(  # noqa: F405
+    parser.add_argument("--json-output", type=Path, default=DEFAULT_REPORT_JSON, help="Local JSON report path")
+    parser.add_argument(
         "--markdown-output",
-        type=Path,  # noqa: F405
-        default=DEFAULT_REPORT_MD,  # noqa: F405
+        type=Path,
+        default=DEFAULT_REPORT_MD,
         help="Local Markdown report path",
     )
     parser.add_argument("--no-sync-runtime", action="store_true", help="Reuse a previously verified worker runtime")
@@ -196,13 +202,19 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
         parser.error("--eval-only requires --limit 1")
     if args.eval_only and args.max_task_starts != 0:
         parser.error("--eval-only requires --max-task-starts 0")
+    if args.defer_parent_fact_report and not args.eval_only:
+        parser.error("--defer-parent-fact-report requires --eval-only")
+    if args.eval_only_source_base_run_dir and not args.eval_only:
+        parser.error("--eval-only-source-base-run-dir requires --eval-only")
+    if args.eval_only_source_base_run_dir and not Path(args.eval_only_source_base_run_dir).is_absolute():
+        parser.error("--eval-only-source-base-run-dir must be absolute")
 
     if args.start_index < 1:
         parser.error("--start-index must be >= 1")
     if args.limit <= 0:
         parser.error("--limit must be > 0")
-    if args.limit > MAX_TASKS_PER_RUN:  # noqa: F405
-        parser.error(f"--limit must be <= {MAX_TASKS_PER_RUN}")  # noqa: F405
+    if args.limit > MAX_TASKS_PER_RUN:
+        parser.error(f"--limit must be <= {MAX_TASKS_PER_RUN}")
     if args.max_task_starts < 0:
         parser.error("--max-task-starts must be >= 0")
     if args.max_eval_attempts <= 0:
@@ -219,23 +231,16 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
         parser.error("--top-p must be between 0 and 1")
     if args.max_output_tokens is not None and args.max_output_tokens <= 0:
         parser.error("--max-output-tokens must be > 0")
-    if args.expected_runtime_tree_sha256 and not re.fullmatch(
-        r"[0-9a-f]{64}", args.expected_runtime_tree_sha256
-    ):
+    if args.expected_runtime_tree_sha256 and not re.fullmatch(r"[0-9a-f]{64}", args.expected_runtime_tree_sha256):
         parser.error("--expected-runtime-tree-sha256 must be a lowercase SHA-256")
-    expected_candidate_binding = (
+    expected_candidate_fields = (
         args.expected_task,
         args.expected_record_id,
         args.expected_source_patch_sha256,
-    )
-    expected_candidate_fields = (
-        *expected_candidate_binding,
         args.expected_eval_patch_sha256,
     )
-    if any(expected_candidate_fields) and not all(expected_candidate_binding):
-        parser.error(
-            "eval-only candidate identity requires task, record ID, and source patch SHA-256"
-        )
+    if any(expected_candidate_fields) and not all(expected_candidate_fields):
+        parser.error("eval-only candidate identity requires task, record ID, and both patch SHA-256 values")
     if any(expected_candidate_fields) and not args.eval_only:
         parser.error("expected candidate identity is supported only with --eval-only")
     for option, value in (("--expected-task", args.expected_task), ("--expected-record-id", args.expected_record_id)):
@@ -250,7 +255,7 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
     if args.no_sync_runtime and not args.expected_runtime_tree_sha256:
         parser.error("--no-sync-runtime requires --expected-runtime-tree-sha256")
     try:
-        normalize_workflow_env(args.workflow_env)  # noqa: F405
+        normalize_workflow_env(args.workflow_env)
     except ValueError as exc:
         parser.error(str(exc))
     positive_values = {
@@ -265,30 +270,19 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
     for option, value in positive_values.items():
         if value <= 0:
             parser.error(f"{option} must be > 0")
-    if (
-        args.eval_container_bind_timeout <= 0
-        or args.eval_container_bind_timeout > MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS
-    ):
-        parser.error(
-            "--eval-container-bind-timeout must be between 1 and "
-            f"{MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS} seconds"
-        )
     if not args.eval_only and args.checkpoint_interval != 0:
         parser.error("--checkpoint-interval must be 0 for trusted host extraction")
-    if args.remote_api_env_file and (
-        args.llm_provider != "openai" or not is_kimi_direct_model(args.llm_model)
-    ):
+    if args.remote_api_env_file and (args.llm_provider != "openai" or not is_kimi_direct_model(args.llm_model)):
         parser.error("--remote-api-env-file is supported only for direct Kimi models")
     if args.remote_api_env_file and args.remote_proxy_base_url.rstrip("/") != KIMI_CODING_BASE_URL:
         parser.error(f"Kimi direct mode requires --remote-proxy-base-url {KIMI_CODING_BASE_URL}")
     if args.run_id:
         try:
-            args.run_id = validate_run_id(args.run_id)  # noqa: F405
+            args.run_id = validate_run_id(args.run_id)
         except ValueError as exc:
             parser.error(str(exc))
 
     required = {
-        "--host or OPENCOLLAB_SWE_HOST": args.host,
         "--remote-root or OPENCOLLAB_SWE_REMOTE_ROOT": args.remote_root,
         "--model-name or OPENCOLLAB_SWE_MODEL_NAME": args.model_name,
         "--remote-python": args.remote_python,
@@ -296,6 +290,8 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
         "--image-repository or OPENCOLLAB_SWE_IMAGE_REPOSITORY": args.image_repository,
         ("--remote-proxy-base-url or OPENCOLLAB_REMOTE_PROXY_BASE_URL"): args.remote_proxy_base_url,
     }
+    if args.runner_transport == "ssh":
+        required["--host or OPENCOLLAB_SWE_HOST"] = args.host
     for option, value in required.items():
         if not str(value or "").strip():
             parser.error(f"{option} is required")
@@ -309,33 +305,36 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
             "--local-proxy-base-url or OPENCOLLAB_LOCAL_PROXY_BASE_URL is required when remote proxy setup is enabled"
         )
 
-    configure_run_paths(args)  # noqa: F405
+    configure_run_paths(args)
     if args.eval_only:
-        with parent_eval_lock(args):  # noqa: F405
-            parent_eval_budget = apply_parent_eval_budget(args)  # noqa: F405
+        with parent_eval_lock(args):
+            parent_eval_budget = apply_parent_eval_budget(args)
             try:
-                summary = run_remote(args)  # noqa: F405
+                summary = run_remote(args)
             except KeyboardInterrupt:
                 return 130
-            write_local_report(  # noqa: F405
+            write_local_report(
                 summary,
                 args.json_output,
                 args.markdown_output,
             )
             summary["parent_eval_budget"] = parent_eval_budget
-            with parent_report_lock(args):  # noqa: F405
-                summary["parent_fact_report"] = update_parent_fact_report(args)  # noqa: F405
-            write_local_report(  # noqa: F405
+            if args.defer_parent_fact_report:
+                summary["parent_fact_report"] = {"status": "deferred_to_parallel_controller"}
+            else:
+                with parent_report_lock(args):
+                    summary["parent_fact_report"] = update_parent_fact_report(args)
+            write_local_report(
                 summary,
                 args.json_output,
                 args.markdown_output,
             )
     else:
         try:
-            summary = run_remote(args)  # noqa: F405
+            summary = run_remote(args)
         except KeyboardInterrupt:
             return 130
-        write_local_report(  # noqa: F405
+        write_local_report(
             summary,
             args.json_output,
             args.markdown_output,

@@ -1,0 +1,30 @@
+{
+  "lock_root": "/srv/evaluation/request-slots",
+  "unconfirmed_previous_request_reserve": 0,
+  "providers": {
+    "company": {
+      "name": "company",
+      "origin": "https://company.example",
+      "max_active": 45,
+      "enabled": true
+    },
+    "laboratory": {
+      "name": "laboratory",
+      "origin": "https://laboratory.example",
+      "max_active": 30,
+      "enabled": true
+    },
+    "selfpaid_1": {
+      "name": "selfpaid_1",
+      "origin": "https://selfpaid-one.example",
+      "max_active": 100,
+      "enabled": true
+    },
+    "selfpaid_2": {
+      "name": "selfpaid_2",
+      "origin": "https://selfpaid-two.example",
+      "max_active": 100,
+      "enabled": false
+    }
+  }
+}

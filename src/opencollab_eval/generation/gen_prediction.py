@@ -159,6 +159,11 @@ from .gen_prediction_pending import (
     recover_generation_state,
     require_published_output,
 )
+from .gen_prediction_runtime import (
+    remove_solver_runtime_dependencies,
+    restore_solver_runtime_dependencies,
+    stash_solver_runtime_dependencies,
+)
 from .gen_prediction_safe_output import (
     _acquire_exclusive_lock,
     _append_jsonl_durable,
@@ -261,11 +266,7 @@ def _cleanup_generation_attempt(
     if not preserve_container:
         completed = False
         try:
-            completed = (
-                not failures
-                and generation_error is None
-                and metrics_have_completed_identity(metrics, patch)
-            )
+            completed = not failures and generation_error is None and metrics_have_completed_identity(metrics, patch)
         except BaseException as exc:
             capture("completion identity check", exc)
         try:
@@ -274,9 +275,7 @@ def _cleanup_generation_attempt(
                 cid=cid,
                 name=name,
                 keep_container=(
-                    bool(getattr(args, "keep_container", False))
-                    if generation_error is None and not failures
-                    else False
+                    bool(getattr(args, "keep_container", False)) if generation_error is None and not failures else False
                 ),
                 completed=completed,
                 metrics=metrics,
@@ -298,10 +297,7 @@ def _raise_or_note_cleanup_failures(
         raise failures[0][1]
     add_note = getattr(generation_error, "add_note", None)
     for label, error in failures:
-        note = (
-            f"{label} failed after generation error: "
-            f"{type(error).__name__}: {str(error)[:512]}"
-        )
+        note = f"{label} failed after generation error: {type(error).__name__}: {str(error)[:512]}"
         if callable(add_note):
             try:
                 add_note(note)
@@ -392,11 +388,13 @@ def main() -> None:
     trusted_baseline = None
     try:
         generation_image_id = container_image_id(cid)
+        solver_runtime = stash_solver_runtime_dependencies(cid, str(instance.get("base_commit") or ""))
         snapshot = prepare_solver_git_snapshot(
             cid,
             str(instance.get("base_commit") or ""),
         )
         trusted_baseline = prepare_trusted_patch_baseline(cid, snapshot)
+        restore_solver_runtime_dependencies(cid, solver_runtime)
         task = build_task(instance)
         metrics = run_with_bounded_shutdown(
             run_agent(
@@ -413,12 +411,10 @@ def main() -> None:
             {
                 "llm_model": cfg["model"],
                 "llm_provider": cfg["provider"],
-                "context_window": model_context_window(cfg["model"]),
+                "context_window": cfg.get("context_window") or model_context_window(cfg["model"]),
                 "temperature": cfg.get("temperature"),
                 "top_p": cfg.get("top_p"),
-                "max_output_tokens": cfg.get(
-                    "max_output_tokens", DEFAULT_MAX_OUTPUT_TOKENS
-                ),
+                "max_output_tokens": cfg.get("max_output_tokens", DEFAULT_MAX_OUTPUT_TOKENS),
                 "budget": args.budget,
                 "max_steps": args.max_steps,
             }
@@ -429,12 +425,11 @@ def main() -> None:
         if metrics.get("candidate_probe_eligible") is True:
             require_container_quiescence(cid)
             metrics["container_execution_quiesced"] = True
-            metrics["execution_quiesced"] = (
-                metrics.get("session_quiesced") is True
-            )
-            metrics["submission_eligible"] = (
-                metrics["execution_quiesced"] is True
-            )
+            metrics["execution_quiesced"] = metrics.get("session_quiesced") is True
+            metrics["submission_eligible"] = metrics["execution_quiesced"] is True and metrics.get(
+                "workflow_status"
+            ) in {"done", "done_with_timeout_patch"}
+            remove_solver_runtime_dependencies(cid, solver_runtime)
             patch, removed_artifacts, extraction = extract_patch_guarded(cid, trusted_baseline)
             metrics["trusted_patch_extraction"] = extraction
             metrics["removed_generated_artifacts"] = removed_artifacts
@@ -510,6 +505,26 @@ def main() -> None:
     else:
         print("\nWARNING: empty patch (agent made no tracked changes)")
 
+    if (
+        (metrics.get("workflow_status") == "error" or metrics.get("agent_status") == "stopped")
+        and metrics.get("submission_eligible") is False
+        and patch.strip()
+        and metrics.get("worktree_integrity_proven") is True
+        and metrics.get("container_cleanup_succeeded") is True
+    ):
+        from .gen_prediction_recovery import publish_failed_capture_recovery
+
+        publish_failed_capture_recovery(
+            run_dir=run_dir,
+            source_predictions_path=out_path,
+            source_metrics_path=metrics_path,
+            prediction=record,
+            metric=metric_record,
+            capture_metrics=metrics,
+            expected_base_commit=str(instance.get("base_commit") or ""),
+            expected_runtime_tree_sha256=metrics.get("runtime_tree_sha256"),
+            cid=cid,
+        )
     if not metrics_have_completed_identity(metric_record, patch):
         raise SystemExit(1)
 

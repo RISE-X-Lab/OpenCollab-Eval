@@ -53,6 +53,12 @@ from opencollab_eval.runtime_config import resolve_runtime_config as get_config
 from opencollab_eval.usage import DEFAULT_MAX_OUTPUT_TOKENS, model_context_window
 
 from . import gen_prediction as gp  # noqa: E402 — shared container plumbing
+from .candidate_environment import image_activation_prefix, install_candidate_environment
+from .candidate_retention import (
+    arm_candidate_retention,
+    complete_candidate_retention,
+    retain_failed_candidate,
+)
 from .container_quiescence import require_container_quiescence  # noqa: E402
 from .gen_prediction_patch import extract_patch_guarded  # noqa: E402
 from .gen_prediction_workflow_inputs import (  # noqa: E402
@@ -70,6 +76,7 @@ from .gen_prediction_workflow_inputs import (  # noqa: E402
 from .gen_prediction_workflow_inputs import build_extras as build_extras  # noqa: E402
 from .gen_prediction_workflow_inputs import build_task as build_task  # noqa: E402
 from .gen_prediction_workflow_inputs import json as json  # noqa: E402
+from .gen_prediction_workflow_state import workflow_model_settings, workflow_stop_metrics
 
 _REPO_ROOT = Path(os.environ.get("OPENCOLLAB_EVAL_WORKSPACE", Path.cwd())).resolve()
 
@@ -81,9 +88,7 @@ def _bundled_workflow_registry() -> dict[str, object]:
         spec = getattr(workflow_fn, "__workflow_spec__", None)
         public_name = getattr(spec, "name", None)
         if not isinstance(public_name, str) or not public_name:
-            raise RuntimeError(
-                f"bundled workflow {exported_name!r} has no public workflow name"
-            )
+            raise RuntimeError(f"bundled workflow {exported_name!r} has no public workflow name")
         if public_name in registry:
             raise RuntimeError(f"duplicate bundled workflow name {public_name!r}")
         registry[public_name] = workflow_fn
@@ -91,9 +96,7 @@ def _bundled_workflow_registry() -> dict[str, object]:
 
 
 _BUNDLED_WORKFLOWS = _bundled_workflow_registry()
-_CONTROLLED_STOP_REASON_NAMES = frozenset(
-    {"budget_exceeded", "context_overflow", "step_limit_exceeded", "timeout"}
-)
+_CONTROLLED_STOP_REASON_NAMES = frozenset({"budget_exceeded", "context_overflow", "step_limit_exceeded", "timeout"})
 _CONTROLLED_STOP_REASON_PREFIXES = (
     "budget exceeded:",
     "budget exceeded after model call:",
@@ -112,34 +115,28 @@ def validate_workflow_limits(
     budget: object,
     timeout: object,
     checkpoint_interval: object,
-) -> tuple[int, int, float, float]:
-    normalized_steps, normalized_budget, normalized_timeout = (
-        gp.validate_generation_limits(
-            max_steps=max_steps,
-            budget=budget,
-            timeout=timeout,
-        )
+) -> tuple[int | None, int | None, float, float]:
+    normalized_steps, normalized_budget, normalized_timeout = gp.validate_generation_limits(
+        max_steps=max_steps,
+        budget=budget,
+        timeout=timeout,
     )
     if isinstance(checkpoint_interval, bool):
-        raise ValueError(
-            "--checkpoint-interval-seconds must be a finite non-negative number"
-        )
+        raise ValueError("--checkpoint-interval-seconds must be a finite non-negative number")
     try:
         normalized_checkpoint = float(checkpoint_interval)
     except (TypeError, ValueError) as exc:
-        raise ValueError(
-            "--checkpoint-interval-seconds must be a finite non-negative number"
-        ) from exc
+        raise ValueError("--checkpoint-interval-seconds must be a finite non-negative number") from exc
     if not math.isfinite(normalized_checkpoint) or normalized_checkpoint < 0:
-        raise ValueError(
-            "--checkpoint-interval-seconds must be a finite non-negative number"
-        )
+        raise ValueError("--checkpoint-interval-seconds must be a finite non-negative number")
     return (
         normalized_steps,
         normalized_budget,
         normalized_timeout,
         normalized_checkpoint,
     )
+
+
 from opencollab_eval.engine.workflows import generate_review_fix  # noqa: E402
 
 # Team-baseline parity: use the current default per-instance cap for comparable
@@ -148,6 +145,8 @@ DEFAULT_BUDGET = 1_000_000
 DEFAULT_MAX_STEPS = 60  # per workflow session; 60 proved enough to act, 40 did not
 DEFAULT_TIMEOUT = 1800.0  # the workflow runs up to 3 sequential sessions
 DEFAULT_CHECKPOINT_INTERVAL_SECONDS = 0.0
+
+
 def _json_safe(value: object) -> object:
     if value is None or isinstance(value, str | int | float | bool):
         return value
@@ -163,11 +162,7 @@ def _patch_sha256(patch: str) -> str:
 
 
 def _result_metrics(result) -> dict:
-    return {
-        field.name: _json_safe(getattr(result, field.name))
-        for field in fields(result)
-        if field.name != "patch"
-    }
+    return {field.name: _json_safe(getattr(result, field.name)) for field in fields(result) if field.name != "patch"}
 
 
 def _verified_provider_models(
@@ -221,20 +216,15 @@ def _verified_provider_models(
             raise RuntimeError("Responses trajectory contains a mixed wire protocol")
         observed = payload.get("provider_model")
         if observed != expected_model:
-            raise RuntimeError(
-                f"Responses provider model mismatch expected {expected_model!r} got {observed!r}"
-            )
+            raise RuntimeError(f"Responses provider model mismatch expected {expected_model!r} got {observed!r}")
         observed_effort = payload.get("reasoning_effort")
         effort_policy = payload.get("reasoning_effort_policy")
         if effort_policy not in {"configured", "suppressed"}:
             raise RuntimeError("Responses llm_call is missing its reasoning effort policy")
-        expected_effort = (
-            None if effort_policy == "suppressed" else expected_reasoning_effort
-        )
+        expected_effort = None if effort_policy == "suppressed" else expected_reasoning_effort
         if observed_effort != expected_effort:
             raise RuntimeError(
-                "Responses reasoning effort mismatch "
-                f"expected {expected_effort!r} got {observed_effort!r}"
+                f"Responses reasoning effort mismatch expected {expected_effort!r} got {observed_effort!r}"
             )
         models.append(observed)
     if not models:
@@ -248,25 +238,19 @@ def _workflow_status_for_result(result, patch: str) -> str:
         if error.startswith("Task timed out after ") and patch.strip():
             return "done_with_timeout_patch"
         return "error"
-    if not patch.strip():
-        return "empty_patch_after_done"
-    def is_controlled_stop(reason: object) -> bool:
-        if not isinstance(reason, str):
-            return False
-        normalized = reason.strip().lower()
-        return normalized in _CONTROLLED_STOP_REASON_NAMES or normalized.startswith(
-            _CONTROLLED_STOP_REASON_PREFIXES
-        )
-
-    if is_controlled_stop(getattr(result, "runtime_reason", None)):
-        return "done_with_timeout_patch"
-    workflow_result = getattr(result, "workflow_result", None)
-    if isinstance(workflow_result, dict) and workflow_result.get("status"):
-        status = str(workflow_result["status"])
-        if is_controlled_stop(status):
-            return "done_with_timeout_patch"
+    reason = str(getattr(result, "runtime_reason", None) or "")
+    output = getattr(result, "workflow_result", None)
+    status = str(output.get("status") or "") if isinstance(output, dict) else ""
+    if patch.strip():
+        for value in (reason, status):
+            normalized = value.strip().lower()
+            if normalized in _CONTROLLED_STOP_REASON_NAMES or normalized.startswith(_CONTROLLED_STOP_REASON_PREFIXES):
+                return "done_with_timeout_patch"
+    if getattr(result, "runtime_status", None) == "stopped":
+        return reason or "stopped"
+    if status and status != "done":
         return status
-    return "done" if patch.strip() else ""
+    return "done" if patch.strip() else "empty_patch_after_done"
 
 
 def build_output_records(
@@ -294,9 +278,7 @@ def build_output_records(
     if solver_task_id not in (None, "", instance_id):
         metric_record["solver_task_id"] = solver_task_id
     metric_record["task_id"] = instance_id
-    metric_record["runner_returncode"] = gp.runner_returncode_for_metrics(
-        metric_record
-    )
+    metric_record["runner_returncode"] = gp.runner_returncode_for_metrics(metric_record)
     prediction = {
         "instance_id": instance_id,
         "record_id": record_id,
@@ -330,7 +312,15 @@ async def generate(
     iid = instance["instance_id"]
     name = gp.unique_container_name("oc-wf-", iid)
     run_dir = Path(args.output).parent
-    cid = gp.start_container_with_marker(image, name, run_dir)
+    from opencollab_eval.engine.native_progress_watch import register_generator
+
+    register_generator(run_dir)
+    cid = gp.start_container_with_marker(
+        image,
+        name,
+        run_dir,
+        temporary_directory=run_dir / "container-tmp" / name,
+    )
     print(f"Container: {cid}")
     patch = ""
     metrics: dict = {}
@@ -342,19 +332,35 @@ async def generate(
     pending_required = False
     generation_error: BaseException | None = None
     trusted_baseline = None
+    workflow_log_dir = None
+    task = None
+    result = None
+    generation_image_id = None
     try:
         generation_image_id = gp.container_image_id(cid)
+        effective_model_settings = workflow_model_settings(cfg)
+        solver_runtime = gp.stash_solver_runtime_dependencies(cid, str(instance.get("base_commit") or ""))
         snapshot = gp.prepare_solver_git_snapshot(
             cid,
             str(instance.get("base_commit") or ""),
         )
         trusted_baseline = gp.prepare_trusted_patch_baseline(cid, snapshot)
+        arm_candidate_retention(gp, run_dir=run_dir, cid=cid, name=name)
+        gp.restore_solver_runtime_dependencies(cid, solver_runtime)
+        if _workflow_name(workflow_fn, workflow_label) == "validation-council-solve":
+            candidate_prefix = image_activation_prefix(cid, gp._ACTIVATE)
+        else:
+            candidate_prefix = install_candidate_environment(
+                cid,
+                solver_runtime,
+                activation=gp._ACTIVATE,
+            )
         # Attach mode: run_eval_task's internal env.cleanup() no-ops on attached
         # containers, so the container survives for baseline-style extraction.
         env = attach_container(
             container_id=cid,
             workspace=gp.DOCKER_WORKDIR,
-            command_prefix=gp._ACTIVATE,
+            command_prefix=candidate_prefix,
             timeout_returncode=124,
         )
 
@@ -365,13 +371,9 @@ async def generate(
             workflow_fn, getattr(args, "blind_validation", None), workflow_label
         )
         if not blind_validation:
-            raise RuntimeError(
-                "trusted host extraction requires blind validation without injected tests"
-            )
+            raise RuntimeError("trusted host extraction requires blind validation without injected tests")
         if bool(args.resume) or args.checkpoint_interval_seconds > 0:
-            raise RuntimeError(
-                "trusted host extraction does not accept container Git checkpoints"
-            )
+            raise RuntimeError("trusted host extraction does not accept container Git checkpoints")
         include_hidden_tests = not blind_validation
         task = EvalTask(
             task_id=gp.anonymous_solver_task_id(),
@@ -397,13 +399,13 @@ async def generate(
             workflow=workflow_fn,
             temperature=cfg["temperature"],
             top_p=cfg.get("top_p"),
-            max_output_tokens=cfg.get(
-                "max_output_tokens", DEFAULT_MAX_OUTPUT_TOKENS
-            ),
+            max_output_tokens=cfg.get("max_output_tokens", DEFAULT_MAX_OUTPUT_TOKENS),
             thinking=cfg.get("thinking", False),
             thinking_params=cfg.get("thinking_params") or None,
             wire_protocol=cfg.get("wire_protocol", "chat_completions"),
             reasoning_effort=cfg.get("reasoning_effort"),
+            context_window=cfg.get("context_window"),
+            llm_timeout=cfg.get("llm_timeout", 600.0),
             llm_connect_timeout=cfg.get("llm_connect_timeout", 30.0),
             llm_first_event_timeout=cfg.get("llm_first_event_timeout", 180.0),
             llm_stream_idle_timeout=cfg.get("llm_stream_idle_timeout", 180.0),
@@ -416,9 +418,9 @@ async def generate(
             f"  workflow: tokens={result.tokens_used} steps={result.steps} "
             f"duration={result.duration:.0f}s error={result.error}"
         )
-        provider_failure = summarize_terminal_provider_failures(
-            result.agent_failures
-        )
+        provider_failure = summarize_terminal_provider_failures(result.agent_failures)
+        original_error = result.error
+        observation_error = None
         try:
             provider_models, trajectory_sha256 = _verified_provider_models(
                 result.trajectory_path,
@@ -428,20 +430,25 @@ async def generate(
                 wire_protocol=cfg.get("wire_protocol", "chat_completions"),
             )
         except RuntimeError as exc:
-            result.error = str(exc)
+            observation_error = str(exc)
             provider_models = []
             trajectory_sha256 = None
+        stop_metrics = workflow_stop_metrics(result)
+        if provider_failure is not None and result.runtime_status != "completed":
+            stop_metrics.update(failure_origin="provider_transport", technical_failure=True, oc_failure=False)
         outer_extraction_allowed = bool(
-            result.execution_quiesced
+            stop_metrics["session_quiesced"]
+            and result.execution_quiesced
+            and (result.patch_extraction_succeeded or not result.error)
+            and not (provider_failure is not None and result.runtime_status != "completed")
             and result.injected_path_cleanup_proven
             and result.harness_artifact_exclusion_proven
             and result.checkpoint_restore_integrity_proven
             and result.task_stage_integrity_proven
             and not result.test_patch_isolation_failed
-            and not result.error
-            and provider_failure is None
         )
         if outer_extraction_allowed:
+            gp.remove_solver_runtime_dependencies(cid, solver_runtime)
             patch, removed_validation_artifacts, extraction_proof = extract_patch_guarded(
                 cid,
                 trusted_baseline,
@@ -451,13 +458,24 @@ async def generate(
             removed_validation_artifacts = []
             extraction_proof = None
         metrics = _result_metrics(result)
+        metrics.update(stop_metrics)
+        metrics["candidate_probe_eligible"] = outer_extraction_allowed
+        metrics["original_workflow_error"] = original_error
+        if observation_error is not None:
+            metrics["trajectory_verification_error"] = observation_error
+            metrics["error"] = observation_error
+            if metrics.get("failure_origin") == "none":
+                metrics.update(
+                    failure_origin="evaluation_adapter", failure_phase="trajectory_identity", technical_failure=True
+                )
         if provider_failure is not None:
-            metrics["provider_failure"] = provider_failure
+            metrics["workflow_role_provider_failure"] = provider_failure
+            if metrics.get("failure_origin") == "provider_transport":
+                metrics["provider_failure"] = provider_failure
         metrics["container_execution_quiesced"] = True
         metrics["execution_quiesced"] = metrics.get("execution_quiesced") is True
         metrics["submission_eligible"] = (
-            metrics.get("submission_eligible") is True
-            and metrics["execution_quiesced"] is True
+            metrics.get("submission_eligible") is True and metrics["execution_quiesced"] is True
         )
         metrics.update(
             {
@@ -467,15 +485,15 @@ async def generate(
                 "llm_provider": cfg["provider"],
                 "wire_protocol": cfg.get("wire_protocol", "chat_completions"),
                 "reasoning_effort": cfg.get("reasoning_effort"),
-                "context_window": model_context_window(cfg["model"]),
+                **effective_model_settings,
+                "context_window": effective_model_settings["context_window"] or model_context_window(cfg["model"]),
                 "temperature": cfg["temperature"],
                 "top_p": cfg.get("top_p"),
-                "max_output_tokens": cfg.get(
-                    "max_output_tokens", DEFAULT_MAX_OUTPUT_TOKENS
-                ),
+                "max_output_tokens": cfg.get("max_output_tokens", DEFAULT_MAX_OUTPUT_TOKENS),
                 "budget": args.budget,
                 "max_steps": args.max_steps,
                 "llm_base_url_sha256": cfg.get("base_url_sha256"),
+                "solver_runtime_dependencies": list(solver_runtime.roots),
                 "workflow_env": {
                     key: os.environ[key]
                     for key in (
@@ -506,16 +524,25 @@ async def generate(
             metrics["trusted_patch_extraction"] = extraction_proof
             metrics["patch_path_audit"] = _patch_path_audit(patch)
         extraction_valid = current_generation_proof_valid(metrics, patch)
+        if extraction_valid:
+            complete_candidate_retention(gp, run_dir=run_dir, cid=cid, name=name)
         metrics["patch_extraction_succeeded"] = extraction_valid
         metrics["task_stage_integrity_proven"] = extraction_valid
         metrics["worktree_integrity_proven"] = extraction_valid
         metrics["submission_eligible"] = (
-            outer_extraction_allowed and extraction_valid and bool(patch.strip())
+            outer_extraction_allowed
+            and extraction_valid
+            and bool(patch.strip())
+            and not original_error
+            and observation_error is None
+            and metrics.get("failure_origin") == "none"
         )
         metrics["patch_produced"] = bool(patch.strip())
         metrics["submitted_patch_chars"] = len(patch)
-        if provider_failure is not None:
+        if provider_failure is not None and metrics.get("failure_origin") == "provider_transport":
             metrics["workflow_status"] = "provider_request_rejected"
+        elif observation_error is not None:
+            metrics["workflow_status"] = "error"
         elif not metrics.get("workflow_status"):
             metrics["workflow_status"] = _workflow_status_for_result(result, patch)
         gp.normalize_trusted_extraction_status(metrics, patch)
@@ -524,11 +551,7 @@ async def generate(
         if getattr(args, "_persist_output_after_cleanup", False):
             output_path = Path(args.output)
             metrics_path_arg = getattr(args, "metrics", None)
-            metrics_path = (
-                Path(metrics_path_arg)
-                if metrics_path_arg
-                else gp.default_metrics_path(output_path)
-            )
+            metrics_path = Path(metrics_path_arg) if metrics_path_arg else gp.default_metrics_path(output_path)
             persisted_model_name = getattr(args, "model_name", None) or (
                 f"opencollab-{_workflow_name(workflow_fn, workflow_label)}-{cfg['model']}"
             )
@@ -560,27 +583,48 @@ async def generate(
         )
         raise
     finally:
-        cleanup_failures = gp._cleanup_generation_attempt(
-            trusted_baseline=trusted_baseline,
-            run_dir=run_dir,
-            cid=cid,
-            name=name,
-            args=args,
-            metrics=metrics,
-            patch=patch,
-            pending_required=pending_required,
-            pending_path=pending_path,
-            generation_error=generation_error,
-        )
+        cleanup_failures = ()
+        retention_required = trusted_baseline is not None and metrics.get("patch_extraction_succeeded") is not True
+        if retention_required:
+            try:
+                retain_failed_candidate(
+                    gp,
+                    run_dir=run_dir,
+                    cid=cid,
+                    name=name,
+                    baseline=trusted_baseline,
+                    instance=instance,
+                    image=image,
+                    generation_image_id=generation_image_id,
+                    metrics=metrics,
+                    generation_error=generation_error,
+                    workflow_log_dir=workflow_log_dir,
+                    task_id=getattr(task, "task_id", None),
+                    trajectory_path=getattr(result, "trajectory_path", None),
+                )
+            except BaseException as retention_error:
+                if generation_error is None:
+                    raise
+                gp._raise_or_note_cleanup_failures(
+                    (("candidate retention", retention_error),), generation_error,
+                )
+        else:
+            cleanup_failures = gp._cleanup_generation_attempt(
+                trusted_baseline=trusted_baseline,
+                run_dir=run_dir,
+                cid=cid,
+                name=name,
+                args=args,
+                metrics=metrics,
+                patch=patch,
+                pending_required=pending_required,
+                pending_path=pending_path,
+                generation_error=generation_error,
+            )
         gp._raise_or_note_cleanup_failures(cleanup_failures, generation_error)
 
     if getattr(args, "_persist_output_after_cleanup", False):
-        if (
-            output_path is None
-            or metrics_path is None
-            or record is None
-            or metric_record is None
-        ):
+        if output_path is None or metrics_path is None or record is None or metric_record is None:
             raise RuntimeError("workflow output record was not built")
         if pending_path is not None:
             publish_status = gp.publish_pending_output(run_dir, pending_path)
@@ -590,17 +634,37 @@ async def generate(
             )
         else:
             gp.append_output_records(output_path, metrics_path, record, metric_record)
+        if (
+            (metrics.get("workflow_status") == "error" or metrics.get("agent_status") == "stopped")
+            and metrics.get("submission_eligible") is False
+            and patch.strip()
+            and metrics.get("worktree_integrity_proven") is True
+            and metrics.get("container_cleanup_succeeded") is True
+            and metrics.get("trajectory_verification_error") is None
+        ):
+            from .gen_prediction_recovery import publish_failed_capture_recovery
+
+            publish_failed_capture_recovery(
+                run_dir=run_dir,
+                source_predictions_path=output_path,
+                source_metrics_path=metrics_path,
+                prediction=record,
+                metric=metric_record,
+                capture_metrics=metrics,
+                expected_base_commit=str(instance.get("base_commit") or ""),
+                expected_runtime_tree_sha256=metrics.get("runtime_tree_sha256"),
+                cid=cid,
+            )
     return patch, metrics
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(
-        description="Generate one SWE-bench prediction with the review-fix workflow"
-    )
+    ap = argparse.ArgumentParser(description="Generate one SWE-bench prediction with the review-fix workflow")
     ap.add_argument("--instance-file", required=True, help="JSON file with one instance")
     ap.add_argument("--output", required=True, help="Predictions JSONL to append to")
-    ap.add_argument("--metrics", default=None,
-                    help="Metrics JSONL to append to (default: metrics.jsonl beside --output)")
+    ap.add_argument(
+        "--metrics", default=None, help="Metrics JSONL to append to (default: metrics.jsonl beside --output)"
+    )
     ap.add_argument("--image", default=None, help="Override container image")
     ap.add_argument("--arch", default="x86_64")
     ap.add_argument("--model", default=None)
@@ -609,21 +673,27 @@ def main() -> None:
     ap.add_argument("--top-p", type=float)
     ap.add_argument("--max-output-tokens", type=int)
     ap.add_argument("--model-name", default=None, help="model_name_or_path in predictions")
-    ap.add_argument("--workflow", default=None,
-                    help="Bundled workflow name (e.g. analyst-solve); "
-                         "default: the built-in generate_review_fix")
+    ap.add_argument(
+        "--workflow",
+        default=None,
+        help="Bundled workflow name (e.g. analyst-solve); default: the built-in generate_review_fix",
+    )
     blind_group = ap.add_mutually_exclusive_group()
-    blind_group.add_argument("--blind-validation", dest="blind_validation",
-                             action="store_true",
-                             help="Do not inject official test_patch or FAIL_TO_PASS ids")
-    blind_group.add_argument("--with-hidden-tests", dest="blind_validation",
-                             action="store_false",
-                             help="Inject official test_patch and FAIL_TO_PASS ids")
+    blind_group.add_argument(
+        "--blind-validation",
+        dest="blind_validation",
+        action="store_true",
+        help="Do not inject official test_patch or FAIL_TO_PASS ids",
+    )
+    blind_group.add_argument(
+        "--with-hidden-tests",
+        dest="blind_validation",
+        action="store_false",
+        help="Inject official test_patch and FAIL_TO_PASS ids",
+    )
     ap.set_defaults(blind_validation=True)
-    ap.add_argument("--max-steps", type=int, default=DEFAULT_MAX_STEPS,
-                    help="Step cap per workflow session")
-    ap.add_argument("--budget", type=int, default=DEFAULT_BUDGET,
-                    help="Shared token budget across all workflow sessions")
+    ap.add_argument("--max-steps", type=int, default=None, help="Optional step cap per workflow session")
+    ap.add_argument("--budget", type=int, default=None, help="Optional shared token budget across workflow sessions")
     ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
     ap.add_argument(
         "--checkpoint-interval-seconds",
@@ -693,21 +763,14 @@ def main() -> None:
     print(f"Image:    {image}")
     print(f"Model:    {cfg['model']} (provider={cfg['provider']})")
     print(f"Thinking: {cfg.get('thinking', False)}")
-    print(f"Workflow: {wf_label} (budget={args.budget}, "
-          f"max_steps/session={args.max_steps})")
+    print(f"Workflow: {wf_label} (budget={args.budget}, max_steps/session={args.max_steps})")
     print(f"Blind validation: {args.blind_validation}")
-    print(
-        "Checkpoint: "
-        f"{args.checkpoint_interval_seconds:g}s"
-        f"{' resume' if args.resume else ''}"
-    )
+    print(f"Checkpoint: {args.checkpoint_interval_seconds:g}s{' resume' if args.resume else ''}")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     args.model_name = model_name
     args._persist_output_after_cleanup = True
-    patch, metrics = gp.run_with_bounded_shutdown(
-        generate(instance, image, cfg, args, workflow_fn, wf_label)
-    )
+    patch, metrics = gp.run_with_bounded_shutdown(generate(instance, image, cfg, args, workflow_fn, wf_label))
 
     if patch.strip():
         print(f"\nPatch ({len(patch)} chars) written to {out_path}")

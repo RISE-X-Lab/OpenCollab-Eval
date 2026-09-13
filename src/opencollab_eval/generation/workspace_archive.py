@@ -81,6 +81,41 @@ class _WorkspaceArchiveTimeout(RuntimeError):
 
 _MAX_DOCKER_STDERR_BYTES = 16 * 1024
 _PROCESS_KILL_REAP_TIMEOUT_SECONDS = 5.0
+_ARCHIVE_TRANSPORT_ENV = "OPENCOLLAB_DOCKER_ARCHIVE_TRANSPORT"
+_ARCHIVE_TRANSPORTS = frozenset({"docker-cp", "exec-python"})
+_EXEC_PYTHON_ARCHIVE = """\
+import os
+import sys
+import tarfile
+
+root = sys.argv[1]
+with tarfile.open(fileobj=sys.stdout.buffer, mode="w|") as archive:
+    for name in sorted(os.listdir(root), key=os.fsencode):
+        archive.add(os.path.join(root, name), arcname=name, recursive=True)
+"""
+
+
+def _workspace_archive_transport_from_env() -> str:
+    transport = os.environ.get(_ARCHIVE_TRANSPORT_ENV, "docker-cp").strip()
+    if transport not in _ARCHIVE_TRANSPORTS:
+        choices = ", ".join(sorted(_ARCHIVE_TRANSPORTS))
+        raise ValueError(f"{_ARCHIVE_TRANSPORT_ENV} must be one of {choices}")
+    return transport
+
+
+def _workspace_archive_command(container_id: str) -> tuple[list[str], str]:
+    transport = _workspace_archive_transport_from_env()
+    if transport == "docker-cp":
+        return ["docker", "cp", f"{container_id}:{DOCKER_WORKDIR}/.", "-"], transport
+    return [
+        "docker",
+        "exec",
+        container_id,
+        "python3",
+        "-c",
+        _EXEC_PYTHON_ARCHIVE,
+        DOCKER_WORKDIR,
+    ], transport
 
 
 def _kill_and_reap(process) -> None:
@@ -94,7 +129,7 @@ def _kill_and_reap(process) -> None:
     try:
         process.wait(timeout=_PROCESS_KILL_REAP_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired as exc:
-        raise RuntimeError("docker cp process did not exit after SIGKILL") from exc
+        raise RuntimeError("docker archive process did not exit after SIGKILL") from exc
 
 
 def _bounded_docker_stderr(stderr_file) -> str:
@@ -194,9 +229,7 @@ def _extract_member(
         while written < member.size:
             chunk = source.read(min(1024 * 1024, member.size - written))
             if not chunk:
-                raise _WorkspaceArchiveTruncated(
-                    "container workspace archive file payload is truncated"
-                )
+                raise _WorkspaceArchiveTruncated("container workspace archive file payload is truncated")
             view = memoryview(chunk)
             while view:
                 count = os.write(fd, view)
@@ -245,14 +278,14 @@ def _restore_directory_modes(root: Path, directory_modes: dict[tuple[str, ...], 
 
 
 def _copy_workspace_archive(container_id: str, root: Path) -> tuple[str, int, int, int]:
-    command = ["docker", "cp", f"{container_id}:{DOCKER_WORKDIR}/.", "-"]
+    command, transport = _workspace_archive_command(container_id)
     timeout_seconds = _workspace_archive_timeout_from_env()
     started_at = time.monotonic()
     with tempfile.TemporaryFile() as stderr_file:
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=stderr_file)
         if process.stdout is None:
             _kill_and_reap(process)
-            raise RuntimeError("docker cp did not expose its archive stream")
+            raise RuntimeError(f"{transport} did not expose its archive stream")
         timed_out = threading.Event()
         timer_cleanup_errors: list[BaseException] = []
 
@@ -290,7 +323,7 @@ def _copy_workspace_archive(container_id: str, root: Path) -> tuple[str, int, in
             try:
                 process.wait(timeout=_PROCESS_KILL_REAP_TIMEOUT_SECONDS)
             except subprocess.TimeoutExpired as exc:
-                raise RuntimeError("docker cp process did not exit after SIGKILL") from exc
+                raise RuntimeError("docker archive process did not exit after SIGKILL") from exc
 
         timer = threading.Timer(timeout_seconds, kill_on_timeout)
         reader = _BoundedHashReader(process.stdout, MAX_WORKSPACE_ARCHIVE_BYTES)
@@ -325,17 +358,13 @@ def _copy_workspace_archive(container_id: str, root: Path) -> tuple[str, int, in
             if returncode != 0:
                 stderr = _bounded_docker_stderr(stderr_file)
                 detail = f": {stderr}" if stderr else ""
-                raise RuntimeError(
-                    f"docker cp workspace archive failed with exit {returncode}{detail}"
-                )
+                raise RuntimeError(f"{transport} workspace archive failed with exit {returncode}{detail}")
             return reader.digest.hexdigest(), reader.count, entries, extracted
         except tarfile.ReadError as exc:
             stop_process()
             if timed_out.is_set():
                 raise timeout_error() from exc
-            raise _WorkspaceArchiveTruncated(
-                f"container workspace archive stream is truncated: {exc}"
-            ) from exc
+            raise _WorkspaceArchiveTruncated(f"container workspace archive stream is truncated: {exc}") from exc
         except BaseException as exc:
             stop_process()
             if timed_out.is_set() and not isinstance(exc, _WorkspaceArchiveTimeout):

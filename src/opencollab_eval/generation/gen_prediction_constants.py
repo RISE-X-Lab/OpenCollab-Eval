@@ -7,8 +7,19 @@ import re
 from opencollab_eval.engine.swe_eval_records import MAX_JSONL_SCAN_BYTES
 
 DOCKER_WORKDIR = "/testbed"
-# Activate the testbed conda env so the agent's `python`/tests see the repo deps.
-_ACTIVATE = "source /opt/miniconda3/bin/activate testbed 2>/dev/null || true"
+# Conda-backed task images require the prepared testbed environment. Images
+# without a Conda marker keep their native language toolchain unchanged.
+_ACTIVATE = (
+    "if [ -e /opt/miniconda3/bin/activate ] || "
+    "[ -e /opt/miniconda3/envs/testbed ] || "
+    "[ \"${CONDA_DEFAULT_ENV:-}\" = testbed ]; then "
+    "source /opt/miniconda3/bin/activate testbed >/dev/null || { "
+    "printf '%s\\n' 'Environment preparation failed: testbed activation failed' >&2; "
+    "exit 86; }; "
+    "[ \"${CONDA_DEFAULT_ENV:-}\" = testbed ] || { "
+    "printf '%s\\n' 'Environment preparation failed: testbed activation was not confirmed' >&2; "
+    "exit 86; }; fi"
+)
 MAX_EXTRACTED_PATCH_BYTES = 8 * 1024 * 1024
 MAX_STATUS_DIAGNOSTIC_BYTES = 64 * 1024
 MAX_CAPTURED_STDERR_BYTES = 64 * 1024
@@ -29,7 +40,7 @@ _MISSING_CONTAINER_RE = re.compile(r"(?:no such (?:container|object)|not found)"
 
 
 AGENT_PROMPT = """\
-You are an autonomous software engineer fixing a real bug in a Python repository.
+You are an autonomous software engineer fixing a real bug in a software repository.
 The repository is checked out at /testbed and all dependencies are installed.
 
 Rules:
@@ -39,7 +50,7 @@ Rules:
   the source file. Do not keep exploring once the cause is clear.
 - Make the smallest correct change to the SOURCE code that fixes the issue.
 - Do NOT edit test files — your fix is graded against the project's own tests.
-- After editing, verify with a quick Python snippet that the reported behavior
+- After editing, verify with a quick check using the repository's language and tools that the reported behavior
   is fixed, then stop.
 - Do NOT run `git commit`. Just leave your edits in the working tree.
 """

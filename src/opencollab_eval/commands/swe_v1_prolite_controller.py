@@ -16,7 +16,9 @@ from pathlib import Path
 from typing import Any
 
 from opencollab_eval.commands import _swe_eval_layer_integrity as _integrity
+from opencollab_eval.commands import swe_local_runner_transport as _local_transport
 from opencollab_eval.commands import swe_v1_prolite_report as _p
+from opencollab_eval.commands.swe_ssh_transport import with_liveness_options as _ssh_with_liveness_options
 from opencollab_eval.commands.swe_v1_parent_eval_lock import (
     ParentEvalLock,  # noqa: F401
     parent_eval_lock,  # noqa: F401
@@ -55,9 +57,6 @@ from opencollab_eval.commands.swe_v1_transport_recovery import (
     wait_for_remote_ownership_fact,
     wait_for_terminal_remote_summary,
 )
-from opencollab_eval.engine.swe_v1_remote_state import (
-    DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
-)
 
 eval_only_reconciliation_reports = _p.eval_only_reconciliation_reports
 
@@ -69,26 +68,25 @@ def _row_eval_attempt_count(row: dict[str, Any]) -> int:
     count = _integrity.strict_nonnegative_integer(evaluation.get("attempt_count", 0))
     return count if count is not None else 0
 
-_SSH_LIVENESS_OPTIONS = (
-    "-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "ServerAliveInterval=30",
-    "-o", "ServerAliveCountMax=3", "-o", "TCPKeepAlive=yes",)
-def _ssh_with_liveness_options(command: list[str]) -> list[str]:
-    if not command or Path(command[0]).name != "ssh":
-        return command
-    return [*command, *_SSH_LIVENESS_OPTIONS]
+
 def _install_local_abort_handlers() -> dict[signal.Signals, Any]:
     previous: dict[signal.Signals, Any] = {}
+
     def abort(signum: int, _frame: object) -> None:
         if signum == signal.SIGINT:
             raise KeyboardInterrupt
         raise SystemExit(128 + signum)
+
     for signum in LOCAL_SPAWN_SIGNALS:
         previous[signum] = signal.getsignal(signum)
         signal.signal(signum, abort)
     return previous
+
+
 def _restore_local_abort_handlers(previous: dict[signal.Signals, Any]) -> None:
     for signum, handler in previous.items():
         signal.signal(signum, handler)
+
 
 def run_remote(args: argparse.Namespace) -> dict[str, Any]:
     abort_signal_state = _install_local_abort_handlers()
@@ -96,6 +94,8 @@ def run_remote(args: argparse.Namespace) -> dict[str, Any]:
         return _run_remote(args)
     finally:
         _restore_local_abort_handlers(abort_signal_state)
+
+
 def prepare_runtime_summary(
     args: argparse.Namespace,
     ssh_command: list[str],
@@ -103,6 +103,8 @@ def prepare_runtime_summary(
     eval_only: bool,
     deadline: float | None = None,
 ) -> dict[str, Any]:
+    if getattr(args, "runner_transport", "ssh") == "local":
+        return _local_transport.prepare_local_runtime_summary(args)
     expected = str(getattr(args, "expected_runtime_tree_sha256", "") or "")
     if not args.no_sync_runtime:
         kwargs: dict[str, Any] = {
@@ -127,9 +129,7 @@ def prepare_runtime_summary(
         kwargs["deadline"] = deadline
     observed = verify_remote_runtime(**kwargs)
     if observed.get("sha256") != expected:
-        raise RuntimeError(
-            "installed remote runtime source tree does not match the shared preflight"
-        )
+        raise RuntimeError("installed remote runtime source tree does not match the shared preflight")
     return {
         "source_tree": {
             "local": observed,
@@ -137,6 +137,8 @@ def prepare_runtime_summary(
             "verified": True,
         }
     }
+
+
 def _remote_payload(
     args: argparse.Namespace,
     *,
@@ -159,9 +161,7 @@ def _remote_payload(
         "workflow": args.workflow,
         "workflow_env": normalize_workflow_env(args.workflow_env),
         "openhands_command": args.openhands_command,
-        "openhands_empty_patch_rejections": max(
-            0, args.openhands_empty_patch_rejections
-        ),
+        "openhands_empty_patch_rejections": max(0, args.openhands_empty_patch_rejections),
         "max_empty_patch_retries": min(1, max(0, args.max_empty_patch_retries)),
         "model_name": args.model_name,
         "llm_model": args.llm_model,
@@ -183,32 +183,34 @@ def _remote_payload(
         "swe_timeout": args.swe_timeout,
         "task_wall_timeout": args.task_wall_timeout,
         "eval_timeout": args.eval_timeout,
-        "eval_container_bind_timeout": getattr(
-            args,
-            "eval_container_bind_timeout",
-            DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
-        ),
         "llm_timeout": args.llm_timeout,
         "checkpoint_interval": args.checkpoint_interval,
         "max_task_starts": args.max_task_starts,
         "max_eval_attempts": args.max_eval_attempts,
         "eval_only": eval_only,
+        "eval_only_source_base_run_dir": str(getattr(args, "eval_only_source_base_run_dir", "") or ""),
         "eval_dir_name": str(getattr(args, "eval_dir_name", "official_eval")),
         **expected_candidate_identity(args),
         "dry_run": args.dry_run,
     }
+
+
 def _recovery_runtime_tree(observed: dict[str, Any]) -> str:
     owner = observed.get("runner_owner")
     if not isinstance(owner, dict):
         return ""
     value = str(owner.get("runtime_tree_sha256") or "")
     return value if re.fullmatch(r"[0-9a-f]{64}", value) else ""
+
+
 def _recovery_invocation_id(observed: dict[str, Any]) -> str:
     owner = observed.get("runner_owner")
     if not isinstance(owner, dict):
         return ""
     value = str(owner.get("invocation_id") or "")
     return value if re.fullmatch(r"[0-9a-f]{32}", value) else ""
+
+
 def _validate_total_timeout(value: object) -> float:
     if isinstance(value, bool):
         raise ValueError("total_timeout must be finite and positive")
@@ -219,6 +221,8 @@ def _validate_total_timeout(value: object) -> float:
     if not math.isfinite(timeout) or timeout <= 0:
         raise ValueError("total_timeout must be finite and positive")
     return timeout
+
+
 def _remaining_timeout(deadline: float) -> float:
     """Return remaining time in the controller's end-to-end wall-clock budget."""
     if not math.isfinite(deadline):
@@ -227,6 +231,8 @@ def _remaining_timeout(deadline: float) -> float:
     if remaining <= 0:
         raise subprocess.TimeoutExpired("remote runner", 0)
     return remaining
+
+
 def _remote_preflight_timeout_summary(
     args: argparse.Namespace,
     phase: str,
@@ -236,17 +242,25 @@ def _remote_preflight_timeout_summary(
     remote_proxy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     transport = {
-        "status": "timeout", "phase": phase, "base_run_dir": args.base_run_dir,
+        "status": "timeout",
+        "phase": phase,
+        "base_run_dir": args.base_run_dir,
         "error": _redacted(str(error)),
     }
     return {
-        "status": "preflight_failed", "task": "",
-        "technical_reasons": ["remote_ownership_timeout"], "remote_transport": transport,
+        "status": "preflight_failed",
+        "task": "",
+        "technical_reasons": ["remote_ownership_timeout"],
+        "remote_transport": transport,
         "runtime_sync": runtime_sync or {"status": "not_started"},
         "remote_proxy": remote_proxy or {"status": "not_started"},
     }
+
+
 def probe_preexisting_remote_execution(**kwargs: Any) -> dict[str, Any] | None:
     return wait_for_remote_ownership_fact(**kwargs)
+
+
 def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
     defaults = {
         "run_id": "",
@@ -261,33 +275,37 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
         "temperature": None,
         "top_p": None,
         "max_output_tokens": None,
-        "eval_container_bind_timeout": DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
         "max_eval_attempts": 2,
         "expected_runtime_tree_sha256": "",
     }
     for name, value in defaults.items():
         if not hasattr(args, name):
             setattr(args, name, value)
+    runner_transport = str(getattr(args, "runner_transport", "ssh"))
     ssh_command = _ssh_with_liveness_options(shlex.split(args.ssh_command))
     eval_only = bool(getattr(args, "eval_only", False))
     remote_api_env_file = str(getattr(args, "remote_api_env_file", "") or "").strip()
     total_timeout = _validate_total_timeout(args.total_timeout)
     completion_deadline = time.monotonic() + total_timeout
     try:
-        preexisting = probe_preexisting_remote_execution(
-            ssh_command=ssh_command,
-            host=args.host,
-            base_run_dir=args.base_run_dir,
-            remote_runtime_repo=args.remote_runtime_repo,
-            remote_python=str(args.remote_python),
-            deadline=completion_deadline,
-        )
+        if runner_transport == "local":
+            preexisting = _local_transport.probe_local_execution_state(args)
+        else:
+            preexisting = probe_preexisting_remote_execution(
+                ssh_command=ssh_command,
+                host=args.host,
+                base_run_dir=args.base_run_dir,
+                remote_runtime_repo=args.remote_runtime_repo,
+                remote_python=str(args.remote_python),
+                deadline=completion_deadline,
+            )
     except TimeoutError as exc:
         return _remote_preflight_timeout_summary(args, "preexisting_owner_probe", exc)
     if preexisting is not None and not (
-        preexisting.get("runner_state") == "missing"
-        and preexisting.get("summary") is None
+        preexisting.get("runner_state") == "missing" and preexisting.get("summary") is None
     ):
+        if runner_transport == "local":
+            raise RemoteRunnerUnavailable(preexisting)
         expected_owner = runner_owner_identity(preexisting)
         if expected_owner is None:
             raise RemoteRunnerUnavailable(preexisting)
@@ -295,13 +313,8 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
         invocation_id = _recovery_invocation_id(preexisting)
         if not runtime_tree_sha256 or not invocation_id:
             raise RemoteRunnerUnavailable(preexisting)
-        expected_runtime_tree_sha256 = str(
-            getattr(args, "expected_runtime_tree_sha256", "") or ""
-        )
-        if (
-            expected_runtime_tree_sha256
-            and runtime_tree_sha256 != expected_runtime_tree_sha256
-        ):
+        expected_runtime_tree_sha256 = str(getattr(args, "expected_runtime_tree_sha256", "") or "")
+        if expected_runtime_tree_sha256 and runtime_tree_sha256 != expected_runtime_tree_sha256:
             raise RemoteRunnerUnavailable(preexisting)
         payload = _remote_payload(
             args,
@@ -322,9 +335,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
                 expected_owner=expected_owner,
             )
         except TimeoutError as exc:
-            return _remote_preflight_timeout_summary(
-                args, "existing_owner_recovery_probe", exc
-            )
+            return _remote_preflight_timeout_summary(args, "existing_owner_recovery_probe", exc)
         if existing_summary is not None:
             existing_summary["remote_transport"] = {
                 "status": "recovered_terminal_summary",
@@ -350,6 +361,8 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             "status": "direct_remote_api",
             "remote_proxy_base_url": args.remote_proxy_base_url,
         }
+    elif runner_transport == "local":
+        proxy_summary = _local_transport.prepare_local_proxy_summary(args)
     else:
         try:
             proxy_summary = ensure_remote_proxy(
@@ -372,12 +385,10 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             deadline=completion_deadline,
         )
     except (TimeoutError, subprocess.TimeoutExpired) as exc:
-        return _remote_preflight_timeout_summary(
-            args, "runtime_sync", exc, remote_proxy=proxy_summary
-        )
+        return _remote_preflight_timeout_summary(args, "runtime_sync", exc, remote_proxy=proxy_summary)
     selected_remote_proxy_base_url = proxy_summary.get("remote_proxy_base_url", args.remote_proxy_base_url)
     source_tree = sync_summary.get("source_tree") if isinstance(sync_summary, dict) else None
-    if isinstance(source_tree, dict) and isinstance(source_tree.get("local"), dict):
+    if runner_transport == "ssh" and isinstance(source_tree, dict) and isinstance(source_tree.get("local"), dict):
         try:
             source_tree["pre_generation_remote"] = verify_remote_runtime(
                 ssh_command=ssh_command,
@@ -407,16 +418,20 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
         ),
         remote_proxy_base_url=selected_remote_proxy_base_url,
     )
+    if runner_transport == "local":
+        return _local_transport.run_local_runner(
+            args,
+            owner_nonce=owner_nonce,
+            payload=payload,
+            runtime_summary=sync_summary,
+            proxy_summary=proxy_summary,
+        )
     remote_pythonpath = str(Path(args.remote_runtime_repo) / "src")
     remote_python = str(args.remote_python)
     path_entries = [str(entry) for entry in getattr(args, "remote_path_entry", [])]
     if "/" in remote_python:
         path_entries.insert(0, str(Path(remote_python).parent))
-    remote_path = (
-        "PATH=" + ":".join(shlex.quote(entry) for entry in path_entries) + ':"$PATH" '
-        if path_entries
-        else ""
-    )
+    remote_path = "PATH=" + ":".join(shlex.quote(entry) for entry in path_entries) + ':"$PATH" ' if path_entries else ""
     remote_command = (
         "env "
         + remote_path
@@ -471,11 +486,10 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
         raise
     try:
         _restore_local_spawn_signals(spawn_signal_state)
+
         def recovered(summary: dict[str, Any], reason: str) -> dict[str, Any]:
             if not terminate_local_process_group(proc):
-                raise RuntimeError(
-                    "remote summary completed but the local SSH process group did not quiesce"
-                )
+                raise RuntimeError("remote summary completed but the local SSH process group did not quiesce")
             summary["remote_transport"] = {
                 "status": "recovered_terminal_summary",
                 "reason": reason,
@@ -483,7 +497,9 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             }
             summary["runtime_sync"] = sync_summary
             summary["remote_proxy"] = proxy_summary
+            summary["runner_transport"] = "ssh"
             return summary
+
         def poll_remote_runner() -> None:
             observed = probe_remote_execution_state(
                 ssh_command=ssh_command,
@@ -499,6 +515,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             )
             if observed is not None and observed.get("runner_state") != "alive":
                 raise RemoteRunnerUnavailable(observed)
+
         stdout, stderr = _bounded_remote_communicate(
             proc,
             json.dumps(payload),
@@ -519,8 +536,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
                 raise interruption
             if not cleanup.get("ok"):
                 raise RuntimeError(
-                    "ssh leader exited with residual process-group descendants; "
-                    f"technical cleanup failure: {cleanup}"
+                    f"ssh leader exited with residual process-group descendants; technical cleanup failure: {cleanup}"
                 )
         result = subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
         if result.returncode not in (0, 1, 2):
@@ -537,9 +553,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             )
             if summary is not None:
                 return recovered(summary, "primary_transport_lost")
-            raise RuntimeError(
-                _redacted(result.stderr or result.stdout or f"ssh exited {result.returncode}")
-            )
+            raise RuntimeError(_redacted(result.stderr or result.stdout or f"ssh exited {result.returncode}"))
         try:
             summary = json.loads(result.stdout)
         except json.JSONDecodeError as exc:
@@ -556,11 +570,10 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             )
             if recovered_summary is not None:
                 return recovered(recovered_summary, "primary_output_invalid")
-            raise RuntimeError(
-                _redacted(result.stdout[-4000:] or result.stderr[-4000:])
-            ) from exc
+            raise RuntimeError(_redacted(result.stdout[-4000:] or result.stderr[-4000:])) from exc
         summary["runtime_sync"] = sync_summary
         summary["remote_proxy"] = proxy_summary
+        summary["runner_transport"] = "ssh"
         return summary
     except RemoteRunnerUnavailable as exc:
         summary = matching_terminal_remote_summary(exc.observed, payload)
@@ -605,11 +618,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
                 owner_nonce=owner_nonce,
                 timeout=probe_timeout,
             )
-        recovered_summary = (
-            matching_terminal_remote_summary(observed, payload)
-            if observed is not None
-            else None
-        )
+        recovered_summary = matching_terminal_remote_summary(observed, payload) if observed is not None else None
         if recovered_summary is not None:
             return recovered(recovered_summary, "primary_timeout")
         cleanup, interruption = _cleanup_remote_execution(
@@ -637,6 +646,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             file=sys.stderr,
         )
         raise
+
 
 def apply_parent_eval_budget(args: argparse.Namespace) -> dict[str, Any] | None:
     if not (args.eval_only and args.parent_output_dir):
@@ -666,9 +676,7 @@ def apply_parent_eval_budget(args: argparse.Namespace) -> dict[str, Any] | None:
     final_report_path = args.parent_output_dir.resolve() / "final_eval_layer_report.json"
     final_report_counts: dict[int, int] = {}
     if final_report_path.exists():
-        final_report = json.loads(
-            final_report_path.read_text(encoding="utf-8", errors="replace")
-        )
+        final_report = json.loads(final_report_path.read_text(encoding="utf-8", errors="replace"))
         final_report_counts = _p.final_candidate_eval_attempt_counts(
             final_report,
             expected_index=expected_index,
@@ -677,25 +685,18 @@ def apply_parent_eval_budget(args: argparse.Namespace) -> dict[str, Any] | None:
         for index, count in final_report_counts.items():
             counts_by_index[index] = max(counts_by_index.get(index, 0), count)
     selected = range(args.start_index, args.start_index + max(args.limit, 0))
-    remaining_by_index = {
-        index: MAX_TOTAL_EVAL_ATTEMPTS - counts_by_index.get(index, 0)
-        for index in selected
-    }
+    remaining_by_index = {index: MAX_TOTAL_EVAL_ATTEMPTS - counts_by_index.get(index, 0) for index in selected}
     exhausted = [index for index, remaining in remaining_by_index.items() if remaining <= 0]
     if exhausted:
         joined = ", ".join(str(index) for index in exhausted)
         raise RuntimeError(
-            "eval retry budget exhausted for task indices: "
-            f"{joined}; max total is {MAX_TOTAL_EVAL_ATTEMPTS}"
+            f"eval retry budget exhausted for task indices: {joined}; max total is {MAX_TOTAL_EVAL_ATTEMPTS}"
         )
     effective_additional_attempts = min(
         args.max_eval_attempts,
         *remaining_by_index.values(),
     )
-    projected_total_attempts = max(
-        counts_by_index.get(index, 0) + effective_additional_attempts
-        for index in selected
-    )
+    projected_total_attempts = max(counts_by_index.get(index, 0) + effective_additional_attempts for index in selected)
     args.max_eval_attempts = effective_additional_attempts
     return {
         "max_total_eval_attempts": MAX_TOTAL_EVAL_ATTEMPTS,
@@ -706,6 +707,8 @@ def apply_parent_eval_budget(args: argparse.Namespace) -> dict[str, Any] | None:
         "effective_max_eval_attempts": effective_additional_attempts,
         "projected_total_eval_attempts": projected_total_attempts,
     }
+
+
 def update_parent_fact_report(args: argparse.Namespace) -> dict[str, Any]:
     parent_output_dir = args.parent_output_dir.resolve()
     parent_summary = parent_output_dir / "parallel_summary.json"
@@ -729,12 +732,8 @@ def update_parent_fact_report(args: argparse.Namespace) -> dict[str, Any]:
     if candidate_identities is None and getattr(args, "eval_only", False):
         expected_task = str(getattr(args, "expected_task", "") or "")
         expected_record_id = str(getattr(args, "expected_record_id", "") or "")
-        expected_source_sha = str(
-            getattr(args, "expected_source_patch_sha256", "") or ""
-        )
-        expected_eval_sha = str(
-            getattr(args, "expected_eval_patch_sha256", "") or ""
-        )
+        expected_source_sha = str(getattr(args, "expected_source_patch_sha256", "") or "")
+        expected_eval_sha = str(getattr(args, "expected_eval_patch_sha256", "") or "")
         expected_index = getattr(args, "start_index", None)
         if (
             isinstance(expected_index, int)
@@ -759,9 +758,7 @@ def update_parent_fact_report(args: argparse.Namespace) -> dict[str, Any]:
     candidate_identity_path: Path | None = None
     if candidate_identities is not None:
         reconciliation_kwargs["candidate_identities"] = candidate_identities
-        candidate_identity_path = _p.write_candidate_identities_file(
-            parent_output_dir, candidate_identities
-        )
+        candidate_identity_path = _p.write_candidate_identities_file(parent_output_dir, candidate_identities)
         command.extend(["--candidate-identities-json", str(candidate_identity_path)])
     try:
         for report_path in eval_only_reconciliation_reports(
@@ -790,4 +787,6 @@ def update_parent_fact_report(args: argparse.Namespace) -> dict[str, Any]:
         "report_markdown": str(parent_output_dir / "final_eval_layer_report.md"),
         "counts": report.get("counts") if isinstance(report, dict) else {},
     }
+
+
 __all__ = [name for name in globals() if not name.startswith("__")]

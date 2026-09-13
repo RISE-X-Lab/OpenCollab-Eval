@@ -33,9 +33,7 @@ def load_json(path: Path) -> dict[str, Any]:
     return _report_io.load_json(path)
 
 
-def _compact_token_summary(
-    summary: dict[str, Any], config: ParallelConfig
-) -> dict[str, Any]:
+def _compact_token_summary(summary: dict[str, Any], config: ParallelConfig) -> dict[str, Any]:
     return {
         "summary_json": str(config.output_dir / "parallel_token_cost_summary.json"),
         "summary_markdown": str(config.output_dir / "parallel_token_cost_summary.md"),
@@ -90,13 +88,9 @@ def build_token_summary(config: ParallelConfig) -> dict[str, Any]:
     ]
     if config.usd_cny is not None:
         cmd.extend(["--usd-cny", str(config.usd_cny)])
-    proc = subprocess.run(cmd, cwd=REPO, text=True, capture_output=True)
-    _report_io.write_text(
-        config.output_dir / "parallel_token_cost_summary.stdout.log", proc.stdout
-    )
-    _report_io.write_text(
-        config.output_dir / "parallel_token_cost_summary.stderr.log", proc.stderr
-    )
+    proc = subprocess.run(cmd, cwd=REPO, text=True, capture_output=True, check=False)
+    _report_io.write_text(config.output_dir / "parallel_token_cost_summary.stdout.log", proc.stdout)
+    _report_io.write_text(config.output_dir / "parallel_token_cost_summary.stderr.log", proc.stderr)
     if proc.returncode != 0:
         return {
             "status": "error",
@@ -138,9 +132,7 @@ def _task_eval_attempt_count(task: Any, reasons: list[str]) -> int:
     return value
 
 
-def _validate_fact_report(
-    report: dict[str, Any], config: ParallelConfig
-) -> tuple[str, dict[str, int], list[str]]:
+def _validate_fact_report(report: dict[str, Any], config: ParallelConfig) -> tuple[str, dict[str, int], list[str]]:
     reasons: list[str] = []
     if report.get("schema") != "opencollab.swe_eval_layer_final_report.v1":
         reasons.append("invalid_fact_report_schema")
@@ -164,31 +156,17 @@ def _validate_fact_report(
     indices = [_strict_index(task.get("index")) for task in tasks if isinstance(task, dict)]
     if len(indices) != len(tasks) or indices != list(config.indices):
         reasons.append("fact_report_task_index_mismatch")
-    task_eval_attempts = [
-        _task_eval_attempt_count(task, reasons) for task in tasks
-    ]
+    task_eval_attempts = [_task_eval_attempt_count(task, reasons) for task in tasks]
     derived = {
         "eval_attempts": sum(task_eval_attempts),
-        "eval_retry_tasks": sum(
-            1 for count in task_eval_attempts if count > 1
-        ),
-        "eval_success": sum(
-            1 for task in tasks if isinstance(task, dict) and task.get("eval_success") is True
-        ),
+        "eval_retry_tasks": sum(1 for count in task_eval_attempts if count > 1),
+        "eval_success": sum(1 for task in tasks if isinstance(task, dict) and task.get("eval_success") is True),
         "empty_patch": sum(
-            1
-            for task in tasks
-            if isinstance(task, dict) and task.get("generation_status") == "empty_patch"
+            1 for task in tasks if isinstance(task, dict) and task.get("generation_status") == "empty_patch"
         ),
-        "eval_pending": sum(
-            1 for task in tasks if isinstance(task, dict) and task.get("eval_pending") is True
-        ),
-        "resolved": sum(
-            1 for task in tasks if isinstance(task, dict) and task.get("resolved") is True
-        ),
-        "unresolved": sum(
-            1 for task in tasks if isinstance(task, dict) and task.get("resolved") is False
-        ),
+        "eval_pending": sum(1 for task in tasks if isinstance(task, dict) and task.get("eval_pending") is True),
+        "resolved": sum(1 for task in tasks if isinstance(task, dict) and task.get("resolved") is True),
+        "unresolved": sum(1 for task in tasks if isinstance(task, dict) and task.get("resolved") is False),
         "technical_failed_final": sum(
             1 for task in tasks if isinstance(task, dict) and task.get("technical_failed") is True
         ),
@@ -206,11 +184,7 @@ def _validate_fact_report(
         reasons.append("fact_report_clean_completion_conflict")
     if reasons:
         return "invalid_fact_report", normalized, list(dict.fromkeys(reasons))
-    status = (
-        "done"
-        if normalized["technical_failed_final"] == 0
-        else "done_with_technical_failures"
-    )
+    status = "done" if normalized["technical_failed_final"] == 0 else "done_with_technical_failures"
     return status, normalized, []
 
 
@@ -235,7 +209,7 @@ def build_eval_fact_report(config: ParallelConfig) -> dict[str, Any]:
         cmd.extend(["--expected-index", str(index)])
     if config.usd_cny is not None:
         cmd.extend(["--usd-cny", str(config.usd_cny)])
-    proc = subprocess.run(cmd, cwd=REPO, text=True, capture_output=True)
+    proc = subprocess.run(cmd, cwd=REPO, text=True, capture_output=True, check=False)
     _report_io.write_text(config.output_dir / "final_eval_layer_report.stdout.log", proc.stdout)
     _report_io.write_text(config.output_dir / "final_eval_layer_report.stderr.log", proc.stderr)
     if proc.returncode != 0:
@@ -274,9 +248,7 @@ def aggregate(
         attempts = item.get("attempts")
         integer_attempts = isinstance(attempts, int) and not isinstance(attempts, bool)
         valid = integer_attempts and (
-            attempts == 0
-            if item.get("reused_existing_report") is True
-            else 1 <= attempts <= config.runner_attempts
+            attempts == 0 if item.get("reused_existing_report") is True else 1 <= attempts <= config.runner_attempts
         )
         if not valid:
             item["technical_failed"] = max(1, int(item.get("technical_failed") or 0))
@@ -291,35 +263,22 @@ def aggregate(
             item["summary_validation_reasons"] = reasons
     counts = {
         "tasks": sum(int(item.get("tasks") or 0) for item in ordered),
-        "generation_done": sum(
-            int(item.get("generation_done") or 0) for item in ordered
-        ),
+        "generation_done": sum(int(item.get("generation_done") or 0) for item in ordered),
         "empty_patch": sum(int(item.get("empty_patch") or 0) for item in ordered),
         "eval_done": sum(int(item.get("eval_done") or 0) for item in ordered),
         "eval_attempts": sum(int(item.get("eval_attempts") or 0) for item in ordered),
-        "eval_retry_tasks": sum(
-            int(item.get("eval_retry_tasks") or 0) for item in ordered
-        ),
+        "eval_retry_tasks": sum(int(item.get("eval_retry_tasks") or 0) for item in ordered),
         "resolved": sum(int(item.get("resolved") or 0) for item in ordered),
         "unresolved": sum(int(item.get("unresolved") or 0) for item in ordered),
-        "technical_failed": sum(
-            int(item.get("technical_failed") or 0) for item in ordered
-        ),
+        "technical_failed": sum(int(item.get("technical_failed") or 0) for item in ordered),
     }
     fact_validation_reasons: list[str] = []
     fact_status = ""
     if fact_report:
         fact_status = str(fact_report.get("status") or "")
-        fact_counts = (
-            fact_report.get("counts")
-            if isinstance(fact_report.get("counts"), dict)
-            else {}
-        )
+        fact_counts = fact_report.get("counts") if isinstance(fact_report.get("counts"), dict) else {}
         if fact_status not in {"done", "done_with_technical_failures"}:
-            fact_validation_reasons.extend(
-                str(reason)
-                for reason in fact_report.get("validation_reasons") or []
-            )
+            fact_validation_reasons.extend(str(reason) for reason in fact_report.get("validation_reasons") or [])
             fact_validation_reasons.append(f"fact_report_status:{fact_status or 'missing'}")
         else:
             comparisons = {
@@ -334,9 +293,7 @@ def aggregate(
             }
             for parallel_field, fact_field in comparisons.items():
                 if counts[parallel_field] != fact_counts.get(fact_field):
-                    fact_validation_reasons.append(
-                        f"parallel_fact_count_mismatch:{parallel_field}"
-                    )
+                    fact_validation_reasons.append(f"parallel_fact_count_mismatch:{parallel_field}")
             if not fact_validation_reasons:
                 counts.update(
                     tasks=fact_counts["tasks"],
@@ -358,19 +315,12 @@ def aggregate(
         and len(set(result_indices)) == len(result_indices)
         and set(result_indices) == set(config.indices)
     )
-    status = (
-        "done"
-        if census_complete
-        and all(item.get("completed") for item in ordered)
-        else "running"
-    )
+    status = "done" if census_complete and all(item.get("completed") for item in ordered) else "running"
     if status == "done" and fact_validation_reasons and counts["technical_failed"] == 0:
         status = "done_with_report_validation_failure"
     elif status == "done" and counts["technical_failed"] > 0:
         status = "done_with_technical_failures"
-    elif status == "done" and any(
-        item.get("returncode") not in (0, 1) for item in ordered
-    ):
+    elif status == "done" and any(item.get("returncode") not in (0, 1) for item in ordered):
         status = "done_with_runner_failures"
     if status == "done" and fact_status == "done_with_technical_failures":
         status = "done_with_technical_failures"
@@ -385,6 +335,10 @@ def aggregate(
         "run_id": config.run_id,
         "max_workers": config.max_workers,
         "runner_attempts": config.runner_attempts,
+        "max_technical_recoveries": config.max_technical_recoveries,
+        "technical_recovery_manifest": (
+            str(config.output_dir / "technical_recovery_manifest.json") if config.max_technical_recoveries else ""
+        ),
         "remote_base": config.remote_base,
         "remote_runtime_repo": config.remote_runtime_repo,
         "remote_python": config.remote_python,
@@ -398,9 +352,7 @@ def aggregate(
         "max_output_tokens": config.max_output_tokens,
         "workflow": config.workflow,
         "workflow_env": list(config.workflow_env),
-        "openhands_command_sha256": _openhands_command_sha256(
-            getattr(config, "openhands_command", "")
-        ),
+        "openhands_command_sha256": _openhands_command_sha256(getattr(config, "openhands_command", "")),
         "openhands_empty_patch_rejections": config.openhands_empty_patch_rejections,
         "max_empty_patch_retries": config.max_empty_patch_retries,
         "budget": config.budget,
@@ -416,9 +368,7 @@ def aggregate(
         summary["fact_report"] = fact_report
     if fact_validation_reasons:
         summary["report_validation_failed"] = True
-        summary["fact_report_validation_reasons"] = list(
-            dict.fromkeys(fact_validation_reasons)
-        )
+        summary["fact_report_validation_reasons"] = list(dict.fromkeys(fact_validation_reasons))
     if scheduler:
         summary["scheduler"] = scheduler
     if remote_health:
@@ -484,10 +434,7 @@ def write_markdown(config: ParallelConfig, summary: dict[str, Any]) -> None:
         f"- workflow_env: `{summary['workflow_env']}`",
         f"- budget: `{summary['budget']}`",
         f"- max_steps: `{summary['max_steps']}`",
-        (
-            "- openhands_empty_patch_rejections: "
-            f"`{summary['openhands_empty_patch_rejections']}`"
-        ),
+        (f"- openhands_empty_patch_rejections: `{summary['openhands_empty_patch_rejections']}`"),
         f"- generation_done: `{summary['counts']['generation_done']}`",
         f"- empty_patch: `{summary['counts'].get('empty_patch', 0)}`",
         f"- eval_done: `{summary['counts']['eval_done']}`",
@@ -497,9 +444,7 @@ def write_markdown(config: ParallelConfig, summary: dict[str, Any]) -> None:
         f"- unresolved: `{summary['counts']['unresolved']}`",
         f"- technical_failed: `{summary['counts']['technical_failed']}`",
     ]
-    scheduler = (
-        summary.get("scheduler") if isinstance(summary.get("scheduler"), dict) else {}
-    )
+    scheduler = summary.get("scheduler") if isinstance(summary.get("scheduler"), dict) else {}
     if scheduler:
         lines.extend(
             [
@@ -508,21 +453,11 @@ def write_markdown(config: ParallelConfig, summary: dict[str, Any]) -> None:
                 f"- scheduler_events: `{len(scheduler.get('events') or [])}`",
             ]
         )
-    remote_health = (
-        summary.get("remote_health")
-        if isinstance(summary.get("remote_health"), dict)
-        else {}
-    )
+    remote_health = summary.get("remote_health") if isinstance(summary.get("remote_health"), dict) else {}
     if remote_health:
         lines.append(f"- remote_health: `{remote_health.get('status')}`")
-    token_cost = (
-        summary.get("token_cost") if isinstance(summary.get("token_cost"), dict) else {}
-    )
-    billable = (
-        token_cost.get("billable")
-        if isinstance(token_cost.get("billable"), dict)
-        else {}
-    )
+    token_cost = summary.get("token_cost") if isinstance(summary.get("token_cost"), dict) else {}
+    billable = token_cost.get("billable") if isinstance(token_cost.get("billable"), dict) else {}
     if billable:
         lines.extend(
             [
@@ -533,11 +468,7 @@ def write_markdown(config: ParallelConfig, summary: dict[str, Any]) -> None:
         )
         if "cost_cny" in billable:
             lines.append(f"- billable_cost_cny: `{billable.get('cost_cny')}`")
-    fact_report = (
-        summary.get("fact_report")
-        if isinstance(summary.get("fact_report"), dict)
-        else {}
-    )
+    fact_report = summary.get("fact_report") if isinstance(summary.get("fact_report"), dict) else {}
     if fact_report:
         lines.extend(
             [

@@ -257,3 +257,23 @@ __all__ = [
     "run_checked",
     "run_ssh_checked",
 ]
+
+
+_SSH_LIVENESS_OPTIONS = (
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=20",
+    "-o",
+    "ServerAliveInterval=30",
+    "-o",
+    "ServerAliveCountMax=3",
+    "-o",
+    "TCPKeepAlive=yes",
+)
+
+
+def with_liveness_options(command: list[str]) -> list[str]:
+    if not command or Path(command[0]).name != "ssh":
+        return command
+    return [*command, *_SSH_LIVENESS_OPTIONS]

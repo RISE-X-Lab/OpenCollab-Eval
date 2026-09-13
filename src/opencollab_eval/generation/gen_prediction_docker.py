@@ -16,6 +16,7 @@ from opencollab_eval.engine.swe_eval_records import open_regular_binary, read_bo
 
 from .gen_prediction_config import _docker_timeout_from_env
 from .gen_prediction_constants import (
+    _ACTIVATE,
     _MISSING_CONTAINER_RE,
     CONTAINER_OWNER_LABEL,
     CONTAINER_OWNER_SCHEMA_VERSION,
@@ -119,10 +120,24 @@ def start_container(
     image: str,
     name: str,
     owner_token: str | None = None,
+    *,
+    temporary_directory: Path | None = None,
 ) -> str:
     owner_token = owner_token or uuid.uuid4().hex
     if re.fullmatch(r"[0-9a-f]{32}", owner_token) is None:
         raise ValueError("container owner token must be 32 lowercase hex characters")
+    temporary_mount = []
+    temporary_size = os.environ.get("OPENCOLLAB_GENERATION_TMPFS_SIZE", "").strip().lower()
+    if temporary_size and re.fullmatch(r"[1-9][0-9]*[kmg]?", temporary_size) is None:
+        raise ValueError("OPENCOLLAB_GENERATION_TMPFS_SIZE must be a positive Docker size")
+    if temporary_directory is not None:
+        temporary_directory.mkdir(parents=True, exist_ok=False)
+        temporary_directory.chmod(0o1777)
+        temporary_mount = (
+            ["--tmpfs", f"/tmp:rw,exec,nosuid,nodev,size={temporary_size},mode=1777"]
+            if temporary_size
+            else ["--mount", f"type=bind,src={temporary_directory.resolve()},dst=/tmp"]
+        )
     try:
         res = _docker(
             "run",
@@ -133,6 +148,7 @@ def start_container(
             f"{CONTAINER_OWNER_LABEL}={owner_token}",
             "--network",
             "none",
+            *temporary_mount,
             "--env",
             "GIT_ATTR_NOSYSTEM=1",
             "--env",
@@ -448,6 +464,8 @@ def start_container_with_marker(
     image: str,
     name: str,
     run_dir: Path,
+    *,
+    temporary_directory: Path | None = None,
 ) -> str:
     """Persist ownership before Docker creation, then upgrade it with the CID."""
     from .gen_prediction_pending import recover_generation_state
@@ -456,7 +474,10 @@ def start_container_with_marker(
         raise RuntimeError("stale generation state recovery failed")
     pending = _create_pending_owner(run_dir, name)
     try:
-        cid = start_container(image, name, pending["owner_token"])
+        if temporary_directory is None:
+            cid = start_container(image, name, pending["owner_token"])
+        else:
+            cid = start_container(image, name, pending["owner_token"], temporary_directory=temporary_directory)
         write_container_marker(run_dir, cid, name)
     except BaseException:
         current = _read_owner(container_owner_path(run_dir, name)) or pending
@@ -589,3 +610,9 @@ def finalize_container_ownership(
     if not remove_container_and_clear_marker(run_dir, cid):
         raise RuntimeError(f"technical container cleanup failed for {cid}; ownership marker retained")
     metrics["container_cleanup_succeeded"] = True
+
+
+def prepare_testbed_environment(container_id: str) -> None:
+    """Check required Conda activation before any model receives the workspace."""
+    result = _docker("exec", container_id, "bash", "-lc", _ACTIVATE)
+    _check_docker(result, "solver environment preparation")

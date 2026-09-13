@@ -3,9 +3,14 @@
 # ruff: noqa: F403, F405
 
 from opencollab_eval.engine import swe_v1_remote_cleanup as remote_cleanup
+from opencollab_eval.engine.native_progress_watch import wait_generation
 from opencollab_eval.engine.swe_eval_records import direct_eval_done_has_execution_proof
 from opencollab_eval.engine.swe_v1_remote_commands import *
 from opencollab_eval.engine.swe_v1_remote_core import *
+from opencollab_eval.engine.swe_v1_remote_eval_candidate import (
+    generation_readiness_failure,
+    reconcile_expected_candidate_identity,
+)
 from opencollab_eval.engine.swe_v1_remote_generation_failure import *
 from opencollab_eval.engine.swe_v1_remote_gitlink_probe import *
 from opencollab_eval.engine.swe_v1_remote_records import *
@@ -19,13 +24,7 @@ def bind_llm_transport_environment(env):
         bind_remote_api_network_environment(env, remote_api_network_env)
 
 
-def bind_eval_container_marker(
-    cidfile,
-    marker_path,
-    container_name,
-    proc,
-    timeout=DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
-):
+def bind_eval_container_marker(cidfile, marker_path, container_name, proc, timeout=2.0):
     deadline = time.monotonic() + timeout
     last_error = "container cidfile did not appear"
     while time.monotonic() < deadline:
@@ -122,8 +121,6 @@ def clear_pending_eval_marker(cidfile, marker_path, container_name):
     except OSError as exc:
         return {"ok": False, "status": "pending_marker_unlink_failed", "details": str(exc)}
     return {"ok": True, "status": "pending_marker_removed"}
-
-
 GENERATION_RETRY_STATUSES = {
     "fifo_write_failed",
     "generation_failed",
@@ -132,11 +129,7 @@ GENERATION_RETRY_STATUSES = {
 def result_failure_scope(result_rows, technical_failed):
     if not technical_failed:
         return "none"
-    return "image" if any(
-        row["generation"].get("failure_scope") == "image" for row in result_rows
-    ) else "task"
-
-
+    return "image" if any(row["generation"].get("failure_scope") == "image" for row in result_rows) else "task"
 def _generation_patch_result(
     row,
     task,
@@ -210,6 +203,23 @@ def _generation_patch_result(
     return result
 
 
+def _fresh_historical_generation_completed(
+    prediction,
+    metric,
+    task,
+    *,
+    previous_record_id,
+    returncode,
+):
+    record_id = row_record_id(prediction)
+    return bool(
+        returncode == 0
+        and record_id
+        and record_id != previous_record_id
+        and historical_generation_identity_status(prediction, metric, task) == "verified"
+    )
+
+
 def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
     task = row["instance_id"]
     run_dir = base_run_dir / task
@@ -225,6 +235,12 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
         metric,
         task,
     )
+    if not done:
+        terminal = terminal_generation_result(prediction, metric, task, pairing)
+        if terminal is not None:
+            if not _generation_base_commit_matches(row, metric):
+                terminal.update(status="technical_generation_base_identity_failed", technical_failure=True)
+            return terminal
     if not done and not isinstance(metric, dict) and start_count(run_dir) >= max_task_starts:
         return {"status": "generation_start_limit_reached", "task": task, "start_count": start_count(run_dir)}
     image_status = ensure_image(image)
@@ -239,9 +255,7 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
         pairing,
         expected_generation_image_id=expected_generation_image_id,
     )
-    if provider_failure is not None and not (
-        eval_only and artifact_identity_status == "interrupted_verified"
-    ):
+    if provider_failure is not None and not (eval_only and artifact_identity_status == "interrupted_verified"):
         return provider_failure
     if not done and start_count(run_dir) >= max_task_starts:
         return {
@@ -322,9 +336,7 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
             "OPENCOLLAB_SWE_BUDGET": str(budget),
             "OPENCOLLAB_SWE_MAX_STEPS": str(max_steps),
             "OPENCOLLAB_LLM_PROVIDER": llm_provider or "anthropic",
-            "OPENCOLLAB_OPENHANDS_EMPTY_PATCH_REJECTIONS": str(
-                openhands_empty_patch_rejections
-            ),
+            "OPENCOLLAB_OPENHANDS_EMPTY_PATCH_REJECTIONS": str(openhands_empty_patch_rejections),
             "OPENCOLLAB_SWE_TIMEOUT": str(swe_timeout),
             "OPENCOLLAB_LLM_TIMEOUT": str(cfg["llm_timeout"]),
             "OPENCOLLAB_SWE_DATASET": "swe-batch-pro-lite",
@@ -335,12 +347,8 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
             "OPENCOLLAB_EVAL_INVOCATION_ID": invocation_id,
             "OPENCOLLAB_EVAL_RUN_ID": run_id,
             "OPENCOLLAB_RUNTIME_TREE_SHA256": runtime_tree_sha256,
-            "OPENCOLLAB_EVAL_LLM_BASE_URL_SHA256": hashlib.sha256(
-                remote_proxy_base_url.encode("utf-8")
-            ).hexdigest(),
-            "OPENCOLLAB_EVAL_WORKFLOW_ENV": json.dumps(
-                effective_workflow_env(), sort_keys=True
-            ),
+            "OPENCOLLAB_EVAL_LLM_BASE_URL_SHA256": hashlib.sha256(remote_proxy_base_url.encode("utf-8")).hexdigest(),
+            "OPENCOLLAB_EVAL_WORKFLOW_ENV": json.dumps(effective_workflow_env(), sort_keys=True),
         }
     )
     env.update(effective_workflow_env())
@@ -402,7 +410,7 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
                     }
                 return {"status": "fifo_write_failed", "task": task, "details": fifo_write, "log": str(log_path)}
             try:
-                returncode = proc.wait(timeout=task_wall_timeout)
+                returncode = wait_generation(proc, run_dir, wall_timeout=task_wall_timeout, environment=env)
                 cleanup_quiesced = ensure_process_group_quiesced_after_wait(proc)
                 if not cleanup_quiesced:
                     cleanup_fifo(fifo)
@@ -480,6 +488,17 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
             start_state=state,
         )
         return provider_failure
+    fresh_historical_completion = _fresh_historical_generation_completed(
+        prediction,
+        metric,
+        task,
+        previous_record_id=previous_record_id,
+        returncode=returncode,
+    )
+    if not done and fresh_historical_completion:
+        result = generation_readiness_failure(task, prediction, metric, pairing, require_identity=True)
+        result.update(returncode=returncode, log=str(log_path), start_state=state)
+        return result
     if done:
         return _generation_patch_result(
             row,
@@ -509,6 +528,10 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
             log=str(log_path),
             start_state=state,
         )
+    terminal = terminal_generation_result(prediction, metric, task, pairing)
+    if terminal is not None:
+        terminal.update(returncode=returncode, log=str(log_path), start_state=state)
+        return terminal
     failure_evidence = generation_failure_evidence(run_dir, task)
     return {
         "status": "generation_failed",
@@ -526,50 +549,17 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
 
 
 def reconcile_eval_only_candidate_identity(result):
-    """Keep immutable candidate bindings strict and derive the eval patch binding."""
-    expected = {
+    return reconcile_expected_candidate_identity(result, {
         "task": expected_task,
         "record_id": expected_record_id,
         "source_patch_sha256": expected_source_patch_sha256,
         "eval_patch_sha256": expected_eval_patch_sha256,
-    }
-    if not any(expected.values()):
-        return result
-    observed = {
-        "task": str(result.get("task") or ""),
-        "record_id": str(result.get("record_id") or ""),
-        "source_patch_sha256": str(result.get("source_patch_sha256") or result.get("patch_sha256") or ""),
-        "eval_patch_sha256": str(result.get("eval_patch_sha256") or result.get("patch_sha256") or ""),
-    }
-    immutable_fields = ("task", "record_id", "source_patch_sha256")
-    mismatched = [
-        field for field in immutable_fields if observed[field] != expected[field]
-    ]
-    if mismatched:
-        return {
-            "status": "candidate_identity_mismatch",
-            "task": result.get("task"),
-            "eval_only": True,
-            "identity_mismatch_fields": mismatched,
-            "expected_candidate_identity": expected,
-            "observed_candidate_identity": observed,
-        }
-    eval_patch_matches = (
-        not expected["eval_patch_sha256"]
-        or observed["eval_patch_sha256"] == expected["eval_patch_sha256"]
-    )
-    if eval_patch_matches:
-        return result
-    reconciled = dict(result)
-    reconciled["artifact_identity_warnings"] = [
-        "stale_expected_eval_patch_sha256"
-    ]
-    reconciled["candidate_identity_reconciliation"] = {
-        "status": "accepted_recomputed_eval_patch",
-        "expected_candidate_identity": expected,
-        "observed_candidate_identity": observed,
-    }
-    return reconciled
+    })
+
+
+def eval_only_candidate_identity_error(result):
+    reconciled = reconcile_eval_only_candidate_identity(result)
+    return reconciled if reconciled is not result else None
 
 
 def generation_for_task(row):
@@ -585,9 +575,11 @@ def generation_for_task(row):
         )
         force_new_generation = False
         attempts.append(result)
-        if result.get("status") == "generation_done":
+        if result.get("status") in {"generation_done", "generation_candidate_captured"}:
             break
         if was_empty_patch_retry:
+            break
+        if result.get("status") == "empty_patch" and result.get("oc_failure") is True:
             break
         if result.get("status") == "empty_patch":
             run_dir = base_run_dir / row["instance_id"]
@@ -662,9 +654,7 @@ def eval_summary_matches_prediction(
     if not patch_sha_matches(previous_sha, current_sha):
         return False
     current_eval_sha = str(expected_eval_patch_sha256 or patch_sha(eval_model_patch(prediction)))
-    previous_eval_sha = str(
-        summary.get("eval_patch_sha256") or summary.get("patch_sha256") or ""
-    )
+    previous_eval_sha = str(summary.get("eval_patch_sha256") or summary.get("patch_sha256") or "")
     if not patch_sha_matches(previous_eval_sha, current_eval_sha):
         return False
     current_record = row_record_id(prediction)
@@ -795,4 +785,6 @@ def cleanup_eval_container(cidfile, marker_path, container_name):
         "status": "all_references_absent",
         "attempts": attempts,
     }
+
+
 __all__ = [name for name in globals() if not name.startswith("__")]

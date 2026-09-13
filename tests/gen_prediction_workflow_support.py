@@ -29,6 +29,17 @@ FIXTURE = {
 
 @pytest.fixture(autouse=True)
 def isolated_solver_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime = SimpleNamespace(workspace="/testbed", store="/tmp/fixture-runtime", roots=[])
+    monkeypatch.setattr(gpw.gp, "stash_solver_runtime_dependencies", lambda *a, **k: runtime)
+    monkeypatch.setattr(gpw.gp, "restore_solver_runtime_dependencies", lambda *a, **k: None)
+    monkeypatch.setattr(gpw.gp, "remove_solver_runtime_dependencies", lambda *a, **k: None)
+    monkeypatch.setattr(gpw, "install_candidate_environment", lambda *a, **k: "")
+    monkeypatch.setattr(gpw, "image_activation_prefix", lambda *a, **k: "")
+    monkeypatch.setattr(gpw, "arm_candidate_retention", lambda *a, **k: None)
+    monkeypatch.setattr(gpw, "complete_candidate_retention", lambda *a, **k: None)
+    retained = []
+    monkeypatch.setattr(gpw, "_retained_candidates_for_test", retained, raising=False)
+    monkeypatch.setattr(gpw, "retain_failed_candidate", lambda *a, **k: retained.append(k))
     monkeypatch.setattr(gpw.gp, "container_image_id", lambda container_id: "sha256:" + "8" * 64)
     evidence = SimpleNamespace(
         as_dict=lambda: {

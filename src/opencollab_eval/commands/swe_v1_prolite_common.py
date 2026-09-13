@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 
 from opencollab_eval.engine.solver_backend import normalize_llm_user_agent
+from opencollab_eval.runtime_config import resolve_generation_environment
 
 REPO_ROOT = Path(os.environ.get("OPENCOLLAB_EVAL_REPO_ROOT", Path.cwd())).resolve()
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
@@ -28,14 +29,17 @@ REMOTE_HEALTH_SSH_TIMEOUT_FLOOR = 15
 REMOTE_COMPLETION_POLL_SECONDS = 120
 REMOTE_COMPLETION_PROBE_TIMEOUT_SECONDS = 30
 REMOTE_COMPLETION_MAX_CONSECUTIVE_PROBE_FAILURES = 3
-REMOTE_TERMINAL_STATUSES = frozenset(
-    {"done", "done_with_technical_failures", "dry_run", "preflight_failed"}
-)
+REMOTE_TERMINAL_STATUSES = frozenset({"done", "done_with_technical_failures", "dry_run", "preflight_failed"})
 MAX_TOTAL_EVAL_ATTEMPTS = 10
 ALLOWED_WORKFLOW_ENV_KEYS = frozenset(
     {
+        "OPENCOLLAB_G11_ROLE_BUDGET",
         "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES",
         "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY",
+        "OPENCOLLAB_EVAL_NO_PROGRESS_TIMEOUT",
+        "OPENCOLLAB_UNBOUNDED_LIMITS",
+        "OPENCOLLAB_EXTERNAL_PROVIDER_ISOLATION",
+        "OPENCOLLAB_DOCKER_ARCHIVE_TRANSPORT",
         "OPENCOLLAB_MAX_OUTPUT_TOKENS",
         "OPENCOLLAB_TEMPERATURE",
         "OPENCOLLAB_THINKING",
@@ -60,23 +64,18 @@ ALLOWED_WORKFLOW_ENV_KEYS = frozenset(
 
 
 def normalize_workflow_env_entries(values: list[str] | tuple[str, ...]) -> dict[str, str]:
-    normalized: dict[str, str] = {}
+    normalized: dict[str, str] = resolve_generation_environment({})
     for item in values:
         key, separator, value = str(item).partition("=")
         if not separator or key not in ALLOWED_WORKFLOW_ENV_KEYS:
             raise ValueError(f"unsupported --workflow-env: {item}")
-        normalized[key] = (
-            normalize_llm_user_agent(value)
-            if key == "OPENCOLLAB_LLM_USER_AGENT"
-            else value
-        )
+        normalized[key] = normalize_llm_user_agent(value) if key == "OPENCOLLAB_LLM_USER_AGENT" else value
     return normalized
 
 
 REMOTE_PROXY_TUNNELS: list[subprocess.Popen[str]] = []
 REMOTE_RUNNER = (
-    "from opencollab_eval.engine.swe_v1_remote_runner import run_from_stdin\n"
-    "raise SystemExit(run_from_stdin())\n"
+    "from opencollab_eval.engine.swe_v1_remote_runner import run_from_stdin\nraise SystemExit(run_from_stdin())\n"
 )
 LOCAL_PROCESS_TERM_GRACE_SECONDS = 5.0
 LOCAL_PROCESS_KILL_REAP_TIMEOUT_SECONDS = 5.0

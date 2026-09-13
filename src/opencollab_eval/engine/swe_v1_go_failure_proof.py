@@ -36,7 +36,7 @@ _GO_TOOLCHAIN_DOWNLOAD_RE = re.compile(
 _GO_MODULE_FETCH_RE = re.compile(
     r"(?P<path>(?:[A-Za-z]:)?[^:\r\n]*?[^/\\:\r\n]+\.go):"
     r"[0-9]+(?::[0-9]+)?:\s+(?P<module>[^@\s:]+)@(?P<version>[^:\s]+):"
-    r"\s+Get \"https?://[^\"]+\":\s+.+\Z"
+    r"\s+Get \"https?://[^\"]+\":\s+(?P<detail>.+)\Z"
 )
 
 
@@ -291,6 +291,10 @@ def _candidate_dependency_setup_failure_matches(
             continue
         failure = _GO_MODULE_FETCH_RE.fullmatch(line)
         if failure:
+            detail = line.lower()
+            semantic_errors = ("unknown revision", "invalid version", "unrecognized import path")
+            if not any(marker in detail for marker in semantic_errors):
+                return False
             failures.append(failure.groupdict())
             continue
         if line:
