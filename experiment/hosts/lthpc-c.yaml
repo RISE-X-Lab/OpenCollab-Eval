@@ -1,0 +1,48 @@
+# lthpc again -- the same machine, the same workdir, the same python, the same
+# docker daemon and the same scoring venv -- reached through a SECOND pair of
+# git checkouts.
+#
+# WHY IT EXISTS
+#
+# A checkout can only be detached at one commit, and `sync` refuses to move one
+# while any driver is alive on the host, which is correct: moving it would pull
+# the cards out from under a batch that is running. With one pair of checkouts
+# that makes every new pin wait for the current batch to finish -- eight hours
+# of an idle machine while `qwen-plain40-4m` ran its last thirty-two runs.
+#
+# These directories are clones of the same two GitHub repositories, detached at
+# whatever pin the spec names, and nothing else about the machine changes. Every
+# field below except `name`, `opencollab_dir` and `eval_dir` is byte for byte
+# `lthpc.yaml`, and a test asserts exactly that, because a second host file that
+# quietly carried a different scoring dataset or a different python would turn
+# "which card" into "which machine".
+#
+# Load, not isolation, is the thing to watch: the two checkouts share one docker
+# daemon, and a generation run whose `docker run -d` takes over 60 s loses its
+# container. Keep the sum of the concurrencies where it was.
+name: lthpc-c
+ssh: gpu                                    # ssh alias; a ControlMaster is configured
+workdir: /home/xuzhenhua                    # out-dirs, instance files and logs live here
+python: /home/xuzhenhua/oc-venv/bin/python
+opencollab_dir: OpenCollab-c                # git checkout under workdir, detached at the pin
+eval_dir: OpenCollab-Eval-c                 # same
+proxy: null                                 # this host reaches the model endpoints directly
+docker_disk: /home                          # docker data-root is /home/docker/lib
+# Not gpu3's 10. This filesystem is 44 TB shared by 17 users with no quotas and
+# has been sitting at 99% full; the free space it reports is other people's
+# headroom, not ours, and it can move by hundreds of GB while a batch runs. A
+# 10 GB floor on such a disk would pass right up to the moment a run dies with
+# no space left. 300 GB is roughly one full pull of the frame's task images,
+# i.e. enough room to fail on something other than the disk.
+min_free_gb: 300
+local_batches_dir: /root/oc-batches         # where `pull` puts a batch and `plan` its inputs
+local_opencollab_dir: /root/git/OpenCollab  # card bytes are read at the pin with `git show`
+frame_content: ~/.cache/opencollab-eval/swebench-verified.jsonl
+scanner: /root/git/OpenCollab-Eval/experiment/analysis/scan_batch.py
+# Scoring. The harness needs fields the frame content does not carry
+# (eval_script, image, log_parser), so `batch score` filters this dataset down
+# to a batch's instances rather than rebuilding those fields. This file is the
+# one the 2026-09-07 re-scoring ran against; it covers subset-50 plus the
+# scikit-learn-26323 replacement task.
+scoring_dataset: /home/xuzhenhua/oc-scoring/ds-r2-relthpc/dataset-ds51.jsonl
+scoring_python: /home/xuzhenhua/oc-scoring/.venv-swebench/bin/python

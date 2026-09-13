@@ -66,6 +66,11 @@ RUNG_CELLS = {
     # the ladder -- plus one more: it is not best-of-n, which in this project is
     # D13's k=3 samples from one agent selected without a test.
     "propose": "cmd-propose",
+    # `cmd-propose` with the two failures its own smoke measured repaired: the
+    # coder is asked to commit and send the sha as soon as its change runs
+    # (three of six runs had it spend 3.9M and report nothing), and the tester
+    # call is made unconditional (two of six never addressed it).
+    "propose2": "cmd-propose2",
 }
 
 # ``pgrep -f`` matches its own caller's command line, so the pattern carries a

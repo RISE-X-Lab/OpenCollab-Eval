@@ -733,11 +733,12 @@ def test_rung_derives_the_cell_and_refuses_a_mismatch(experiment: dict) -> None:
         "prohibit": "cmd-prohibit",
         "verify": "cmd-verify",
         "propose": "cmd-propose",
+        "propose2": "cmd-propose2",
     }
 
 
 def test_the_second_lthpc_checkout_is_the_same_machine() -> None:
-    """`lthpc-b.yaml` may differ from `lthpc.yaml` in the checkout paths only.
+    """Every `lthpc-*.yaml` may differ from `lthpc.yaml` in the checkout paths only.
 
     It exists so a second pin can run while a batch holds the first checkout,
     and it is only sound while every other field is identical: a second host
@@ -747,11 +748,16 @@ def test_the_second_lthpc_checkout_is_the_same_machine() -> None:
     import yaml
 
     a = yaml.safe_load((EXPERIMENT / "hosts" / "lthpc.yaml").read_text(encoding="utf-8"))
-    b = yaml.safe_load((EXPERIMENT / "hosts" / "lthpc-b.yaml").read_text(encoding="utf-8"))
-    differ = {k for k in set(a) | set(b) if a.get(k) != b.get(k)}
-    assert differ == {"name", "opencollab_dir", "eval_dir"}, differ
-    assert b["opencollab_dir"] != a["opencollab_dir"]
-    assert b["eval_dir"] != a["eval_dir"]
+    others = sorted((EXPERIMENT / "hosts").glob("lthpc-*.yaml"))
+    assert others, "the extra checkouts are what this test exists for"
+    seen = set()
+    for path in others:
+        b = yaml.safe_load(path.read_text(encoding="utf-8"))
+        differ = {k for k in set(a) | set(b) if a.get(k) != b.get(k)}
+        assert differ == {"name", "opencollab_dir", "eval_dir"}, (path.name, differ)
+        pair = (b["opencollab_dir"], b["eval_dir"])
+        assert pair not in seen and pair != (a["opencollab_dir"], a["eval_dir"]), path.name
+        seen.add(pair)
 
 
 def test_checked_in_specs_name_rung_and_cell_consistently() -> None:
