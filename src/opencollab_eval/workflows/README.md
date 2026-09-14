@@ -92,22 +92,24 @@ and `diff` inspect the current work tree when the runtime supplies a probe.
 read-only run budgets.
 
 Tool lists should match the role. Read-only roles normally use `file_read` and
-`grep`, with `bash` only when an executable probe is required. Coders may add
-`file_write` and `apply_patch`. Test gates require `run_tests`. Diff auditors
-use `git_diff`. Passing `allow_file_creation=False` to `builtin_tools` prevents
-`file_write` from creating new files.
+`grep`, with `bash` when an executable probe is required. Coders may add
+`file_write` and `apply_patch`. Tests use the project's native shell commands.
+Diff auditors use `git_diff`. Passing `allow_file_creation=False` to
+`builtin_tools` prevents `file_write` from creating new files.
 
-OpenCollab no longer ships a built-in `run_tests`. Eval owns the proof-oriented
-implementation in `opencollab_eval.verification`; workflow `toolset` composes
-it with the current public OC built-ins. The default Single and YAML team
-examples use Bash for native project tests. Mechanical red-green replay retains
-its explicit target, command and executed-test records.
+All model-facing tools use the current OC built-in schemas. Eval observes Bash
+execution to retain the actual command, exit status and matching test output for
+workflow decisions. Command selection, flags, timeouts, approval, execution and
+model-visible output remain native Bash behavior. There is no dedicated test
+tool, automatic runner selection, command rewriting or test-tool verdict.
 
-Every `run_tests` instance created for a model role rejects runner
-overrides and extra model-supplied arguments. A workflow may inspect the
-instance's parser-backed `verified_targets` after the call when a benchmark
-requires exact target execution evidence. Passing still requires that
-executable evidence, regardless of a model-written `tests_run` field.
+For exact pytest target evidence, use `-rA` to include executed node IDs. Go
+commands can use `-json`, and Django source tests can use verbose native output.
+The observer retains full target paths and rejects empty, skipped, truncated,
+wrong-target or replayed output as proof. Mechanical candidate comparison
+replays the exact recorded Bash command. Model-written test claims alone cannot
+satisfy existing workflow evidence checks. Official scoring continues in its
+separate evaluator with the original candidate and specified target tests.
 
 ## Conventions
 

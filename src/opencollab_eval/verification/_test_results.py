@@ -1,42 +1,16 @@
-"""Parser-backed public-test evidence migrated from OpenCollab before #95."""
+"""Pure public-test output parsing for observed shell commands."""
 
 from __future__ import annotations
 
 import posixpath
 import re
 import shlex
-from typing import Any
 
-from ._run_tests_django import django_command, django_evidence, django_has_pass_proof, is_django_runner
-from ._run_tests_go import go_has_pass_proof as _go_has_pass_proof
-from ._run_tests_go import go_runner_command as _go_runner_command
-from ._run_tests_go import go_target_specs as _go_target_specs
-from ._run_tests_go import has_multiple_go_selector_tokens as _has_multiple_go_selector_tokens
-from ._run_tests_go import is_go_runner as _is_go_runner
-from ._run_tests_go import translate_go_target_args as _translate_go_target_args
+from ._go_evidence import go_has_pass_proof as _go_has_pass_proof
+from ._go_evidence import is_go_runner as _is_go_runner
+from .django_evidence import django_has_pass_proof, is_django_runner
 
-# Keep the traceback head bounded; full dumps explode the context (ref: bash.py).
-MAX_TRACEBACK_CHARS = 6_000
 DEFAULT_RUNNER = "python -m pytest"
-DEFAULT_TIMEOUT = 300.0
-# After this many consecutive failing runs of the SAME target, nudge the model
-# to change approach instead of re-running the identical failing assertion.
-ESCALATE_AFTER = 3
-# Project-native runners, probed in order when the caller did not pin ``runner``
-# (or when pytest is missing). Each entry: (probe-cmd that exits 0 iff present,
-# base runner command). bin/test is sympy's; manage.py is Django's; tox is the
-# generic multi-env runner. Pytest is always tried first via DEFAULT_RUNNER.
-# go.mod is probed LAST on purpose: the pytest-collected-nothing fallback only
-# trusts a Go runner, so returning "go test" first on a mixed Python+Go repo
-# would green off unrelated Go tests while the intended Python suite never ran.
-# Keeping go.mod last makes _detect_native_runner surface Go only when it is the
-# sole native signal.
-_NATIVE_PROBES: tuple[tuple[str, str], ...] = (
-    ("test -x bin/test", "python bin/test"),
-    ("test -f manage.py", "python manage.py test"),
-    ("test -f tox.ini", "tox"),
-    ("test -f go.mod", "go test"),
-)
 
 # Count tokens pytest prints in its final summary line, e.g.
 # "===== 1 failed, 2 passed, 1 skipped in 0.12s =====".
@@ -80,34 +54,6 @@ def _verification_target_covers(parent: str, child: str) -> bool:
 
 def _verification_targets_overlap(left: str, right: str) -> bool:
     return _verification_target_covers(left, right) or _verification_target_covers(right, left)
-
-
-def require_positive_int(value: int, name: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ValueError(f"{name} must be a positive integer")
-    return value
-
-
-def truncate(text: str, max_chars: int, label: str | None = None) -> str:
-    """Keep head + tail, drop the middle to avoid context explosion."""
-    require_positive_int(max_chars, "max_chars")
-    if len(text) <= max_chars:
-        return text
-    dropped = len(text) - max_chars
-    marker = (
-        f"\n\n... [{dropped} chars of {label} truncated] ...\n\n"
-        if label is not None
-        else f"\n\n... [{dropped} chars truncated] ...\n\n"
-    )
-    if len(marker) >= max_chars:
-        return marker[:max_chars]
-    source_budget = max_chars - len(marker)
-    head = (source_budget + 1) // 2
-    tail = source_budget - head
-    suffix = text[-tail:] if tail else ""
-    result = text[:head] + marker + suffix
-    assert len(result) <= max_chars
-    return result
 
 
 _ENV_ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*", re.DOTALL)
@@ -168,75 +114,6 @@ def _is_pytest_runner(runner: str) -> bool:
     except ValueError:
         return False
     return _parts_invoke_pytest(parts)
-
-
-def _is_supported_runner(runner: str) -> bool:
-    return _is_pytest_runner(runner) or _is_go_runner(runner) or is_django_runner(runner)
-
-
-def _validate_go_target_before_execution(
-    runner: str,
-    pinned_runner: str | None,
-    target: str,
-) -> None:
-    """Reject unprovable Go target lists before safety checks or execution."""
-    if _is_go_runner(runner) or (pinned_runner is None and _has_multiple_go_selector_tokens(target)):
-        _go_target_specs(target)
-
-
-def _build_command(runner: str, target: str, extra_args: str) -> str:
-    # --tb=short keeps tracebacks compact; -rfE forces a failed/error summary
-    # block even under -q so we can list failing node-ids reliably. -rA adds a
-    # per-test short summary (incl. PASSED) so a downstream gate can confirm a
-    # NAMED test went green; -p no:cacheprovider makes runs deterministic.
-    if _is_pytest_runner(runner):
-        parts = [runner, "--tb=short", "-rfE", "-rA", "-p", "no:cacheprovider", "-q"]
-        if target:
-            parts.append(shlex.quote(target))
-    elif is_django_runner(runner):
-        parts = [django_command(runner, target)]
-    elif _is_go_runner(runner):
-        parts = [_go_runner_command(runner), "-json"]
-        parts.extend(_translate_go_target_args(target))
-    else:
-        raise ValueError(f"unsupported test runner without proof parser: {runner}")
-    if extra_args:
-        parts.append(extra_args)
-    return " ".join(parts)
-
-
-async def _detect_native_runner(env: Any) -> str | None:
-    """Probe the workspace for a project-native runner; None if none found."""
-    for probe, runner in _NATIVE_PROBES:
-        try:
-            result = await env.exec_cmd(probe, timeout=10.0)
-        except Exception:
-            continue
-        if getattr(result, "returncode", 1) == 0:
-            return runner
-    return None
-
-
-async def _native_fallback_candidate(
-    env: Any,
-    returncode: int,
-    output: str,
-) -> str | None:
-    if _pytest_missing(returncode, output):
-        return await _detect_native_runner(env)
-    if _pytest_no_tests(returncode, output):
-        native = await _detect_native_runner(env)
-        if native and _is_go_runner(native):
-            return native
-    return None
-
-
-def _pytest_missing(returncode: int, output: str) -> bool:
-    """Whether the run failed because pytest itself is absent."""
-    if returncode == 0:
-        return False
-    lines = [line.strip() for line in output.splitlines() if line.strip()]
-    return len(lines) == 1 and _PYTEST_MISSING_RE.fullmatch(lines[0]) is not None
 
 
 def _pytest_no_tests(returncode: int, output: str) -> bool:
@@ -309,7 +186,7 @@ def _target_has_pass_proof(target: str, passed_lines: list[str]) -> bool:
     return False
 
 
-def _is_green(
+def has_pass_evidence(
     returncode: int,
     output: str,
     *,
@@ -356,26 +233,6 @@ def _is_green(
     return False
 
 
-def _missing_substring_hint(output: str) -> str | None:
-    """Best-effort 'expected X, got Y' hint from the first assertion diff."""
-    for line in output.splitlines():
-        s = line.strip()
-        if s.startswith("E   ") and "assert" in s:
-            return s[len("E   ") :].strip()
-        if s.startswith("assert "):
-            return s
-    return None
-
-
-def _failed_tests(output: str) -> list[str]:
-    fails = []
-    for line in output.splitlines():
-        s = line.strip()
-        if s.startswith("FAILED ") or s.startswith("ERROR "):
-            fails.append(s)
-    return fails
-
-
 def _passed_tests(output: str) -> list[str]:
     """Node-ids reported as PASSED in the -rA short summary (default pytest)."""
     passes = []
@@ -384,105 +241,3 @@ def _passed_tests(output: str) -> list[str]:
         if s.startswith("PASSED "):
             passes.append(s)
     return passes
-
-
-def _traceback_head(output: str, max_chars: int = MAX_TRACEBACK_CHARS) -> str:
-    """Head of the first FAILURES/ERRORS section (or a raw Python traceback)."""
-    for marker in ("= FAILURES =", "= ERRORS =", "Traceback (most recent call last)"):
-        idx = output.find(marker)
-        if idx != -1:
-            section = output[idx:]
-            end = section.find("= short test summary info =")
-            if end != -1:
-                section = section[:end]
-            return truncate(section.strip(), max_chars)
-    return ""
-
-
-def _format_report(
-    cmd: str,
-    returncode: int,
-    output: str,
-    target: str = "",
-    runner: str = DEFAULT_RUNNER,
-    green: bool | None = None,
-    fail_streak: int = 0,
-    max_chars: int = MAX_TRACEBACK_CHARS,
-) -> str:
-    if green is None:
-        green = _is_green(returncode, output, runner=runner, target=target)
-    if _is_pytest_runner(runner) and _pytest_missing(returncode, output):
-        # Still emit a parseable verdict so the gate/model is never left without
-        # a signal. pytest-missing is RED (the named tests could not run) and
-        # points the model at auto-detected native runners.
-        return (
-            f"Command: {cmd}\nExit code: {returncode}\n"
-            "Error: pytest not found and no project-native runner detected. "
-            "Omit `runner` so run_tests can auto-detect Go go.mod, sympy "
-            "bin/test, Django manage.py, or tox. For Go, pass `target` like "
-            "'./internal/server' or './internal/server::TestEvaluate'.\n"
-            "Verdict: RED (tests could not run)\n"
-            f"{truncate(output.strip(), 1_000)}"
-        )
-
-    summary = _summary_line(output)
-    counts, warnings = _parse_counts(summary)
-    failed = _failed_tests(output)
-    passed = _passed_tests(output)
-    if is_django_runner(runner):
-        counts, passed, failed, total, _valid = django_evidence(output)
-        summary = f"Django unittest runner executed {total} tests" if total is not None else None
-
-    parts = [f"Command: {cmd}", f"Exit code: {returncode}"]
-    if counts:
-        # Warnings are deliberately excluded — the pass/fail decision is
-        # exit-code + failed/error counts only, never a warning count.
-        parts.append("Counts: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
-    if warnings:
-        parts.append(f"Warnings: {warnings} (not failures)")
-    if summary:
-        parts.append(f"Summary: {summary}")
-    else:
-        verdict_word = "GREEN" if green else "RED"
-        parts.append(f"Summary: no parser-backed executed-test proof; exit code {returncode} -> {verdict_word}")
-
-    if failed:
-        shown = failed[:25]
-        parts.append("Failed/errored tests:")
-        parts.extend(f"  - {line}" for line in shown)
-        if len(failed) > len(shown):
-            parts.append(f"  ... and {len(failed) - len(shown)} more")
-
-    # List PASSED node-ids only for a focused run (a named target was requested
-    # or the -rA summary is present). For a full-suite run the PASSED list is
-    # suppressed to protect context — the aggregate count is enough. This lets a
-    # downstream gate confirm a NAMED test went green.
-    if passed and target:
-        shown_pass = passed[:25]
-        parts.append("Passed tests:")
-        parts.extend(f"  - {line}" for line in shown_pass)
-        if len(passed) > len(shown_pass):
-            parts.append(f"  ... and {len(passed) - len(shown_pass)} more")
-
-    head = _traceback_head(output, max_chars)
-    if head:
-        parts.append("First failure detail:\n" + head)
-
-    # No structured signal at all (e.g. collection crash) — fall back to output.
-    if not counts and not failed and not head:
-        parts.append("Output:\n" + truncate(output.strip(), max_chars))
-
-    # Always emit an authoritative one-line verdict, even with no summary line.
-    parts.append(f"Verdict: {'GREEN' if green else 'RED'}")
-    if not green:
-        hint = _missing_substring_hint(output)
-        if hint:
-            parts.append(f"Hint (expected vs got): {hint}")
-        if fail_streak >= ESCALATE_AFTER:
-            parts.append(
-                f"Escalation: target {target or '(suite)'} has failed "
-                f"{fail_streak} runs in a row — stop re-running the same "
-                "assertion and try a different fix or approach."
-            )
-
-    return "\n".join(parts)

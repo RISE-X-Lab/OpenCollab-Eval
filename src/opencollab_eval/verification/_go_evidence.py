@@ -5,8 +5,6 @@ from __future__ import annotations
 import json
 import shlex
 
-GO_PATH_PREFIX = "PATH=/usr/local/go/bin:/usr/lib/go/bin:/opt/go/bin:$PATH"
-
 
 class InvalidGoTargetError(ValueError):
     """Raised when a Go target cannot be verified by one exact invocation."""
@@ -19,11 +17,6 @@ def is_go_runner(runner: str) -> bool:
     except ValueError:
         return False
     return len(parts) >= 2 and (parts[0] == "go" or parts[0].endswith("/go")) and parts[1] == "test"
-
-
-def go_runner_command(runner: str) -> str:
-    """Return a Go runner command with common Go install paths visible."""
-    return f"{GO_PATH_PREFIX} {runner}" if runner.strip().startswith("go ") else runner
 
 
 def normalize_go_package(package: str) -> str:
@@ -51,7 +44,7 @@ def go_target_specs(target: str) -> list[tuple[str, str | None]]:
     specs: list[tuple[str, str | None]] = []
     for raw_target in raw_targets:
         if raw_target.startswith("-"):
-            raise InvalidGoTargetError("target entries cannot be Go command flags; use extra_args for flags")
+            raise InvalidGoTargetError("target entries cannot be Go command flags; use native command flags")
         if raw_target.count("::") > 1:
             raise InvalidGoTargetError(f"{raw_target!r} contains more than one '::' selector separator")
         package, sep, node = raw_target.partition("::")
@@ -64,35 +57,9 @@ def go_target_specs(target: str) -> list[tuple[str, str | None]]:
     if len(specs) > 1 and any(test_name is not None for _, test_name in specs):
         raise InvalidGoTargetError(
             "multiple targets containing a test selector are unsupported; "
-            "run each package::Test target in a separate run_tests call"
+            "run each package::Test target in a separate command"
         )
     return specs
-
-
-def translate_go_target_args(target: str) -> list[str]:
-    """Map pytest-like targets to safe ``go test`` package and ``-run`` args."""
-    args: list[str] = []
-    for package, test_name in go_target_specs(target):
-        args.append(shlex.quote(package))
-        if test_name:
-            args.extend(["-run", shlex.quote(test_name)])
-    return args
-
-
-def has_multiple_go_selector_tokens(target: str) -> bool:
-    """Detect an unpinned multi-target string that is unambiguously Go-shaped."""
-    try:
-        tokens = shlex.split(target)
-    except ValueError:
-        return False
-    if len(tokens) <= 1 or not any("::" in token for token in tokens):
-        return False
-
-    def is_go_package(token: str) -> bool:
-        package = token.partition("::")[0]
-        return package in {".", "./..."} or package.startswith(("./", "../", "/")) or package.endswith(".go")
-
-    return all(is_go_package(token) for token in tokens)
 
 
 def go_package_matches(requested: str, reported: str) -> bool:

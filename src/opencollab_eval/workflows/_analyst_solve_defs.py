@@ -99,9 +99,8 @@ RECON_FLOOR = 600_000
 # the SWE-bench-tuned variant: it warns off chasing not-yet-existing tests).
 SHARED_RULES = """\
 Rules:
-- Prefer your DEDICATED tool over bash: file_read/grep to inspect, run_tests \
-to test, file_write/apply_patch to edit. Use bash ONLY for what no dedicated \
-tool covers (e.g. a one-line `python -c` repro).
+- Use file_read/grep to inspect, file_write/apply_patch to edit, and Bash \
+for the project's native tests, builds, and executable probes.
 - Fix the ROOT CAUSE in the source; make the SMALLEST correct change.
 - NEVER edit test files. NEVER run `git commit`; leave edits in the working tree.
 - Never assume a package is available: confirm the repo already imports it \
@@ -181,7 +180,7 @@ VERDICT_SCHEMA: dict[str, Any] = {
         "tests_run": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "The exact test node-ids you actually executed with run_tests this "
+            "description": "The exact test node-ids you actually executed with bash this "
             "verification — proof, not a label. For a graded task this MUST include every "
             "target (FAIL_TO_PASS) node-id you were given.",
         },
@@ -189,7 +188,7 @@ VERDICT_SCHEMA: dict[str, Any] = {
             "type": "integer",
             "minimum": 0,
             "description": "How many of the tests you ran failed or errored (0 for a clean PASS). "
-            "Read it straight off run_tests' Counts line; do not estimate.",
+            "Read the executed test summary and exit code; do not estimate.",
         },
     },
 }
@@ -315,7 +314,7 @@ file_read/grep. Default edit: file_write in str_replace mode — minimal and \
 targeted. If str_replace fails twice (no unique match — whitespace diff, \
 duplicate/ambiguous lines, line drift), do NOT retry the same replacement: fall \
 back to apply_patch with a content-anchored diff (use line_replace with \
-expected_str to guard the range). Verify with run_tests (or a short `python -c` \
+expected_str to guard the range). Verify with bash (or a short `python -c` \
 repro) before reporting. Your final message is your report: what you changed \
 (each file + edit), why, and your verification result.
 
@@ -347,18 +346,19 @@ concrete findings from the tester:
 
 TESTER_PROMPT = """\
 You are a Tester adversarially verifying a coder's change. Run the project's \
-tests with run_tests. Inspect the ACTUAL source with file_read/grep — do not \
+tests through Bash using the project's native test command. Inspect the ACTUAL source with file_read/grep — do not \
 trust the coder's summary; confirm the change is really there and really fixes \
 the root cause. Hunt failures: edge cases, missing handling, regressions in \
 neighboring behavior. You do not edit files.
 
 Proof, not a label. If target tests are named below, you MUST run them with \
-run_tests using those EXACT node-ids (pass them as the `target`) and report them \
+Bash using those EXACT node-ids (include them in the command) and report them \
 in `tests_run`; report the failed/errored total in `failed_count` straight off \
-run_tests' Counts line. NEVER self-certify with `python -c` or by eyeballing the \
-source — only a real run_tests execution of the named node-ids counts. \
+the actual test output. NEVER self-certify with `python -c` or by eyeballing the \
+source — only a real bash execution of the named node-ids counts. \
 PASS requires that EVERY named target node-id appears in `tests_run`, is in the \
-run's passed set, and `failed_count` is 0 (zero failed, zero errored).
+run's passed set, and `failed_count` is 0 (zero failed, zero errored). \
+Use pytest -rA for named result lines, or the native runner's verbose output.
 
 Verdict PASS only when the change is really there, the named target tests pass \
 with zero failures, and the definition of done holds. Verdict FAIL for a code \
@@ -382,7 +382,7 @@ Coder's report:
 STATIC_TESTER_PROMPT = """\
 You are a Tester verifying a coder's change in an environment with NO runnable test \
 suite (no pytest, heavy deps like torch absent, grading tests withheld by design). Do \
-NOT call run_tests or pytest. You are GIVEN the plan the coder worked to and the \
+NOT attempt to run an unavailable test suite. You are GIVEN the plan the coder worked to and the \
 coder's report below — verify the edit against THOSE; do NOT go re-derive the spec by \
 exploring the codebase. Do EXACTLY these two things, then STOP and emit your verdict:
 
@@ -491,8 +491,8 @@ def _target_tests_block(args: dict[str, Any]) -> str:
 
 def _verified_test_targets(tools: list[Any]) -> set[str]:
     """Collect parser-backed GREEN targets from this tester call's tool instance."""
-    run_tests = next((tool for tool in tools if getattr(tool, "name", "") == "run_tests"), None)
-    return set(getattr(run_tests, "verified_targets", ()))
+    bash = next((tool for tool in tools if getattr(tool, "name", "") == "bash"), None)
+    return set(getattr(bash, "verified_targets", ()))
 
 
 def _f2p_gate(
@@ -508,7 +508,7 @@ def _f2p_gate(
     non-empty, regardless of whether a test patch was supplied. Defense in
     depth: even a PASS verdict must carry ``failed_count == 0``, every required
     node-id in ``tests_run``, and (when supplied by the workflow) parser-backed
-    GREEN evidence from this tester call's run_tests instance.
+    GREEN evidence from this tester call's bash instance.
     """
     if not fail_to_pass:
         return None  # no benchmark target ids were declared
@@ -520,7 +520,7 @@ def _f2p_gate(
             f"Tester reported {failed!r} failed/errored test(s), which is invalid. "
             "The named FAIL_TO_PASS "
             "tests must run green with ZERO failures. Re-run the exact target node-ids "
-            "with run_tests and fix the remaining failures."
+            "with bash and fix the remaining failures."
         )
     ran = verdict.get("tests_run")
     ran_set = set(ran) if isinstance(ran, list) else set()
@@ -529,7 +529,7 @@ def _f2p_gate(
         listed = ", ".join(missing)
         return (
             "These required FAIL_TO_PASS node-ids were not shown as executed in the "
-            f"verification: {listed}. Run them with run_tests using the EXACT node-ids "
+            f"verification: {listed}. Run them through Bash using the EXACT node-ids "
             "and ensure they pass with zero failures before reporting PASS."
         )
     if executed_tests is not None:
@@ -537,8 +537,8 @@ def _f2p_gate(
         if unproved:
             listed = ", ".join(unproved)
             return (
-                "This tester call contains no parser-backed GREEN run_tests execution for these "
-                f"required node-ids: {listed}. Run each exact target with run_tests; a "
+                "This tester call contains no parser-backed GREEN bash execution for these "
+                f"required node-ids: {listed}. Run each exact target through Bash; a "
                 "tests_run self-report cannot replace executable evidence."
             )
     return None
@@ -654,32 +654,21 @@ def _planner_tools(enforcement_strength: str = ENFORCEMENT_OFF) -> list[Any]:
 def _coder_tools(enforcement_strength: str = ENFORCEMENT_OFF) -> list[Any]:
     """Tools for the implement/forced/repair coder calls.
 
-    OFF == reference: returns the exact current 6-tool list AND order. ON drops
-    bash (no shell test-theater / find / helper-script creation) and restricts
-    file_write to str_replace only (``allow_create=False``), keeping the coder's
-    habitual edit path plus apply_patch + run_tests + read/grep.
+    OFF uses the current native coding tools. ON keeps shell execution disabled
+    for the coder and restricts file creation. The tester role performs native
+    test execution through Bash.
     """
     if enforcement_strength == ENFORCEMENT_OFF:
-        return toolset(
-            "bash", "file_read", "file_write", "apply_patch", "run_tests", "grep"
-        )
-    return toolset(
-        "file_read",
-        "grep",
-        "file_write",
-        "apply_patch",
-        "run_tests",
-        allow_file_creation=False,
-    )
+        return toolset("bash", "file_read", "file_write", "apply_patch", "grep")
+    return toolset("file_read", "grep", "file_write", "apply_patch", allow_file_creation=False)
 
 
 def _tester_tools() -> list[Any]:
-    return toolset("bash", "file_read", "run_tests", "grep")
+    return toolset("bash", "file_read", "grep")
 
 
 def _static_tester_tools() -> list[Any]:
-    # No RunTestsTool: where no test runtime exists, run_tests can only waste
-    # budget. Static validation needs bash (py_compile), file_read, grep.
+    # Static validation uses Bash for available probes such as py_compile.
     return toolset("bash", "file_read", "grep")
 
 

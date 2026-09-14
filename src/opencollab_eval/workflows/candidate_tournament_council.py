@@ -143,6 +143,8 @@ TEST_OWNER_PROMPT = """\
 You are the Public Test Owner. You are the only council role allowed to execute tests.
 Inspect the current diff, run the most relevant public reproduction or targeted test,
 then one bounded regression or build check when available.
+Use native test output with executed names, such as pytest -rA, go test -json,
+or Django verbose output, for exact evidence.
 
 {rules}
 
@@ -208,7 +210,7 @@ def _integrator_tools() -> list[Any]:
 
 
 def _test_owner_tools() -> list[Any]:
-    return toolset("bash", "file_read", "run_tests", "grep", "git_diff")
+    return toolset("bash", "file_read", "grep", "git_diff")
 
 
 def _forced_write_tools() -> list[Any]:
@@ -386,11 +388,11 @@ async def _current_diff(ctx: Any) -> str | None:
 
 
 def _verified_test_targets(tools: list[Any]) -> set[str]:
-    run_tests = next(
-        (tool for tool in tools if getattr(tool, "name", "") == "run_tests"),
+    bash = next(
+        (tool for tool in tools if getattr(tool, "name", "") == "bash"),
         None,
     )
-    return set(getattr(run_tests, "verified_targets", ()))
+    return set(getattr(bash, "verified_targets", ()))
 
 
 def _submission_diff_audit(

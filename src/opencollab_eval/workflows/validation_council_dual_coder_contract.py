@@ -33,7 +33,7 @@ compatibility and existing public behavior outside the requested change. Trace
 the immediate callers and consumers needed to verify the fix, then implement a
 minimal complete source patch. Avoid broad refactors, speculative cleanup, test
 edits, generated files, caches, and logs. Run the nearest relevant public tests
-with run_tests, inspect the final diff, and finish with a non-empty source diff.
+with bash, inspect the final diff, and finish with a non-empty source diff.
 Do not use official results, hidden tests, FAIL_TO_PASS ids, grader patches, or
 historical outcomes."""
 
@@ -53,8 +53,8 @@ Trace every producer and producing state or data path, every direct consumer, pu
 serialization contract, error propagation, lifecycle boundary, and relevant
 edge cases. Implement the smallest patch that covers the whole contract while
 preserving unrelated behavior. Avoid test edits, generated files, caches, and
-logs. Run relevant public tests with run_tests. When the shared command is
-present and representable, execute the same target and runner without replacing
+logs. Run relevant public tests through Bash using the project's native test command. When the shared command is
+available, execute the same native command without replacing
 it with an easier test. Inspect the final diff and finish with a non-empty source
 patch. Do not use official results, hidden tests, FAIL_TO_PASS ids, grader
 patches, or historical outcomes."""
@@ -86,15 +86,7 @@ grader patches, historical results, or model identity."""
 
 
 def _coder_tools() -> list[Any]:
-    return toolset(
-        "bash",
-        "file_read",
-        "file_write",
-        "apply_patch",
-        "run_tests",
-        "grep",
-        "git_diff",
-    )
+    return toolset("bash", "file_read", "file_write", "apply_patch", "grep", "git_diff")
 
 
 async def _coder_candidate(

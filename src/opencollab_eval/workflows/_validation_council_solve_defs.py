@@ -389,7 +389,9 @@ Localization:
 
 TEST_CARTOGRAPHER_PROMPT = """\
 You are the read-only Test Cartographer. Identify the runner, relevant public
-tests, fixtures, assertion style, and safe temporary probe method.
+tests, fixtures, assertion style, and safe temporary probe method. Select native
+commands that expose executed test names, such as pytest -rA, go test -json, or
+Django verbose output, so later verification can retain exact test evidence.
 
 Goal:
 {goal}
@@ -578,7 +580,7 @@ def _read_tools() -> list[Any]:
 
 
 def _coder_tools() -> list[Any]:
-    return toolset("bash", "file_read", "file_write", "apply_patch", "run_tests", "grep")
+    return toolset("bash", "file_read", "file_write", "apply_patch", "grep")
 
 
 def _tester_tools() -> list[Any]:
@@ -586,7 +588,7 @@ def _tester_tools() -> list[Any]:
     # probe so a PASS is backed by a real run, not prose alone. Blindness holds
     # because the hidden FAIL_TO_PASS tests are absent from the container, not
     # because bash is. No file_write/apply_patch: these roles verify, not author.
-    return toolset("bash", "file_read", "run_tests", "grep", "git_diff")
+    return toolset("bash", "file_read", "grep", "git_diff")
 
 
 def _risk_tools() -> list[Any]:

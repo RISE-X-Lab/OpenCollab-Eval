@@ -35,7 +35,7 @@ def _g(name: str):
 
 
 def _names(tools) -> list[str]:
-    return [type(t).__name__ for t in tools]
+    return [type(getattr(t, "_delegate", t)).__name__ for t in tools]
 
 
 # --------------------------------------------------------------------------- #
@@ -62,7 +62,6 @@ def test_coder_tools_off_is_exact_reference_list_and_order():
         "FileReadTool",
         "FileWriteTool",
         "ApplyPatchTool",
-        "RunTestsTool",
         "GrepTool",
     ]
     assert _names(coder()) == _names(coder(OFF))  # default arg is off
@@ -76,8 +75,8 @@ def test_coder_tools_on_drops_bash_and_disables_create():
     tools = coder(ON)
     names = _names(tools)
     assert "BashTool" not in names
-    # Keeps the sanctioned edit/test/read path.
-    for required in ("FileReadTool", "GrepTool", "FileWriteTool", "ApplyPatchTool", "RunTestsTool"):
+    # The tester role handles native command execution.
+    for required in ("FileReadTool", "GrepTool", "FileWriteTool", "ApplyPatchTool"):
         assert required in names, required
     on_fw = [t for t in tools if type(t).__name__ == "FileWriteTool"][0]
     assert on_fw.allow_create is False
@@ -107,7 +106,7 @@ class ScriptedCtx:
         reply = self._replies.pop(0) if self._replies else None
         if isinstance(reply, dict) and reply.get("verdict") == "PASS":
             for tool in tools or ():
-                if getattr(tool, "name", "") == "run_tests":
+                if getattr(tool, "name", "") == "bash":
                     tool._verified_targets.update(reply.get("tests_run") or ())
         return reply
 
@@ -187,9 +186,9 @@ def test_off_scope_and_tester_untouched():
     read = _g("_read_tools")
     # scope is explicitly NOT threaded — stays on _read_tools().
     assert _names(_call(ctx, "analyst:scope")["tools"]) == _names(read())
-    # tester keeps its own toolset (includes RunTests, no file_write).
+    # tester keeps its own toolset (includes Bash, no file_write).
     tester_names = _names(_call(ctx, "tester:p0")["tools"])
-    assert "RunTestsTool" in tester_names
+    assert "BashTool" in tester_names
     assert "FileWriteTool" not in tester_names
 
 

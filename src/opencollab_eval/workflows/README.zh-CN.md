@@ -84,20 +84,21 @@ async def my_flow(
 `tokens_spent`、`tokens_remaining`、`seconds_left` 和 `time_low` 提供只读的
 运行预算。
 
-工具列表应与角色匹配。只读角色通常使用 `file_read` 和 `grep`，需要执行探针
-时再加入 `bash`。编码角色可以加入 `file_write` 和 `apply_patch`。测试门禁
-需要 `run_tests`，差异审查使用 `git_diff`。向 `builtin_tools` 传入
+工具列表应与角色匹配。只读角色通常使用 `file_read` 和 `grep`，需要执行探针时
+加入 `bash`。编码角色可以加入 `file_write` 和 `apply_patch`，测试通过项目原生
+Shell 命令运行，差异审查使用 `git_diff`。向 `builtin_tools` 传入
 `allow_file_creation=False` 可以阻止 `file_write` 创建新文件。
 
-OpenCollab 已移除内置 `run_tests`。精确测试证据的实现由 Eval 的
-`opencollab_eval.verification` 提供，工作流 `toolset` 将其与当前 OC 公开工具组合。
-默认 Single 和 YAML 团队示例通过 Bash 运行项目原生测试。机械红绿复测保留
-明确的目标、命令与实际测试记录。
+模型可见工具均采用当前 OC 原生定义。Eval 观察 Bash 的实际执行，保存命令、退出码
+和对应测试输出，供工作流判断使用。命令选择、参数、等待时间、审批、执行及模型
+看到的输出沿用原生 Bash 行为。专用测试工具、自动选择运行器、命令改写和工具
+GREEN／RED 报告已经移除。
 
-为模型角色创建的每个 `run_tests` 实例都会拒绝运行器覆盖值和模型提供
-的额外参数。基准需要精确的目标执行证据时，工作流可以在调用后检查该实例中
-由解析器支持的 `verified_targets`。即使模型写入了 `tests_run` 字段，通过
-门禁仍需可执行证据。
+需要精确 pytest 目标证据时，命令可使用 `-rA` 输出实际执行的节点。Go 可使用
+`-json`，Django 源码测试可使用原生详细输出。记录保留完整目标路径，空执行、
+跳过、截断、错误目标或重放输出均无法作为通过证据。机械候选对照原样执行已经
+记录的 Bash 命令。已有工作流证据检查继续要求真实执行，正式评分继续由独立
+评测器使用原候选和指定测试完成。
 
 ## 约定
 

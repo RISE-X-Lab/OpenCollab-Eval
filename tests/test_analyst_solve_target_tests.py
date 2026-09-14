@@ -29,7 +29,7 @@ class ScriptedCtx:
         reply = self._replies.pop(0) if self._replies else None
         if isinstance(reply, dict) and tools:
             for tool in tools:
-                if getattr(tool, "name", "") == "run_tests":
+                if getattr(tool, "name", "") == "bash":
                     tool._verified_targets.update(reply.get("tests_run") or ())
         return reply
 

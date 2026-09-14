@@ -47,8 +47,8 @@ compatibility and existing public behavior outside the requested change. Trace
 the immediate callers and consumers needed to verify the fix, then implement a
 minimal complete source patch. Avoid broad refactors, speculative cleanup, test
 edits, generated files, caches, and logs. Run the nearest relevant public tests
-with run_tests. When the shared public command is present and representable,
-execute the same target and runner without replacing it with an easier test.
+with bash. When the shared public command is available,
+execute the same native command without replacing it with an easier test.
 Inspect the final diff and finish with a non-empty source diff. Do not use
 official results, hidden tests, FAIL_TO_PASS ids, grader patches, or historical
 outcomes."""
@@ -67,7 +67,7 @@ Target: {target}
 Runner: {runner}
 Command: {command}
 
-Execute the same target with the same runner through run_tests. Do not replace
+Execute the exact same native test command through Bash. Do not replace
 it with a broader, narrower, easier, or different test. When the exact probe
 cannot be represented, do not run a substitute. Report only commands actually
 executed. Do not use official results, hidden tests, FAIL_TO_PASS identifiers,

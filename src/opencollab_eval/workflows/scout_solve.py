@@ -45,9 +45,8 @@ MAX_SOLVE_ROUNDS = 3
 # Shared rules — every role gets them (same contract as the sibling workflows).
 SHARED_RULES = """\
 Rules:
-- Prefer your DEDICATED tool over bash: file_read/grep to inspect, run_tests \
-to test, file_write/apply_patch to edit. Use bash ONLY for what no dedicated \
-tool covers (e.g. a one-line `python -c` repro).
+- Use file_read/grep to inspect, file_write/apply_patch to edit, and Bash \
+for the project's native tests, builds, and executable probes.
 - NEVER edit test files. NEVER run `git commit`; leave edits in the working tree.
 """
 
@@ -173,7 +172,7 @@ rely on it. Inspect with file_read/grep. Default edit: file_write in \
 str_replace mode — minimal and targeted. If str_replace fails twice (no unique \
 match — whitespace diff, duplicate/ambiguous lines, line drift), do NOT retry \
 the same replacement: fall back to apply_patch with a content-anchored diff \
-(use line_replace with expected_str to guard the range). Verify with run_tests \
+(use line_replace with expected_str to guard the range). Verify with bash \
 (or a short `python -c` repro) before reporting. Your final message is your \
 report: what you changed (each file + edit), why, and your verification result.
 
@@ -199,7 +198,7 @@ concrete findings from the tester:
 
 TESTER_PROMPT = """\
 You are a Tester adversarially verifying a coder's change. Run the project's \
-tests with run_tests. Inspect the ACTUAL source with file_read/grep — do not \
+tests through Bash using the project's native test command. Inspect the ACTUAL source with file_read/grep — do not \
 trust the coder's summary; confirm the change is really there and really fixes \
 the root cause. Hunt failures: edge cases, missing handling, regressions in \
 neighboring behavior. You do not edit files.
@@ -227,13 +226,11 @@ def _read_tools() -> list[Any]:
 
 
 def _coder_tools() -> list[Any]:
-    return toolset(
-        "bash", "file_read", "file_write", "apply_patch", "run_tests", "grep"
-    )
+    return toolset("bash", "file_read", "file_write", "apply_patch", "grep")
 
 
 def _tester_tools() -> list[Any]:
-    return toolset("bash", "file_read", "run_tests", "grep")
+    return toolset("bash", "file_read", "grep")
 
 
 async def _explore(ctx: Any, goal: str, dims: list[dict[str, Any]]) -> str:

@@ -47,11 +47,11 @@ Issue
 Shared public command selected from candidate A
 {public_command}
 
-Inspect the live diff and directly affected source. Translate the shared public
-command into the corresponding run_tests target and runner, then execute it.
-When the exact command cannot be represented by run_tests, do not substitute an
-easier target. Report only commands actually executed. Do not use official
-results, hidden tests, FAIL_TO_PASS identifiers, or grader patches."""
+Inspect the live diff and directly affected source. Execute the exact shared
+public command through Bash, preserving its targets and flags. When execution
+is unavailable, report that result. Report only commands actually executed.
+Do not use official results, hidden tests, FAIL_TO_PASS identifiers, or grader
+patches."""
 
 
 def _clip_text(value: Any, limit: int) -> str:
@@ -62,7 +62,7 @@ def _clip_text(value: Any, limit: int) -> str:
 
 
 def _probe_tools() -> list[Any]:
-    return toolset("file_read", "run_tests", "grep", "git_diff")
+    return toolset("file_read", "bash", "grep", "git_diff")
 
 
 def _public_record(record: dict[str, Any]) -> dict[str, Any]:
