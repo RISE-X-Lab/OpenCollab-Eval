@@ -29,6 +29,7 @@ def image_activation_prefix(container_id, activation=""):
 
 def install_candidate_environment(container_id, solver_runtime, activation=""):
     """Call after existing dependency restore and before creating the workflow."""
+    from .gen_prediction_config import _workspace_archive_timeout_from_env
     from .gen_prediction_docker import _check_docker
     from .gen_prediction_snapshot import _docker_with_stdin, _install_snapshot_helper
 
@@ -48,6 +49,7 @@ def install_candidate_environment(container_id, solver_runtime, activation=""):
         solver_runtime.workspace,
         store,
         input_text=json.dumps(solver_runtime.roots),
+        timeout=_workspace_archive_timeout_from_env(),
     )
     _check_docker(result, "candidate runtime dependency preparation")
     return command_prefix(store, solver_runtime.workspace, helper=helper, activation=activation)

@@ -181,7 +181,8 @@ def test_run_tests_does_not_fallback_from_failed_test_output_text():
     assert len(env.exec_calls) == 1
 
 
-def test_run_tests_falls_back_to_go_runner_when_pytest_missing():
+@pytest.mark.parametrize("runner", [None, ""])
+def test_run_tests_falls_back_to_go_runner_when_pytest_missing(runner):
     env = ScriptedEnv([
         ("python -m pytest", 1, "No module named pytest"),
         ("test -f go.mod", 0, ""),
@@ -196,7 +197,7 @@ def test_run_tests_falls_back_to_go_runner_when_pytest_missing():
 
     result = run(
         RunTestsTool(allow_runner_override=False, allow_extra_args=False).execute_with_runtime(
-            {"target": "internal/server"}, runtime
+            {"target": "internal/server", "runner": runner}, runtime
         )
     )
 

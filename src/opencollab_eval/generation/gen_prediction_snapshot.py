@@ -31,13 +31,15 @@ _MAX_EVIDENCE_BYTES = 256 * 1024
 _ROOTLESS_COPY_FAILURE = "operation not permitted"
 
 
-def _docker_with_stdin(*args: str, input_text: str) -> subprocess.CompletedProcess[str]:
+def _docker_with_stdin(
+    *args: str, input_text: str, timeout: float | None = None,
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["docker", *args],
         input=input_text,
         capture_output=True,
         text=True,
-        timeout=_docker_timeout_from_env(),
+        timeout=_docker_timeout_from_env() if timeout is None else timeout,
         check=False,
     )
 
