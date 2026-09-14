@@ -1,0 +1,54 @@
+# qwen3.8-max at the primary rung, subset-50 rows 13-40, on the token-plan endpoint.
+#
+# Why this batch exists. The adherence table needs forty tasks per cell. This
+# model already has rows 1-12 at three rungs (primary 0/11, prohibit 10/12,
+# plain 9/11), run on 2026-09-11 against the private gateway. This batch adds
+# rows 13-40 so the primary cell has a denominator of forty.
+#
+# Declared before launch, two deviations this batch introduces:
+#
+#  1. ENDPOINT SPLIT INSIDE ONE CELL. Rows 1-12 were produced on the private
+#     gateway (configs/.env.qwenmax-pg, http://47.100.35.241:56477/v1); rows
+#     13-40 run here against https://token-plan.cn-beijing.maas.aliyuncs.com
+#     /compatible-mode/v1, because that is the key that has quota tonight. The
+#     merged forty-task alpha therefore has a denominator spanning two
+#     endpoints. The principal chose this over re-running rows 1-12 (which
+#     would have cost 30% more of a window that expires tonight). It must be
+#     declared in Deviations. Probed from lthpc before launch: http 200,
+#     echoed_model 'qwen3.8-max', 1.36s.
+#
+#  2. MODEL NOT IN THE CAPABILITY TABLE. 'qwen3.8-max' has no entry in
+#     _EXACT_MODEL_CAPABILITIES (opencollab/adapters/llm/types.py), so it runs
+#     under the unlisted-model fallback: no context_window, forced tool choice
+#     allowed. This is NOT a change from rows 1-12 -- those ran under the same
+#     fallback -- so the two halves of the cell are aligned on this dimension.
+#
+# Read-out, written before the run. The primary card names no division of work
+# and says in so many words that keeping the work and handing it over are both
+# open. Reference points at this rung: deepseek-v4-flash 0/40, qwen3.8-flash
+# 6/40, glm-5.2 1/11, and this model's own 0/11 on rows 1-12.
+#   - delivered <= 2/28 -> consistent with its own rows 1-12; merge and report
+#     the forty-task count.
+#   - 3-5/28 -> report the count; note the split denominator is doing work.
+#   - >= 6/28 -> contradicts its own 0/11 on the other endpoint. Do NOT merge.
+#     The endpoint becomes a live confounder and has to be settled first.
+name: qwenmax-cmdprimary28-tp
+host: lthpc
+arm: team
+rung: primary
+cell: facts-v2
+suite: subset-50
+rows: {start: 13, stop: 40}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 9
+model_env: configs/.env.tp-qwenmax
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "extends qwenmax-cmdprimary12 (rows 1-12, private gateway) to a forty-task denominator; rows 13-40 on the token-plan endpoint, whose key expires tonight"

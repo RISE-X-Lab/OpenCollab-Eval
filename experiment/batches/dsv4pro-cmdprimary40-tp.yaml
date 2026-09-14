@@ -1,0 +1,77 @@
+# deepseek-v4-pro at the primary rung, subset-50 rows 1-40, on the token-plan endpoint.
+#
+# Why this batch exists. The breadth table asks whether knowing the model name
+# lets you recover alpha. Four models answer it now (deepseek-v4-flash,
+# qwen3.8-flash, qwen3.8-max, glm-5.2); this adds a fifth, and the first one
+# from the pro tier. It is the only model in the table with no runs at all.
+#
+# Declared before launch, two facts that make this batch different from the
+# others in the table:
+#
+#  1. NEW ENDPOINT. https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1,
+#     the only endpoint that serves this model to us. Every other cell in the
+#     breadth table ran on the private gateway or on dashscope, so a difference
+#     between this row and the others is confounded with the endpoint. Probed
+#     from lthpc before launch: http 200, echoed_model 'deepseek-v4-pro', 1.15s.
+#     Declare in Deviations.
+#
+#  2. MODEL NOT IN THE CAPABILITY TABLE. 'deepseek-v4-pro' has no entry in
+#     _EXACT_MODEL_CAPABILITIES (opencollab/adapters/llm/types.py): it runs
+#     under the unlisted-model fallback -- no context_window (history
+#     compaction fires on the default threshold rather than a measured one)
+#     and forced tool choice allowed. gpt-5.6-luna ran under this same
+#     fallback and ended up declared an instrument-failure case study, so this
+#     batch is launched with --limit 1 first and the single run is read before
+#     the rest is released. What the smoke must show: tool calls issued and
+#     executed, provider_model == 'deepseek-v4-pro' in the trajectory, no
+#     compaction-related failure, and a duration in the same order as the
+#     other models' primary runs.
+#
+# Read-out, written before the run. Reference points at this rung:
+# deepseek-v4-flash 0/40, qwen3.8-flash 6/40, glm-5.2 1/11, qwen3.8-max 0/11.
+#   - delivered <= 2/40 -> baseline shape, same as its flash sibling.
+#   - 3-5/40 -> report the count; it sits between flash and qwen3.8-flash.
+#   - >= 6/40 -> this model delegates without being told to; the ladder does
+#     not exist for it. Report as such, do not fold into an average.
+#
+# 2026-09-13 13:50 UTC, two decisions recorded before the remaining 39 rows go
+# out, so that neither can be read back as hindsight:
+#
+#  1. CONCURRENCY 10 -> 6. Ten is exactly what was in flight on this endpoint
+#     when it stalled for 24 minutes at 10:24-10:48 UTC and killed 21 runs of
+#     qwenmax-cmdprimary28-tp. Whether that stall was load-driven or a fault on
+#     the endpoint's side cannot be told from our data, so 6 is a hedge, not a
+#     finding. With the pro control's 3 still in flight the endpoint total is 9.
+#
+#  2. DISPATCHED BEFORE THE CONTROL HAS RETURNED ITS VERDICT. The rule is that
+#     this model's adherence may be reported only after its own prohibit control
+#     clears Q >= 10, and dsv4pro-cmdprohibit12-tp will not finish until roughly
+#     16:40 UTC. These 39 runs are being paid for before that verdict, on the
+#     prior that every model measured so far cleared it (deepseek-v4-flash 11/12,
+#     qwen3.8-flash 12/12, glm-5.2 12/12, qwen3.8-max 10/12), because the key
+#     expires tonight at an hour nobody has told us and waiting is a certain
+#     loss. If the control does NOT clear, these runs are not discarded and not
+#     reported either: they sit unreportable until a control exists. The verdict
+#     is not to be softened afterwards to rescue them, and no number from this
+#     batch may appear in the paper while Q <= 9 stands.
+
+name: dsv4pro-cmdprimary40-tp
+host: lthpc
+arm: team
+rung: primary
+cell: facts-v2
+suite: subset-50
+rows: {start: 1, stop: 40}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env.tp-dsv4pro
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "first runs of deepseek-v4-pro anywhere in this project; launch --limit 1 first and read the single run before releasing the rest"
