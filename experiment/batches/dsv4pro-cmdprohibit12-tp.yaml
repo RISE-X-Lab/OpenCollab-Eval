@@ -1,0 +1,70 @@
+# deepseek-v4-pro at the prohibit rung, subset-50 rows 1-12, token-plan endpoint.
+#
+# What this batch is for. It is this model's POSITIVE CONTROL, and nothing else.
+# The prohibit card tells the analyst in so many words not to do the work alone.
+# A model that will not delegate even under an explicit prohibition either does
+# not follow the card, or delegates in a way our instruments cannot see; either
+# way its delegation rate at the other rungs means nothing. The project's
+# pre-registered rule is therefore: a model's adherence numbers may be reported
+# only after its own prohibit control has cleared the gate.
+#
+# Why twelve tasks and not forty. The gate is a qualitative one -- does this
+# model delegate when told to -- so it needs no statistical power, and the
+# criterion table (breadth-runbook/03-DECIDE-THIRD-RUNG.md) states it on twelve
+# tasks. The forty-task denominator adopted on 09-13 applies to the rungs that
+# enter the table (primary, plain, prohibit-as-a-rung), not to the control. This
+# batch is the control. Every other model's control was also run on rows 1-12,
+# so this one is aligned with them.
+#
+# Deviations this batch carries (both already declared for this model):
+#
+#  1. MODEL NOT IN THE CAPABILITY TABLE. 'deepseek-v4-pro' has no entry in
+#     _EXACT_MODEL_CAPABILITIES (opencollab/adapters/llm/types.py), so it runs
+#     under the unlisted-model fallback: no context_window, forced tool choice
+#     allowed. D27. The 09-13 smoke confirmed it works under that fallback --
+#     42 llm_calls, 48 tool_exec, provider_model 'deepseek-v4-pro' every time.
+#  2. ENDPOINT. token-plan, the same endpoint as this model's primary cell, so
+#     unlike qwen3.8-max there is no split inside this model's data.
+#
+# Read-out, written before the run. Reference points at this rung, all on these
+# same twelve tasks: deepseek-v4-flash 11/12, qwen3.8-flash 12/12, glm-5.2
+# 12/12, qwen3.8-max 10/12. Every model measured so far has cleared.
+#   - Q >= 10 -> GATE CLEARED. This model's primary cell may be reported.
+#   - Q <= 9  -> GATE NOT CLEARED. Stop with this model: its primary alpha, at
+#     forty tasks or at any other denominator, may NOT enter the table, and the
+#     runs already paid for stay unreportable. Not clearing is itself a result
+#     and goes in the progress file as a number, without claiming which of the
+#     two causes it is (does not obey the card / we cannot see the delegation).
+#     The second cause would be an instrument red flag, not a finding about the
+#     model, so it must not be written up as one.
+# Concurrency 3, run in parallel with the qwen3.8-max retry batches rather than
+# after them. Those hold 6 in flight on this same endpoint, so the total is 9,
+# below the 10 that was in flight when the endpoint stalled 10:24-10:48 UTC.
+# That is not a claim the stall was load-driven -- the data cannot separate a
+# load effect from a fault on the endpoint's side -- it is a choice to get this
+# control's verdict early, because the key expires tonight at an hour nobody has
+# told us, and without a cleared control everything else this model produces is
+# unreportable.
+#
+#   - Read Q only after confirming preds == 12. A short predictions file scores
+#     without complaint and silently changes the denominator (09-11 lesson).
+name: dsv4pro-cmdprohibit12-tp
+host: lthpc
+arm: team
+rung: prohibit
+cell: cmd-prohibit
+suite: subset-50
+rows: {start: 1, stop: 12}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 3
+model_env: configs/.env.tp-dsv4pro
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "positive control for deepseek-v4-pro; twelve tasks, same rows as every other model's control; its primary cell may not be reported until this clears Q>=10"
