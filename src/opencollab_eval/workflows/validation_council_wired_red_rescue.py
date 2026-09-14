@@ -48,7 +48,7 @@ Issue
 G20 workflow status
 {status}
 
-Inspect the live diff and the directly affected source. Use run_tests to run at
+Inspect the live diff and the directly affected source. Use bash to run at
 most two nearest public test targets that can expose a concrete defect in the
 current candidate. Prefer a focused target over a repository-wide suite. Do not
 infer a failure from prose. Report only commands that you actually executed.
@@ -77,7 +77,7 @@ Executed public failure records
 {failure_records}
 
 Inspect the relevant producers and consumers, implement the smallest complete
-repair, and rerun every failed public target above with run_tests. Finish with a
+repair, and rerun every failed public target above with bash. Finish with a
 non-empty source diff. Do not use official results, hidden tests, FAIL_TO_PASS
 identifiers, or grader patches."""
 
@@ -90,19 +90,11 @@ def _clip_text(value: Any, limit: int) -> str:
 
 
 def _probe_tools() -> list[Any]:
-    return toolset("file_read", "run_tests", "grep", "git_diff")
+    return toolset("file_read", "bash", "grep", "git_diff")
 
 
 def _rescue_tools() -> list[Any]:
-    return toolset(
-        "bash",
-        "file_read",
-        "file_write",
-        "apply_patch",
-        "run_tests",
-        "grep",
-        "git_diff",
-    )
+    return toolset("bash", "file_read", "file_write", "apply_patch", "grep", "git_diff")
 
 
 def _verification_records(tools: list[Any]) -> list[dict[str, Any]]:

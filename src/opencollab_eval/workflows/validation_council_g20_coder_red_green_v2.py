@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, cast
+from typing import Any
 
-from opencollab.tools import VerificationTool
 from opencollab.workflows import CandidateRun, workflow
 
 from opencollab_eval.verification import evaluation_tools
@@ -24,78 +23,6 @@ MINIMAL_CODER_BUDGET = 3_000_000
 TOTAL_RUNNER_BUDGET = 2 * CANDIDATE_BUDGET
 MECHANICAL_PROBE_TIMEOUT = 300.0
 _SHARED_PROBE_KEY = "g20_coder_red_green_v2_public_probe"
-
-
-class _MechanicalRunTests:
-    """Public run_tests wrapper with fixed mechanical-execution boundaries."""
-
-    name = "run_tests"
-    description = "Run one exact public target and runner mechanically."
-    parameters = {
-        "type": "object",
-        "properties": {
-            "target": {"type": "string"},
-            "runner": {"type": "string"},
-            "timeout": {"type": "number"},
-        },
-        "required": ["target", "runner"],
-        "additionalProperties": False,
-    }
-    default_timeout = MECHANICAL_PROBE_TIMEOUT
-    disable_outer_timeout = False
-
-    def __init__(self) -> None:
-        self._delegate = evaluation_tools("run_tests", headless=False)[0]
-
-    @property
-    def verified_targets(self) -> frozenset[str]:
-        return frozenset(getattr(self._delegate, "verified_targets", ()))
-
-    @property
-    def verification_records(self) -> tuple[dict[str, object], ...]:
-        return tuple(
-            dict(record) for record in getattr(self._delegate, "verification_records", ()) if isinstance(record, dict)
-        )
-
-    def to_openai_schema(self) -> dict[str, object]:
-        return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.description,
-                "parameters": self.parameters,
-            },
-        }
-
-    async def execute_with_runtime(self, params: dict[str, Any], runtime: Any) -> str:
-        unsupported = set(params) - {"target", "runner", "timeout"}
-        if unsupported:
-            raise ValueError(f"mechanical run_tests received unsupported fields {sorted(unsupported)}")
-        environment = getattr(runtime, "environment", None)
-        if not bool(getattr(environment, "process_isolated", False)):
-            raise RuntimeError("mechanical run_tests requires process isolation")
-        target = str(params.get("target") or "").strip()
-        runner = str(params.get("runner") or "").strip()
-        if not target or not runner:
-            raise ValueError("mechanical run_tests requires target and runner")
-        result = await self._delegate.execute_with_runtime(
-            {
-                "target": target,
-                "runner": runner,
-                "timeout": params.get("timeout", MECHANICAL_PROBE_TIMEOUT),
-            },
-            runtime,
-        )
-        if not isinstance(result, str):
-            raise TypeError("mechanical run_tests must return text")
-        return result
-
-
-def _new_run_tests() -> VerificationTool:
-    tool = _MechanicalRunTests()
-    if not isinstance(tool, VerificationTool):
-        raise TypeError("public run_tests tool does not satisfy VerificationTool")
-    return cast(VerificationTool, tool)
 
 
 def _valid_reference(value: Any) -> dict[str, str]:
@@ -135,12 +62,11 @@ async def _run_mechanical_probe(
     if not normalized:
         return [], "missing-reference"
     try:
-        tool = _new_run_tests()
+        tool = evaluation_tools("bash")[0]
         await ctx.execute_verification(
             tool,
             {
-                "target": normalized["target"],
-                "runner": normalized["runner"],
+                "command": normalized["command"],
                 "timeout": MECHANICAL_PROBE_TIMEOUT,
             },
         )
@@ -148,6 +74,9 @@ async def _run_mechanical_probe(
         await ctx.log(f"mechanical public probe unavailable after {type(exc).__name__}")
         return [], type(exc).__name__
     records = [dual._public_record(record) for record in tool.verification_records if isinstance(record, dict)]
+    records = [record for record in records if dual._record_key(record) == (
+        normalized["target"], normalized["runner"], normalized["command"],
+    )]
     if len(records) != 1:
         return [], "unexpected-record-count"
     return records, None

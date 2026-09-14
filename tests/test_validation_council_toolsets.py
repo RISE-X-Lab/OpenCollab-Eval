@@ -27,7 +27,7 @@ def test_validation_council_tester_tools_can_probe_but_not_author():
     tools = _workflow_globals()["_tester_tools"]()
     names = _names(tools)
 
-    assert names == ["bash", "file_read", "run_tests", "grep", "git_diff"]
+    assert names == ["bash", "file_read", "grep", "git_diff"]
     assert "file_write" not in names
     assert "apply_patch" not in names
 
@@ -50,7 +50,6 @@ def test_validation_council_coder_tools_keep_edit_path():
         "file_read",
         "file_write",
         "apply_patch",
-        "run_tests",
         "grep",
     ]
 

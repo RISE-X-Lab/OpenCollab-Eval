@@ -19,12 +19,12 @@ from opencollab_eval.workflows.analyst_solve import analyst_solve
 F2P = ["tests/test_widget.py::test_empty"]
 
 
-class _ScriptedRunTestsVerifier:
+class _ScriptedBashEvidence:
     """Minimal tester-tool evidence exposed to the workflow gate."""
 
     __slots__ = ("verified_targets",)
 
-    name = "run_tests"
+    name = "bash"
 
     def __init__(self, verified_targets: list[str]) -> None:
         self.verified_targets = frozenset(verified_targets)
@@ -65,8 +65,8 @@ class ScriptedCtx:
         reply = self._replies.pop(0) if self._replies else None
         if isinstance(reply, dict) and tools:
             for index, tool in enumerate(tools):
-                if getattr(tool, "name", "") == "run_tests":
-                    tools[index] = _ScriptedRunTestsVerifier(
+                if getattr(tool, "name", "") == "bash":
+                    tools[index] = _ScriptedBashEvidence(
                         reply.get("tests_run") or []
                     )
         return reply

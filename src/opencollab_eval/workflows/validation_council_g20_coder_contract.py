@@ -37,9 +37,9 @@ Own the issue end to end. Locate the root cause, trace every affected producer,
 consumer, and public API contract, and implement the smallest complete source
 patch. Preserve compatible behavior outside the requested change. Inspect the
 final diff and remove generated files, caches, logs, and accidental test edits.
-Run the nearest relevant public tests with run_tests. When the shared public
-command is present and representable by run_tests, execute the same target and
-runner. Do not substitute an easier test. Finish with a non-empty source diff.
+Run the nearest relevant public tests through Bash using the project's native test command. When the shared public
+command is present and available, execute the same command. Do not substitute an easier test. Finish with a
+non-empty source diff.
 Do not use official results, hidden tests, FAIL_TO_PASS ids, grader patches, or
 historical outcomes."""
 
@@ -69,15 +69,7 @@ grader patches, historical results, or model identity."""
 
 
 def _coder_tools() -> list[Any]:
-    return toolset(
-        "bash",
-        "file_read",
-        "file_write",
-        "apply_patch",
-        "run_tests",
-        "grep",
-        "git_diff",
-    )
+    return toolset("bash", "file_read", "file_write", "apply_patch", "grep", "git_diff")
 
 
 async def _autonomous_candidate(

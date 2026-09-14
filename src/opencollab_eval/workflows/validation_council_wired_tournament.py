@@ -107,7 +107,7 @@ Unified public command
 {public_command}
 
 Inspect the exact source, edit the candidate worktree, and run the unified
-public command with run_tests when it is available. Keep tests, logs, caches,
+public command with bash when it is available. Keep tests, logs, caches,
 and generated files out of the candidate diff. Finish with a concise account
 of the source reasoning and command result."""
 
@@ -131,7 +131,7 @@ Unified public command
 {public_command}
 
 Inspect the exact source, edit the candidate worktree, and run the unified
-public command with run_tests when it is available. Keep tests, logs, caches,
+public command with bash when it is available. Keep tests, logs, caches,
 and generated files out of the candidate diff. Finish with a concise account
 of the alternative reasoning and command result."""
 
@@ -168,7 +168,7 @@ Issue
 Unified public command
 {public_command}
 
-Inspect the adopted diff. Execute the unified public command with run_tests.
+Inspect the adopted diff. Execute the unified public command with bash.
 Report the exact command, exit code, collected tests, failed tests, and concise
 findings. Do not edit files."""
 

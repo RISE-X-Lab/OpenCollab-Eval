@@ -38,7 +38,7 @@ Public issue
 
 Find the narrowest root cause that fully explains the issue. Trace the immediate
 callers and consumers needed for correctness, implement a minimal complete
-source patch, run the nearest relevant public tests with run_tests, inspect the
+source patch, run the nearest relevant public tests with bash, inspect the
 final diff, and finish with a non-empty source diff. Preserve unrelated public
 behavior. Avoid tests, generated files, caches, and logs. Do not use official
 results, hidden tests, FAIL_TO_PASS ids, grader patches, or historical results."""
@@ -57,8 +57,8 @@ Shared public command observed from candidate A
 Solve the issue end to end. Trace producers, consumers, public API and
 serialization boundaries, lifecycle behavior, error propagation, and edge
 cases. Implement the smallest complete cross-component source patch. Run
-relevant public tests with run_tests. When the shared command is representable,
-run the same target and runner. Inspect the final diff and finish with a
+relevant public tests through Bash using the project's native test command. When the shared command is available,
+run the same native command. Inspect the final diff and finish with a
 non-empty source diff. Avoid tests, generated files, caches, and logs. Do not
 use official results, hidden tests, FAIL_TO_PASS ids, grader patches, or
 historical results."""
@@ -78,7 +78,7 @@ Work as a test-first debugger. Reproduce the public failure or nearest public
 behavior before editing. Trace the failing value and control flow to its root
 cause, then implement the smallest source repair that makes the same public
 target green without weakening coverage. Run the exact shared target and runner
-when representable, plus a focused regression probe for the changed contract.
+when available, plus a focused regression probe for the changed contract.
 Inspect the final diff and finish with a non-empty source diff. Avoid tests,
 generated files, caches, and logs. Do not use official results, hidden tests,
 FAIL_TO_PASS ids, grader patches, or historical results."""
@@ -147,15 +147,7 @@ grader patches, historical results, or model identity."""
 
 
 def _coder_tools() -> list[Any]:
-    return toolset(
-        "bash",
-        "file_read",
-        "file_write",
-        "apply_patch",
-        "run_tests",
-        "grep",
-        "git_diff",
-    )
+    return toolset("bash", "file_read", "file_write", "apply_patch", "grep", "git_diff")
 
 
 async def _candidate(

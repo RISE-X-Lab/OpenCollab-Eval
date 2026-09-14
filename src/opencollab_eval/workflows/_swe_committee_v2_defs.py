@@ -55,8 +55,8 @@ SHARED_RULES = """\
 Rules:
 - Use only issue text, repository source, public tests, and public docs.
 - Do not use hidden grader test patches, injected FAIL_TO_PASS IDs, or any hidden suite.
-- Prefer file_read/grep for inspection and run_tests for validation checks.
-- Use bash only when no dedicated tool fits.
+- Prefer file_read/grep for inspection and bash for validation checks.
+- Use Bash for native tests, builds, setup and executable probes.
 - Never include temporary validation artifacts or test scripts in final patch output.
 - Keep temporary validation outside git diff; remove temporary validation files before final verifier pass.
 - Minimize edits: prefer smallest behavior-preserving patch.

@@ -106,7 +106,7 @@ def test_integrity_coverage_ledger_is_complete_and_truthful() -> None:
     assert coverage["H-07"]["status"] == "deferred"
     assert coverage["H-69"]["status"] == "partial"
     assert coverage["H-71"]["nodeid"].endswith(
-        "test_run_tests_rejects_go_multi_selector_before_any_command"
+        "test_go_duplicate_selector_cannot_create_ambiguous_evidence"
     )
 
 

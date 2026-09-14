@@ -53,8 +53,8 @@ CODER_HEAVY_TESTING_PROMPT = """\
 
 You own executable validation for this attempt. Before finishing, inspect the
 current diff, run the cheapest build, import, or collection check for every
-changed package, and run the nearest relevant public tests. Use run_tests or
-bash for real commands and inspect their complete failure output."""
+changed package, and run the nearest relevant public tests. Use Bash
+for native commands and inspect their complete failure output."""
 
 WIRED_PLUS_FINAL_REPAIR_BUDGET = 800_000
 WIRED_PLUS_SUMMARY_BYTES = 32 * 1024
@@ -76,7 +76,7 @@ the direct producers and consumers across component boundaries. Preserve valid
 changes, fix every remaining source problem, and remove accidental test, cache,
 log, or generated-file changes. Before finishing, inspect the final diff, run
 the cheapest build, import, or collection check for every changed package, and
-run the nearest relevant public tests. Use real run_tests or bash commands and
+run the nearest relevant public tests. Use native Bash commands and
 inspect their complete failure output."""
 
 DIAGNOSE_REPAIR_DIAGNOSTIC_BUDGET = 300_000
@@ -481,19 +481,11 @@ class _CoderHeavyWiringContext(_ResilientWiringContext):
 
 
 def _wired_plus_writer_tools() -> list[Any]:
-    return toolset(
-        "file_read",
-        "file_write",
-        "apply_patch",
-        "run_tests",
-        "grep",
-        "git_diff",
-        "bash",
-    )
+    return toolset("file_read", "file_write", "apply_patch", "bash", "grep", "git_diff")
 
 
 def _diagnose_repair_diagnostic_tools() -> list[Any]:
-    return toolset("file_read", "run_tests", "grep", "git_diff")
+    return toolset("file_read", "bash", "grep", "git_diff")
 
 
 def _conditional_repair_decision(value: Any) -> str:

@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import posixpath
 import re
 import shlex
-from typing import Any
 
 DJANGO_RUNNER = "python tests/runtests.py"
 _LABEL = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*")
@@ -30,19 +28,6 @@ def is_django_runner(runner: str) -> bool:
     )
 
 
-async def detect_django_runner(env: Any) -> str | None:
-    """Prefer Django's own entry point only in its source repository."""
-    read = getattr(env, "read_text_range", None)
-    if not callable(read):
-        return None
-    try:
-        for path in ("tests/runtests.py", "django/__init__.py"):
-            await read(posixpath.join(env.workspace, path), offset=1, limit=1, max_chars=256)
-    except (FileNotFoundError, NotADirectoryError):
-        return None
-    return DJANGO_RUNNER
-
-
 class InvalidDjangoTargetError(ValueError):
     """The requested selector cannot be represented by one Django label."""
 
@@ -60,11 +45,6 @@ def django_target(target: str) -> str:
     if _LABEL.fullmatch(label) is None:
         raise InvalidDjangoTargetError("Django target must be one dotted test label or repository test path")
     return label
-
-
-def django_command(runner: str, target: str) -> str:
-    label = django_target(target)
-    return f"{runner} --verbosity 2 --parallel 1" + (f" {shlex.quote(label)}" if label else "")
 
 
 def django_evidence(output: str) -> tuple[dict[str, int], list[str], list[str], int | None, bool]:

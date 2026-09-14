@@ -37,9 +37,8 @@ MAX_ROUNDS_PER_SUBTASK = 3
 # Shared rules — every role gets them (same contract as self_collab).
 SHARED_RULES = """\
 Rules:
-- Prefer your DEDICATED tool over bash: file_read/grep to inspect, run_tests \
-to test, file_write/apply_patch to edit. Use bash ONLY for what no dedicated \
-tool covers (e.g. a one-line `python -c` repro).
+- Use file_read/grep to inspect, file_write/apply_patch to edit, and Bash \
+for the project's native tests, builds, and executable probes.
 - Fix the ROOT CAUSE in the source; make the SMALLEST correct change.
 - NEVER edit test files. NEVER run `git commit`; leave edits in the working tree.
 - Never assume a package is available: confirm the repo already imports it \
@@ -117,7 +116,7 @@ file_write in str_replace mode — minimal and targeted. If str_replace fails \
 twice (no unique match — whitespace diff, duplicate/ambiguous lines, line \
 drift), do NOT retry the same replacement: fall back to apply_patch with a \
 content-anchored diff (use line_replace with expected_str to guard the range). \
-Verify with run_tests (or a short `python -c` repro) before reporting. Your \
+Verify with bash (or a short `python -c` repro) before reporting. Your \
 final message is your report: what you changed (each file + edit), why, and \
 your verification result.
 
@@ -140,7 +139,7 @@ concrete findings from the tester:
 
 TESTER_PROMPT = """\
 You are a Tester adversarially verifying a coder's change for ONE subtask. \
-Run the project's tests with run_tests. Inspect the ACTUAL source with \
+Run the project's tests through Bash using the project's native test command. Inspect the ACTUAL source with \
 file_read/grep — do not trust the coder's summary; confirm the change is \
 really there and really meets the definition of done. The tree may also hold \
 edits from other subtasks — judge only THIS subtask, but report any \
@@ -169,7 +168,7 @@ working tree. Integrate and verify the COMBINED change against the original \
 goal:
 1. Run `git diff` (bash) to see the full change; read any touched file you \
 need with file_read.
-2. Run the project's tests with run_tests — the full suite, not a slice.
+2. Run the project's tests with bash — the full suite, not a slice.
 3. If the combined change has integration seams (conflicting edits, or a \
 failed subtask leaving the tree broken), repair them with minimal, targeted \
 edits.
@@ -190,13 +189,11 @@ def _read_tools() -> list[Any]:
 
 
 def _coder_tools() -> list[Any]:
-    return toolset(
-        "bash", "file_read", "file_write", "apply_patch", "run_tests", "grep"
-    )
+    return toolset("bash", "file_read", "file_write", "apply_patch", "grep")
 
 
 def _tester_tools() -> list[Any]:
-    return toolset("bash", "file_read", "run_tests", "grep")
+    return toolset("bash", "file_read", "grep")
 
 
 async def _run_subtask(ctx: Any, sub: dict[str, Any], idx: int) -> dict[str, Any]:

@@ -226,6 +226,8 @@ path. Testing remains owned by the Test Owner."""
 
 TEST_OWNER_PROMPT = """\
 You are the Test Owner and the only role allowed to execute post-patch tests.
+Use native test output with executed names, such as pytest -rA, go test -json,
+or Django verbose output, for exact evidence.
 
 {rules}
 
@@ -261,7 +263,7 @@ def _read_tools() -> list[Any]:
 
 
 def _reproducer_tools() -> list[Any]:
-    return toolset("file_read", "run_tests", "grep")
+    return toolset("file_read", "bash", "grep")
 
 
 def _writer_tools() -> list[Any]:
@@ -269,7 +271,7 @@ def _writer_tools() -> list[Any]:
 
 
 def _test_owner_tools() -> list[Any]:
-    return toolset("file_read", "run_tests", "grep", "git_diff")
+    return toolset("file_read", "bash", "grep", "git_diff")
 
 
 def _challenger_tools() -> list[Any]:
@@ -334,11 +336,11 @@ def _empty_challenger() -> dict[str, Any]:
 
 
 def _verified_targets(tools: list[Any]) -> set[str]:
-    run_tests = next(
-        (tool for tool in tools if getattr(tool, "name", "") == "run_tests"),
+    bash = next(
+        (tool for tool in tools if getattr(tool, "name", "") == "bash"),
         None,
     )
-    return set(getattr(run_tests, "verified_targets", ()))
+    return set(getattr(bash, "verified_targets", ()))
 
 
 async def _current_diff(ctx: Any) -> str | None:
