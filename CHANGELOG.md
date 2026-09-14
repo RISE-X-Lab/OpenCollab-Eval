@@ -2,6 +2,8 @@
 
 All notable changes to OpenCollab-Eval are recorded in this file.
 
+## [Unreleased]
+
 ## [0.7.0] - 2026-09-14
 
 ### Added
@@ -9,6 +11,14 @@ All notable changes to OpenCollab-Eval are recorded in this file.
 Paired with OpenCollab 0.7.0 and its current public runtime/tool interface.
 
 Reusable server-local evaluation packaging, shared provider request limits, native Single configuration, and named collaboration workflows.
+
+### Changed
+
+Removed Eval's dedicated `run_tests` tool and its automatic runner selection,
+command rewriting, and model-facing GREEN/RED reports. Collaboration workflows
+execute native project commands through OpenCollab's Bash interface. Evaluation
+observes actual command results for existing workflow evidence checks, and
+mechanical candidate comparisons replay the recorded command unchanged.
 
 ### Fixed
 
@@ -19,14 +29,16 @@ are resolved per invocation, and explicit provider recovery time reaches the
 outer role wait.
 
 Adapted default Single and team configurations to the current OC built-in tools.
-Exact-target research verification is now owned by Eval. Final verification
+Exact-target research evidence is collected from native Bash execution. Final verification
 receives all role reports, cleanup failures retain captured candidates for
 review, and truncated diff output is recovered through a complete file transfer.
 
 Public runtime dependencies and Conda activation are prepared before generation. Failed candidate captures preserve recovery resources, completed response evidence retains known usage, and official evaluation receives a configurable container-binding interval.
 
-
-## [Unreleased]
+Bulk dependency operations use the workspace-transfer timeout instead of the
+short Docker control timeout. Test evidence preserves complete target paths,
+invalidates overlapping evidence after failed reruns, and rejects missing,
+truncated, or mismatched execution output.
 
 ## [0.5.1] - 2026-09-04
 
