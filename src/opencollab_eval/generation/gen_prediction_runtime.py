@@ -7,6 +7,7 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
+from .gen_prediction_config import _workspace_archive_timeout_from_env
 from .gen_prediction_constants import DOCKER_WORKDIR
 from .gen_prediction_docker import _check_docker
 from .gen_prediction_snapshot import _docker_with_stdin, _install_snapshot_helper
@@ -34,6 +35,7 @@ def _run(container_id: str, action: str, workspace: str, argument: str, payload:
         workspace,
         argument,
         input_text=payload,
+        timeout=_workspace_archive_timeout_from_env(),
     )
     _check_docker(result, f"solver runtime dependency {action}")
     return result.stdout

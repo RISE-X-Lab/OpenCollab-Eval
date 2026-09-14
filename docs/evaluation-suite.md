@@ -112,3 +112,8 @@ module before they can establish candidate failure. JavaScript missing-module
 failures require the missing import to have been introduced by the candidate.
 An optional trusted test-patch digest lets offline reconciliation recover the
 same binding from saved evaluator inputs. Unbound failures remain technical.
+
+Saving, restoring, and removing prepared image dependencies, including preparing
+candidate copies, use `OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT` with its default of
+900 seconds. These operations can transfer large dependency trees. Ordinary
+Docker control operations use `OPENCOLLAB_DOCKER_TIMEOUT`.

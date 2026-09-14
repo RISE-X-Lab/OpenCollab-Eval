@@ -1,5 +1,6 @@
 """Django source tests run without pytest and require matching verbose proof."""
 
+import shlex
 import sys
 
 import pytest
@@ -67,8 +68,7 @@ async def test_native_source_runner_executes_without_override_or_pytest(tmp_path
     async def execute(command, timeout=120):
         commands.append(command)
         # Use the test interpreter without changing discovery's environment.
-        if command.startswith("python "):
-            command = repr(sys.executable) + command[len("python"):]
+        command = command.replace("&& python ", f"&& {shlex.quote(sys.executable)} ", 1)
         return await original(command, timeout=timeout)
 
     env.exec_cmd = execute
@@ -78,8 +78,11 @@ async def test_native_source_runner_executes_without_override_or_pytest(tmp_path
         assert "Verdict: GREEN" in report
         assert "passed=1" in report
         assert tool.verified_targets == {"admin_utils"}
-        assert not any("pytest" in cmd for cmd in commands)
-        assert "python tests/runtests.py --verbosity 2 --parallel 1 admin_utils" in commands
+        assert not any("-m pytest" in cmd for cmd in commands)
+        assert (
+            f"cd -- {shlex.quote(str(tmp_path))} && "
+            "python tests/runtests.py --verbosity 2 --parallel 1 admin_utils"
+        ) in commands
         (tests / "admin_utils.py").write_text(
             "import unittest\nclass Example(unittest.TestCase):\n"
             "    def test_one(self): self.fail('regression')\n"

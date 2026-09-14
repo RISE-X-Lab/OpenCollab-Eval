@@ -6,6 +6,7 @@ from typing import Any
 
 from ._run_tests_django import InvalidDjangoTargetError, detect_django_runner
 from ._run_tests_go import InvalidGoTargetError as _InvalidGoTargetError
+from ._run_tests_workspace import WorkspaceTestEnvironment, workspace_environment, workspace_target
 from ._test_results import (
     DEFAULT_RUNNER,
     DEFAULT_TIMEOUT,
@@ -14,6 +15,7 @@ from ._test_results import (
     _build_command,
     _format_report,
     _is_green,
+    _is_pytest_runner,
     _is_supported_runner,
     _native_fallback_candidate,
     _validate_go_target_before_execution,
@@ -95,6 +97,12 @@ class RunTestsTool:
         self.allow_runner_override = allow_runner_override
         self.allow_extra_args = allow_extra_args
         self.require_process_isolation = require_process_isolation
+        properties = dict(self.parameters["properties"])
+        if not allow_runner_override:
+            properties.pop("runner", None)
+        if not allow_extra_args:
+            properties.pop("extra_args", None)
+        self.parameters = {**self.parameters, "properties": properties}
         self._verified_targets: set[str] = set()
         self._verification_records: list[dict[str, object]] = []
         # target -> consecutive RED count, for the escalation nudge. The tool
@@ -102,8 +110,12 @@ class RunTestsTool:
         # the eval toolset), so this survives across run_tests calls.
         self._consecutive_fail: dict[str, int] = {}
 
-    def _invalidate_verification_scope(self, target: str) -> None:
-        stale = {verified for verified in self._verified_targets if _verification_targets_overlap(target, verified)}
+    def _invalidate_verification_scope(self, target: str, workspace: str | None = None) -> None:
+        normalized = workspace_target(target, workspace)
+        stale = {
+            verified for verified in self._verified_targets
+            if _verification_targets_overlap(normalized, workspace_target(verified, workspace))
+        }
         self._verified_targets.difference_update(stale)
 
     async def execute_with_runtime(
@@ -112,16 +124,19 @@ class RunTestsTool:
         runtime: Any,
     ) -> str:
         target = params.get("target", "")
-        self._invalidate_verification_scope(target)
         pinned_runner = params.get("runner")
+        if pinned_runner == "":
+            pinned_runner = None
         extra_args = params.get("extra_args", "")
         timeout = params.get("timeout", DEFAULT_TIMEOUT)
-        env = runtime.environment
+        env = workspace_environment(runtime.environment)
+        workspace = env.workspace if isinstance(env, WorkspaceTestEnvironment) else None
+        self._invalidate_verification_scope(target, workspace)
         safety_policy = runtime.safety_policy
 
         if env is None:
             return "Error: no execution environment available."
-        if self.require_process_isolation and not getattr(env, "process_isolated", False):
+        if self.require_process_isolation and not getattr(runtime.environment, "process_isolated", False):
             return (
                 "Error: run_tests is disabled because this execution environment "
                 "does not provide an OS process sandbox."
@@ -137,7 +152,7 @@ class RunTestsTool:
         if extra_args and not self.allow_extra_args:
             return "Error: extra_args is disabled for this run_tests tool."
 
-        runner = pinned_runner or await detect_django_runner(env) or DEFAULT_RUNNER
+        runner = pinned_runner or await detect_django_runner(runtime.environment) or DEFAULT_RUNNER
         if pinned_runner is not None and not _is_supported_runner(runner):
             return self._unsupported_runner_report(target, runner)
         try:
@@ -184,25 +199,27 @@ class RunTestsTool:
         except _InvalidGoTargetError as exc:
             return self._invalid_go_target_report(target, exc)
 
+        proof_target = workspace_target(target, workspace) if _is_pytest_runner(runner) else target
         green = _is_green(
             result.returncode,
             combined,
             runner=runner,
-            target=target,
+            target=proof_target,
             output_truncated=bool(
                 getattr(result, "stdout_truncated", False) or getattr(result, "stderr_truncated", False)
             ),
         )
-        self._verification_records.append(
-            {"target": target, "runner": runner, "command": cmd, "exit_code": result.returncode, "verified": green}
-        )
+        record = {"target": target, "runner": runner, "command": cmd, "exit_code": result.returncode, "verified": green}
+        if workspace:
+            record["workspace"] = workspace
+        self._verification_records.append(record)
         if target:
             if green:
                 self._verified_targets.add(target)
             else:
                 self._verified_targets.discard(target)
         streak = self._record(target, green)
-        return _format_report(
+        report = _format_report(
             cmd,
             result.returncode,
             combined,
@@ -212,6 +229,7 @@ class RunTestsTool:
             fail_streak=streak,
             max_chars=self.max_traceback_chars,
         )
+        return f"Workspace: {workspace}\n{report}" if workspace else report
 
     async def _run(
         self,
@@ -224,11 +242,17 @@ class RunTestsTool:
         confirm_fn: Any,
     ) -> tuple[Any, str, str]:
         """Build + safety-check + exec one command. Returns (result, cmd, runner)."""
+        if isinstance(env, WorkspaceTestEnvironment) and _is_pytest_runner(runner):
+            target = workspace_target(target, env.workspace)
         cmd = _build_command(runner, target, extra_args)
+        execution_cmd = cmd
+        if isinstance(env, WorkspaceTestEnvironment):
+            execution_cmd = env.command(cmd)
+            env = env.environment
         # Same safety handshake bash uses — a runner override could be anything.
         if safety_policy:
-            await safety_policy.check_cmd_interactive(cmd, confirm_fn)
-        result = await env.exec_cmd(cmd, timeout=timeout)
+            await safety_policy.check_cmd_interactive(execution_cmd, confirm_fn)
+        result = await env.exec_cmd(execution_cmd, timeout=timeout)
         return result, cmd, runner
 
     def _record(self, target: str, green: bool) -> int:

@@ -28,3 +28,15 @@ def test_workflow_model_roles_cannot_override_test_commands(workflow_name):
         run_tests = next(tool for tool in tools if tool.name == "run_tests")
         assert run_tests.allow_runner_override is False
         assert run_tests.allow_extra_args is False
+        properties = run_tests.to_openai_schema()["function"]["parameters"]["properties"]
+        assert "runner" not in properties
+        assert "extra_args" not in properties
+        assert {"target", "timeout"}.issubset(properties)
+
+
+def test_public_test_tool_keeps_explicit_runner_controls():
+    from opencollab_eval.verification.run_tests import RunTestsTool
+
+    properties = RunTestsTool().to_openai_schema()["function"]["parameters"]["properties"]
+
+    assert {"runner", "extra_args", "target", "timeout"}.issubset(properties)

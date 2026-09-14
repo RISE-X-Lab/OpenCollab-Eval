@@ -18,3 +18,17 @@ parser-backed passing targets; failed overlapping runs invalidate older proof.
 `verification_records` retains the actual command, runner, target, exit code and
 verification outcome for candidate comparison. Empty, collection-only, skipped,
 truncated and mismatched-target output cannot produce passing evidence.
+
+Runner discovery and execution explicitly enter the environment's declared
+workspace, including when container shell initialization selects another
+directory. Absolute pytest paths are made relative to that same workspace
+before execution and proof matching, with their full paths and selectors
+preserved. Relative and absolute aliases invalidate the same previous proof
+after a failed rerun. Verification records retain the originally requested
+target, test command, and workspace. The workspace prefix remains separate from
+the command identity so independent candidate workspaces can compare the same
+test command.
+
+Headless tool schemas expose only usable options. Disabled runner overrides
+and extra flags remain rejected if supplied programmatically. An empty runner
+value requests automatic detection, just like an omitted runner.
