@@ -7,12 +7,14 @@ import re
 from pathlib import PurePosixPath
 from typing import Any
 
+from opencollab_eval.candidate_bytes import CANDIDATE_BYTE_BUDGET, MAX_CANDIDATE_FILE_BYTES
+
 TRUSTED_PATCH_EXTRACTION_SCHEMA = "opencollab.trusted_patch_extraction.v1"
 MAX_WORKSPACE_ARCHIVE_BYTES = 4 * 1024 * 1024 * 1024
 MAX_WORKSPACE_EXTRACTED_BYTES = 8 * 1024 * 1024 * 1024
 MAX_WORKSPACE_FILE_BYTES = 2 * 1024 * 1024 * 1024
 MAX_WORKSPACE_ARCHIVE_ENTRIES = 1_000_000
-MAX_TRUSTED_PATCH_BYTES = 8 * 1024 * 1024
+MAX_TRUSTED_PATCH_BYTES = CANDIDATE_BYTE_BUDGET.patch_bytes
 
 _OBJECT_ID_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
@@ -334,7 +336,6 @@ def _trusted_patch_extraction_shape_valid(
         "extracted_byte_limit": MAX_WORKSPACE_EXTRACTED_BYTES,
         "file_byte_limit": MAX_WORKSPACE_FILE_BYTES,
         "entry_limit": MAX_WORKSPACE_ARCHIVE_ENTRIES,
-        "patch_byte_limit": MAX_TRUSTED_PATCH_BYTES,
     }
     if any(value.get(key) != expected for key, expected in expected_limits.items()):
         return False
@@ -350,7 +351,12 @@ def _trusted_patch_extraction_shape_valid(
         return False
     if value["workspace_extracted_bytes"] > MAX_WORKSPACE_EXTRACTED_BYTES:
         return False
-    if value["patch_bytes"] > MAX_TRUSTED_PATCH_BYTES:
+    recorded_patch_limit = value.get("patch_byte_limit")
+    if (
+        not _nonnegative_int(recorded_patch_limit)
+        or not 0 < recorded_patch_limit <= MAX_CANDIDATE_FILE_BYTES
+        or value["patch_bytes"] > min(recorded_patch_limit, MAX_TRUSTED_PATCH_BYTES)
+    ):
         return False
     return isinstance(value.get("patch_sha256"), str) and bool(
         _SHA256_RE.fullmatch(value["patch_sha256"])

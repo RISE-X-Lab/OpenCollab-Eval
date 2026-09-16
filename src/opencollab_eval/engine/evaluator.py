@@ -12,7 +12,6 @@ Ref:
 from __future__ import annotations
 
 import asyncio
-import json
 import operator
 import os
 import shlex as shlex
@@ -30,6 +29,7 @@ from opencollab.environments import (
 )
 from opencollab.tools import Tool, builtin_tools
 
+from opencollab_eval.candidate_bytes import CANDIDATE_BYTE_BUDGET, encode_candidate_jsonl
 from opencollab_eval.engine.async_runtime import (
     add_exception_note,
     await_owned_operation,
@@ -150,7 +150,7 @@ DEFAULT_EXECUTION_CLEANUP_TIMEOUT = 60.0
 MAX_TASK_ID_BYTES = 240
 RESULT_TEMP_DIRECTORY = ".opencollab-results-tmp"
 MAX_LEGACY_RESULT_TEMP_ARTIFACTS = 256
-MAX_RESULT_RECORD_BYTES = 64 * 1024 * 1024
+MAX_RESULT_RECORD_BYTES = CANDIDATE_BYTE_BUDGET.jsonl_line_bytes
 MAX_RESULTS_FILE_BYTES = 512 * 1024 * 1024
 MAX_TASK_HARNESS_ARTIFACT_PATHS = 256
 MAX_TASK_HARNESS_ARTIFACT_PATH_BYTES = 32 * 1024
@@ -573,7 +573,7 @@ def save_results(results: list[EvalResult], output_path: str) -> None:
             }
             if result.checkpoint_result is not None:
                 record["checkpoint_result"] = result.checkpoint_result
-            line = (json.dumps(record) + "\n").encode("utf-8")
+            line = encode_candidate_jsonl(record, patch_key="patch")
             if len(line) > MAX_RESULT_RECORD_BYTES:
                 raise ValueError(f"evaluation result record exceeds {MAX_RESULT_RECORD_BYTES} bytes")
             total_bytes += len(line)

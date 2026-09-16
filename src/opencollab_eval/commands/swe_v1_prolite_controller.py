@@ -15,6 +15,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from opencollab_eval.candidate_bytes import candidate_byte_environment
 from opencollab_eval.commands import _swe_eval_layer_integrity as _integrity
 from opencollab_eval.commands import swe_local_runner_transport as _local_transport
 from opencollab_eval.commands import swe_v1_prolite_report as _p
@@ -436,7 +437,8 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
     remote_command = (
         "env "
         + remote_path
-        + "PYTHONPATH="
+        + " ".join(f"{key}={shlex.quote(value)}" for key, value in candidate_byte_environment().items())
+        + " PYTHONPATH="
         + shlex.quote(remote_pythonpath)
         + " "
         + shlex.quote(remote_python)

@@ -306,6 +306,7 @@ def main():
         "max_steps": max_steps,
         "max_task_starts": max_task_starts,
         "max_eval_attempts": max_eval_attempts,
+        "eval_container_bind_timeout": eval_container_bind_timeout,
         "eval_only": eval_only,
         **candidate_isolation_summary(candidate_isolation),
         "eval_dir_name": eval_dir_name,

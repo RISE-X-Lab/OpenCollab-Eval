@@ -1,5 +1,4 @@
 """Small, pure helpers for SWE-bench prediction/metric records."""
-
 from __future__ import annotations
 
 import hashlib
@@ -14,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
 
+from opencollab_eval.candidate_bytes import CANDIDATE_BYTE_BUDGET, MAX_CANDIDATE_FILE_BYTES, validate_candidate_read
 from opencollab_eval.engine.eval_candidate_projection import (
     candidate_projection_failure_valid,
     candidate_projection_valid,
@@ -31,10 +31,10 @@ from opencollab_eval.engine.swe_test_evidence import target_evidence_passed
 from opencollab_eval.engine.swe_test_plan_contract import validated_test_plan_kind
 
 _SHA256_RE = re.compile(r"[0-9a-fA-F]{64}\Z")
-MAX_JSONL_LINE_BYTES = 64 * 1024 * 1024
-MAX_JSONL_RETAINED_BYTES = 128 * 1024 * 1024
+MAX_JSONL_LINE_BYTES = CANDIDATE_BYTE_BUDGET.jsonl_line_bytes
+MAX_JSONL_RETAINED_BYTES = MAX_CANDIDATE_FILE_BYTES
 MAX_JSONL_RETAINED_ROWS = 10_000
-MAX_JSONL_SCAN_BYTES = 256 * 1024 * 1024
+MAX_JSONL_SCAN_BYTES = MAX_CANDIDATE_FILE_BYTES
 MAX_JSON_DOCUMENT_BYTES = 16 * 1024 * 1024
 SUBMISSION_INTEGRITY_PROVEN = "proven"
 SUBMISSION_INTEGRITY_LEGACY = "legacy_missing_fields"
@@ -180,6 +180,7 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
                     raise RecordInputFormatError(
                         f"JSONL record must be an object: {path}"
                     )
+                validate_candidate_read(value, RecordInputLimitError)
                 line_size = len(line)
                 rows.append((line_size, value))
                 retained_bytes += line_size

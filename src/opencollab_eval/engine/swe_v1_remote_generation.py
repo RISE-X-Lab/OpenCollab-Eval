@@ -324,7 +324,7 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
         "openhands"
         if workflow == "openhands-external"
         else "single-agent"
-        if workflow == "single-agent"
+        if workflow in {"single-agent", "single2"}
         else "workflow"
     )
     env.update(

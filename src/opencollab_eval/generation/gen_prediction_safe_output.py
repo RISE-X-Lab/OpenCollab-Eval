@@ -12,6 +12,7 @@ import time
 import uuid
 from pathlib import Path
 
+from opencollab_eval.candidate_bytes import encode_candidate_jsonl
 from opencollab_eval.engine.async_runtime import add_exception_note
 from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid
 from opencollab_eval.safe_files import (
@@ -469,7 +470,7 @@ def output_paths_collide(first: Path, second: Path) -> bool:
 
 
 def _append_jsonl_durable(path: Path, row: dict) -> None:
-    payload = (json.dumps(row, ensure_ascii=False) + "\n").encode("utf-8")
+    payload = encode_candidate_jsonl(row)
     if len(payload) > MAX_OUTPUT_JSONL_BYTES:
         raise OSError(f"output JSONL row exceeds byte limit: {path}")
     fd, _created = _open_regular_file(

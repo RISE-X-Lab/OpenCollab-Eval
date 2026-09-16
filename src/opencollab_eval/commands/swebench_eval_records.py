@@ -16,6 +16,7 @@ import time
 import unicodedata
 from pathlib import Path, PureWindowsPath
 
+from opencollab_eval.candidate_bytes import CandidateByteLimitError, validate_candidate_record
 from opencollab_eval.engine import swe_eval_records as swe_records
 from opencollab_eval.engine.swe_eval_record_identity import direct_payload_task_id
 from opencollab_eval.engine.swe_eval_records import (
@@ -147,6 +148,10 @@ def read_jsonl(path: Path) -> list[dict]:
             raise RecordInputFormatError(f"invalid JSONL record in {path}") from exc
         if not isinstance(value, dict):
             raise RecordInputFormatError(f"JSONL record must be an object: {path}")
+        try:
+            validate_candidate_record(value)
+        except CandidateByteLimitError as exc:
+            raise RecordInputLimitError(str(exc)) from exc
         rows.append(value)
     return rows
 

@@ -30,6 +30,7 @@ def _isolated_solver_snapshot(monkeypatch):
     monkeypatch.setattr(gp, "restore_solver_runtime_dependencies", lambda *a, **k: None)
     monkeypatch.setattr(gp, "remove_solver_runtime_dependencies", lambda *a, **k: None)
     monkeypatch.setattr(gp, "container_image_id", lambda container_id: "sha256:" + "8" * 64)
+    monkeypatch.setattr(gp, "prepare_testbed_environment", lambda container_id: None)
     evidence = gp.SolverGitSnapshot(
         anonymous_head="a" * 40,
         base_tree="b" * 40,
@@ -544,9 +545,9 @@ def test_staging_validation_failure_does_not_strand_container(monkeypatch, tmp_p
 
     owner_path = gp.container_owner_path(tmp_path, "name")
     owner = json.loads(owner_path.read_text(encoding="utf-8"))
-    # Validation failed before a pending record was written, so teardown must
-    # still be allowed to remove the active container.
-    assert owner["state"] == "active"
+    # A completed candidate that exceeds the serialization budget retains its
+    # owned workspace for an explicit capacity recovery.
+    assert owner["state"] == "kept"
     assert not list((tmp_path / ".opencollab" / "pending_outputs").glob("*.json"))
     owner["owner_pid"] = 2**30
     owner["owner_start_identity"] = "proc:dead"
@@ -559,8 +560,8 @@ def test_staging_validation_failure_does_not_strand_container(monkeypatch, tmp_p
     )
 
     assert gp.recover_generation_state(tmp_path) is True
-    assert removed == ["cid"]
-    assert not owner_path.exists()
+    assert removed == []
+    assert owner_path.exists()
 
 
 def test_recovery_promotes_durable_candidate_after_owner_upgrade_crash(

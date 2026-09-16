@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from opencollab_eval.candidate_bytes import candidate_byte_environment
 from opencollab_eval.commands.swe_v1_prolite_common import _redacted
 from opencollab_eval.commands.swe_v1_prolite_config import (
     local_http_ok,
@@ -110,6 +111,7 @@ def local_runner_command(args: Any, owner_nonce: str) -> tuple[list[str], dict[s
         owner_nonce,
     ]
     environment = dict(os.environ)
+    environment.update(candidate_byte_environment())
     environment["PYTHONPATH"] = str(runtime_repo / "src")
     path_entries = [str(entry) for entry in getattr(args, "remote_path_entry", [])]
     if "/" in remote_python:
