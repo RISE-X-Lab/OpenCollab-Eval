@@ -11,7 +11,8 @@ from opencollab_eval.engine.swe_v1_remote_core import *
 from opencollab_eval.engine.swe_v1_remote_health import http_health  # noqa: F401
 from opencollab_eval.engine.swe_v1_remote_state import *
 from opencollab_eval.patch_diff import *
-from opencollab_eval.runtime_config import effective_generation_limits, resolve_generation_environment
+from opencollab_eval.runtime_config import resolve_generation_environment
+from opencollab_eval.runtime_config import runtime_identity_limits as identity_limits
 
 
 def now():
@@ -260,7 +261,7 @@ def latest_pair(run_dir, task):
 
 
 def generation_runtime_identity():
-    limits = effective_generation_limits(budget=budget, max_steps=max_steps, environment=effective_workflow_env())
+    limits = identity_limits(workflow, budget, max_steps, effective_workflow_env())
     identity = {
         "budget": limits[0],
         "invocation_id": invocation_id,
@@ -397,7 +398,6 @@ def historical_generation_identity_status(prediction, metric, task):
     ):
         return "interrupted_verified"
     return "invalid"
-
 
 
 def completed_generation_identity(prediction, metric, task, *, require_submission_integrity=True):

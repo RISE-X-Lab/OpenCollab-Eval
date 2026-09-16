@@ -7,6 +7,11 @@ import sys
 from types import SimpleNamespace
 
 from opencollab import OpenCollab
+from swe_v1_prolite_runner_test_support import (
+    _proven_submission_integrity,
+    _remote_namespace,
+    _write_jsonl,
+)
 from test_gen_prediction_single_agent import (
     RecordingRuntime,
     _agent_config,
@@ -261,6 +266,80 @@ def test_remote_runner_accepts_single2_terminal_stream_compatibility() -> None:
     assert remote_state.workflow_env == {
         "OPENCOLLAB_TRUST_STREAMED_OUTPUT_ON_TERMINAL_MISMATCH": "1"
     }
+
+
+def test_single2_remote_identity_accepts_the_effective_generated_limits(
+    tmp_path,
+) -> None:
+    authorized = 1_000_000_000_000
+    default_namespace = _remote_namespace(
+        tmp_path / "default",
+        workflow="single-agent",
+        workflow_env={"OPENCOLLAB_UNBOUNDED_LIMITS": "true"},
+        budget=authorized,
+        max_steps=authorized,
+    )
+    assert default_namespace["generation_runtime_identity"]()["budget"] is None
+    assert default_namespace["generation_runtime_identity"]()["max_steps"] is None
+
+    namespace = _remote_namespace(
+        tmp_path / "single2",
+        workflow="single2",
+        workflow_env={"OPENCOLLAB_UNBOUNDED_LIMITS": "true"},
+        budget=authorized,
+        max_steps=authorized,
+    )
+    identity = namespace["generation_runtime_identity"]()
+
+    assert identity["budget"] == authorized
+    assert identity["max_steps"] == authorized
+
+    task = "task-1"
+    run_dir = namespace["base_run_dir"] / task
+    patch = "diff --git a/src/a.py b/src/a.py\n+fixed\n"
+    patch_sha = namespace["patch_sha"](patch)
+    _write_jsonl(
+        run_dir / "predictions.jsonl",
+        [
+            {
+                "instance_id": task,
+                "record_id": "single2-record",
+                "patch_sha256": patch_sha,
+                "model_patch": patch,
+                "model_name_or_path": namespace["model_name"],
+                "workflow": "single2",
+            }
+        ],
+    )
+    _write_jsonl(
+        run_dir / "metrics.jsonl",
+        [
+            {
+                "instance_id": task,
+                "record_id": "single2-record",
+                "patch_sha256": patch_sha,
+                "workflow_status": "done",
+                "runner_returncode": 0,
+                "model_name": namespace["model_name"],
+                "workflow": "single2",
+                "budget": authorized,
+                "max_steps": authorized,
+                **_proven_submission_integrity(patch),
+                **identity,
+            }
+        ],
+    )
+
+    completed, prediction, metric, pairing = namespace["generation_done"](
+        run_dir,
+        task,
+    )
+
+    assert completed is True
+    assert prediction["record_id"] == "single2-record"
+    assert metric["budget"] == authorized
+    assert metric["max_steps"] == authorized
+    assert pairing == "record_id"
 
 
 def test_remote_summary_records_eval_container_bind_timeout_at_source() -> None:

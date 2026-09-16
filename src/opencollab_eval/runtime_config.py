@@ -7,6 +7,9 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+SINGLE2_AUTHORIZED_BUDGET = 1_000_000_000_000
+SINGLE2_AUTHORIZED_MAX_STEPS = 1_000_000_000_000
+
 
 def resolve_runtime_config(
     workspace: str | Path,
@@ -47,3 +50,31 @@ def effective_generation_limits(*, budget, max_steps, environment=None):
     if unbounded not in {"", "0", "false", "1", "true"}:
         raise ValueError("OPENCOLLAB_UNBOUNDED_LIMITS must be true or false")
     return (None, None) if unbounded in {"1", "true"} else (budget, max_steps)
+
+
+def resolve_agent_generation_limits(profile, max_steps, budget):
+    """Restore Single2's explicit evaluation limits after unbounded parsing."""
+    if profile not in {"single", "single2"}:
+        raise ValueError(f"unsupported single-agent profile: {profile}")
+    if profile == "single2":
+        return (
+            SINGLE2_AUTHORIZED_MAX_STEPS if max_steps is None else max_steps,
+            SINGLE2_AUTHORIZED_BUDGET if budget is None else budget,
+        )
+    return max_steps, budget
+
+
+def runtime_identity_limits(workflow, budget, max_steps, environment=None):
+    """Return the limits that the selected generator records in its metric."""
+    effective_budget, effective_max_steps = effective_generation_limits(
+        budget=budget,
+        max_steps=max_steps,
+        environment=environment,
+    )
+    if workflow == "single2":
+        effective_max_steps, effective_budget = resolve_agent_generation_limits(
+            "single2",
+            effective_max_steps,
+            effective_budget,
+        )
+    return effective_budget, effective_max_steps
