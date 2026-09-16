@@ -108,6 +108,38 @@ def test_non_pytest_single_batch_receives_controller_timeout(
     assert (output / "f2p.batch_001.exit").read_text(encoding="utf-8").strip() == "124"
 
 
+def test_large_non_pytest_command_crosses_process_boundaries_via_stdin(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        plans, "validated_test_plan_kind", lambda *args, **kwargs: "synthetic"
+    )
+    output = tmp_path / "eval-output"
+    output.mkdir()
+    command = "printf large-command-ok; : '" + ("x" * 300_000) + "'"
+    script = plans.prolite_test_plan_script(
+        {"commands": [command], "proofs": [{}]},
+        "p2p",
+        "nonce",
+        controller_timeout=5,
+    ).replace("/eval_output", str(output))
+
+    result = subprocess.run(
+        ["bash", "-s"],
+        input=script,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stdout
+    assert (output / "p2p.batch_001.exit").read_text(encoding="utf-8").strip() == "0"
+    assert "large-command-ok" in (output / "p2p.batch_001.log").read_text(
+        encoding="utf-8"
+    )
+
+
 def test_shared_deadline_rejects_nonfinite_environment_value(
     monkeypatch, tmp_path: Path
 ) -> None:

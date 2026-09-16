@@ -93,17 +93,20 @@ def _kill_and_reap(process):
 
 try:
     timeout = float(sys.argv[1])
-    command = bytes.fromhex(sys.argv[2]).decode("utf-8")
+    command = bytes.fromhex(sys.stdin.read()).decode("utf-8")
 except (IndexError, TypeError, ValueError, OverflowError, UnicodeDecodeError):
     raise SystemExit(124)
 if timeout <= 0 or timeout != timeout or timeout == float("inf") or timeout == float("-inf"):
     raise SystemExit(124)
 try:
-    process = subprocess.Popen(["bash", "-c", command], start_new_session=True)
+    process = subprocess.Popen(
+        ["bash"], stdin=subprocess.PIPE, text=True, start_new_session=True
+    )
 except OSError:
     raise SystemExit(127)
 try:
-    returncode = process.wait(timeout=timeout)
+    process.communicate(command, timeout=timeout)
+    returncode = process.returncode
 except subprocess.TimeoutExpired:
     if _kill_and_reap(process):
         raise SystemExit(124)
@@ -136,11 +139,9 @@ def _bounded_command_execution(command: str, timeout_argument: str) -> str:
         # and make every invocation fail before launching the child.
         + " "
         + timeout_argument
-        + " "
-        # Encode the shell command as hex before crossing the nested
-        # ``bash -c`` boundary.  Quoting the raw command twice would strip
-        # quotes from commands such as ``python3 -c '...'``.
-        + shlex.quote(command.encode("utf-8").hex())
+        + " <<'OPENCOLLAB_COMMAND_HEX'\n"
+        + command.encode("utf-8").hex()
+        + "\nOPENCOLLAB_COMMAND_HEX"
     )
 
 
@@ -661,6 +662,10 @@ def prolite_test_plan_script(
                 if shared_deadline
                 else shlex.quote(str(timeout_value)),
             )
+        command_script = f"{stem}.run.sh"
+        delimiter = f"OPENCOLLAB_BATCH_COMMAND_{evidence_prefix}_{index:03d}"
+        while delimiter in execution_command:
+            delimiter += "_X"
         batch_prefix = []
         if stop_after_cleanup_failure:
             batch_prefix.extend(
@@ -689,8 +694,12 @@ def prolite_test_plan_script(
         lines.extend(
             [
                 f"printf '%s\\n' {shlex.quote(command)} > {stem}.command",
+                f"cat > {command_script} <<'{delimiter}'",
+                execution_command,
+                delimiter,
+                f"chmod 0500 {command_script}",
                 *batch_prefix,
-                f"bash -c {shlex.quote(execution_command)} > {stem}.log 2>&1",
+                f"bash {command_script} > {stem}.log 2>&1",
                 "batch_status=$?",
                 f"printf '%s\\n' \"$batch_status\" > {stem}.exit",
                 f"cat {stem}.log",
