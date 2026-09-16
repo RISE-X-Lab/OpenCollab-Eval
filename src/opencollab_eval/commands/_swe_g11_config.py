@@ -275,6 +275,11 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
     workflow = str(args.workflow or "").strip()
     workflow_env = normalize_workflow_env(getattr(args, "workflow_env", ()))
     workflow_env_values = dict(item.split("=", 1) for item in workflow_env)
+    if workflow == "single2":
+        workflow_env_values.setdefault(
+            "OPENCOLLAB_TRUST_STREAMED_OUTPUT_ON_TERMINAL_MISMATCH",
+            "1",
+        )
     if llm_provider == "openai" and not workflow_env_values.get("OPENCOLLAB_LLM_USER_AGENT"):
         workflow_env_values["OPENCOLLAB_LLM_USER_AGENT"] = default_openai_user_agent()
     if workflow_env_values.get("OPENCOLLAB_WIRE_PROTOCOL") == "responses":

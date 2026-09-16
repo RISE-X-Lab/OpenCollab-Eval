@@ -41,6 +41,7 @@ def isolated_solver_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(gpw, "_retained_candidates_for_test", retained, raising=False)
     monkeypatch.setattr(gpw, "retain_failed_candidate", lambda *a, **k: retained.append(k))
     monkeypatch.setattr(gpw.gp, "container_image_id", lambda container_id: "sha256:" + "8" * 64)
+    monkeypatch.setattr(gpw.gp, "prepare_testbed_environment", lambda container_id: None)
     evidence = SimpleNamespace(
         as_dict=lambda: {
             "enabled": True,

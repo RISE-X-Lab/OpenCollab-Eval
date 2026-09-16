@@ -9,6 +9,8 @@ import os
 import stat
 from pathlib import Path
 
+from opencollab_eval.candidate_bytes import CandidateByteLimitError, encode_candidate_jsonl, encode_pending_candidate
+
 from .gen_prediction_constants import (
     MAX_JSONL_SCAN_LINE_BYTES,
     MAX_OUTPUT_JSONL_BYTES,
@@ -16,7 +18,6 @@ from .gen_prediction_constants import (
     PENDING_OUTPUT_SCHEMA_VERSION,
 )
 from .gen_prediction_docker import (
-    _encode_owner,
     _owner_directory,
     _read_owner,
     _replace_owner,
@@ -124,9 +125,17 @@ def persist_pending_output(
     _validate_pending_candidate(candidate)
     instance_id, record_id, _patch_sha = _row_output_identity(prediction)
     path = pending_output_path(run_dir, instance_id, record_id)
-    payload = _encode_owner(candidate)
-    if len(payload) > MAX_PENDING_OUTPUT_BYTES:
-        raise ValueError("pending output exceeds its byte limit")
+    try:
+        payload = encode_pending_candidate(candidate)
+        if len(payload) > MAX_PENDING_OUTPUT_BYTES:
+            raise CandidateByteLimitError("pending output exceeds its byte limit")
+    except CandidateByteLimitError as budget_error:
+        # Keep the completed owned workspace when serialization exceeds budget.
+        current_owner = _read_owner(owner_path)
+        if current_owner is None or current_owner.get("owner_token") != owner["owner_token"]:
+            raise RuntimeError("candidate owner changed during byte-limit preservation") from budget_error
+        _replace_owner(owner_path, current_owner, {**current_owner, "state": "kept"})
+        raise
 
     # Validate and durably create the candidate before changing the owner state.
     # If validation, size checks, or the atomic create fail, leaving the owner
@@ -323,7 +332,7 @@ def _find_committed_identity(fd: int, expected: dict) -> bool:
 
 
 def _append_jsonl_durable_once(path: Path, row: dict) -> bool:
-    payload = (json.dumps(row, ensure_ascii=False) + "\n").encode("utf-8")
+    payload = encode_candidate_jsonl(row)
     if len(payload) > MAX_OUTPUT_JSONL_BYTES:
         raise OSError(f"output JSONL row exceeds byte limit: {path}")
     fd, _created = _open_regular_file(

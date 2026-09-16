@@ -4,6 +4,7 @@
 
 import shutil
 
+from opencollab_eval.candidate_bytes import encode_candidate_jsonl, validate_candidate_read
 from opencollab_eval.engine.swe_eval_records import SUBMISSION_INTEGRITY_PROVEN
 from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid, reusable_intrinsic_role_failures
 from opencollab_eval.engine.swe_v1_remote_core import *
@@ -49,6 +50,7 @@ def iter_jsonl(path, max_scan_bytes=None, max_rows=None):
                 raise RecordInputFormatError(f"invalid JSONL record in {path}") from exc
             if not isinstance(value, dict):
                 raise RecordInputFormatError(f"JSONL record must be an object: {path}")
+            validate_candidate_read(value, RecordInputLimitError)
             yield len(line), value
     finally:
         context.__exit__(None, None, None)
@@ -93,7 +95,7 @@ def write_json(path, value):
 
 
 def append_jsonl(path, value):
-    payload = (json.dumps(value, ensure_ascii=False) + "\n").encode("utf-8")
+    payload = encode_candidate_jsonl(value)
     if len(payload) > MAX_JSONL_LINE_BYTES:
         raise RecordInputLimitError(f"JSONL row exceeds byte limit: {path}")
     fd = open_regular_file(path, os.O_RDWR | os.O_APPEND)

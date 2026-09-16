@@ -273,6 +273,7 @@ async def generate(
     generation_image_id = None
     try:
         generation_image_id = gp.container_image_id(cid)
+        gp.prepare_testbed_environment(cid)
         effective_model_settings = workflow_model_settings(cfg)
         solver_runtime = gp.stash_solver_runtime_dependencies(cid, str(instance.get("base_commit") or ""))
         snapshot = gp.prepare_solver_git_snapshot(

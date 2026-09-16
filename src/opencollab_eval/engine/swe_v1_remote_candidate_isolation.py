@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from opencollab_eval.candidate_bytes import MAX_CANDIDATE_FILE_BYTES, validate_candidate_record
 from opencollab_eval.engine.swe_eval_records import (
     prediction_patch,
     row_record_id,
@@ -20,7 +21,7 @@ from opencollab_eval.safe_files import (
 )
 
 SCHEMA = "opencollab.swe_eval_only_candidate_isolation.v1"
-MAX_CANDIDATE_RECORD_BYTES = 256 * 1024 * 1024
+MAX_CANDIDATE_RECORD_BYTES = MAX_CANDIDATE_FILE_BYTES
 MAX_ISOLATION_MANIFEST_BYTES = 1024 * 1024
 
 
@@ -41,6 +42,7 @@ def _jsonl_rows(payload: bytes, *, label: str) -> list[dict[str, Any]]:
             raise ValueError(  # noqa: TRY004 - all candidate document failures share one contract
                 f"candidate isolation {label} row must be an object"
             )
+        validate_candidate_record(value)
         rows.append(value)
     if not rows:
         raise ValueError(f"candidate isolation {label} is empty")

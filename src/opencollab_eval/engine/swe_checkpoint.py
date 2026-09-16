@@ -10,9 +10,9 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from opencollab_eval.candidate_bytes import CANDIDATE_BYTE_BUDGET
 from opencollab_eval.engine.async_runtime import add_exception_note
 from opencollab_eval.engine.environment import (
-    PROCESS_OUTPUT_CAPTURE_BYTES,
     ExecResult,
     ExecutionEnvironment,
 )
@@ -47,7 +47,7 @@ CHECKPOINT_PATCH = "checkpoint.worktree.patch"
 CHECKPOINT_META = "checkpoint.worktree.json"
 DEFAULT_CHECKPOINT_ABORT_TIMEOUT = 2.0
 MAX_FORCED_CHECKPOINT_ABORT_TIMEOUT = 2.0
-MAX_CHECKPOINT_PATCH_BYTES = PROCESS_OUTPUT_CAPTURE_BYTES + 64 * 1024
+MAX_CHECKPOINT_PATCH_BYTES = CANDIDATE_BYTE_BUDGET.patch_bytes
 MAX_CHECKPOINT_META_BYTES = 1024 * 1024
 MAX_CHECKPOINT_TEMP_CLEANUP_SECONDS = 10.0
 MAX_FAILED_RESTORE_PROOF_SECONDS = 10.0

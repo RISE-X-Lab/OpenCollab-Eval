@@ -238,6 +238,10 @@ fi
 if [[ "${OPENCOLLAB_SWE_RESUME:-false}" == "true" ]]; then
   checkpoint_args+=(--resume)
 fi
+agent_profile_args=()
+if [[ "$WORKFLOW" == "single2" ]]; then
+  agent_profile_args+=(--agent-profile single2)
+fi
 
 if [[ "$SWE_GENERATOR" == "single-agent" ]]; then
   python3 -u -m opencollab_eval.generation.gen_prediction \
@@ -248,6 +252,7 @@ if [[ "$SWE_GENERATOR" == "single-agent" ]]; then
     --model-name "$MODEL_NAME" \
     --budget "$SWE_BUDGET" \
     --max-steps "$SWE_MAX_STEPS" \
+    ${agent_profile_args[@]+"${agent_profile_args[@]}"} \
     ${llm_args[@]+"${llm_args[@]}"} \
     --timeout "$SWE_TIMEOUT" 2>&1 | tee -a "$RUN/generation_logs/$IID.log"
 elif [[ "$SWE_GENERATOR" == "openhands" ]]; then

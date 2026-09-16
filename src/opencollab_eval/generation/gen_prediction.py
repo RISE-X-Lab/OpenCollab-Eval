@@ -69,8 +69,11 @@ from . import (
 )
 from .container_quiescence import container_image_id, require_container_quiescence
 from .gen_prediction_agent import (
+    SINGLE2_AUTHORIZED_BUDGET,
+    SINGLE2_AUTHORIZED_MAX_STEPS,
     build_task,
     load_instance,
+    resolve_agent_generation_limits,
     run_agent,
 )
 from .gen_prediction_config import (
@@ -131,6 +134,7 @@ from .gen_prediction_docker import (
     container_owner_path,
     finalize_container_ownership,
     mark_container_kept,
+    prepare_testbed_environment,
     recover_stale_container_owners,
     remove_container,
     remove_container_and_clear_marker,
@@ -331,6 +335,12 @@ def main() -> None:
     ap.add_argument("--top-p", type=float)
     ap.add_argument("--max-output-tokens", type=int)
     ap.add_argument("--context-window", type=int)
+    ap.add_argument(
+        "--agent-profile",
+        choices=("single", "single2"),
+        default="single",
+        help="Standalone OpenCollab profile selected by the single-agent generator",
+    )
     ap.add_argument("--model-name", default=None, help="model_name_or_path in predictions")
     ap.add_argument("--max-steps", type=int, default=40)
     ap.add_argument("--budget", type=int, default=1_000_000)
@@ -342,6 +352,11 @@ def main() -> None:
             max_steps=args.max_steps,
             budget=args.budget,
             timeout=args.timeout,
+        )
+        args.max_steps, args.budget = resolve_agent_generation_limits(
+            args.agent_profile,
+            args.max_steps,
+            args.budget,
         )
     except ValueError as exc:
         ap.error(str(exc))
@@ -393,6 +408,7 @@ def main() -> None:
     trusted_baseline = None
     try:
         generation_image_id = container_image_id(cid)
+        prepare_testbed_environment(cid)
         solver_runtime = stash_solver_runtime_dependencies(cid, str(instance.get("base_commit") or ""))
         snapshot = prepare_solver_git_snapshot(
             cid,
@@ -410,6 +426,7 @@ def main() -> None:
                 args.budget,
                 args.timeout,
                 artifact_root=run_dir,
+                profile=args.agent_profile,
             )
         )
         metrics.update(
@@ -424,6 +441,8 @@ def main() -> None:
                 "max_steps": args.max_steps,
             }
         )
+        if args.agent_profile == "single2":
+            metrics["agent_profile"] = args.agent_profile
         bind_llm_transport(metrics)
         metrics["generation_image_id"] = generation_image_id
         metrics["solver_git_snapshot"] = snapshot.as_dict()
@@ -458,7 +477,7 @@ def main() -> None:
             model_name=model_name,
             patch=patch,
             metrics=metrics,
-            workflow_name="single-agent",
+            workflow_name=("single2" if args.agent_profile == "single2" else "single-agent"),
         )
         pending_required = bool(patch.strip())
         if pending_required:
