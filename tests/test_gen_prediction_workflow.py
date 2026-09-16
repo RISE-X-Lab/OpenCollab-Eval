@@ -121,9 +121,17 @@ def test_build_extras_omits_hidden_data_for_blind_validation():
 
 def test_validation_council_defaults_to_blind_validation():
     assert gpw._blind_validation_default("validation-council-solve", None) is True
+    assert gpw._blind_validation_default("validation-council-lean-official-v1", None) is True
     assert gpw._blind_validation_default("generate_review_fix", None) is False
     assert gpw._blind_validation_default("validation-council-solve", False) is False
     assert gpw._blind_validation_default("generate_review_fix", True) is True
+
+
+def test_lean_validation_council_uses_official_direct_activation_path():
+    assert {
+        "validation-council-solve",
+        "validation-council-lean-official-v1",
+    } <= gpw._DIRECT_ACTIVATION_WORKFLOWS
 
 
 def test_bundled_workflows_use_public_hyphenated_names():
