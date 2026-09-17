@@ -47,7 +47,23 @@ def direct_payload_alias_value(
 
 def direct_payload_task_id(payload: dict[str, Any] | None) -> str | None:
     """Canonicalize ``task``/``instance_id``/``task_id`` aliases."""
-    return direct_payload_alias_value(payload, _DIRECT_TASK_ID_FIELDS)
+    return task_identity_alias_value(payload, _DIRECT_TASK_ID_FIELDS)
+
+
+def task_identity_alias_value(
+    payload: dict[str, Any] | None, fields: tuple[str, ...],
+) -> str | None:
+    """Keep anonymous legacy solver IDs separate from benchmark instance IDs."""
+    if isinstance(payload, dict):
+        instance_id = payload.get("instance_id")
+        task_id = payload.get("task_id")
+        if (
+            isinstance(instance_id, str) and instance_id
+            and re.fullmatch(r"solver-[0-9a-f]{32}", instance_id) is None
+            and isinstance(task_id, str) and re.fullmatch(r"solver-[0-9a-f]{32}", task_id)
+        ):
+            fields = tuple(field for field in fields if field != "task_id")
+    return direct_payload_alias_value(payload, fields)
 
 
 def direct_payload_patch_sha(payload: dict[str, Any] | None) -> str | None:
@@ -93,4 +109,5 @@ __all__ = [
     "direct_payload_task_id",
     "sha256_equal",
     "strict_integer",
+    "task_identity_alias_value",
 ]

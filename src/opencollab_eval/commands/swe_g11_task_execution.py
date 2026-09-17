@@ -129,6 +129,7 @@ def task_command(
             str(config.proxy_env_file),
         ]
     for option, value in (
+        ("--scoring-adapter-registry", getattr(config, "scoring_adapter_registry", "")),
         ("--llm-model", config.llm_model),
         ("--context-window", config.context_window),
         ("--temperature", config.temperature),

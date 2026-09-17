@@ -26,6 +26,7 @@ from opencollab_eval.engine.swe_eval_record_identity import (
     direct_payload_task_id,  # noqa: F401
     sha256_equal,
     strict_integer,  # noqa: F401
+    task_identity_alias_value,
 )
 from opencollab_eval.engine.swe_test_evidence import target_evidence_passed
 from opencollab_eval.engine.swe_test_plan_contract import validated_test_plan_kind
@@ -74,7 +75,6 @@ def open_regular_binary(path: Path) -> Iterator[BinaryIO]:
     nofollow = getattr(os, "O_NOFOLLOW", 0)
     if nofollow:
         flags |= nofollow
-
     try:
         before = path.lstat()
     except FileNotFoundError:
@@ -83,7 +83,6 @@ def open_regular_binary(path: Path) -> Iterator[BinaryIO]:
         raise UnsafeRecordInputError(f"cannot inspect record input {path}") from exc
     if not stat.S_ISREG(before.st_mode):
         raise UnsafeRecordInputError(f"record input is not a regular file: {path}")
-
     try:
         fd = os.open(path, flags)
     except FileNotFoundError:
@@ -213,7 +212,7 @@ def prediction_patch(row: dict[str, Any] | None) -> str:
     return str(row.get("model_patch") or row.get("patch") or "")
 
 def row_task_id(row: dict[str, Any] | None) -> str:
-    return direct_payload_alias_value(row, ("instance_id", "task_id", "id")) or ""
+    return task_identity_alias_value(row, ("instance_id", "task_id", "id")) or ""
 
 
 def row_record_id(row: dict[str, Any] | None) -> str:

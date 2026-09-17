@@ -115,6 +115,11 @@ def resolve_eval_timeout(value: Any = None) -> Any:
     return eval_timeout
 
 
+def resolve_scoring_adapter_registry():
+    """Read the active scoring configuration for installed and direct callers."""
+    return cfg.get("scoring_adapter_registry")
+
+
 ACTIVE_CHILD_PGIDS: set[int] = set()
 ACTIVE_FIFO_PATHS: set[pathlib.Path] = set()
 RUNNER_LOCK_FD: int | None = None
@@ -263,6 +268,10 @@ def configure(config: dict[str, Any]) -> None:
     if missing:
         raise ValueError("missing remote runner configuration: " + ", ".join(missing))
     cfg = dict(config)
+    from opencollab_eval.engine.swe_eval_scoring_adapters import configured_registry_path
+
+    scoring_registry = configured_registry_path(cfg.get("scoring_adapter_registry"))
+    cfg["scoring_adapter_registry"] = str(scoring_registry) if scoring_registry else ""
     remote_api_environment = (
         read_remote_api_environment(remote_api_env_file)
         if remote_api_env_file and not requested_eval_only

@@ -101,6 +101,7 @@ class ParallelConfig:
     runtime_tree_sha256: str = ""
     max_technical_recoveries: int = 0
     agent_profile: str | None = None
+    scoring_adapter_registry: str = ""
 
 
 @dataclass
@@ -262,6 +263,9 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
             raise ValueError("pass --remote-base or configure --remote-eval-work-root or OPENCOLLAB_SWE_EVAL_WORK_ROOT")
         remote_base = f"{remote_eval_work_root.rstrip('/')}/{run_id}"
     remote_runtime_repo = args.remote_runtime_repo or f"{remote_base}/_runtime/repo"
+    scoring_registry = str(getattr(args, "scoring_adapter_registry", "") or "")
+    if scoring_registry and not Path(scoring_registry).is_absolute():
+        raise ValueError("--scoring-adapter-registry must be an absolute worker path")
     output_dir = args.output_dir or (REPO / "docs" / "monitoring" / run_id)
     session_prefix = args.session_prefix or run_id
     max_workers = max(1, args.max_workers)
@@ -366,6 +370,7 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
         output_dir=Path(output_dir),
         remote_base=remote_base,
         remote_runtime_repo=remote_runtime_repo,
+        scoring_adapter_registry=scoring_registry,
         model_name=model_name,
         llm_model=llm_model,
         llm_provider=llm_provider,
@@ -463,6 +468,8 @@ def _expected_summary_identity(
         expected["openhands_command_sha256"] = _openhands_command_sha256(getattr(config, "openhands_command", ""))
     if config.runtime_tree_sha256:
         expected["runtime_tree_sha256"] = config.runtime_tree_sha256
+    if getattr(config, "scoring_adapter_registry", ""):
+        expected["scoring_adapter_registry"] = config.scoring_adapter_registry
     if overrides:
         expected.update(overrides)
     return expected

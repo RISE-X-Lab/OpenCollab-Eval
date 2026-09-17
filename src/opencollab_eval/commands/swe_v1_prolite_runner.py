@@ -63,6 +63,11 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--remote-root", default=DEFAULT_REMOTE_ROOT, help="Worker evaluation and trusted dataset root")
     parser.add_argument("--remote-runtime-repo", default="", help="Worker directory receiving the runtime source tree")
+    parser.add_argument(
+        "--scoring-adapter-registry",
+        default=os.environ.get("OPENCOLLAB_EVAL_SCORING_ADAPTER_REGISTRY", ""),
+        help="Absolute worker path to an external official-scoring adapter registry",
+    )
     parser.add_argument("--run-id", default="", help="Run-scoped identity used in reports and ownership records")
     parser.add_argument("--base-run-dir", default="", help="Worker directory for this bounded slice")
     parser.add_argument("--start-index", type=int, default=26, help="One-based first dataset row")
@@ -205,6 +210,8 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
         help="Validate configuration and selection without running tasks",
     )
     args = parser.parse_args(argv)
+    if args.scoring_adapter_registry and not Path(args.scoring_adapter_registry).is_absolute():
+        parser.error("--scoring-adapter-registry must be an absolute worker path")
 
     if args.eval_only and args.parent_output_dir is None:
         parser.error("--eval-only requires --parent-output-dir")

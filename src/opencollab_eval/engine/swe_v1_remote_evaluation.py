@@ -3,6 +3,7 @@
 # ruff: noqa: E501, F403, F405
 
 from opencollab_eval.engine import swe_v1_remote_cleanup as remote_cleanup
+from opencollab_eval.engine.swe_eval_scoring_adapters import prepare_scoring_row
 from opencollab_eval.engine.swe_v1_candidate_go_dependencies import (
     candidate_added_go_modules,
 )
@@ -28,6 +29,8 @@ from opencollab_eval.engine.swe_v1_remote_state import *
 def eval_for_task_once(row, patch_selection=None):
     from opencollab_eval.engine.native_progress_watch import record_stage
 
+    row = prepare_scoring_row(row, resolve_scoring_adapter_registry())
+    scoring_adapter_receipt = row.scoring_adapter_receipt
     record_stage(base_run_dir / row["instance_id"], "scoring")
     task = row["instance_id"]
     run_dir = base_run_dir / task
@@ -217,6 +220,7 @@ def eval_for_task_once(row, patch_selection=None):
     }
     for name, value in plan_inputs.items():
         write_json(input_dir / name, value)
+    write_json(input_dir / "scoring_adapter_receipt.json", scoring_adapter_receipt)
     controller_path = input_dir / "opencollab_pytest_controller.py"
     atomic_write_bytes(input_dir / "opencollab_pytest_proof.py", prolite_pytest_proof_plugin_source().encode("utf-8"))
     atomic_write_bytes(controller_path, prolite_pytest_controller_source().encode("utf-8"))
@@ -582,6 +586,7 @@ def eval_for_task_once(row, patch_selection=None):
             "test_patch_log_tail": test_patch_log_tail,
         },
     }
+    report["scoring_adapter"] = scoring_adapter_receipt
     write_json(report_path, {task: report})
     summary = {
         "schema": "opencollab.prolite_direct_eval.v2",
@@ -611,6 +616,7 @@ def eval_for_task_once(row, patch_selection=None):
         "runtime_dependency_identities": runtime_dependency_identities,
         "tests_status": report["tests_status"],
     }
+    summary["scoring_adapter"] = scoring_adapter_receipt
     write_json(summary_path, summary)
     return {
         "status": "eval_done" if not technical_error else "technical_eval_failed",
@@ -623,6 +629,7 @@ def eval_for_task_once(row, patch_selection=None):
 
 
 def eval_for_task(row):
+    row = prepare_scoring_row(row, resolve_scoring_adapter_registry())
     return eval_for_task_with_retries(
         row,
         eval_for_task_once,

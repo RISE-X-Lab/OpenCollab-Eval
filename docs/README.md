@@ -16,6 +16,7 @@ design, and test records document the implementation behind those guides.
 | Choose the correct command | [CLI reference](cli-reference.md) |
 | Understand components and dependencies | [Architecture](architecture.md) |
 | Understand trusted results and failure states | [Evaluation integrity](evaluation-integrity.md) |
+| Configure external official-scoring adapters | [Scoring adapters](scoring-adapters.md) |
 | Diagnose a failed run | [Troubleshooting](troubleshooting.md) |
 | Publish a validated 100-task comparison | [Final report contract](final-report.md) |
 

@@ -159,6 +159,7 @@ def prepare_runtime(config: ParallelConfig) -> str:
             str(config.proxy_env_file),
         ]
     for option, value in (
+        ("--scoring-adapter-registry", getattr(config, "scoring_adapter_registry", "")),
         ("--llm-model", config.llm_model),
         ("--context-window", config.context_window),
         ("--temperature", config.temperature),
@@ -671,6 +672,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--remote-base", default="")
     parser.add_argument("--remote-eval-work-root", default=DEFAULT_EVAL_WORK_ROOT)
     parser.add_argument("--remote-runtime-repo", default="")
+    parser.add_argument(
+        "--scoring-adapter-registry",
+        default=os.environ.get("OPENCOLLAB_EVAL_SCORING_ADAPTER_REGISTRY", ""),
+        help="Absolute worker path to an external official-scoring adapter registry",
+    )
     parser.add_argument("--model-name", default=DEFAULT_MODEL_NAME)
     parser.add_argument("--llm-model", default=os.environ.get("OPENCOLLAB_SWE_LLM_MODEL", ""))
     parser.add_argument(

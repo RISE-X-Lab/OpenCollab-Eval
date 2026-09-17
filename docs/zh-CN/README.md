@@ -15,6 +15,7 @@
 | 选择正确的命令 | [CLI 参考](cli-reference.md) |
 | 了解组件与依赖关系 | [架构](architecture.md) |
 | 了解可信结果与失败状态 | [评测完整性](evaluation-integrity.md) |
+| 配置外部正式评分适配 | [评分适配](scoring-adapters.md) |
 | 诊断失败的运行 | [故障排查](troubleshooting.md) |
 | 发布经过验证的 100 任务对比结果 | [最终报告契约](final-report.md) |
 
