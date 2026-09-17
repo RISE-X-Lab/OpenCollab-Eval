@@ -57,7 +57,9 @@ def records(path):
 def native_sources(config, state):
     """Read the registered generator trajectory while retaining the observation cursor."""
     if "native_workflow_sources" in config:
-        return [(Path(path), "native") for path in config["native_workflow_sources"]]
+        sources = [(Path(path), "native") for path in config["native_workflow_sources"]]
+        sources.extend((Path(path), "stream") for path in config.get("model_progress_sources", []))
+        return sources
     catalog = state.setdefault("native_source_catalog", {})
     path = Path(config["output"]) / "native-progress-owner.json"
     try:
@@ -68,7 +70,9 @@ def native_sources(config, state):
             catalog.update(signature=signature, paths=owner.get("native_progress_sources", []))
     except FileNotFoundError:
         pass
-    return [(Path(path), "native") for path in catalog.get("paths", [])]
+    sources = [(Path(path), "native") for path in catalog.get("paths", [])]
+    sources.extend((Path(path), "stream") for path in config.get("model_progress_sources", []))
+    return sources
 
 
 def latest_progress(config, started_epoch, now=None, state=None):
@@ -87,7 +91,39 @@ def latest_progress(config, started_epoch, now=None, state=None):
         sources.extend((p, "tool") for p in Path(config["run"]).glob("agent-*/trajectory.jsonl"))
     for path, kind in sources:
         for row in incremental_records(path, offsets):
-            if kind == "model":
+            if kind == "stream":
+                if (
+                    str(path) == config.get("shared_model_progress_source")
+                    and row.get("progress_id") != config.get("model_progress_id")
+                ):
+                    continue
+                waits = state.setdefault("provider_fault_waits", {})
+                call = row.get("call")
+                if row.get("event") == "provider_error":
+                    status = row.get("original_status")
+                    end = row.get("epoch")
+                    proven_error = type(status) is int and status >= 400 or status is None and row.get("error_type")
+                    if (
+                        call and proven_error and isinstance(end, (int, float))
+                        and math.isfinite(end) and started_epoch <= end <= clock()
+                    ):
+                        waits[call] = {
+                            "phase": "provider_failure_waiting", "confirmed": True,
+                            "epoch": row.get("epoch"), "http_status": status,
+                            "error_type": row.get("error_type"), "error_code": row.get("error_code"),
+                        }
+                    continue
+                if row.get("event") not in {"model_content", "tool_arguments", "model_completed"}:
+                    continue
+                if row.get("event") != "model_completed":
+                    chars = row.get("content_chars")
+                    if type(chars) is not int or chars <= 0:
+                        continue
+                end = row.get("epoch")
+                event_id = row.get("call")
+                if call in waits and isinstance(end, (int, float)) and end >= waits[call]["epoch"]:
+                    waits.pop(call)
+            elif kind == "model":
                 if row.get("event") != "completed" or not isinstance(row.get("call"), int):
                     continue
                 try:
@@ -101,7 +137,7 @@ def latest_progress(config, started_epoch, now=None, state=None):
                 event_id = row["call"]
             elif kind == "native" and row.get("type") == "llm_call":
                 payload = row.get("payload")
-                if not isinstance(payload, dict) or not payload.get("model") or "finish_reason" not in payload:
+                if not isinstance(payload, dict) or not payload.get("model") or not payload.get("finish_reason"):
                     continue
                 if not {"content", "tool_calls"}.issubset(payload):
                     continue
@@ -118,7 +154,12 @@ def latest_progress(config, started_epoch, now=None, state=None):
             if isinstance(end, (float, int)) and math.isfinite(end) and latest["epoch"] < end <= clock():
                 latest = {
                     "epoch": end,
-                    "kind": "model_completed" if kind == "model" or row.get("type") == "llm_call" else "tool_completed",
+                    "kind": (
+                        row["event"] if kind == "stream"
+                        else "model_completed" if kind == "model" or row.get("type") == "llm_call"
+                        else "tool_completed"
+                    ),
+                    "phase": "tool" if row.get("type") == "tool_exec" else "generation",
                     "event_id": event_id,
                     "source": str(path),
                 }
@@ -192,6 +233,7 @@ def observe(config, record, now=None):
     record["progress"] = progress
     record["no_progress_seconds"] = max(0, now - progress["epoch"])
     record["observed_epoch"] = now
+    record["activity_phase"] = progress.get("phase", "generation")
     return record["no_progress_seconds"] >= float(config.get("no_progress_timeout_seconds", 43200))
 
 
@@ -203,7 +245,7 @@ def stop_recheck_state(config, started_epoch):
         os.getpid()
     ):
         return saved
-    return {"started_epoch": started_epoch}
+    return {"started_epoch": started_epoch, "generation_identity": process_identity(os.getpid()), "phase": "generating"}
 
 
 async def run_with_stop_request(operation, config, started_epoch, decision):
@@ -211,13 +253,15 @@ async def run_with_stop_request(operation, config, started_epoch, decision):
     task = asyncio.create_task(operation)
     request_path = Path(config["output"]) / "no-progress-stop.json"
     interval = float(config.get("progress_poll_seconds", 5))
-    probe = {"started_epoch": started_epoch}
+    probe = stop_recheck_state(config, started_epoch)
     role_probe = {}
     try:
         while True:
             done, _ = await asyncio.wait({task}, timeout=interval)
             if done:
                 return task.result()
+            stalled = observe(config, probe)
+            save(Path(config["output"]) / "native-progress-status.json", probe)
             role_sources = [path for path, kind in native_sources(config, role_probe) if kind == "native"]
             role_probe = provider_wait_watchdog.scan(
                 role_sources,
@@ -230,7 +274,7 @@ async def run_with_stop_request(operation, config, started_epoch, decision):
                 ),
             )
             save(Path(config["output"]) / "provider-wait-status.json", role_probe)
-            if role_probe["pause_candidates"]:
+            if config.get("stop_stalled_role") and role_probe["pause_candidates"]:
                 provider_wait = role_probe["pause_candidates"][0]
                 request = {
                     "requested_epoch": time.time(),
@@ -253,8 +297,10 @@ async def run_with_stop_request(operation, config, started_epoch, decision):
                     pass
                 raise EvaluationNoProgressTimeout("Evaluation paused after one role had no complete model event")
             request = read(request_path)
-            if request is None:
+            if request is None and not stalled:
                 continue
+            if request is None:
+                request = {"requested_epoch": time.time(), "reason": "evaluation_no_progress"}
             checkpoint = stop_recheck_state(config, started_epoch)
             if checkpoint.get("observed_epoch", -1) > probe.get("observed_epoch", -1):
                 probe = checkpoint
@@ -266,13 +312,16 @@ async def run_with_stop_request(operation, config, started_epoch, decision):
                 stopped_epoch=time.time(),
                 progress=probe["progress"],
                 no_progress_seconds=probe["no_progress_seconds"],
+                provider_fault_waits=probe.get("provider_fault_waits", {}),
             )
             save(Path(config["output"]) / "no-progress-decision.json", decision)
             task.cancel()
             try:
-                await task
+                result = await task
             except asyncio.CancelledError:
                 pass
+            else:
+                return result
             raise EvaluationNoProgressTimeout("Evaluation stopped after no completed model or tool event")
     finally:
         if not task.done():
@@ -321,6 +370,18 @@ def monitor(config, record, state_path, child=None):
                 record.update(phase="generation_exited", returncode=receipt["returncode"], generation_exit=receipt)
             save(state_path, record)
             return record
+        if config.get("native_generator_owner"):
+            owner = read(output / "native-progress-owner.json", {})
+            if owner.get("generation_completed_epoch") is not None:
+                record.update(owner)
+                record["generation_duration_seconds"] = max(
+                    0, owner["generation_completed_epoch"] - record["started_epoch"],
+                )
+                save(state_path, record)
+                return record
+        wall_deadline = config.get("generation_wall_deadline_epoch")
+        if wall_deadline is not None and time.time() >= wall_deadline:
+            raise subprocess.TimeoutExpired(getattr(child, "args", []), max(0, wall_deadline - record["started_epoch"]))
         stalled = observe(config, record)
         request = read(request_path)
         if stalled and request is None:

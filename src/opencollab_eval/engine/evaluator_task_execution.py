@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 import time
 from collections.abc import Awaitable, Callable
@@ -74,7 +75,9 @@ class StageController:
         self._deadline = deadline
         self._state = state
 
-    def remaining_time(self) -> float:
+    def remaining_time(self) -> float | None:
+        if self._deadline == math.inf:
+            return None
         remaining = self._deadline - time.monotonic()
         if remaining <= 0:
             raise CallerTimeoutError
@@ -239,7 +242,8 @@ async def run_session_or_workflow(
         facade.build_repository_map(state.env),
     )
     prompt = f"{config.prompt}\n\n{repo_map}" if repo_map else config.prompt
-    execution_task = replace(state.task, timeout=controller.remaining_time())
+    remaining = controller.remaining_time()
+    execution_task = replace(state.task, timeout=state.task.timeout if remaining is None else remaining)
     if config.workflow is None:
         state.session = await facade._run_single_session(
             task=execution_task,

@@ -26,6 +26,9 @@ from opencollab_eval.engine.swe_v1_remote_state import *
 
 
 def eval_for_task_once(row, patch_selection=None):
+    from opencollab_eval.engine.native_progress_watch import record_stage
+
+    record_stage(base_run_dir / row["instance_id"], "scoring")
     task = row["instance_id"]
     run_dir = base_run_dir / task
     eval_dir = run_dir / eval_dir_name

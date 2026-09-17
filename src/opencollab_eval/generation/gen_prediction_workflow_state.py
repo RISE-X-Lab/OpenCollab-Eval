@@ -29,7 +29,9 @@ def _role_states(trajectory_path: str | None) -> tuple[list[dict], list[dict]]:
         return [], []
     directory = Path(trajectory_path).parent
     roles, errors = [], []
-    for path in sorted(directory.glob("*.json")):
+    paths = set(directory.glob("*.json"))
+    paths.update(path.with_suffix("") for path in directory.glob("*.json.journal"))
+    for path in sorted(paths):
         if re.fullmatch(r"\d+_.+\.json", path.name) is None:
             continue
         try:

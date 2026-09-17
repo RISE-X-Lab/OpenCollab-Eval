@@ -49,6 +49,8 @@ import uuid
 from pathlib import Path, PureWindowsPath
 
 from opencollab_eval.engine.async_runtime import run_with_bounded_shutdown
+from opencollab_eval.engine.native_progress_watch import add_arguments as add_progress_arguments
+from opencollab_eval.engine.native_progress_watch import configure_arguments as configure_progress_arguments
 from opencollab_eval.engine.swe_eval_records import (
     MAX_JSONL_SCAN_BYTES,
     open_regular_binary,
@@ -346,8 +348,10 @@ def main() -> None:
     ap.add_argument("--budget", type=int, default=1_000_000)
     ap.add_argument("--timeout", type=float, default=900.0)
     ap.add_argument("--keep-container", action="store_true")
+    add_progress_arguments(ap)
     args = ap.parse_args()
     try:
+        configure_progress_arguments(args)
         args.max_steps, args.budget, args.timeout = validate_generation_limits(
             max_steps=args.max_steps,
             budget=args.budget,

@@ -15,6 +15,8 @@ from opencollab_eval.benchmarks.swe_batch_pro import load_identity_key, load_jso
 from opencollab_eval.commands.eval_batch import _eval, _result_counts
 from opencollab_eval.commands.swe_final_report import add_arguments as add_final_report_arguments
 from opencollab_eval.commands.swe_final_report import run_from_args as run_final_report
+from opencollab_eval.engine.native_progress_watch import add_arguments as add_progress_arguments
+from opencollab_eval.engine.native_progress_watch import configure_arguments as configure_progress_arguments
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -64,6 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--temperature", type=float, default=0.2, help="Model sampling temperature")
     run_parser.add_argument("--top-p", type=float, help="Optional nucleus-sampling value")
     run_parser.add_argument("--agent-profile", choices=("single", "single2"), help="OpenCollab agent profile")
+    add_progress_arguments(run_parser)
     final_parser = subparsers.add_parser(
         "final-report",
         help="Build a final comparison report from two terminal SWE fact reports",
@@ -114,6 +117,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 0
     if args.command == "run":
+        try:
+            configure_progress_arguments(args)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
         if not args.model or not args.provider:
             raise SystemExit("run requires --model and --provider (or matching OPENCOLLAB_* variables)")
         results = asyncio.run(

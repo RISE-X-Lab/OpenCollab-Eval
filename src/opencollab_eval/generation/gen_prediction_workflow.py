@@ -31,6 +31,7 @@ import argparse
 import hashlib
 import math
 import os
+import tempfile
 import uuid
 from dataclasses import fields
 from pathlib import Path
@@ -39,6 +40,9 @@ from opencollab.environments import attach_container
 
 from opencollab_eval import workflows as bundled_workflows
 from opencollab_eval.engine.evaluator import EvalTask, run_eval_task  # noqa: E402
+from opencollab_eval.engine.native_progress_watch import add_arguments as add_progress_arguments
+from opencollab_eval.engine.native_progress_watch import configure_arguments as configure_progress_arguments
+from opencollab_eval.engine.native_progress_watch import generation_timing
 from opencollab_eval.engine.provider_failures import (  # noqa: E402
     summarize_terminal_provider_failures,
 )
@@ -255,14 +259,11 @@ async def generate(
     iid = instance["instance_id"]
     name = gp.unique_container_name("oc-wf-", iid)
     run_dir = Path(args.output).parent
-    from opencollab_eval.engine.native_progress_watch import register_generator
-
-    register_generator(run_dir)
     cid = gp.start_container_with_marker(
         image,
         name,
         run_dir,
-        temporary_directory=run_dir / "container-tmp" / name,
+        temporary_directory=Path(tempfile.gettempdir()) / "opencollab-container-tmp" / name,
     )
     print(f"Container: {cid}")
     patch = ""
@@ -410,6 +411,7 @@ async def generate(
             removed_validation_artifacts = []
             extraction_proof = None
         metrics = _result_metrics(result)
+        metrics.update(generation_timing(run_dir))
         metrics.update(stop_metrics)
         metrics["candidate_probe_eligible"] = outer_extraction_allowed
         metrics["original_workflow_error"] = original_error
@@ -668,8 +670,10 @@ def main() -> None:
         help="Unsupported in trusted host extraction mode; passing it is rejected",
     )
     ap.add_argument("--keep-container", action="store_true")
+    add_progress_arguments(ap)
     args = ap.parse_args()
     try:
+        configure_progress_arguments(args)
         (
             args.max_steps,
             args.budget,

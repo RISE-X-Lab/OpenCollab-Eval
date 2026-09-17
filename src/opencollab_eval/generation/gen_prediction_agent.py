@@ -14,6 +14,12 @@ from opencollab_eval.benchmarks.task_specification import (
     compose_task_specification,
 )
 from opencollab_eval.engine.native_failure_attribution import classify_failure
+from opencollab_eval.engine.native_progress_watch import (
+    generation_timing,
+    generation_wall_timeout,
+    guarded_agent,
+    timeout_seconds,
+)
 from opencollab_eval.engine.swe_eval_records import read_bounded_json
 from opencollab_eval.runtime_config import (
     SINGLE2_AUTHORIZED_BUDGET as SINGLE2_AUTHORIZED_BUDGET,
@@ -187,9 +193,15 @@ def _result_metrics(result: RunResult[str]) -> dict[str, Any]:
         or type(result.error).__name__
         in {"TransientProviderError", "APIError", "APIConnectionError", "APITimeoutError"}
     )
+    progress_stop = (
+        type(result.error).__name__ == "EvaluationNoProgressTimeout"
+        and type(result.error).__module__ == "opencollab_eval.engine.completed_progress_watch"
+    )
     failure_origin = (
         "oc"
         if not session_quiesced
+        else "evaluation_no_progress"
+        if progress_stop
         else ("evaluation_deadline" if values.get("outcome") == "timed_out" else "timeout_origin_unresolved")
         if timed_out
         else "provider_transport"
@@ -207,12 +219,13 @@ def _result_metrics(result: RunResult[str]) -> dict[str, Any]:
         or (
             result.status in {"stopped", "failed"}
             and not provider_failure
+            and not progress_stop
             and (not timed_out or values.get("outcome") == "completed")
         ),
         "runtime_outcome": values.get("outcome"),
         "agent_status": result.status,
         "agent_reason": result.reason,
-        "technical_interruption_recoverable": (_technical_interruption_recoverable(result.error)),
+        "technical_interruption_recoverable": progress_stop or _technical_interruption_recoverable(result.error),
         "session_phase": phase,
         "step_count": int(values.get("steps") or 0),
         "used_tokens": int(result.tokens or 0),
@@ -234,6 +247,15 @@ def _result_metrics(result: RunResult[str]) -> dict[str, Any]:
         metrics["error"] = str(error or result.reason or "agent execution failed")
     if values.get("agent_profile"):
         metrics["agent_profile"] = values["agent_profile"]
+    for key in ("no_progress_timeout", "evaluation_time_policy", "resume_snapshot"):
+        if key in values:
+            metrics[key] = values[key]
+    if progress_stop:
+        metrics.update(
+            error_type=type(result.error).__name__, error=str(result.error),
+            usage_complete=False, used_tokens_lower_bound=True,
+            usage_status="snapshot_counter_lower_bound_after_inactivity_stop",
+        )
     return metrics
 
 
@@ -316,21 +338,25 @@ async def run_agent(
         common = {
             "budget": budget,
             "max_steps": max_steps,
-            "timeout": timeout,
+            "timeout": generation_wall_timeout(timeout),
             "cleanup_timeout": AGENT_CANCELLATION_GRACE_SECONDS,
             "artifacts": artifact_dir,
             "trace": True,
         }
         if profile == "single2":
-            result = await client.agent2(task, **common)
+            operation = client.agent2(task, **common)
         else:
-            result = await client.agent(
+            operation = client.agent(
                 task,
                 name="swe_agent",
                 tools="coding",
                 **common,
                 **({"llm": owned_model} if owned_model is not None else {}),
             )
+        if timeout_seconds() is not None:
+            result = await guarded_agent(operation, artifact_root, artifact_dir)
+        else:
+            result = await operation
         metrics = _result_metrics(result)
     except Exception as exc:
         print(f"  agent: runtime failed with {type(exc).__name__}: {exc}")
@@ -371,5 +397,6 @@ async def run_agent(
             effective_max_steps=max_steps,
         )
     metrics["evaluation_model_configuration"] = model_configuration
+    metrics.update(generation_timing(artifact_root))
     print(f"  agent: steps={metrics['step_count']} tokens={metrics['used_tokens']}")
     return metrics

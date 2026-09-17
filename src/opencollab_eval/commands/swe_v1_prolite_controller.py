@@ -58,6 +58,7 @@ from opencollab_eval.commands.swe_v1_transport_recovery import (
     wait_for_remote_ownership_fact,
     wait_for_terminal_remote_summary,
 )
+from opencollab_eval.engine.native_progress_watch import controller_wall_timeout
 
 eval_only_reconciliation_reports = _p.eval_only_reconciliation_reports
 
@@ -226,8 +227,10 @@ def _validate_total_timeout(value: object) -> float:
     return timeout
 
 
-def _remaining_timeout(deadline: float) -> float:
+def _remaining_timeout(deadline: float | None) -> float:
     """Return remaining time in the controller's end-to-end wall-clock budget."""
+    if deadline is None:
+        return math.inf
     if not math.isfinite(deadline):
         raise subprocess.TimeoutExpired("remote runner", 0)
     remaining = deadline - time.monotonic()
@@ -289,7 +292,8 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
     eval_only = bool(getattr(args, "eval_only", False))
     remote_api_env_file = str(getattr(args, "remote_api_env_file", "") or "").strip()
     total_timeout = _validate_total_timeout(args.total_timeout)
-    completion_deadline = time.monotonic() + total_timeout
+    effective_timeout = controller_wall_timeout(total_timeout, normalize_workflow_env(args.workflow_env))
+    completion_deadline = time.monotonic() + effective_timeout if effective_timeout is not None else None
     try:
         if runner_transport == "local":
             preexisting = _local_transport.probe_local_execution_state(args)
@@ -523,7 +527,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
         stdout, stderr = _bounded_remote_communicate(
             proc,
             json.dumps(payload),
-            timeout=_remaining_timeout(completion_deadline),
+            timeout=None if completion_deadline is None else _remaining_timeout(completion_deadline),
             poll_interval=REMOTE_COMPLETION_POLL_SECONDS,
             poll_callback=poll_remote_runner,
         )
