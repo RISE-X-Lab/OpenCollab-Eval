@@ -18,6 +18,45 @@ GENERATION_INTEGRITY_FIELDS = (
 )
 
 
+def handled_revoked_role_failures(metric):
+    """Require concrete, matched native revocation observations for every role failure."""
+    import re
+
+    from opencollab_eval.engine.native_failure_attribution import classify_failure
+
+    failures = metric.get("agent_failures") or []
+    if not failures:
+        return True
+    if not isinstance(failures, (list, tuple)):
+        return False
+    counts = {}
+    for failure in failures:
+        if (not isinstance(failure, dict) or failure.get("exception_type") != "RuntimeError"
+                or failure.get("status_code") is not None
+                or failure.get("provider_error_type") is not None
+                or classify_failure(record=failure)["origin"] != "oc"):
+            return False
+        label = failure.get("label")
+        if not isinstance(label, str) or not label:
+            return False
+        slug = re.sub(r"[^A-Za-z0-9._-]+", "-", label.rsplit("/", 1)[-1]).strip("-._")[:40]
+        if not slug:
+            return False
+        counts[slug] = counts.get(slug, 0) + 1
+    states = metric.get("workflow_role_states") or []
+    if not isinstance(states, list) or any(not isinstance(state, dict) for state in states):
+        return False
+    reason = "RuntimeError: Execution environment has been revoked. Session cannot continue."
+    for slug, count in counts.items():
+        matches = [state for state in states
+                   if re.fullmatch(r"\d+_" + re.escape(slug) + r"\.json", str(state.get("artifact") or ""))]
+        if (len(matches) != count or len({state["artifact"] for state in matches}) != count or any(
+            state.get("phase") != "error" or state.get("terminal_reason") != reason for state in matches
+        )):
+            return False
+    return True
+
+
 def adopted_workflow_candidate(metric):
     """Recognize explicit delivery separately from the council's own verdict."""
     if not isinstance(metric, dict):
@@ -26,6 +65,13 @@ def adopted_workflow_candidate(metric):
     native = metric.get("runtime_state") or {}
     if not isinstance(output, dict) or not isinstance(native, dict):
         return False
+    origins = metric.get("workflow_role_failure_origins")
+    if origins is None:
+        origins = []
+    if not isinstance(origins, list) or any(
+        not isinstance(role, dict) or role.get("origin") != "oc" for role in origins
+    ):
+        return False
     diff_bytes = output.get("candidate_diff_bytes")
     return bool(
         metric.get("runtime_status") == "completed"
@@ -33,12 +79,11 @@ def adopted_workflow_candidate(metric):
         and metric.get("execution_quiesced") is True
         and not metric.get("error")
         and not metric.get("original_workflow_error")
-        and not metric.get("agent_failures")
+        and handled_revoked_role_failures(metric)
         and not metric.get("failure_exception_chain")
         and not metric.get("technical_failure")
         and not metric.get("provider_failure")
         and not metric.get("workflow_role_provider_failure")
-        and not metric.get("workflow_role_failure_origins")
         and not metric.get("workflow_role_observation_errors")
         and not metric.get("trajectory_verification_error")
         and not metric.get("wall_clock_timeout")
@@ -84,6 +129,8 @@ def adopted_candidate_metric_view(metric, patch):
         )
     }
     corrected.update(workflow_status="done", runner_returncode=0, failure_origin="none", oc_failure=False)
+    if metric.get("agent_failures"):
+        corrected["workflow_role_failures_tolerated"] = True
     return corrected
 
 
@@ -173,6 +220,10 @@ def generation_outcome_evidence(metric, patch):
         "technical_failure": technical,
         "technical_interruption_recoverable": metric.get("technical_interruption_recoverable", False),
         "origin_record_id": metric.get("origin_record_id", metric.get("record_id")),
+        **({field: metric[field] for field in (
+            "agent_failures", "workflow_role_failure_origins", "workflow_role_states",
+            "workflow_role_failures_tolerated"
+        ) if field in metric} if metric.get("agent_failures") else {}),
         **({"original_generation_projection": metric["original_generation_projection"]}
            if "original_generation_projection" in metric else {}),
     }

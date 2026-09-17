@@ -12,7 +12,9 @@ from opencollab_eval.engine.native_progress_watch import is_progress_stop
 from opencollab_eval.engine.swe_v1_generation_outcomes import adopted_workflow_candidate
 
 
-def workflow_candidate_delivered(result) -> bool:
+def workflow_candidate_delivered(result, *, role_states=None, observation_errors=None) -> bool:
+    if role_states is None and result.agent_failures:
+        role_states, observation_errors = _role_states(result.trajectory_path)
     return adopted_workflow_candidate({
         "workflow_result": result.workflow_result,
         "runtime_status": result.runtime_status,
@@ -20,6 +22,8 @@ def workflow_candidate_delivered(result) -> bool:
         "runtime_state": result.runtime_state,
         "execution_quiesced": result.execution_quiesced,
         "agent_failures": result.agent_failures,
+        "workflow_role_states": role_states,
+        "workflow_role_observation_errors": observation_errors,
         "error": result.error,
     })
 
@@ -73,6 +77,7 @@ def workflow_stop_metrics(result) -> dict:
     reason = result.runtime_reason
     output = result.workflow_result if isinstance(result.workflow_result, dict) else {}
     output_status = output.get("status")
+    roles, observation_errors = _role_states(result.trajectory_path)
     role_origins = []
     for failure in result.agent_failures:
         role_origins.append({"label": failure.get("label"), **classify_failure(record=failure)})
@@ -86,7 +91,9 @@ def workflow_stop_metrics(result) -> dict:
     if lifecycle_exception:
         status = "failed"
         reason = result.error
-    completed = status == "completed" and (output_status in {None, "done"} or workflow_candidate_delivered(result))
+    completed = status == "completed" and (output_status in {None, "done"} or workflow_candidate_delivered(
+        result, role_states=roles, observation_errors=observation_errors
+    ))
     # Older test and evaluator callers can omit the public runtime projection.
     if status is None:
         completed = not result.error and output_status in {None, "done"}
@@ -118,7 +125,6 @@ def workflow_stop_metrics(result) -> dict:
         origin = "evaluation_adapter"
     else:
         origin = "none"
-    roles, observation_errors = _role_states(result.trajectory_path)
     usage_complete = native.get("usage_complete", False)
     return {
         "agent_status": status,

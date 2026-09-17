@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 
+import pytest
+from swe_v1_prolite_runner_test_support import _remote_namespace
+
 from opencollab_eval.engine.swe_v1_go_failure_proof import (
     GO_TARGET_DISCOVERY_PREFIX,
     go_failure_proof_matches,
@@ -310,6 +313,27 @@ def test_candidate_production_source_build_failure_proves_target_failure():
         expected_command=command,
         observed_command=command,
     )
+
+
+@pytest.mark.parametrize("diagnostic", ["scanner/source.go", "scanner/unrelated.go", "dependency/source.go"])
+def test_installed_remote_namespace_retains_candidate_build_failure_proof(tmp_path, diagnostic):
+    namespace = _remote_namespace(tmp_path)
+    command = "exact discovery command"
+    package = "example.invalid/project/scanner"
+    proof = _dynamic_proof("TestScanner", candidate_source_paths=["scanner/source.go"])
+    events = [
+        {"ImportPath": package + " [" + package + ".test]", "Action": "build-output",
+         "Output": "# " + package + " [" + package + ".test]\n" + diagnostic + ":42:9: undefined: value\n"},
+        {"ImportPath": package + " [" + package + ".test]", "Action": "build-fail"},
+        {"Action": "output", "Package": package, "Output": "FAIL\t" + package + " [build failed]\n"},
+        {"Action": "fail", "Package": package},
+    ]
+    log = "\n".join([_discovery("./scanner", "TestScanner", "scanner/source_test.go"),
+                     *(json.dumps(event) for event in events)])
+    assert namespace["_plan_log_failure_proof_matches"](proof, log, "", command, command) is (
+        diagnostic == "scanner/source.go"
+    )
+    assert namespace["_GO_DIAGNOSTIC_RE"].pattern != namespace["_GO_PROOF_DIAGNOSTIC_RE"].pattern
 
 
 def test_legacy_dynamic_production_failure_requires_candidate_path():

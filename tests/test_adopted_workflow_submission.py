@@ -21,6 +21,7 @@ from opencollab_eval.engine.swe_eval_records import (
 from opencollab_eval.engine.swe_v1_generation_outcomes import (
     adopted_candidate_metric_view,
     adopted_candidate_report_view,
+    handled_revoked_role_failures,
 )
 from opencollab_eval.generation.gen_prediction_workflow import (
     _result_metrics,
@@ -78,6 +79,76 @@ def test_workflow_status_preserves_structured_advisory_gap():
         workflow_result={"status": "advisory_gap", "done_with_advisory_gap": True},
     )
     assert _workflow_status_for_result(result, result.patch) == "advisory_gap"
+
+
+def revoked_role_evidence():
+    return {
+        "agent_failures": [{"label": "candidate/verifier:r1", "exception_type": "RuntimeError",
+                            "status_code": None, "provider_error_type": None}],
+        "workflow_role_states": [{"artifact": "001_verifier-r1.json", "phase": "error",
+                                  "terminal_reason": "RuntimeError: Execution environment has been revoked. "
+                                                     "Session cannot continue."}],
+    }
+
+
+@pytest.mark.parametrize("case", ["generic", "provider", "malformed_status", "unknown", "wrong_role", "missing_state",
+                                  "duplicate", "mixed_generic", "other_exception", "nonerror"])
+def test_only_concrete_matched_role_revocation_can_be_tolerated(case):
+    evidence = revoked_role_evidence()
+    failure = evidence["agent_failures"][0]
+    state = evidence["workflow_role_states"][0]
+    if case == "generic":
+        state["terminal_reason"] = "RuntimeError: unexpected failure"
+    elif case == "provider":
+        failure["status_code"] = 524
+    elif case == "malformed_status":
+        failure["status_code"] = True
+    elif case == "unknown":
+        failure["provider_error_type"] = "unknown_error"
+    elif case == "wrong_role":
+        state["artifact"] = "001_other-role.json"
+    elif case == "missing_state":
+        evidence["workflow_role_states"] = []
+    elif case == "duplicate":
+        evidence["agent_failures"].append(dict(failure))
+        evidence["workflow_role_states"].append(dict(state))
+    elif case == "mixed_generic":
+        evidence["agent_failures"].append(dict(failure))
+        evidence["workflow_role_states"].append({**state, "artifact": "002_verifier-r1.json",
+                                                "terminal_reason": "RuntimeError: unknown cause"})
+    elif case == "other_exception":
+        failure["exception_type"] = "ValueError"
+    else:
+        state["phase"] = "stopped"
+    assert handled_revoked_role_failures(evidence) is False
+
+
+def test_adopted_candidate_can_deliver_after_concrete_internal_revocation(monkeypatch):
+    from opencollab_eval.generation import gen_prediction_workflow_state as observations
+
+    result = delivered_result()
+    evidence = revoked_role_evidence()
+    result.agent_failures = tuple(evidence["agent_failures"])
+    monkeypatch.setattr(observations, "_role_states", lambda *args: (evidence["workflow_role_states"], []))
+    metrics = workflow_stop_metrics(result)
+    assert metrics["failure_origin"] == "none" and metrics["oc_failure"] is False
+    assert metrics["workflow_role_failures_tolerated"] is True
+    assert metrics["workflow_role_failure_origins"][0]["origin"] == "oc"
+    assert metrics["workflow_role_states"] == evidence["workflow_role_states"]
+    assert _workflow_status_for_result(result, PATCH) == "done"
+    _, original = old_delivery_pair()
+    original.update(evidence)
+    view = adopted_candidate_metric_view(original, PATCH)
+    assert view["workflow_status"] == "done" and view["workflow_role_failures_tolerated"] is True
+    assert view["agent_failures"] == original["agent_failures"]
+    assert original["workflow_status"] == "incomplete"
+
+
+@pytest.mark.parametrize("origins", [["bad"], {}, {"origin": "oc"}])
+def test_corrupted_role_origin_records_remain_ineligible(origins):
+    _, metric = old_delivery_pair()
+    metric["workflow_role_failure_origins"] = origins
+    assert adopted_candidate_metric_view(metric, PATCH) is metric
 
 
 @pytest.mark.parametrize("case", ["unadopted", "empty", "boolean_bytes", "unknown_status", "caught_exception",
