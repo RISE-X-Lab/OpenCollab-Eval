@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import re
 import shlex
 import signal
@@ -20,10 +21,10 @@ from opencollab_eval.commands import _swe_eval_layer_integrity as _integrity
 from opencollab_eval.commands import swe_local_runner_transport as _local_transport
 from opencollab_eval.commands import swe_v1_prolite_report as _p
 from opencollab_eval.commands.swe_ssh_transport import with_liveness_options as _ssh_with_liveness_options
-from opencollab_eval.commands.swe_v1_parent_eval_lock import (
-    ParentEvalLock,  # noqa: F401
-    parent_eval_lock,  # noqa: F401
-    parent_report_lock,  # noqa: F401
+from opencollab_eval.commands.swe_v1_parent_eval_lock import (  # noqa: F401
+    ParentEvalLock,
+    parent_eval_lock,
+    parent_report_lock,
 )
 from opencollab_eval.commands.swe_v1_prolite_common import (
     LOCAL_SPAWN_SIGNALS,
@@ -59,6 +60,7 @@ from opencollab_eval.commands.swe_v1_transport_recovery import (
     wait_for_terminal_remote_summary,
 )
 from opencollab_eval.engine.native_progress_watch import controller_wall_timeout
+from opencollab_eval.engine.swe_eval_scoring_adapters import REGISTRY_ENV
 
 eval_only_reconciliation_reports = _p.eval_only_reconciliation_reports
 
@@ -73,12 +75,10 @@ def _row_eval_attempt_count(row: dict[str, Any]) -> int:
 
 def _install_local_abort_handlers() -> dict[signal.Signals, Any]:
     previous: dict[signal.Signals, Any] = {}
-
     def abort(signum: int, _frame: object) -> None:
         if signum == signal.SIGINT:
             raise KeyboardInterrupt
         raise SystemExit(128 + signum)
-
     for signum in LOCAL_SPAWN_SIGNALS:
         previous[signum] = signal.getsignal(signum)
         signal.signal(signum, abort)
@@ -151,6 +151,7 @@ def _remote_payload(
 ) -> dict[str, Any]:
     eval_only = bool(getattr(args, "eval_only", False))
     remote_api_env_file = str(getattr(args, "remote_api_env_file", "") or "").strip()
+    scoring_registry = getattr(args, "scoring_adapter_registry", None)
     return {
         "token": "" if eval_only or remote_api_env_file else get_proxy_token(args.proxy_env_file),
         "remote_api_env_file": remote_api_env_file,
@@ -162,6 +163,7 @@ def _remote_payload(
         "base_run_dir": args.base_run_dir,
         "workflow": args.workflow,
         "agent_profile": getattr(args, "agent_profile", None),
+        "scoring_adapter_registry": str(scoring_registry or os.environ.get(REGISTRY_ENV, "")),
         "workflow_env": normalize_workflow_env(args.workflow_env),
         "openhands_command": args.openhands_command,
         "openhands_empty_patch_rejections": max(0, args.openhands_empty_patch_rejections),
@@ -494,7 +496,6 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
         raise
     try:
         _restore_local_spawn_signals(spawn_signal_state)
-
         def recovered(summary: dict[str, Any], reason: str) -> dict[str, Any]:
             if not terminate_local_process_group(proc):
                 raise RuntimeError("remote summary completed but the local SSH process group did not quiesce")
@@ -507,7 +508,6 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             summary["remote_proxy"] = proxy_summary
             summary["runner_transport"] = "ssh"
             return summary
-
         def poll_remote_runner() -> None:
             observed = probe_remote_execution_state(
                 ssh_command=ssh_command,
@@ -755,8 +755,7 @@ def update_parent_fact_report(args: argparse.Namespace) -> dict[str, Any]:
                     expected_task,
                     expected_record_id,
                     expected_source_sha,
-                    # The eval hash is derived and optional in legacy
-                    # eval-only invocations; source remains the safe fallback.
+                    # Legacy eval-only rows may fall back to the source hash.
                     expected_eval_sha or expected_source_sha,
                 )
             }

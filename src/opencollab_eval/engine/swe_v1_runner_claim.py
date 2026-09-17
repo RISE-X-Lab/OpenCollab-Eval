@@ -22,6 +22,10 @@ def runner_claim_identity(config: dict[str, Any]) -> dict[str, Any]:
         "start_index": int(config.get("start_index") or 0),
         "limit": int(config.get("limit") or 0),
         "workflow": str(config.get("workflow") or ""),
+        **(
+            {"scoring_adapter_registry": str(config["scoring_adapter_registry"])}
+            if config.get("scoring_adapter_registry") else {}
+        ),
         "workflow_env": {str(key): str(value) for key, value in sorted((config.get("workflow_env") or {}).items())},
         "model_name": str(config.get("model_name") or ""),
         "llm_model": str(config.get("llm_model") or ""),

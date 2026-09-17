@@ -2,6 +2,7 @@
 
 # ruff: noqa: E501, F403, F405
 
+from opencollab_eval.engine.swe_eval_scoring_adapters import prepare_scoring_row
 from opencollab_eval.engine.swe_v1_remote_artifacts import *
 from opencollab_eval.engine.swe_v1_remote_commands import *
 from opencollab_eval.engine.swe_v1_remote_core import *
@@ -177,10 +178,11 @@ def main():
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 2
     selected = load_dataset(start_index, limit)
+    scoring_selected = [prepare_scoring_row(row, resolve_scoring_adapter_registry()) for row in selected]
     base_run_dir.mkdir(parents=True, exist_ok=True)
-    candidate_isolation = prepare_eval_only_candidate_isolation(selected)
+    candidate_isolation = prepare_eval_only_candidate_isolation(scoring_selected)
     result_rows = []
-    for offset, row in enumerate(selected, start_index):
+    for offset, (row, eval_row) in enumerate(zip(selected, scoring_selected, strict=True), start_index):
         task = row["instance_id"]
         if eval_only:
             run_dir = base_run_dir / task
@@ -232,7 +234,7 @@ def main():
         elif dry_run and gen.get("status") in {"would_generate", "generation_done"}:
             ev = {"status": "would_eval", "task": task}
         elif gen.get("status") in {"generation_done", "generation_candidate_captured"}:
-            ev = eval_for_task(row)
+            ev = eval_for_task(eval_row)
         else:
             ev = {
                 "status": "skipped_generation_not_ready",
@@ -251,6 +253,7 @@ def main():
                 "task_result": outcome,
                 "oc_failure": outcome["oc_failure"],
                 "candidate_official_resolved": outcome["candidate_official_resolved"],
+                "scoring_adapter": eval_row.scoring_adapter_receipt,
             }
         )
     generation_ok_statuses = {"generation_done", "generation_candidate_captured", "empty_patch", "intrinsic_unresolved"}
@@ -289,6 +292,7 @@ def main():
         "workflow": workflow,
         "agent_profile": agent_profile,
         "workflow_env": workflow_env,
+        "scoring_adapter_registry": str(resolve_scoring_adapter_registry() or ""),
         "openhands_command_sha256": openhands_command_sha256,
         "openhands_empty_patch_rejections": openhands_empty_patch_rejections,
         "max_empty_patch_retries": max_empty_patch_retries,

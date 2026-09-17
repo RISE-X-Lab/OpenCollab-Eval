@@ -267,6 +267,8 @@ def _remote_summary_expectation(payload: dict[str, Any]) -> dict[str, Any]:
     if payload.get("workflow") == "openhands-external":
         expected["openhands_empty_patch_rejections"] = max(0, int(payload["openhands_empty_patch_rejections"]))
         expected["openhands_command_sha256"] = hashlib.sha256(payload["openhands_command"].encode("utf-8")).hexdigest()
+    if payload.get("scoring_adapter_registry"):
+        expected["scoring_adapter_registry"] = payload["scoring_adapter_registry"]
     return expected
 
 

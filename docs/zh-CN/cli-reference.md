@@ -56,6 +56,12 @@ Pro-Lite 与并行运行器通过 `--workflow-env OPENCOLLAB_EVAL_NO_PROGRESS_TI
 | 证据限制 | `--max-task-starts`、`--max-eval-attempts`、`--checkpoint-interval`、`--eval-container-bind-timeout` |
 | 输出 | `--json-output`、`--markdown-output`、`--parent-output-dir` |
 | 维护 | `--dry-run`、`--eval-only`、`--no-sync-runtime`、`--expected-runtime-tree-sha256` |
+| 评分适配 | `--scoring-adapter-registry` |
+
+`--scoring-adapter-registry` 指定已安装在 worker 绝对路径下的外部登记文件。
+host 配置默认值为 `OPENCOLLAB_EVAL_SCORING_ADAPTER_REGISTRY`。
+[外部正式评分适配说明](scoring-adapters.md) 给出了登记格式、实际入口、
+runtime 打包方式与回执字段。
 
 `--eval-container-bind-timeout` 控制运行器等待 Docker 写出官方评测容器 ID
 的时长。默认值为 30 秒，可配置范围为 1 至 300 秒。该设置属于官方评测

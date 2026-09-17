@@ -87,6 +87,13 @@ official evaluation. The main option groups are shown below.
 | Evidence limits | `--max-task-starts`, `--max-eval-attempts`, `--checkpoint-interval`, `--eval-container-bind-timeout` |
 | Output | `--json-output`, `--markdown-output`, `--parent-output-dir` |
 | Maintenance | `--dry-run`, `--eval-only`, `--no-sync-runtime`, `--expected-runtime-tree-sha256` |
+| Scoring adaptation | `--scoring-adapter-registry` |
+
+`--scoring-adapter-registry` selects an external registry already installed at
+an absolute worker path. The host default is
+`OPENCOLLAB_EVAL_SCORING_ADAPTER_REGISTRY`. See
+[external official-scoring adapters](scoring-adapters.md) for the registry
+format, entrypoints, runtime packaging, and receipt fields.
 
 `--eval-container-bind-timeout` controls how long the runner waits for Docker
 to publish the official-evaluation container ID. Its default is 30 seconds and
