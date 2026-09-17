@@ -15,6 +15,7 @@ _TITLE = re.compile(
 )
 _CHINESE = re.compile(r"[\u3400-\u9fff]")
 _ZERO_SHA = "0" * 40
+_GITHUB_MERGE = re.compile(r"^Merge pull request #[1-9][0-9]* from \S+$")
 
 
 def _git_environment() -> dict[str, str]:
@@ -65,6 +66,27 @@ def commits_in_range(repository: Path, base: str, head: str) -> list[str]:
     return completed.stdout.split()
 
 
+def _commit_title_error(repository: Path, commit: str, subject: str) -> str | None:
+    error = validate_title(subject)
+    if error is None or not _GITHUB_MERGE.fullmatch(subject):
+        return error
+    completed = subprocess.run(
+        ["git", "--no-replace-objects", "show", "-s", "--format=%P%n%b", commit],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        env=_git_environment(),
+        text=True,
+    )
+    parents, _, body = completed.stdout.partition("\n")
+    if len(parents.split()) < 2:
+        return error
+    # GitHub stores the PR title in the merge message body. Validate it only
+    # for an actual merge; range mode still checks every introduced commit.
+    pr_title = next((line.strip() for line in body.splitlines() if line.strip()), "")
+    return validate_title(pr_title)
+
+
 def _arguments(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     source = parser.add_mutually_exclusive_group(required=True)
@@ -85,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             for commit in commits:
                 title = commit_subject(Path.cwd(), commit)
-                error = validate_title(title)
+                error = _commit_title_error(Path.cwd(), commit, title)
                 if error:
                     print(
                         f"::error::{error}. Commit {commit} has title {title!r}."
@@ -98,10 +120,14 @@ def main(argv: list[str] | None = None) -> int:
             if args.title is not None
             else commit_subject(Path.cwd(), args.commit)
         )
+        error = (
+            validate_title(title)
+            if args.title is not None
+            else _commit_title_error(Path.cwd(), args.commit, title)
+        )
     except (OSError, subprocess.CalledProcessError) as exc:
         print(f"::error::Unable to read commit title: {exc}")
         return 2
-    error = validate_title(title)
     if error:
         print(f"::error::{error}. Received {title!r}.")
         return 1

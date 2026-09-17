@@ -166,3 +166,57 @@ def test_range_mode_fails_when_git_history_is_missing(tmp_path):
 
     assert result.returncode == 2
     assert "Unable to read commit title" in result.stdout
+
+
+def _github_merge(repository: Path, *, branch_title: str, pr_title: str) -> str:
+    base = _git(repository, "rev-parse", "HEAD")
+    original_branch = _git(repository, "branch", "--show-current")
+    _git(repository, "checkout", "-b", "feature")
+    _git(repository, "commit", "--allow-empty", "-m", branch_title)
+    _git(repository, "checkout", original_branch)
+    _git(repository, "merge", "--no-ff", "feature", "-m", "Merge pull request #28 from org/feature", "-m", pr_title)
+    return base
+
+
+def test_github_merge_validates_its_pr_title_and_introduced_commits(tmp_path):
+    repository = _repository(tmp_path, _CLEAN_SNAPSHOT)
+    base = _github_merge(
+        repository,
+        branch_title="fix: \u4fee\u590d\u8bc4\u5206\u6267\u884c",
+        pr_title="fix(eval): \u4fee\u590d\u8bc4\u5206\u6267\u884c",
+    )
+    assert _run(repository, "--commit", "HEAD").returncode == 0
+    result = _run(repository, "--range", base, "HEAD")
+    assert result.returncode == 0
+    assert "2 commits" in result.stdout
+
+
+def test_github_merge_does_not_hide_invalid_branch_commit(tmp_path):
+    repository = _repository(tmp_path, _CLEAN_SNAPSHOT)
+    base = _github_merge(
+        repository,
+        branch_title="invalid branch change",
+        pr_title="fix: \u4fee\u590d\u8bc4\u5206\u6267\u884c",
+    )
+    result = _run(repository, "--range", base, "HEAD")
+    assert result.returncode == 1
+    assert "invalid branch change" in result.stdout
+
+
+def test_github_merge_still_requires_conventional_chinese_pr_title(tmp_path):
+    repository = _repository(tmp_path, _CLEAN_SNAPSHOT)
+    _github_merge(repository, branch_title="fix: \u4fee\u590d\u8bc4\u5206\u6267\u884c", pr_title="fix: repair scoring")
+    result = _run(repository, "--commit", "HEAD")
+    assert result.returncode == 1
+    assert "Chinese text" in result.stdout
+
+
+def test_single_parent_commit_cannot_impersonate_a_github_merge(tmp_path):
+    repository = _repository(tmp_path, _CLEAN_SNAPSHOT)
+    _git(repository, "commit", "--allow-empty", "-m", "Merge pull request #28 from org/feature",
+         "-m", "fix: \u4fee\u590d\u8bc4\u5206\u6267\u884c")
+    assert _run(repository, "--commit", "HEAD").returncode == 1
+
+
+def test_pr_title_cannot_use_a_merge_subject():
+    assert validate_title("Merge pull request #28 from org/feature") is not None
