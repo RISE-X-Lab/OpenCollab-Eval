@@ -57,6 +57,7 @@ base_run_dir = pathlib.Path(".")
 package_root = pathlib.Path(".")
 dataset_path = pathlib.Path(".")
 workflow = ""
+agent_profile: str | None = None
 workflow_env: dict[str, str] = {}
 openhands_command = ""
 openhands_command_sha256 = ""
@@ -217,7 +218,7 @@ def bind_remote_api_network_environment(target: dict[str, str], network_env: dic
 def configure(config: dict[str, Any]) -> None:
     """Validate and install one remote-run configuration."""
     global cfg, token, owner_nonce, remote_root, remote_repo, base_run_dir
-    global package_root, dataset_path, workflow, workflow_env
+    global package_root, dataset_path, workflow, workflow_env, agent_profile
     global openhands_command, openhands_command_sha256
     global openhands_empty_patch_rejections, max_empty_patch_retries
     global model_name, llm_model, llm_provider, llm_transport, remote_api_network_env
@@ -278,6 +279,9 @@ def configure(config: dict[str, Any]) -> None:
         sys.path.insert(0, str(package_root))
     dataset_path = remote_root / "datasets" / "swe-batch-pro-lite" / "instances.jsonl"
     workflow = str(cfg["workflow"])
+    from opencollab_eval.runtime_config import resolve_workflow_agent_profile
+
+    agent_profile = resolve_workflow_agent_profile(cfg.get("agent_profile"))
     workflow_env = {str(key): str(value) for key, value in (cfg.get("workflow_env") or {}).items()}
     allowed_workflow_env = {
         "OPENCOLLAB_G11_ROLE_BUDGET",

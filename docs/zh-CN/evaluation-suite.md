@@ -46,11 +46,24 @@ Single 使用 OC 正常的 `coding` 配置及系统提示，公开题面包含�
 | Base Team | `base-team-single-pass-v1` |
 | G11 | `validation-council-solve` |
 | G20 | `validation-council-wired-v1` |
-| G21 | `validation-council-wired-dual-g20-v1` |
+| G21 | `validation-council-dual-coder-contract-v1` |
+| Wired Dual G20 | `validation-council-wired-dual-g20-v1` |
 | Triple | `validation-council-triple-coder-contract-v1` |
 | Dual Contract | `validation-council-wired-dual-contract-v1` |
 | G20 + Coder Contract | `validation-council-g20-coder-contract-v1` |
 | Red-Green v2 | `validation-council-g20-coder-red-green-v2` |
+
+工作流与底层 Agent profile 分别选择。G21 配合 Single2 时，原有 G21 入口加上 `--agent-profile single2` 即可。这个 profile 覆盖所有 Agent 角色，包括契约裁决者。工作流继续提供角色题面、工具权限、候选工作区和选择策略。OC 提供 Single2 系统提示、上下文整形、安全策略和内置工具默认配置。OCE 使用原有 Bash 证据包装器观察同一个原生工具实例。在这个 profile 下，原生 Bash 输出采用 Single2 的 10,000 字符限制。
+
+```bash
+python -m opencollab_eval.generation.gen_prediction_workflow \
+  --instance-file "$INSTANCE_FILE" --image "$IMAGE" \
+  --output "$PREDICTIONS_FILE" \
+  --workflow validation-council-dual-coder-contract-v1 \
+  --agent-profile single2 --model "$MODEL" --provider openai
+```
+
+并行运行器与 `oc-eval swe-v1-prolite` 也接受 `--agent-profile`。任务配置、生成 metrics 和工作流 manifest 都记录所选 profile。省略该参数时沿用现有工作流 driver，`--agent-profile single` 可以显式选择默认值。独立的 `--workflow single2` 入口继续调用原生单 Agent 生成器。
 
 `claude-code` 使用已有外部 CLI 适配器及相同候选和正式评分设施。mini-swe-agent 和 Native Harbor 在导入候选前也需要获得相同公开题面与已清理的源码视图，其版本与外部启动配置纳入运行来源记录。
 

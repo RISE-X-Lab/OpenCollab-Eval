@@ -169,6 +169,8 @@ def prepare_runtime(config: ParallelConfig) -> str:
             command += [option, str(value)]
     for item in config.workflow_env:
         command += ["--workflow-env", item]
+    if getattr(config, "agent_profile", None) is not None:
+        command += ["--agent-profile", config.agent_profile]
     if config.openhands_command:
         command += ["--openhands-command", config.openhands_command]
     if config.no_sync_runtime:
@@ -694,6 +696,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=_config.DEFAULT_IMAGE_REPOSITORY,
     )
     parser.add_argument("--workflow", default="validation-council-solve")
+    parser.add_argument("--agent-profile", choices=("single", "single2"), help="Agent profile for workflow roles")
     parser.add_argument("--workflow-env", action="append", default=[])
     parser.add_argument("--openhands-command", default="")
     parser.add_argument("--openhands-empty-patch-rejections", type=int, default=2)

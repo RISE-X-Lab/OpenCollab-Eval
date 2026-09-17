@@ -351,6 +351,7 @@ def aggregate(
         "top_p": config.top_p,
         "max_output_tokens": config.max_output_tokens,
         "workflow": config.workflow,
+        "agent_profile": getattr(config, "agent_profile", None),
         "workflow_env": list(config.workflow_env),
         "openhands_command_sha256": _openhands_command_sha256(getattr(config, "openhands_command", "")),
         "openhands_empty_patch_rejections": config.openhands_empty_patch_rejections,

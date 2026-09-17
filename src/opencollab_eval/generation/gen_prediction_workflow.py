@@ -50,6 +50,7 @@ from opencollab_eval.patch_diff import (
     patch_paths as _patch_paths,
 )
 from opencollab_eval.runtime_config import resolve_runtime_config as get_config
+from opencollab_eval.runtime_config import resolve_workflow_agent_profile
 from opencollab_eval.usage import DEFAULT_MAX_OUTPUT_TOKENS, model_context_window
 
 from . import gen_prediction as gp  # noqa: E402 — shared container plumbing
@@ -244,6 +245,10 @@ async def generate(
     workflow_label: str | None = None,
 ) -> tuple[str, dict]:
     """Run the chosen workflow in a fresh container; return (patch, metrics)."""
+    selected_profile = getattr(args, "agent_profile", None)
+    agent_profile = resolve_workflow_agent_profile(
+        cfg.get("agent_profile") if selected_profile is None else selected_profile
+    )
     iid = instance["instance_id"]
     name = gp.unique_container_name("oc-wf-", iid)
     run_dir = Path(args.output).parent
@@ -333,6 +338,7 @@ async def generate(
             env_factory=env_factory,
             max_steps=args.max_steps,
             workflow=workflow_fn,
+            agent_profile=agent_profile,
             temperature=cfg["temperature"],
             top_p=cfg.get("top_p"),
             max_output_tokens=cfg.get("max_output_tokens", DEFAULT_MAX_OUTPUT_TOKENS),
@@ -453,6 +459,8 @@ async def generate(
                 },
             }
         )
+        if agent_profile is not None:
+            metrics["agent_profile"] = agent_profile
         gp.bind_llm_transport(metrics)
         metrics["generation_image_id"] = generation_image_id
         metrics["solver_git_snapshot"] = snapshot.as_dict()
@@ -609,6 +617,12 @@ def main() -> None:
     ap.add_argument("--top-p", type=float)
     ap.add_argument("--max-output-tokens", type=int)
     ap.add_argument("--context-window", type=int)
+    ap.add_argument(
+        "--agent-profile",
+        choices=("single", "single2"),
+        default=None,
+        help="Agent profile used by every role of the selected workflow",
+    )
     ap.add_argument("--model-name", default=None, help="model_name_or_path in predictions")
     ap.add_argument(
         "--workflow",

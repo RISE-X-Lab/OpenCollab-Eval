@@ -139,6 +139,8 @@ def task_command(
             command += [option, str(value)]
     for item in config.workflow_env:
         command += ["--workflow-env", item]
+    if getattr(config, "agent_profile", None) is not None:
+        command += ["--agent-profile", config.agent_profile]
     if config.openhands_command:
         command += ["--openhands-command", config.openhands_command]
     if config.no_sync_runtime:

@@ -318,13 +318,17 @@ def _eval_manifest_payload(
     ctx: Any,
 ) -> dict[str, Any]:
     """Freeze values owned by the event-loop before file I/O starts."""
-    return {
+    manifest = {
         "workflow": getattr(workflow, "__name__", "workflow"),
         "task_id": task.task_id,
         "sessions": int(getattr(ctx, "session_count", len(ctx.sessions))),
         "tokens_spent": int(getattr(ctx, "used_tokens", 0)),
         "budget_total": task.max_tokens,
     }
+    profile = getattr(ctx, "agent_profile", None)
+    if profile is not None:
+        manifest["agent_profile"] = profile
+    return manifest
 
 
 def _write_eval_workflow_manifest(

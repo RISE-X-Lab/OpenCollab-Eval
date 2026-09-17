@@ -28,7 +28,7 @@ oc-eval inspect DATASET --identity-key-file KEY
 oc-eval run TASKS_FILE --model MODEL --provider PROVIDER
             [--api-key KEY] [--base-url URL] [--output DIRECTORY]
             [--concurrency COUNT] [--max-tokens COUNT] [--timeout SECONDS]
-            [--temperature VALUE] [--top-p VALUE]
+            [--temperature VALUE] [--top-p VALUE] [--agent-profile {single,single2}]
 ```
 
 此命令运行通用评测器并写入 `results.jsonl`。摘要包含任务数、具备资格的候选数和不具备资格的候选数。官方 SWE resolved 判定由 Pro-Lite 评测命令给出。
@@ -41,7 +41,7 @@ oc-eval run TASKS_FILE --model MODEL --provider PROVIDER
 | --- | --- |
 | 远程运行时 | `--host`、`--ssh-command`、`--remote-python`、`--remote-root`、`--remote-runtime-repo` |
 | 任务选择 | `--start-index`、`--limit`、`--run-id`、`--base-run-dir` |
-| Solver | `--workflow`、`--model-name`、`--llm-model`、`--llm-provider`、`--budget`、`--max-steps` |
+| Solver | `--workflow`、`--agent-profile`、`--model-name`、`--llm-model`、`--llm-provider`、`--budget`、`--max-steps` |
 | 模型身份 | `--context-window`、`--temperature`、`--top-p`、`--max-output-tokens` |
 | 提供商传输 | `--remote-proxy-base-url`、`--local-proxy-base-url`、`--proxy-env-file`、`--remote-api-env-file` |
 | 证据限制 | `--max-task-starts`、`--max-eval-attempts`、`--checkpoint-interval`、`--eval-container-bind-timeout` |
@@ -53,6 +53,8 @@ oc-eval run TASKS_FILE --model MODEL --provider PROVIDER
 运行身份。使用不同数值生成的报告不会被复用。
 
 构建自动化前，请先运行已安装命令的帮助。
+
+`--agent-profile single2` 为所选 OpenCollab 工作流的每个 Agent 角色启用 Single2 运行时。工作流分别选择，G21 使用 `--workflow validation-council-dual-coder-contract-v1`。工作流生成器与并行运行器都接受这两个参数。省略 profile 时沿用现有 driver，`single` 可以显式选择默认值。
 
 ```bash
 oc-eval swe-v1-prolite --help

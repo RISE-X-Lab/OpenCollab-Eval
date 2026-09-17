@@ -63,6 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--timeout", type=float, default=600.0, help="Default task timeout in seconds")
     run_parser.add_argument("--temperature", type=float, default=0.2, help="Model sampling temperature")
     run_parser.add_argument("--top-p", type=float, help="Optional nucleus-sampling value")
+    run_parser.add_argument("--agent-profile", choices=("single", "single2"), help="OpenCollab agent profile")
     final_parser = subparsers.add_parser(
         "final-report",
         help="Build a final comparison report from two terminal SWE fact reports",
@@ -128,6 +129,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 timeout=args.timeout,
                 temperature=args.temperature,
                 top_p=args.top_p,
+                agent_profile=args.agent_profile,
             )
         )
         eligible, ineligible = _result_counts(results)

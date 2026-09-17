@@ -33,6 +33,7 @@ from opencollab_eval.engine.swe_v1_remote_state import (
     DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
     MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
 )
+from opencollab_eval.runtime_config import resolve_workflow_agent_profile
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_REMOTE_ROOT = os.environ.get("OPENCOLLAB_SWE_REMOTE_ROOT", "").strip()
@@ -99,6 +100,7 @@ class ParallelConfig:
     dry_run: bool
     runtime_tree_sha256: str = ""
     max_technical_recoveries: int = 0
+    agent_profile: str | None = None
 
 
 @dataclass
@@ -379,6 +381,7 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
         remote_root=remote_root,
         image_repository=image_repository,
         workflow=workflow,
+        agent_profile=resolve_workflow_agent_profile(getattr(args, "agent_profile", None)),
         workflow_env=workflow_env,
         openhands_command=openhands_command,
         openhands_empty_patch_rejections=max(0, getattr(args, "openhands_empty_patch_rejections", 2)),
@@ -435,6 +438,7 @@ def _expected_summary_identity(
 ) -> dict[str, Any]:
     expected = {
         "workflow": config.workflow,
+        "agent_profile": getattr(config, "agent_profile", None),
         "model_name": config.model_name,
         "llm_model": config.llm_model,
         "llm_provider": config.llm_provider,

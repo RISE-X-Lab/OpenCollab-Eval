@@ -15,6 +15,15 @@ from opencollab_eval.benchmarks.task_specification import (
 )
 from opencollab_eval.engine.native_failure_attribution import classify_failure
 from opencollab_eval.engine.swe_eval_records import read_bounded_json
+from opencollab_eval.runtime_config import (
+    SINGLE2_AUTHORIZED_BUDGET as SINGLE2_AUTHORIZED_BUDGET,
+)
+from opencollab_eval.runtime_config import (
+    SINGLE2_AUTHORIZED_MAX_STEPS as SINGLE2_AUTHORIZED_MAX_STEPS,
+)
+from opencollab_eval.runtime_config import (
+    resolve_agent_generation_limits,
+)
 from opencollab_eval.usage import DEFAULT_MAX_OUTPUT_TOKENS
 
 from .candidate_environment import image_activation_prefix
@@ -38,26 +47,6 @@ _CONTROLLED_STOP_REASON_PREFIXES = (
     "output truncated:",
 )
 _CONTROLLED_STOP_REASON_NAMES = frozenset({"budget_exceeded", "context_overflow", "step_limit_exceeded", "timeout"})
-SINGLE2_AUTHORIZED_BUDGET = 1_000_000_000_000
-SINGLE2_AUTHORIZED_MAX_STEPS = 1_000_000_000_000
-
-
-def resolve_agent_generation_limits(
-    profile: str,
-    max_steps: int | None,
-    budget: int | None,
-) -> tuple[int | None, int | None]:
-    """Restore Single2's explicit evaluation limits after unbounded parsing."""
-    if profile not in {"single", "single2"}:
-        raise ValueError(f"unsupported single-agent profile: {profile}")
-    if profile == "single2":
-        return (
-            SINGLE2_AUTHORIZED_MAX_STEPS if max_steps is None else max_steps,
-            SINGLE2_AUTHORIZED_BUDGET if budget is None else budget,
-        )
-    return max_steps, budget
-
-
 def build_task(instance: dict) -> str:
     return f"# Issue to fix in `{instance['repo']}`\n\n{compose_task_specification(instance)}\n"
 

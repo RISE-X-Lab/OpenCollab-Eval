@@ -241,6 +241,8 @@ fi
 agent_profile_args=()
 if [[ "$WORKFLOW" == "single2" ]]; then
   agent_profile_args+=(--agent-profile single2)
+elif [[ -n "${OPENCOLLAB_SWE_AGENT_PROFILE:-}" ]]; then
+  agent_profile_args+=(--agent-profile "$OPENCOLLAB_SWE_AGENT_PROFILE")
 fi
 
 if [[ "$SWE_GENERATOR" == "single-agent" ]]; then
@@ -294,6 +296,7 @@ elif [[ "$SWE_GENERATOR" == "openhands" ]]; then
 else
   python3 -u -m opencollab_eval.generation.gen_prediction_workflow \
     --workflow "$WORKFLOW" \
+    ${agent_profile_args[@]+"${agent_profile_args[@]}"} \
     --instance-file "$INSTANCE_FILE" \
     --output "$RUN/predictions.jsonl" \
     --metrics "$RUN/metrics.jsonl" \
