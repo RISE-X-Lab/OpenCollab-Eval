@@ -33,6 +33,27 @@ import sys
 import time
 
 
+def _become_child_subreaper():
+    """Adopt orphaned command descendants so their exit can be proven."""
+    try:
+        import ctypes
+
+        prctl = ctypes.CDLL(None, use_errno=True).prctl
+        return prctl(36, 1, 0, 0, 0) == 0
+    except (AttributeError, OSError):
+        return False
+
+
+def _reap_adopted_children():
+    while True:
+        try:
+            pid, _status = os.waitpid(-1, os.WNOHANG)
+        except (ChildProcessError, OSError):
+            return
+        if pid <= 0:
+            return
+
+
 def _process_group_exists(process):
     """Return whether the owned process group still has a member."""
     killpg = getattr(os, "killpg", None)
@@ -72,6 +93,7 @@ def _kill_and_reap(process):
             process.wait(timeout=min(0.1, remaining))
         except (OSError, ChildProcessError, subprocess.TimeoutExpired):
             pass
+        _reap_adopted_children()
         try:
             leader_alive = process.poll() is None
         except (AttributeError, OSError):
@@ -91,19 +113,37 @@ def _kill_and_reap(process):
     return not _process_group_exists(process) and process.poll() is not None
 
 
+def _wait_for_group_exit(process, deadline):
+    """Allow short-lived descendants to finish within the command deadline."""
+    empty_scans = 0
+    while time.monotonic() < deadline:
+        _reap_adopted_children()
+        if not _process_group_exists(process):
+            empty_scans += 1
+            if empty_scans >= 2:
+                return True
+        else:
+            empty_scans = 0
+        time.sleep(min(0.02, max(0.0, deadline - time.monotonic())))
+    return not _process_group_exists(process)
+
+
 try:
     timeout = float(sys.argv[1])
-    command = bytes.fromhex(sys.argv[2]).decode("utf-8")
-except (IndexError, TypeError, ValueError, OverflowError, UnicodeDecodeError):
+    command_path = sys.argv[2]
+except (IndexError, TypeError, ValueError, OverflowError):
     raise SystemExit(124)
 if timeout <= 0 or timeout != timeout or timeout == float("inf") or timeout == float("-inf"):
     raise SystemExit(124)
+deadline = time.monotonic() + timeout
+_become_child_subreaper()
 try:
-    process = subprocess.Popen(["bash", "-c", command], start_new_session=True)
+    process = subprocess.Popen(["bash", command_path], start_new_session=True)
 except OSError:
     raise SystemExit(127)
 try:
-    returncode = process.wait(timeout=timeout)
+    process.wait(timeout=timeout)
+    returncode = process.returncode
 except subprocess.TimeoutExpired:
     if _kill_and_reap(process):
         raise SystemExit(124)
@@ -112,6 +152,10 @@ except BaseException:
     _kill_and_reap(process)
     raise
 if _process_group_exists(process):
+    if _wait_for_group_exit(process, min(deadline, time.monotonic() + 5.0)):
+        if returncode < 0:
+            returncode = min(255, 128 - returncode)
+        raise SystemExit(min(255, returncode))
     # A command that exits successfully while leaving a same-session
     # descendant behind is not a clean test execution.  Reap the owned group
     # within the same bounded cleanup window and keep the result technical so
@@ -125,7 +169,7 @@ raise SystemExit(min(255, returncode))
 '''
 
 
-def _bounded_command_execution(command: str, timeout_argument: str) -> str:
+def _bounded_command_execution(command_path: str, timeout_argument: str) -> str:
     """Build a dependency-free bounded command invocation for the container."""
 
     return (
@@ -137,10 +181,7 @@ def _bounded_command_execution(command: str, timeout_argument: str) -> str:
         + " "
         + timeout_argument
         + " "
-        # Encode the shell command as hex before crossing the nested
-        # ``bash -c`` boundary.  Quoting the raw command twice would strip
-        # quotes from commands such as ``python3 -c '...'``.
-        + shlex.quote(command.encode("utf-8").hex())
+        + shlex.quote(command_path)
     )
 
 
@@ -642,21 +683,17 @@ def prolite_test_plan_script(
                 execution_command = execution_command.replace(
                     "__OPENCOLLAB_BATCH_TIMEOUT__", '"$batch_timeout"', 1
                 )
-        elif timeout_value is not None:
-            execution_command = _bounded_command_execution(
-                command,
-                '"$batch_timeout"'
-                if shared_deadline
-                else shlex.quote(str(timeout_value)),
-            )
-        # The privileged pytest controller has its own event-stream deadline,
-        # but startup (importing pytest, walking the repository, or dropping
-        # privileges) happens before that loop begins.  Keep the same outer
-        # process-group watchdog around it so a wedged image cannot bypass the
-        # generated plan's total budget.
-        if timeout_value is not None and is_pytest_controller:
-            execution_command = _bounded_command_execution(
-                execution_command,
+        command_script = f"{stem}.run.sh"
+        delimiter = f"OPENCOLLAB_BATCH_COMMAND_{evidence_prefix}_{index:03d}"
+        while delimiter in execution_command:
+            delimiter += "_X"
+        batch_command = f"bash {command_script}"
+        if timeout_value is not None:
+            # Keep the potentially large command in a file.  The watchdog
+            # receives only that short path, and the command shell inherits
+            # the same stdin as the generated test-plan script.
+            batch_command = _bounded_command_execution(
+                command_script,
                 '"$batch_timeout"'
                 if shared_deadline
                 else shlex.quote(str(timeout_value)),
@@ -689,8 +726,12 @@ def prolite_test_plan_script(
         lines.extend(
             [
                 f"printf '%s\\n' {shlex.quote(command)} > {stem}.command",
+                f"cat > {command_script} <<'{delimiter}'",
+                execution_command,
+                delimiter,
+                f"chmod 0500 {command_script}",
                 *batch_prefix,
-                f"bash -c {shlex.quote(execution_command)} > {stem}.log 2>&1",
+                f"{batch_command} > {stem}.log 2>&1",
                 "batch_status=$?",
                 f"printf '%s\\n' \"$batch_status\" > {stem}.exit",
                 f"cat {stem}.log",

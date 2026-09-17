@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -108,6 +110,79 @@ def test_non_pytest_single_batch_receives_controller_timeout(
     assert (output / "f2p.batch_001.exit").read_text(encoding="utf-8").strip() == "124"
 
 
+def test_large_non_pytest_command_crosses_process_boundaries_via_command_file(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        plans, "validated_test_plan_kind", lambda *args, **kwargs: "synthetic"
+    )
+    output = tmp_path / "eval-output"
+    output.mkdir()
+    command = "printf large-command-ok; : '" + ("x" * 300_000) + "'"
+    script = plans.prolite_test_plan_script(
+        {"commands": [command], "proofs": [{}]},
+        "p2p",
+        "nonce",
+        controller_timeout=5,
+    ).replace("/eval_output", str(output))
+
+    result = subprocess.run(
+        ["bash", "-s"],
+        input=script,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stdout
+    assert (output / "p2p.batch_001.exit").read_text(encoding="utf-8").strip() == "0"
+    assert "large-command-ok" in (output / "p2p.batch_001.log").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_command_file_preserves_parent_stdin_and_clean_process_lifecycle(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        plans, "validated_test_plan_kind", lambda *args, **kwargs: "synthetic"
+    )
+    output = tmp_path / "eval-output"
+    output.mkdir()
+    helper = (
+        "import subprocess,sys; "
+        "payload=sys.stdin.read(); "
+        "subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']) "
+        "if payload != 'npm-parent-stdin\\n' else None; "
+        "print('stdin-preserved' if payload == 'npm-parent-stdin\\n' else 'stdin-missing', flush=True)"
+    )
+    command = "python3 -c " + shlex.quote(helper)
+    script = plans.prolite_test_plan_script(
+        {"commands": [command], "proofs": [{}]},
+        "f2p",
+        "nonce",
+        controller_timeout=5,
+    ).replace("/eval_output", str(output))
+    plan_script = tmp_path / "plan.sh"
+    plan_script.write_text(script, encoding="utf-8")
+
+    result = subprocess.run(
+        ["bash", str(plan_script)],
+        input="npm-parent-stdin\n",
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stdout
+    assert (output / "f2p.batch_001.exit").read_text(encoding="utf-8").strip() == "0"
+    assert "stdin-preserved" in (output / "f2p.batch_001.log").read_text(
+        encoding="utf-8"
+    )
+
+
 def test_shared_deadline_rejects_nonfinite_environment_value(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -190,6 +265,40 @@ def test_successful_leader_with_descendant_is_cleaned_and_marked_technical(
         except ProcessLookupError:
             pass
         raise AssertionError("successful bounded command left its descendant running")
+
+
+def test_short_lived_descendant_may_quiesce_within_command_deadline(
+    monkeypatch, tmp_path: Path
+) -> None:
+    if sys.platform != "linux":
+        return
+    monkeypatch.setattr(
+        plans, "validated_test_plan_kind", lambda *args, **kwargs: "synthetic"
+    )
+    output = tmp_path / "eval-output"
+    output.mkdir()
+    command = (
+        "python3 -c 'import subprocess,sys; "
+        "subprocess.Popen([sys.executable, \"-c\", \"import time; time.sleep(0.1)\"])'"
+    )
+    script = plans.prolite_test_plan_script(
+        {"commands": [command], "proofs": [{}]},
+        "f2p",
+        "nonce",
+        controller_timeout=1,
+    ).replace("/eval_output", str(output))
+
+    result = subprocess.run(
+        ["bash", "-s"],
+        input=script,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=5,
+    )
+
+    assert result.returncode == 0, result.stdout
+    assert (output / "f2p.batch_001.exit").read_text(encoding="utf-8").strip() == "0"
 
 
 def test_cleanup_failure_stops_later_batches(tmp_path: Path, monkeypatch) -> None:
