@@ -35,6 +35,14 @@ evaluation identities from the scoring copy. The direct `eval_for_task` and
 adapter executes once when these entrypoints are chained. An in-memory dict
 subclass retains the receipt separately from dataset fields.
 
+An adapter declaring `SUPPORTS_CANDIDATE_PATCH=True` receives an optional
+`candidate_patch` keyword from the verified prediction's evaluation patch.
+Early task preparation defers this adapter until generation readiness is
+verified. Retry planning and direct scoring reuse that same verified prediction
+and metric snapshot. The scoring copy is completed in place once, while
+generation retains the original row. Existing adapters keep their one-argument
+call. The sealed gold patch remains part of the judge data.
+
 The registry uses the existing `opencollab.scoring_adapter_registry.v1` format.
 
 ```json

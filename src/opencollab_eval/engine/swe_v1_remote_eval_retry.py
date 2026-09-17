@@ -2,6 +2,7 @@
 
 # ruff: noqa: F403, F405
 
+from opencollab_eval.engine.swe_eval_scoring_adapters import prepare_scoring_row
 from opencollab_eval.engine.swe_v1_remote_eval_candidate import *
 from opencollab_eval.engine.swe_v1_remote_eval_patch import *
 from opencollab_eval.engine.swe_v1_remote_generation import *
@@ -23,6 +24,8 @@ def eval_for_task_with_retries(row, eval_once, eval_timeout=None, controller_tim
         result["attempt_count"] = 0
         result["max_eval_attempts"] = max_eval_attempts
         return result
+    row = prepare_scoring_row(row, resolve_scoring_adapter_registry(), candidate_patch=eval_model_patch(prediction))
+    row.verified_generation = (prediction, metric, pairing)
     patch_selection = verified_plan_patch_selection(
         row, prediction, metric, eval_timeout, controller_timeout
     )

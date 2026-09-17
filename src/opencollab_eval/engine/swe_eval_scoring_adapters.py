@@ -45,6 +45,7 @@ def configured_registry_path(value: str | Path | None = None) -> Path | None:
 
 def adapt_instance(
     instance: dict[str, Any], registry_path: str | Path | None = None,
+    *, candidate_patch: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Apply one registered adapter and retain its existing isolation checks."""
     if not isinstance(instance, dict):
@@ -87,8 +88,15 @@ def adapt_instance(
         raise ValueError("registry instance is absent from adapter INSTANCE_IDS")
     if getattr(module, "ADAPTER_ID", None) != entry.get("adapter_id"):
         raise ValueError(f"registry adapter_id differs from module ADAPTER_ID in {module_path}")
-    original = copy.deepcopy(instance)
-    adapted, adapter_receipt = module.adapt(copy.deepcopy(instance))
+    original = copy.deepcopy(dict(instance))
+    supports_candidate_patch = getattr(module, "SUPPORTS_CANDIDATE_PATCH", False) is True
+    if supports_candidate_patch and candidate_patch is None:
+        receipt.update(deferred=True, adapter_id=entry.get("adapter_id"), module=str(module_path))
+        return original, receipt
+    if supports_candidate_patch:
+        adapted, adapter_receipt = module.adapt(copy.deepcopy(original), candidate_patch=candidate_patch)
+    else:
+        adapted, adapter_receipt = module.adapt(copy.deepcopy(original))
     if not isinstance(adapted, dict) or not isinstance(adapter_receipt, dict):
         raise ValueError("adapter must return two dictionaries")
     changed = sorted(
@@ -124,9 +132,16 @@ def adapt_instance(
 
 def prepare_scoring_row(
     row: dict[str, Any], registry_path: str | Path | None = None,
+    *, candidate_patch: str | None = None,
 ) -> PreparedScoringRow:
     """Prepare a scoring copy once across main, retries, and direct entrypoints."""
     if isinstance(row, PreparedScoringRow):
+        if not row.scoring_adapter_receipt.get("deferred") or candidate_patch is None:
+            return row
+    adapted, receipt = adapt_instance(row, registry_path, candidate_patch=candidate_patch)
+    if isinstance(row, PreparedScoringRow):
+        row.clear()
+        row.update(adapted)
+        row.scoring_adapter_receipt = receipt
         return row
-    adapted, receipt = adapt_instance(row, registry_path)
     return PreparedScoringRow(adapted, receipt)
