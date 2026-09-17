@@ -45,6 +45,7 @@ from ._validation_council_lean_official_defs import (
     TRIAGE_SCHEMA,
     VALIDATION_FACTORY_BUDGET,
     _accepted_count,
+    _accepted_validation_package,
     _candidates_brief,
     _cartographer_tools,
     _cartography_brief,
@@ -517,7 +518,7 @@ async def run_validation_council_lean_candidate(
             BASELINE_TRIAGE_PROMPT.format(
                 rules=_shared_rules(ctx),
                 goal=_complete_goal(goal),
-                judge=_judge_brief(pre_judge, 200),
+                judge=_accepted_validation_package(pre_candidates, pre_judge),
                 cartography=_cartography_brief(cartography),
             ),
             schema=TRIAGE_SCHEMA,

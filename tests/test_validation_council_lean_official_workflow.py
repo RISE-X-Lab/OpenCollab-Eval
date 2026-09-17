@@ -467,6 +467,31 @@ async def test_coder_receives_complete_pre_patch_evidence(validation_council_sol
     assert triage_detail in coder_prompt
 
 
+async def test_baseline_executor_receives_complete_accepted_probe(validation_council_solve):
+    rejected = {
+        **CANDIDATES["tests"][0],
+        "id": "T2",
+        "setup": "REJECTED_SETUP_SENTINEL",
+        "assertion": "REJECTED_ASSERTION_SENTINEL",
+        "runner_command": "python rejected_probe.py",
+    }
+    replies = _base_replies()
+    replies[3] = {**CANDIDATES, "tests": [CANDIDATES["tests"][0], rejected]}
+    ctx = ScriptedCtx(replies)
+
+    await validation_council_solve(ctx, {"goal": "fix empty widget"})
+
+    baseline_prompt = next(
+        call["prompt"] for call in ctx.agent_calls if call["label"] == "baseline-triage"
+    )
+    assert "call parse('')" in baseline_prompt
+    assert "returns empty widget" in baseline_prompt
+    assert '"runner_command":' in baseline_prompt
+    assert "widget.parse('')" in baseline_prompt
+    assert "why_distinguishes_wrong_patch" in baseline_prompt
+    assert "REJECTED_SETUP_SENTINEL" not in baseline_prompt
+
+
 async def test_every_role_receives_complete_public_task(validation_council_solve):
     goal = "# Public issue\n" + "Problem evidence. " * 80 + "\nREQUIREMENT_SENTINEL"
     ctx = ScriptedCtx(_base_replies())

@@ -63,7 +63,9 @@ def _mutating_git_subcommand(command: str) -> str | None:
             if candidate.startswith("-"):
                 index += 1
                 continue
-            return candidate if candidate in _CANONICAL_TREE_GIT_MUTATORS else None
+            if candidate in _CANONICAL_TREE_GIT_MUTATORS:
+                return candidate
+            break
     return None
 
 

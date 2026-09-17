@@ -54,6 +54,9 @@ from opencollab_eval.usage import DEFAULT_MAX_OUTPUT_TOKENS, model_context_windo
 
 from . import gen_prediction as gp  # noqa: E402 — shared container plumbing
 from .candidate_environment import image_activation_prefix, install_candidate_environment
+from .candidate_environment_lean import (
+    install_candidate_environment as install_lean_candidate_environment,
+)
 from .candidate_retention import (
     arm_candidate_retention,
     complete_candidate_retention,
@@ -79,13 +82,6 @@ from .gen_prediction_workflow_inputs import json as json  # noqa: E402
 from .gen_prediction_workflow_state import workflow_model_settings, workflow_stop_metrics
 
 _REPO_ROOT = Path(os.environ.get("OPENCOLLAB_EVAL_WORKSPACE", Path.cwd())).resolve()
-
-_DIRECT_ACTIVATION_WORKFLOWS = frozenset(
-    {
-        "validation-council-solve",
-        "validation-council-lean-official-v1",
-    }
-)
 
 
 def _bundled_workflow_registry() -> dict[str, object]:
@@ -290,8 +286,15 @@ async def generate(
         trusted_baseline = gp.prepare_trusted_patch_baseline(cid, snapshot)
         arm_candidate_retention(gp, run_dir=run_dir, cid=cid, name=name)
         gp.restore_solver_runtime_dependencies(cid, solver_runtime)
-        if _workflow_name(workflow_fn, workflow_label) in _DIRECT_ACTIVATION_WORKFLOWS:
+        workflow_name = _workflow_name(workflow_fn, workflow_label)
+        if workflow_name == "validation-council-solve":
             candidate_prefix = image_activation_prefix(cid, gp._ACTIVATE)
+        elif workflow_name == "validation-council-lean-official-v1":
+            candidate_prefix = install_lean_candidate_environment(
+                cid,
+                solver_runtime,
+                activation=gp._ACTIVATE,
+            )
         else:
             candidate_prefix = install_candidate_environment(
                 cid,

@@ -9,6 +9,10 @@ from opencollab.workflows import CandidateRun
 
 from opencollab_eval.workflows import _validation_council_lean_official_defs as defs
 from opencollab_eval.workflows import _validation_council_lean_official_impl as implementation
+from opencollab_eval.workflows._validation_council_lean_official_tools import (
+    _mutating_git_subcommand,
+    _VerifierBashTool,
+)
 from opencollab_eval.workflows.validation_council_lean_official import (
     validation_council_lean_official_v1,
 )
@@ -130,3 +134,37 @@ def test_new_modules_stay_within_repository_size_policy() -> None:
     workflow_dir = Path(implementation.__file__).parent
     for path in workflow_dir.glob("*validation_council_lean_official*.py"):
         assert len(path.read_text(encoding="utf-8").splitlines()) < 800
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("git status && git reset --hard HEAD", "reset"),
+        ("git diff; /usr/bin/git -C /testbed clean -fd", "clean"),
+        ("git status && git diff --check", None),
+    ],
+)
+def test_git_mutation_guard_checks_every_compound_command(command: str, expected: str | None) -> None:
+    assert _mutating_git_subcommand(command) == expected
+
+
+@pytest.mark.asyncio
+async def test_verifier_bash_rejects_mutator_after_read_only_git_command() -> None:
+    class Delegate:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def execute_with_runtime(self, params: dict[str, Any], _runtime: Any) -> str:
+            self.calls.append(params)
+            return "delegate-ran"
+
+    delegate = Delegate()
+    guarded = _VerifierBashTool(delegate)
+
+    result = await guarded.execute_with_runtime(
+        {"command": "git status && git reset --hard HEAD"},
+        object(),
+    )
+
+    assert "blocked: git reset" in result
+    assert delegate.calls == []

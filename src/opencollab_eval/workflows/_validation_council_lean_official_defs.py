@@ -666,6 +666,37 @@ def _judge_brief(value: dict[str, Any], limit: int = 350) -> str:
     )
 
 
+def _accepted_validation_package(
+    candidates: dict[str, Any],
+    judge: dict[str, Any],
+) -> str:
+    """Join accepted decisions back to their complete proposed probes by ID."""
+    proposals = {
+        str(item.get("id")): item
+        for item in candidates.get("tests", [])
+        if isinstance(item, dict) and str(item.get("id") or "")
+    }
+    accepted = []
+    for decision in judge.get("accepted", []):
+        if not isinstance(decision, dict):
+            continue
+        test_id = str(decision.get("id") or "")
+        proposal = proposals.get(test_id)
+        accepted.append(
+            {
+                "decision": decision,
+                "proposal": proposal,
+                "proposal_missing": proposal is None,
+            }
+        )
+    return _dump(
+        {
+            "accepted": accepted,
+            "validation_brief": judge.get("validation_brief", ""),
+        }
+    )
+
+
 def _triage_brief(value: dict[str, Any], limit: int = 12_000) -> str:
     classifications = []
     for item in value.get("classifications", []):
