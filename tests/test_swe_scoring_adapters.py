@@ -61,6 +61,18 @@ def _calls(registry):
     return len(path.read_text().splitlines()) if path.exists() else 0
 
 
+def _context_adapter(registry):
+    module = registry.with_name("adapter.py")
+    source = module.read_text().replace(
+        "def adapt(row):\n",
+        "SUPPORTS_CANDIDATE_PATCH = True\n"
+        "def adapt(row, *, candidate_patch=None):\n"
+        "    assert candidate_patch is not None\n"
+        "    assert candidate_patch != row.get('patch')\n",
+    ).replace("'adapter_id': ADAPTER_ID,", "'adapter_id': ADAPTER_ID, 'seen_candidate_patch': candidate_patch,")
+    module.write_text(source)
+
+
 def test_preparation_is_once_and_does_not_trust_dataset_receipt_fields(registry):
     row = _row()
     row["_scoring_adapter_receipt"] = {"applied": True}
@@ -87,6 +99,93 @@ def test_unconfigured_scoring_preserves_a_separate_original_copy(monkeypatch):
     assert prepared == row and prepared is not row
     assert prepared.scoring_adapter_receipt["applied"] is False
     assert prepared.scoring_adapter_receipt["registry"] is None
+
+
+def test_contextual_preparation_defers_and_then_adapts_the_same_scoring_copy(registry):
+    _context_adapter(registry)
+    row = _row()
+    row["patch"] = "sealed gold patch"
+    prepared = adapters.prepare_scoring_row(row, registry)
+    assert prepared == row and prepared.scoring_adapter_receipt["deferred"] is True
+    assert adapters.prepare_scoring_row(prepared, registry) is prepared
+    assert _calls(registry) == 0
+    assert adapters.prepare_scoring_row(prepared, registry, candidate_patch="verified candidate patch") is prepared
+    assert prepared.scoring_adapter_receipt["applied"] is True
+    assert prepared.scoring_adapter_receipt["seen_candidate_patch"] == "verified candidate patch"
+    assert adapters.prepare_scoring_row(prepared, registry, candidate_patch="verified candidate patch") is prepared
+    assert _calls(registry) == 1 and row["test_patch"] == "original test fixture"
+
+
+def test_contextual_main_retry_once_share_the_verified_pair_when_latest_changes(registry, tmp_path):
+    _context_adapter(registry)
+    ns = _remote_namespace(tmp_path, scoring_adapter_registry=str(registry), checkpoint_interval=0)
+    _seed_remote_completed_generation(ns, TASK)
+    row = _row()
+    row["patch"] = "sealed gold patch"
+    ns["dataset_path"].parent.mkdir(parents=True, exist_ok=True)
+    ns["dataset_path"].write_text(json.dumps(row) + "\n")
+    ns["http_health"] = lambda *args, **kwargs: {"ok": True}
+    real_ready = ns["generation_done_for_mode"]
+    reads = []
+
+    def changing_latest(*args, **kwargs):
+        reads.append(True)
+        assert len(reads) == 1, "once must use the verified retry snapshot"
+        return real_ready(*args, **kwargs)
+
+    def generation(original):
+        assert original == row and _calls(registry) == 0
+        return {"status": "generation_done", "oc_failure": False, "technical_failure": False}
+
+    def isolation(selected):
+        assert selected[0].scoring_adapter_receipt["deferred"] is True
+        return None
+
+    ns["generation_done_for_mode"] = changing_latest
+    ns["generation_for_task"] = generation
+    ns["prepare_eval_only_candidate_isolation"] = isolation
+    real_selection = ns["verified_plan_patch_selection"]
+
+    def replace_latest_after_selection(*args, **kwargs):
+        selected = real_selection(*args, **kwargs)
+        run_dir = ns["base_run_dir"] / TASK
+        prediction = json.loads((run_dir / "predictions.jsonl").read_text().splitlines()[0])
+        metric = json.loads((run_dir / "metrics.jsonl").read_text().splitlines()[0])
+        prediction.update(record_id="newer", model_patch=prediction["model_patch"] + "+newer\n")
+        prediction["patch_sha256"] = ns["patch_sha"](prediction["model_patch"])
+        metric.update(record_id="newer", patch_sha256=prediction["patch_sha256"])
+        (run_dir / "predictions.jsonl").write_text(json.dumps(prediction) + "\n")
+        (run_dir / "metrics.jsonl").write_text(json.dumps(metric) + "\n")
+        return selected
+
+    ns["verified_plan_patch_selection"] = replace_latest_after_selection
+    observed = []
+    _plan_probe(ns, observed)
+    assert ns["main"]() == 1
+    assert len(reads) == _calls(registry) == len(observed) == 1
+    prepared = observed[0]["row"]
+    assert prepared.verified_generation[0] is observed[0]["prediction"]
+    assert observed[0]["prediction"]["record_id"] == "r1"
+    assert ns["latest_pair"](ns["base_run_dir"] / TASK, TASK)[0]["record_id"] == "newer"
+    assert prepared.scoring_adapter_receipt["seen_candidate_patch"] == ns["eval_model_patch"](observed[0]["prediction"])
+    summary = json.loads((ns["base_run_dir"] / "summary.json").read_text())
+    assert summary["rows"][0]["scoring_adapter"]["applied"] is True
+    assert row["test_patch"] == "original test fixture"
+
+
+def test_contextual_direct_once_waits_for_verified_generation(registry, tmp_path):
+    _context_adapter(registry)
+    ns = _remote_namespace(tmp_path, scoring_adapter_registry=str(registry))
+    result = ns["eval_for_task_once"](_row())
+    assert result["status"] != "eval_done" and _calls(registry) == 0
+    _seed_remote_completed_generation(ns, TASK)
+    observed = []
+    _plan_probe(ns, observed)
+    ns["eval_for_task_once"](_row())
+    assert len(observed) == _calls(registry) == 1
+    assert observed[0]["row"].scoring_adapter_receipt["seen_candidate_patch"] == ns["eval_model_patch"](
+        observed[0]["prediction"]
+    )
 
 
 def test_external_dataclass_modules_keep_their_own_import_namespace(registry):
