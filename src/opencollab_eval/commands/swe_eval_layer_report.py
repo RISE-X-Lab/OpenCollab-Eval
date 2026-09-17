@@ -12,6 +12,7 @@ from typing import Any
 from opencollab_eval.commands import _swe_eval_layer_integrity as _integrity
 from opencollab_eval.commands import _swe_report_io as _report_io
 from opencollab_eval.commands import swe_v1_prolite_report as _prolite_report
+from opencollab_eval.engine.swe_v1_generation_outcomes import adopted_candidate_source_report_view
 from opencollab_eval.engine.token_cost import WORKFLOW_RE
 
 
@@ -430,6 +431,9 @@ def build_report(
             index = _task_index(row)
             if not _prolite_report.candidate_row_is_admitted(row, expected_identities.get(index)):
                 continue
+            row = adopted_candidate_source_report_view(
+                row, report.get("eval_only_source_base_run_dir") or report.get("base_run_dir")
+            )
             task = _task_key(row)
             if not task:
                 index = _task_index(row)

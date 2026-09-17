@@ -9,6 +9,19 @@ from opencollab import OpenCollab
 
 from opencollab_eval.engine.native_failure_attribution import classify_failure
 from opencollab_eval.engine.native_progress_watch import is_progress_stop
+from opencollab_eval.engine.swe_v1_generation_outcomes import adopted_workflow_candidate
+
+
+def workflow_candidate_delivered(result) -> bool:
+    return adopted_workflow_candidate({
+        "workflow_result": result.workflow_result,
+        "runtime_status": result.runtime_status,
+        "runtime_reason": result.runtime_reason,
+        "runtime_state": result.runtime_state,
+        "execution_quiesced": result.execution_quiesced,
+        "agent_failures": result.agent_failures,
+        "error": result.error,
+    })
 
 
 def workflow_model_settings(overrides=None) -> dict:
@@ -73,7 +86,7 @@ def workflow_stop_metrics(result) -> dict:
     if lifecycle_exception:
         status = "failed"
         reason = result.error
-    completed = status == "completed" and output_status in {None, "done"}
+    completed = status == "completed" and (output_status in {None, "done"} or workflow_candidate_delivered(result))
     # Older test and evaluator callers can omit the public runtime projection.
     if status is None:
         completed = not result.error and output_status in {None, "done"}

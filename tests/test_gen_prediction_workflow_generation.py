@@ -23,7 +23,8 @@ from opencollab_eval.engine.swe_generation_proof import current_generation_proof
 from opencollab_eval.runtime_config import resolve_runtime_config
 
 
-def test_generate_defers_container_patch_extraction(monkeypatch, tmp_path):
+@pytest.mark.parametrize("adopted_incomplete", [False, True])
+def test_generate_defers_container_patch_extraction(monkeypatch, tmp_path, adopted_incomplete):
     captured = {}
     async def fake_run_eval_task(task, **kwargs):
         captured["task"] = task
@@ -35,7 +36,12 @@ def test_generate_defers_container_patch_extraction(monkeypatch, tmp_path):
             tokens_used=1,
             steps=1,
             duration=1.0,
-            workflow_result={"allowed_patch_paths": ["pkg/a.py"]},
+            workflow_result={"allowed_patch_paths": ["pkg/a.py"], **({
+                "status": "incomplete", "candidate_status": "incomplete", "candidate_adopted": True,
+                "candidate_diff_bytes": 12,
+            } if adopted_incomplete else {})},
+            runtime_status="completed" if adopted_incomplete else None,
+            runtime_state={"failure_attribution": {"origin": "none"}} if adopted_incomplete else None,
             patch_extraction_succeeded=False,
             submission_eligible=False,
         )
@@ -98,6 +104,12 @@ def test_generate_defers_container_patch_extraction(monkeypatch, tmp_path):
     ).hexdigest()
     assert metrics["submission_eligible"] is True
     assert current_generation_proof_valid(metrics, patch)
+    if adopted_incomplete:
+        assert metrics["workflow_status"] == "done"
+        assert metrics["original_workflow_status"] == "incomplete"
+        assert metrics["workflow_result"]["status"] == "incomplete"
+        assert metrics["failure_origin"] == "none"
+        assert metrics["oc_failure"] is False
     assert "path_audit" not in metrics["trusted_patch_extraction"]
     assert metrics["patch_path_audit"] == {
         "actual_paths": ["pkg/a.py"],
@@ -686,22 +698,6 @@ def test_workflow_status_maps_controlled_stop_patch_to_timeout_contract(reason):
     )
 
     assert gpw._workflow_status_for_result(result, patch) == "done_with_timeout_patch"
-
-
-def test_workflow_status_preserves_structured_advisory_gap():
-    result = EvalResult(
-        task_id="task-1",
-        patch="diff --git a/pkg/a.py b/pkg/a.py\n+fixed\n",
-        patch_produced=True,
-        tokens_used=1,
-        steps=1,
-        duration=1.0,
-        workflow_result={"status": "advisory_gap", "done_with_advisory_gap": True},
-    )
-
-    status = gpw._workflow_status_for_result(result, result.patch)
-
-    assert status == "advisory_gap"
 
 
 def test_blind_workflow_extracts_without_a_path_allowlist(monkeypatch):

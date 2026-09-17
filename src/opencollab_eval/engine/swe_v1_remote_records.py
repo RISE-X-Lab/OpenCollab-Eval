@@ -7,6 +7,7 @@ import shutil
 from opencollab_eval.candidate_bytes import encode_candidate_jsonl, validate_candidate_read
 from opencollab_eval.engine.swe_eval_records import SUBMISSION_INTEGRITY_PROVEN
 from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid, reusable_intrinsic_role_failures
+from opencollab_eval.engine.swe_v1_generation_outcomes import adopted_candidate_metric_view
 from opencollab_eval.engine.swe_v1_remote_core import *
 from opencollab_eval.engine.swe_v1_remote_health import http_health  # noqa: F401
 from opencollab_eval.engine.swe_v1_remote_state import *
@@ -223,6 +224,7 @@ def latest_pair(run_dir, task):
     if not predictions:
         return None, None, "missing_prediction"
     prediction = predictions[-1]
+    original_patch = prediction_patch(prediction)
     record_id = row_record_id(prediction)
     current_sha = row_patch_sha(prediction)
     if record_id:
@@ -230,7 +232,7 @@ def latest_pair(run_dir, task):
         if not matched:
             embedded_metric = embedded_workflow_metric(prediction)
             if embedded_metric is not None:
-                return prediction, embedded_metric, "embedded_metric"
+                return prediction, adopted_candidate_metric_view(embedded_metric, original_patch), "embedded_metric"
             return prediction, None, "missing_metric_for_record_id"
         metric = matched[-1]
         metric_sha = row_patch_sha(metric)
@@ -244,18 +246,16 @@ def latest_pair(run_dir, task):
             candidate_pair = evaluation_candidate_pair(run_dir, prediction, metric)
             if candidate_pair is not None:
                 return *candidate_pair, "recovered_record_id"
-        return prediction, metric, "record_id"
+        return prediction, adopted_candidate_metric_view(metric, original_patch), "record_id"
     if current_sha:
         for metric in reversed(metrics):
             metric_sha = row_patch_sha(metric)
             if metric_sha and patch_sha_matches(metric_sha, current_sha):
-                return prediction, metric, "patch_sha"
+                return prediction, adopted_candidate_metric_view(metric, original_patch), "patch_sha"
         embedded_metric = embedded_workflow_metric(prediction)
         if embedded_metric is not None:
-            return prediction, embedded_metric, "embedded_metric"
-        # Once the prediction exposes a patch identity, an unrelated latest
-        # metric is not a safe legacy fallback.  Reusing it can mark a new
-        # candidate as completed with evidence from an older patch.
+            return prediction, adopted_candidate_metric_view(embedded_metric, original_patch), "embedded_metric"
+        # A new candidate cannot borrow an older patch proof through an unrelated latest metric.
         return prediction, None, "missing_metric_for_patch_sha"
     return prediction, metrics[-1] if metrics else None, "legacy_latest"
 
@@ -358,11 +358,11 @@ def generation_done(run_dir, task, *, require_identity=True):
 
 
 def historical_generation_identity_status(prediction, metric, task):
+    metric = adopted_candidate_metric_view(metric, prediction_patch(prediction))
     if isinstance(metric, dict) and metric.get("recovery_kind") == "failed_quiesced_capture":
         from opencollab_eval.generation.gen_prediction_recovery import failed_capture_recovery_valid
 
         return "interrupted_verified" if failed_capture_recovery_valid(prediction, metric) else "invalid"
-    """Classify a historical generation artifact using full patch identity."""
     if not isinstance(prediction, dict) or not isinstance(metric, dict):
         return "invalid"
     original_patch = prediction_patch(prediction)

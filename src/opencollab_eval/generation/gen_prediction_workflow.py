@@ -84,7 +84,7 @@ from .gen_prediction_workflow_inputs import (  # noqa: E402
 from .gen_prediction_workflow_inputs import build_extras as build_extras  # noqa: E402
 from .gen_prediction_workflow_inputs import build_task as build_task  # noqa: E402
 from .gen_prediction_workflow_inputs import json as json  # noqa: E402
-from .gen_prediction_workflow_state import workflow_model_settings, workflow_stop_metrics
+from .gen_prediction_workflow_state import workflow_candidate_delivered, workflow_model_settings, workflow_stop_metrics
 
 _REPO_ROOT = Path(os.environ.get("OPENCOLLAB_EVAL_WORKSPACE", Path.cwd())).resolve()
 
@@ -191,6 +191,8 @@ def _workflow_status_for_result(result, patch: str) -> str:
                 return "done_with_timeout_patch"
     if getattr(result, "runtime_status", None) == "stopped":
         return reason or "stopped"
+    if patch.strip() and workflow_candidate_delivered(result):
+        return "done"
     if status and status != "done":
         return status
     return "done" if patch.strip() else "empty_patch_after_done"
