@@ -33,11 +33,44 @@ oc-eval run TASKS_FILE --model MODEL --provider PROVIDER
             [--api-key KEY] [--base-url URL] [--output DIRECTORY]
             [--concurrency COUNT] [--max-tokens COUNT] [--timeout SECONDS]
             [--temperature VALUE] [--top-p VALUE] [--agent-profile {single,single2}]
+            [--no-progress-timeout SECONDS] [--generation-wall-timeout SECONDS]
 ```
 
 This command runs the generic evaluator and writes `results.jsonl`. Its summary
 contains task count, eligible candidate count, and ineligible count. Official
 SWE resolved verdicts come from the Pro-Lite evaluation commands.
+
+`--no-progress-timeout` selects actual progress supervision. Completed native
+model rounds, actual model content or tool argument increments, and completed
+tools renew the inactivity timer. HTTP success, response creation, keepalives,
+log growth, and snapshot modification times leave the timer unchanged. The
+standalone single-agent and workflow generator commands accept these options.
+
+Pro-Lite and the parallel runner select the same policy with
+`--workflow-env OPENCOLLAB_EVAL_NO_PROGRESS_TIMEOUT=43200`. With this setting,
+the default Solver, task, and controller cumulative time limits give way to the
+inactivity timer. An explicit
+`--workflow-env OPENCOLLAB_EVAL_GENERATION_WALL_TIMEOUT=SECONDS` retains a
+generation wall limit. `OPENCOLLAB_EVAL_CONTROLLER_WALL_TIMEOUT` supplies an
+explicit controller wall limit. Official evaluation retains its own test
+timeout. Existing processes retain settings loaded at launch.
+
+For gateway streaming observations, set
+`--workflow-env OPENCOLLAB_EVAL_MODEL_PROGRESS_PATH=/absolute/path/model-progress.jsonl`.
+Each generator subprocess appends its existing `oce-progress/INVOCATION_ID` marker to its
+existing User-Agent. The gateway includes that ID as `progress_id` in compact
+events. Observers accept shared-file activity only for the exact generator ID.
+Each event stores `event`, `epoch`, `call`, and `content_chars`. Actual content
+uses `model_content` or `tool_arguments`; a normal completed round uses
+`model_completed`. The generic concurrent evaluator uses task-scoped progress
+sources or explicitly bound gateway events. A gateway progress binding covers
+one active task per invocation.
+
+The progress status records generation and tool activity, candidate capture,
+and scoring as separate stages. Generation duration ends at the native run's
+return, ahead of candidate capture and report writing. A cooperative inactivity
+stop retains native snapshots and journals, then uses the existing failed
+capture recovery procedure to select a proven candidate for official evaluation.
 
 ### `oc-eval swe-v1-prolite`
 

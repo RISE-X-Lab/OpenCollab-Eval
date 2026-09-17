@@ -29,9 +29,18 @@ oc-eval run TASKS_FILE --model MODEL --provider PROVIDER
             [--api-key KEY] [--base-url URL] [--output DIRECTORY]
             [--concurrency COUNT] [--max-tokens COUNT] [--timeout SECONDS]
             [--temperature VALUE] [--top-p VALUE] [--agent-profile {single,single2}]
+            [--no-progress-timeout SECONDS] [--generation-wall-timeout SECONDS]
 ```
 
 此命令运行通用评测器并写入 `results.jsonl`。摘要包含任务数、具备资格的候选数和不具备资格的候选数。官方 SWE resolved 判定由 Pro-Lite 评测命令给出。
+
+`--no-progress-timeout` 启用真实进展监督。完整的原生模型回合、模型内容或工具参数的实际增量，以及工具完成事件都会更新闲置计时。HTTP 成功、响应创建、保活、日志增长和快照修改时间维持原有计时。独立单 Agent 生成器与工作流生成器也接受这两个选项。
+
+Pro-Lite 与并行运行器通过 `--workflow-env OPENCOLLAB_EVAL_NO_PROGRESS_TIMEOUT=43200` 使用同一策略。启用后，默认的 Solver、任务和 controller 累计时限改为闲置计时。显式传入 `--workflow-env OPENCOLLAB_EVAL_GENERATION_WALL_TIMEOUT=SECONDS` 可保留生成累计时限。`OPENCOLLAB_EVAL_CONTROLLER_WALL_TIMEOUT` 可指定 controller 累计时限。官方评测继续使用自己的测试超时。已有进程保持启动时加载的设置。
+
+网关流式观测通过 `--workflow-env OPENCOLLAB_EVAL_MODEL_PROGRESS_PATH=/absolute/path/model-progress.jsonl` 配置。每个生成器子进程会在原有 User-Agent 后追加既有的 `oce-progress/INVOCATION_ID` 标记。网关在紧凑事件的 `progress_id` 中记录该 ID，观察者按生成器 ID 精确匹配共享文件的活动。每个事件记录 `event`、`epoch`、`call` 和 `content_chars`。实际内容使用 `model_content` 或 `tool_arguments`，正常完成的模型回合使用 `model_completed`。通用并发评测器使用每任务的独立进展源，或具有显式归属的网关事件。一个网关进展归属标识对应一个活跃任务。
+
+进展状态分别记录生成、工具活动、候选提取和评分阶段。生成时长在原生运行返回时结束，候选提取和报告写入在此后执行。协作式闲置停止会保留原生快照与 journal，然后通过已有的失败候选恢复流程选取经过验证的候选，进入官方评测。
 
 ### `oc-eval swe-v1-prolite`
 

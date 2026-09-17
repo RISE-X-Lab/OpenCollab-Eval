@@ -203,11 +203,11 @@ def _bounded_remote_communicate(
     proc: subprocess.Popen[str],
     input_text: str,
     *,
-    timeout: float,
+    timeout: float | None,
     poll_interval: float | None = None,
     poll_callback: Callable[[], None] | None = None,
 ) -> tuple[str, str]:
-    timeout_value = _validate_communication_timeout(timeout)
+    timeout_value = None if timeout is None else _validate_communication_timeout(timeout)
     if poll_interval is not None:
         poll_interval = _validate_timeout(
             poll_interval,
@@ -217,14 +217,14 @@ def _bounded_remote_communicate(
     # Start the deadline before any potentially blocking pipe operation.  In
     # particular, writing a large request to a child that never reads stdin
     # must not bypass the caller's timeout.
-    deadline = time.monotonic() + timeout_value
+    deadline = time.monotonic() + timeout_value if timeout_value is not None else math.inf
     if (
         getattr(proc, "stdout", None) is None
         or getattr(proc, "stderr", None) is None
         or getattr(proc, "stdin", None) is None
     ):
         remaining = max(0.0, deadline - time.monotonic())
-        return proc.communicate(input_text, timeout=remaining)
+        return proc.communicate(input_text, timeout=None if deadline == math.inf else remaining)
     stdout_tail = _BoundedTextTail(MAX_REMOTE_OUTPUT_TAIL_CHARS)
     stderr_tail = _BoundedTextTail(MAX_REMOTE_OUTPUT_TAIL_CHARS)
     threads = [
@@ -295,11 +295,11 @@ def _bounded_remote_communicate(
             raise subprocess.TimeoutExpired(
                 getattr(proc, "args", proc), timeout_value
             ) from None
-        wait_timeout = min(remaining, poll_interval) if poll_interval else remaining
+        wait_timeout = min(remaining, poll_interval) if poll_interval else None if deadline == math.inf else remaining
         try:
             proc.wait(timeout=wait_timeout)
         except subprocess.TimeoutExpired:
-            if wait_timeout < remaining:
+            if wait_timeout is not None and wait_timeout < remaining:
                 if poll_callback is not None:
                     poll_callback()
                 continue
@@ -313,7 +313,7 @@ def _bounded_remote_communicate(
     if not input_done.is_set():
         close_stdin()
     writer_remaining = max(0.0, deadline - time.monotonic())
-    if not input_done.wait(timeout=writer_remaining):
+    if not input_done.wait(timeout=5 if deadline == math.inf else writer_remaining):
         raise subprocess.TimeoutExpired(getattr(proc, "args", proc), timeout_value)
     raise_input_error()
     for thread in threads:

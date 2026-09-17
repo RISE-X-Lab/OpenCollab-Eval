@@ -23,6 +23,7 @@ from opencollab_eval.commands.swe_v1_prolite_process import (
     terminate_local_process_group,
 )
 from opencollab_eval.engine import swe_v1_remote_cleanup as remote_cleanup
+from opencollab_eval.engine.native_progress_watch import controller_wall_timeout
 
 
 def probe_local_execution_state(
@@ -183,7 +184,7 @@ def run_local_runner(
         stdout, stderr = _bounded_remote_communicate(
             proc,
             json.dumps(payload),
-            timeout=args.total_timeout,
+            timeout=controller_wall_timeout(args.total_timeout, payload.get("workflow_env") or {}),
         )
         if _local_process_group_exists(proc.pid) and not terminate_local_process_group(proc):
             raise RuntimeError("local runner exited with residual process-group descendants")

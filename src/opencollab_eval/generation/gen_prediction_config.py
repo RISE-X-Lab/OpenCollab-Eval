@@ -94,6 +94,15 @@ def _workspace_archive_timeout_from_env() -> float:
     return timeout
 
 
+def _dependency_preparation_timeout_from_env() -> float:
+    """Apply the public setup allowance to dependency preparation transport."""
+    if "OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS" in os.environ:
+        from .public_preparation_runner import _preparation_timeout_seconds
+
+        return _preparation_timeout_seconds()
+    return _workspace_archive_timeout_from_env()
+
+
 def validate_generation_limits(
     *,
     max_steps: object,

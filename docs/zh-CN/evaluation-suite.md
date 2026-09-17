@@ -69,6 +69,16 @@ python -m opencollab_eval.generation.gen_prediction_workflow \
 
 ## 环境与信息隔离
 
+工作流容器临时存储采用标准 `TMPDIR` 设置，为每个容器创建独立 owned 目录。服务器本机运行时选择运维用户拥有的本地 NVMe 目录，predictions 和报告继续保存在共享输出目录。`OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS` 通过实际 Docker 传输控制公开 setup、依赖 stash、restore、remove 和候选依赖池准备。省略准备设置时沿用 workspace archive 时限。普通 Docker 工具调用和 workspace archive 分别使用各自时限。每次准备操作保留配置的有限等待时间，显式设置的任务外层时限也会约束准备阶段。
+
+```bash
+export TMPDIR="${EVAL_LOCAL_TMP_ROOT:?Set a local scratch directory}/opencollab-preparation/${RUN_ID:?Set a run name}"
+mkdir -p "$TMPDIR"
+chmod 700 "$TMPDIR"
+# Include this setting in the existing parallel runner's arguments.
+# --workflow-env OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS=43200
+```
+
 生成工作区从指定基础代码建立新的匿名 Git 仓库，原始历史、远端引用、隐藏测试补丁、参考答案和评分日志放在求解器视图之外。源码清理前保存公开依赖及构建产物，清理后恢复。NodeBB 的公开构建产物与 Redis 服务准备独立于隐藏测试。使用 Conda 的镜像需要在求解命令开始前确认 `testbed` 激活成功，其他语言保持正常工具链。
 
 候选子工作区继承获准的运行依赖，各自保存源码改动。最终提取继续使用已有静止检查、所有权校验、路径检查和候选身份配对。`OPENCOLLAB_EVAL_OUTPUT_ROOT` 指定服务器存储位置，正式测试容器可以写入该目录。

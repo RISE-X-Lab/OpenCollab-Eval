@@ -353,6 +353,14 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
         }
     )
     env.update(effective_workflow_env())
+    if env.get("OPENCOLLAB_EVAL_MODEL_PROGRESS_PATH") and generator in {"single-agent", "workflow"}:
+        from opencollab_eval.engine.solver_backend import default_openai_user_agent, normalize_llm_user_agent
+
+        env["OPENCOLLAB_EVAL_PROGRESS_ID"] = invocation_id
+        original_user_agent = env.get("OPENCOLLAB_LLM_USER_AGENT") or default_openai_user_agent()
+        env["OPENCOLLAB_LLM_USER_AGENT"] = normalize_llm_user_agent(
+            f"{original_user_agent} oce-progress/{env['OPENCOLLAB_EVAL_PROGRESS_ID']}"
+        )
     bind_llm_transport_environment(env)
     if openhands_command:
         env["OPENCOLLAB_OPENHANDS_COMMAND"] = openhands_command

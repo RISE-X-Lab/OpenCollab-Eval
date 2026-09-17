@@ -106,6 +106,7 @@ def test_controller_main_removes_reserved_proof_after_timeout(
     process = FakeProcess()
     monkeypatch.setitem(namespace, "_prepare_output", lambda path, root: (1, 2, 3))
     monkeypatch.setitem(namespace, "_prepare_worker", lambda repo: home)
+    monkeypatch.setitem(namespace, "_become_child_subreaper", lambda: False)
     monkeypatch.setitem(namespace, "_trusted_worker_command", lambda *args: ["worker"])
     monkeypatch.setitem(
         namespace,

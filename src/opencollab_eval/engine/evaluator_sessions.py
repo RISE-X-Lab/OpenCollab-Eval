@@ -14,7 +14,12 @@ from opencollab.tools import Tool
 
 from opencollab_eval.engine.environment import ExecutionEnvironment
 from opencollab_eval.engine.native_failure_attribution import classify_failure
-from opencollab_eval.engine.native_progress_watch import guarded_workflow, timeout_seconds
+from opencollab_eval.engine.native_progress_watch import (
+    generation_wall_timeout,
+    guarded_agent,
+    guarded_workflow,
+    timeout_seconds,
+)
 from opencollab_eval.usage import DEFAULT_MAX_OUTPUT_TOKENS
 
 if TYPE_CHECKING:
@@ -150,7 +155,7 @@ class _EvalRunRecord:
             "failure_attribution": attribution,
             "external_error": attribution["origin"] == "provider_transport",
             "external_error_retryable": attribution["retryable"],
-            "usage_complete": self.result.tokens is not None,
+            "usage_complete": self.result.metrics.get("usage_complete", self.result.tokens is not None),
         }
 
     @property
@@ -269,15 +274,21 @@ async def _run_single_session(
     )
     run_options = {} if agent_profile == "single2" else {"name": "eval_agent", "system_prompt": prompt, "tools": tools}
     run_agent = client.agent2 if agent_profile == "single2" else client.agent
-    result = await run_agent(
+    operation = run_agent(
         task.description,
         **run_options,
         budget=task.max_tokens,
         max_steps=max_steps,
-        timeout=task.timeout,
+        timeout=generation_wall_timeout(task.timeout),
         artifacts=artifacts,
         trace=True,
     )
+    if timeout_seconds() is not None:
+        configured_root = os.environ.get("OPENCOLLAB_EVAL_WORKFLOW_LOG_DIR")
+        progress_root = Path(configured_root).parent if configured_root else Path(save_dir or artifacts)
+        result = await guarded_agent(operation, progress_root, artifacts)
+    else:
+        result = await operation
     return _EvalRunRecord(result, agent_profile=agent_profile)
 
 
@@ -321,7 +332,8 @@ async def _run_workflow_mode(
         tracer.bind_artifacts(artifacts, workflow=True)
     progress_timeout = timeout_seconds()
     if progress_timeout is not None:
-        progress_root = Path(os.environ["OPENCOLLAB_EVAL_WORKFLOW_LOG_DIR"]).parent
+        configured_root = os.environ.get("OPENCOLLAB_EVAL_WORKFLOW_LOG_DIR")
+        progress_root = Path(configured_root).parent if configured_root else Path(save_dir or artifacts)
         workflow = guarded_workflow(workflow, progress_root, orchestration_path=artifacts / "orchestration.jsonl")
     profile_options = {"agent_profile": agent_profile} if agent_profile is not None else {"system_prompt": prompt}
     result = await _client(
@@ -347,7 +359,7 @@ async def _run_workflow_mode(
         args,
         budget=task.max_tokens,
         concurrency=_workflow_concurrency(),
-        timeout=None if progress_timeout is not None else task.timeout,
+        timeout=generation_wall_timeout(task.timeout),
         max_steps=max_steps,
         **profile_options,
         artifacts=artifacts,

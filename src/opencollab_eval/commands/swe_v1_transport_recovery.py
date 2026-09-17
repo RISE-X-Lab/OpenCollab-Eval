@@ -205,11 +205,11 @@ def wait_for_remote_ownership_fact(
     base_run_dir: str,
     remote_runtime_repo: str,
     remote_python: str,
-    deadline: float,
+    deadline: float | None,
 ) -> dict[str, Any]:
     """Retain the caller's worker slot until remote ownership is observable."""
     while True:
-        remaining = deadline - time.monotonic()
+        remaining = math.inf if deadline is None else deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError("remote ownership remained unknown until the task deadline")
         observed = probe_remote_execution_state(
@@ -222,7 +222,7 @@ def wait_for_remote_ownership_fact(
         )
         if observed is not None:
             return observed
-        remaining = deadline - time.monotonic()
+        remaining = math.inf if deadline is None else deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError("remote ownership remained unknown until the task deadline")
         time.sleep(min(REMOTE_COMPLETION_POLL_SECONDS, remaining))
@@ -341,13 +341,13 @@ def wait_for_terminal_remote_summary(
     remote_runtime_repo: str,
     owner_nonce: str,
     payload: dict[str, Any],
-    deadline: float,
+    deadline: float | None,
     remote_python: str = "python3",
     expected_owner: tuple[int, str, str, str, str] | None = None,
 ) -> dict[str, Any] | None:
     """Keep task ownership while transport is unavailable and await one terminal fact."""
     while True:
-        remaining = deadline - time.monotonic()
+        remaining = math.inf if deadline is None else deadline - time.monotonic()
         if remaining <= 0:
             return None
         observed = probe_remote_execution_state(
@@ -385,7 +385,7 @@ def wait_for_terminal_remote_summary(
                 raise RemoteRunnerUnavailable(observed)
             if state != "alive":
                 raise RemoteRunnerUnavailable(observed)
-        remaining = deadline - time.monotonic()
+        remaining = math.inf if deadline is None else deadline - time.monotonic()
         if remaining <= 0:
             return None
         time.sleep(min(REMOTE_COMPLETION_POLL_SECONDS, remaining))
@@ -399,12 +399,12 @@ def recover_existing_remote_summary(
     remote_runtime_repo: str,
     remote_python: str,
     payload: dict[str, Any],
-    deadline: float,
+    deadline: float | None,
     expected_owner: tuple[int, str, str, str, str] | None = None,
 ) -> dict[str, Any] | None:
     """Adopt a matching runner from a lost controller before any new launch."""
     while True:
-        remaining = deadline - time.monotonic()
+        remaining = math.inf if deadline is None else deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError("remote ownership remained unknown until the task deadline")
         observed = probe_remote_execution_state(
@@ -449,7 +449,7 @@ def recover_existing_remote_summary(
                 if terminal is not None:
                     return terminal
             raise RemoteRunnerUnavailable(observed)
-        remaining = deadline - time.monotonic()
+        remaining = math.inf if deadline is None else deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError("remote ownership remained unknown until the task deadline")
         time.sleep(min(REMOTE_COMPLETION_POLL_SECONDS, remaining))

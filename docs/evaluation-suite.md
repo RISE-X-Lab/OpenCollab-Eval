@@ -69,6 +69,16 @@ The `claude-code` solver profile uses the existing external CLI adapter and the 
 
 ## Environment and information isolation
 
+Workflow container scratch storage follows the standard `TMPDIR` setting, using a fresh owned directory for each container. For server-local runs, choose an operator-owned directory on local NVMe storage and keep predictions and reports in the shared output directory. `OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS` controls public setup and dependency stash, restore, removal, and candidate-pool preparation through the actual Docker transport. An omitted preparation setting preserves the workspace archive allowance. Ordinary Docker tool calls and workspace archives retain their separate limits. Each preparation operation retains its configured finite allowance. An explicitly configured task wall-clock timeout also bounds preparation.
+
+```bash
+export TMPDIR="${EVAL_LOCAL_TMP_ROOT:?Set a local scratch directory}/opencollab-preparation/${RUN_ID:?Set a run name}"
+mkdir -p "$TMPDIR"
+chmod 700 "$TMPDIR"
+# Include this setting in the existing parallel runner's arguments.
+# --workflow-env OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS=43200
+```
+
 Generation starts from the requested base tree in a fresh anonymous Git repository. Original history, remote references, hidden test patches, reference solutions, and scoring logs remain outside the solver view. Public dependencies and public build output are captured before source cleanup and restored afterward. NodeBB public build artifacts and Redis readiness are prepared independently of hidden tests. Conda-backed images require successful `testbed` activation before solver commands run. Other language images retain their native toolchain.
 
 Candidate sub-workspaces inherit the permitted runtime dependency view while keeping their source changes separate. Final extraction uses the existing workspace quiescence, ownership, path, and candidate identity checks. Server-local output storage is selected with `OPENCOLLAB_EVAL_OUTPUT_ROOT` and is writable by the official test container.

@@ -9,6 +9,8 @@ import time
 from dataclasses import dataclass, replace
 from typing import Any
 
+from opencollab_eval.engine.native_progress_watch import generation_wall_timeout
+
 
 @dataclass(frozen=True)
 class PreparedEvalRun:
@@ -132,13 +134,14 @@ def prepare_eval_run(
         output_dir=output_dir,
         workflow=workflow,
     )
+    wall_timeout = generation_wall_timeout(task.timeout)
     return PreparedEvalRun(
         task=task,
         max_steps=max_steps,
         checkpoint_interval=checkpoint_interval,
         cleanup_timeout=cleanup_timeout,
         start=start,
-        task_deadline=start + task.timeout,
+        task_deadline=start + wall_timeout if wall_timeout is not None else math.inf,
         trajectories_dir=trajectories_dir,
         run_dir=run_dir,
         tracer=tracer,
