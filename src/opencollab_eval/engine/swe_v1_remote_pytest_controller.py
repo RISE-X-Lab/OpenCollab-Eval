@@ -285,6 +285,43 @@ def _collect_events(
     return b"".join(chunks)
 
 
+def _become_child_subreaper():
+    # Keep orphaned launcher descendants reapable by this controller.
+    try:
+        import ctypes
+        return ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0
+    except (AttributeError, OSError):
+        return False
+
+
+def _reap_adopted_children(pid):
+    while True:
+        try:
+            child_pid, _status = os.waitpid(-pid, os.WNOHANG)
+        except (ChildProcessError, OSError):
+            return
+        if child_pid <= 0:
+            return
+
+
+def _wait_for_worker_group_exit(pid, timeout=1.0):
+    deadline = time.monotonic() + min(1.0, max(0.0, timeout))
+    while True:
+        # Xvfb can exit asynchronously after xvfb-run has returned. Reap its
+        # zombie before checking group absence, within the worker deadline.
+        _reap_adopted_children(pid)
+        try:
+            os.killpg(pid, 0)
+        except ProcessLookupError:
+            return True
+        except PermissionError:
+            pass
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(0.02, remaining))
+
+
 def _kill_surviving_group(pid):
     try:
         os.killpg(pid, 0)
@@ -405,6 +442,8 @@ def main():
     read_fd, write_fd = os.pipe()
     process = None
     try:
+        _become_child_subreaper()
+        worker_deadline = time.monotonic() + args.event_timeout_seconds
         process = subprocess.Popen(
             _trusted_worker_command(
                 args.command,
@@ -423,7 +462,8 @@ def main():
         read_fd = -1
         raw = _collect_events(process, owned_read_fd, args.event_timeout_seconds)
         returncode = process.wait()
-        if _kill_surviving_group(process.pid):
+        if not _wait_for_worker_group_exit(process.pid, worker_deadline - time.monotonic()):
+            _kill_surviving_group(process.pid)
             raise ValueError("pytest worker left a process alive")
         events = _decode(raw, returncode)
         _publish(

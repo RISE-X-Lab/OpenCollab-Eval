@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -180,3 +181,77 @@ def test_controller_rejects_abrupt_zero_exit(tmp_path, request):
 
     assert result.returncode == 86
     assert not proof.exists()
+
+
+def test_controller_reaps_exited_descendant_before_publishing(tmp_path, request):
+    result, proof = _run_case(
+        tmp_path,
+        "import os, time\n"
+        "def test_target():\n"
+        "    if os.fork() == 0:\n"
+        "        os._exit(0)\n"
+        "    time.sleep(0.05)\n",
+        request,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    events = [json.loads(line) for line in proof.read_text().splitlines()]
+    assert events[-1]["controller"]["worker_returncode"] == 0
+
+
+def test_controller_waits_for_short_lived_descendant(tmp_path, request):
+    result, proof = _run_case(
+        tmp_path,
+        "import subprocess, sys\n"
+        "def test_target():\n"
+        "    subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(0.2)'],\n"
+        "                     close_fds=True, stdout=subprocess.DEVNULL,\n"
+        "                     stderr=subprocess.DEVNULL)\n",
+        request,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    events = [json.loads(line) for line in proof.read_text().splitlines()]
+    assert events[-1]["controller"]["worker_returncode"] == 0
+
+
+def test_controller_rejects_persistent_live_descendant(tmp_path, request):
+    result, proof = _run_case(
+        tmp_path,
+        "import subprocess, sys\n"
+        "def test_target():\n"
+        "    subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'],\n"
+        "                     close_fds=True, stdout=subprocess.DEVNULL,\n"
+        "                     stderr=subprocess.DEVNULL)\n",
+        request,
+    )
+
+    assert result.returncode == 86, result.stdout + result.stderr
+    assert "pytest worker left a process alive" in result.stderr
+    assert not proof.exists()
+
+
+def test_controller_reaping_preserves_unrelated_child_exit_status():
+    namespace = {"__name__": "controller_test"}
+    exec(prolite_pytest_controller_source(), namespace)
+    worker = subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True)
+    unrelated = subprocess.Popen(
+        [sys.executable, "-c", "raise SystemExit(7)"], start_new_session=True
+    )
+    try:
+        worker.wait(timeout=5)
+        stat = Path(f"/proc/{unrelated.pid}/stat")
+        deadline = time.monotonic() + 5
+        while stat.read_text().rsplit(")", 1)[1].split()[0] != "Z":
+            if time.monotonic() >= deadline:
+                pytest.fail("unrelated child did not exit")
+            time.sleep(0.01)
+
+        namespace["_reap_adopted_children"](worker.pid)
+
+        assert unrelated.wait(timeout=5) == 7
+    finally:
+        for child in (worker, unrelated):
+            if child.poll() is None:
+                child.kill()
+            child.wait(timeout=5)
