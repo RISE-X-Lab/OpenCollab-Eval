@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shlex
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -130,8 +131,12 @@ def test_pytest_plan_passes_the_eval_timeout_to_the_controller(tmp_path: Path) -
         plan, "f2p", "nonce", controller_timeout=7
     )
 
-    # The controller is wrapped in the portable process-group watchdog.  The
-    # inner command is hex-encoded to preserve its shell quoting, so inspect
-    # the encoded payload rather than coupling this test to an unescaped
-    # implementation detail.
-    assert b"--event-timeout-seconds 7".hex() in script
+    # Inspect the executable command written into the batch file. The process
+    # watchdog receives that file while the controller receives its timeout.
+    command = next(
+        line for line in script.splitlines()
+        if line.startswith("python3 /eval_input/opencollab_pytest_controller.py ")
+    )
+    argv = shlex.split(command)
+    assert argv[argv.index("--event-timeout-seconds") + 1] == "7"
+    assert argv[argv.index("--") + 1:] == shlex.split(plan["commands"][0])
