@@ -29,15 +29,17 @@ from opencollab_eval.engine.swe_v1_remote_state import *
 def eval_for_task_once(row, patch_selection=None):
     from opencollab_eval.engine.native_progress_watch import record_stage
 
-    row = prepare_scoring_row(row, resolve_scoring_adapter_registry())
-    scoring_adapter_receipt = row.scoring_adapter_receipt
     record_stage(base_run_dir / row["instance_id"], "scoring")
     task = row["instance_id"]
     run_dir = base_run_dir / task
     eval_dir = run_dir / eval_dir_name
     report_path = eval_dir / "reports" / task / "report.json"
     summary_path = eval_dir / "summary.json"
-    done, prediction, metric, pairing = generation_done_for_mode(run_dir, task, eval_only=eval_only)
+    snapshot = getattr(row, "verified_generation", None) if patch_selection is not None else None
+    if snapshot is None:
+        done, prediction, metric, pairing = generation_done_for_mode(run_dir, task, eval_only=eval_only)
+    else:
+        done, prediction, metric, pairing = True, *snapshot
     if not done:
         if prediction is not None and metric is not None:
             original_model_patch = prediction_patch(prediction)
@@ -63,6 +65,8 @@ def eval_for_task_once(row, patch_selection=None):
                 write_json(summary_path, summary)
                 return {"status": "empty_eval_patch_invalid", "task": task, "summary": summary}
         return generation_readiness_failure(task, prediction, metric, pairing, require_identity=not eval_only)
+    row = prepare_scoring_row(row, resolve_scoring_adapter_registry(), candidate_patch=eval_model_patch(prediction))
+    scoring_adapter_receipt = row.scoring_adapter_receipt
     fail_to_pass = parse_literal_list(row.get("fail_to_pass") or row.get("FAIL_TO_PASS"))
     if not fail_to_pass:
         summary = {

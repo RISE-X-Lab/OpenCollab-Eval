@@ -29,6 +29,12 @@ runtime 保留原评分内容。题目循环遇到显式配置的不可读文件
 使用同一个准备函数，串接这些入口时适配实际执行一次。内存中的 dict
 子类独立保存回执，数据字段保持原结构。
 
+声明 `SUPPORTS_CANDIDATE_PATCH=True` 的适配通过可选 `candidate_patch`
+keyword 接收已验证预测的评测补丁。题目早期准备会将这种适配延后到生成
+就绪校验完成之后。重试计划与直接评分复用同一份已验证 prediction 与
+metric 快照，评分副本在原位完成一次适配，生成保留原数据。既有适配
+继续沿用单参数调用。sealed gold patch 保存在 judge 数据中。
+
 登记文件沿用 `opencollab.scoring_adapter_registry.v1` 格式。
 
 ```json
