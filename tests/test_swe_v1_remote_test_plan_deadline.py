@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -264,6 +265,40 @@ def test_successful_leader_with_descendant_is_cleaned_and_marked_technical(
         except ProcessLookupError:
             pass
         raise AssertionError("successful bounded command left its descendant running")
+
+
+def test_short_lived_descendant_may_quiesce_within_command_deadline(
+    monkeypatch, tmp_path: Path
+) -> None:
+    if sys.platform != "linux":
+        return
+    monkeypatch.setattr(
+        plans, "validated_test_plan_kind", lambda *args, **kwargs: "synthetic"
+    )
+    output = tmp_path / "eval-output"
+    output.mkdir()
+    command = (
+        "python3 -c 'import subprocess,sys; "
+        "subprocess.Popen([sys.executable, \"-c\", \"import time; time.sleep(0.1)\"])'"
+    )
+    script = plans.prolite_test_plan_script(
+        {"commands": [command], "proofs": [{}]},
+        "f2p",
+        "nonce",
+        controller_timeout=1,
+    ).replace("/eval_output", str(output))
+
+    result = subprocess.run(
+        ["bash", "-s"],
+        input=script,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=5,
+    )
+
+    assert result.returncode == 0, result.stdout
+    assert (output / "f2p.batch_001.exit").read_text(encoding="utf-8").strip() == "0"
 
 
 def test_cleanup_failure_stops_later_batches(tmp_path: Path, monkeypatch) -> None:

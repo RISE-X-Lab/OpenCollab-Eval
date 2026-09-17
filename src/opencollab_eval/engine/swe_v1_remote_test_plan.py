@@ -33,6 +33,27 @@ import sys
 import time
 
 
+def _become_child_subreaper():
+    """Adopt orphaned command descendants so their exit can be proven."""
+    try:
+        import ctypes
+
+        prctl = ctypes.CDLL(None, use_errno=True).prctl
+        return prctl(36, 1, 0, 0, 0) == 0
+    except (AttributeError, OSError):
+        return False
+
+
+def _reap_adopted_children():
+    while True:
+        try:
+            pid, _status = os.waitpid(-1, os.WNOHANG)
+        except (ChildProcessError, OSError):
+            return
+        if pid <= 0:
+            return
+
+
 def _process_group_exists(process):
     """Return whether the owned process group still has a member."""
     killpg = getattr(os, "killpg", None)
@@ -72,6 +93,7 @@ def _kill_and_reap(process):
             process.wait(timeout=min(0.1, remaining))
         except (OSError, ChildProcessError, subprocess.TimeoutExpired):
             pass
+        _reap_adopted_children()
         try:
             leader_alive = process.poll() is None
         except (AttributeError, OSError):
@@ -91,6 +113,21 @@ def _kill_and_reap(process):
     return not _process_group_exists(process) and process.poll() is not None
 
 
+def _wait_for_group_exit(process, deadline):
+    """Allow short-lived descendants to finish within the command deadline."""
+    empty_scans = 0
+    while time.monotonic() < deadline:
+        _reap_adopted_children()
+        if not _process_group_exists(process):
+            empty_scans += 1
+            if empty_scans >= 2:
+                return True
+        else:
+            empty_scans = 0
+        time.sleep(min(0.02, max(0.0, deadline - time.monotonic())))
+    return not _process_group_exists(process)
+
+
 try:
     timeout = float(sys.argv[1])
     command_path = sys.argv[2]
@@ -98,6 +135,8 @@ except (IndexError, TypeError, ValueError, OverflowError):
     raise SystemExit(124)
 if timeout <= 0 or timeout != timeout or timeout == float("inf") or timeout == float("-inf"):
     raise SystemExit(124)
+deadline = time.monotonic() + timeout
+_become_child_subreaper()
 try:
     process = subprocess.Popen(["bash", command_path], start_new_session=True)
 except OSError:
@@ -113,6 +152,10 @@ except BaseException:
     _kill_and_reap(process)
     raise
 if _process_group_exists(process):
+    if _wait_for_group_exit(process, min(deadline, time.monotonic() + 5.0)):
+        if returncode < 0:
+            returncode = min(255, 128 - returncode)
+        raise SystemExit(min(255, returncode))
     # A command that exits successfully while leaving a same-session
     # descendant behind is not a clean test execution.  Reap the owned group
     # within the same bounded cleanup window and keep the result technical so
