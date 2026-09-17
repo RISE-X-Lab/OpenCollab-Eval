@@ -33,6 +33,15 @@ def resolve_runtime_config(
 __all__ = ["resolve_runtime_config"]
 
 
+def resolve_workflow_agent_profile(profile: str | None) -> str | None:
+    """Normalize the generator's default spelling to the public workflow API."""
+    if profile in {None, "single", "default"}:
+        return None
+    if profile == "single2":
+        return profile
+    raise ValueError(f"unsupported workflow agent profile: {profile}")
+
+
 def resolve_generation_environment(configured, *, environment=None):
     """Inherit the host limit toggle and let explicit workflow settings win."""
     inherited = os.environ if environment is None else environment
@@ -64,14 +73,14 @@ def resolve_agent_generation_limits(profile, max_steps, budget):
     return max_steps, budget
 
 
-def runtime_identity_limits(workflow, budget, max_steps, environment=None):
+def runtime_identity_limits(workflow, budget, max_steps, environment=None, *, agent_profile=None):
     """Return the limits that the selected generator records in its metric."""
     effective_budget, effective_max_steps = effective_generation_limits(
         budget=budget,
         max_steps=max_steps,
         environment=environment,
     )
-    if workflow == "single2":
+    if workflow == "single2" or (workflow == "single-agent" and agent_profile == "single2"):
         effective_max_steps, effective_budget = resolve_agent_generation_limits(
             "single2",
             effective_max_steps,

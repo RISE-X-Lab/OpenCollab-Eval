@@ -261,13 +261,14 @@ def latest_pair(run_dir, task):
 
 
 def generation_runtime_identity():
-    limits = identity_limits(workflow, budget, max_steps, effective_workflow_env())
+    limits = identity_limits(workflow, budget, max_steps, effective_workflow_env(), agent_profile=agent_profile)
     identity = {
         "budget": limits[0],
         "invocation_id": invocation_id,
         "max_steps": limits[1],
         "llm_base_url_sha256": hashlib.sha256(remote_proxy_base_url.encode("utf-8")).hexdigest(),
         "workflow_env": effective_workflow_env(),
+        "agent_profile": "single2" if workflow == "single2" else agent_profile,
     }
     if run_id:
         identity["run_id"] = run_id
@@ -448,7 +449,6 @@ def completed_generation_identity(prediction, metric, task, *, require_submissio
     return False
 
 
-
 def terminal_generation_result(prediction, metric, task, pairing):
     """Classify a saved explicit terminal outcome that has no evaluable capture."""
     outcome = generation_outcome_evidence(metric, prediction_patch(prediction))
@@ -475,7 +475,6 @@ def terminal_generation_result(prediction, metric, task, pairing):
         patch_len=len(prediction_patch(prediction)),
         **outcome,
     )
-
 
 
 def generation_done_result(task, prediction, metric, pairing, **extra):

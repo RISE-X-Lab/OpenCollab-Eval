@@ -287,6 +287,7 @@ def main():
         "remote_runtime_repo": str(remote_repo),
         "remote_python": str(cfg.get("remote_python") or "python3"),
         "workflow": workflow,
+        "agent_profile": agent_profile,
         "workflow_env": workflow_env,
         "openhands_command_sha256": openhands_command_sha256,
         "openhands_empty_patch_rejections": openhands_empty_patch_rejections,

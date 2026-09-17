@@ -46,11 +46,24 @@ Single uses the normal OC `coding` profile and system prompt. Its public task co
 | Base Team | `base-team-single-pass-v1` |
 | G11 | `validation-council-solve` |
 | G20 | `validation-council-wired-v1` |
-| G21 | `validation-council-wired-dual-g20-v1` |
+| G21 | `validation-council-dual-coder-contract-v1` |
+| Wired Dual G20 | `validation-council-wired-dual-g20-v1` |
 | Triple | `validation-council-triple-coder-contract-v1` |
 | Dual Contract | `validation-council-wired-dual-contract-v1` |
 | G20 + Coder Contract | `validation-council-g20-coder-contract-v1` |
 | Red-Green v2 | `validation-council-g20-coder-red-green-v2` |
+
+Workflow selection and agent profile selection are independent. G21 with Single2 uses the existing G21 entry together with `--agent-profile single2`. The profile applies to every agent role, including the contract adjudicator. The workflow retains its role prompts, permitted tools, candidate workspaces, and selection policy. OC supplies the Single2 system prompt, context shaping, safety policy, and built-in tool defaults. OCE keeps its Bash evidence wrapper around the same native tool instance. For this profile, native Bash output uses the Single2 10,000-character limit.
+
+```bash
+python -m opencollab_eval.generation.gen_prediction_workflow \
+  --instance-file "$INSTANCE_FILE" --image "$IMAGE" \
+  --output "$PREDICTIONS_FILE" \
+  --workflow validation-council-dual-coder-contract-v1 \
+  --agent-profile single2 --model "$MODEL" --provider openai
+```
+
+The same `--agent-profile` option is accepted by the parallel runner and `oc-eval swe-v1-prolite`. It is recorded in the task configuration, generation metrics, and workflow manifest. Omitting it preserves the existing workflow driver. `--agent-profile single` selects that default explicitly. The standalone `--workflow single2` entry continues to select the native single-agent generator.
 
 The `claude-code` solver profile uses the existing external CLI adapter and the same candidate and official-evaluation machinery. External mini-swe-agent and Native Harbor runs must provide the same public task and cleaned source view before candidate import. Their solver versions and external launch configuration remain part of each run's provenance.
 

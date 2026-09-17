@@ -40,6 +40,7 @@ class ExecutionConfig:
     llm_stream_idle_timeout: float
     resume_from_checkpoint: bool
     context_window: int | None = None
+    agent_profile: str | None = None
 
 
 @dataclass
@@ -245,6 +246,7 @@ async def run_session_or_workflow(
             env=state.env,
             tracer=tracer,
             prompt=prompt,
+            agent_profile=config.agent_profile,
             tools=tools,
             model=config.model,
             provider=config.provider,
@@ -282,6 +284,7 @@ async def run_session_or_workflow(
         base_url=config.base_url,
         max_steps=config.max_steps,
         workflow=config.workflow,
+        agent_profile=config.agent_profile,
         injected_paths=state.injected_paths,
         temperature=config.temperature,
         top_p=config.top_p,

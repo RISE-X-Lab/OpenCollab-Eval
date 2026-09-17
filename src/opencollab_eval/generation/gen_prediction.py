@@ -477,7 +477,11 @@ def main() -> None:
             model_name=model_name,
             patch=patch,
             metrics=metrics,
-            workflow_name=("single2" if args.agent_profile == "single2" else "single-agent"),
+            workflow_name=(
+                os.environ["OPENCOLLAB_SWE_WORKFLOW"]
+                if os.environ.get("OPENCOLLAB_SWE_WORKFLOW") in {"single-agent", "single2"}
+                else "single2" if args.agent_profile == "single2" else "single-agent"
+            ),
         )
         pending_required = bool(patch.strip())
         if pending_required:

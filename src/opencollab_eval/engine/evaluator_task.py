@@ -12,6 +12,7 @@ from opencollab_eval.engine.evaluator_task_execution import (
 )
 from opencollab_eval.engine.evaluator_task_finalization import finalize_eval_run
 from opencollab_eval.engine.evaluator_task_setup import _positive_integer, prepare_eval_run
+from opencollab_eval.runtime_config import resolve_workflow_agent_profile
 
 
 async def run_eval_task_impl(
@@ -43,8 +44,10 @@ async def run_eval_task_impl(
     defer_patch_extraction: bool,
     *,
     context_window: int | None = None,
+    agent_profile: str | None = None,
 ) -> Any:
     facade = sys.modules["opencollab_eval.engine.evaluator"]
+    agent_profile = resolve_workflow_agent_profile(agent_profile)
     if context_window is not None:
         context_window = _positive_integer(context_window, name="context_window")
     prepared = prepare_eval_run(
@@ -69,6 +72,7 @@ async def run_eval_task_impl(
         top_p=top_p,
         max_output_tokens=max_output_tokens,
         context_window=context_window,
+        agent_profile=agent_profile,
         thinking=thinking,
         thinking_params=thinking_params,
         wire_protocol=wire_protocol,

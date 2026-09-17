@@ -30,7 +30,7 @@ _PUBLIC_NAMES = {
         }
     ),
     "opencollab.tools": frozenset(
-        {"BuiltinToolName", "Tool", "VerificationTool", "builtin_tools"}
+        {"BuiltinToolName", "Tool", "VerificationTool", "builtin_tools", "profile_tool_limits"}
     ),
     "opencollab.workflows": frozenset({"WorkflowContext", "CandidateRun", "workflow"}),
 }

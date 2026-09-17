@@ -32,7 +32,7 @@ inspection, before generation and official evaluation.
 oc-eval run TASKS_FILE --model MODEL --provider PROVIDER
             [--api-key KEY] [--base-url URL] [--output DIRECTORY]
             [--concurrency COUNT] [--max-tokens COUNT] [--timeout SECONDS]
-            [--temperature VALUE] [--top-p VALUE]
+            [--temperature VALUE] [--top-p VALUE] [--agent-profile {single,single2}]
 ```
 
 This command runs the generic evaluator and writes `results.jsonl`. Its summary
@@ -48,7 +48,7 @@ official evaluation. The main option groups are shown below.
 | --- | --- |
 | Remote runtime | `--host`, `--ssh-command`, `--remote-python`, `--remote-root`, `--remote-runtime-repo` |
 | Task selection | `--start-index`, `--limit`, `--run-id`, `--base-run-dir` |
-| Solver | `--workflow`, `--model-name`, `--llm-model`, `--llm-provider`, `--budget`, `--max-steps` |
+| Solver | `--workflow`, `--agent-profile`, `--model-name`, `--llm-model`, `--llm-provider`, `--budget`, `--max-steps` |
 | Model identity | `--context-window`, `--temperature`, `--top-p`, `--max-output-tokens` |
 | Provider transport | `--remote-proxy-base-url`, `--local-proxy-base-url`, `--proxy-env-file`, `--remote-api-env-file` |
 | Evidence limits | `--max-task-starts`, `--max-eval-attempts`, `--checkpoint-interval`, `--eval-container-bind-timeout` |
@@ -62,6 +62,8 @@ official-evaluation run identity, so a report created with another value is not
 reused.
 
 Run the installed help before constructing automation.
+
+`--agent-profile single2` selects the Single2 runtime for every agent role of the chosen OpenCollab workflow. Workflow selection remains independent. G21 uses `--workflow validation-council-dual-coder-contract-v1`. The workflow generator and parallel runner accept the same pair of options. Omitting the profile preserves the existing driver, and `single` explicitly selects that default.
 
 ```bash
 oc-eval swe-v1-prolite --help

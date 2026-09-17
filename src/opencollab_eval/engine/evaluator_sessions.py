@@ -84,6 +84,7 @@ class _EvalRunRecord:
 
     result: RunResult[Any]
     workflow: bool = False
+    agent_profile: str | None = None
 
     @property
     def used_tokens(self) -> int:
@@ -240,13 +241,14 @@ async def _run_single_session(
     llm_first_event_timeout: float = 180.0,
     llm_stream_idle_timeout: float = 180.0,
     save_dir: str | None = None,
+    agent_profile: str | None = None,
     **_unused: Any,
 ) -> _EvalRunRecord:
     """Run one task-bound public OpenCollab agent."""
     artifacts = _reserve_artifacts(save_dir)
     if artifacts is not None:
         tracer.bind_artifacts(artifacts, workflow=False)
-    result = await _client(
+    client = _client(
         env=env,
         model=model,
         provider=provider,
@@ -264,18 +266,19 @@ async def _run_single_session(
         llm_connect_timeout=llm_connect_timeout,
         llm_first_event_timeout=llm_first_event_timeout,
         llm_stream_idle_timeout=llm_stream_idle_timeout,
-    ).agent(
+    )
+    run_options = {} if agent_profile == "single2" else {"name": "eval_agent", "system_prompt": prompt, "tools": tools}
+    run_agent = client.agent2 if agent_profile == "single2" else client.agent
+    result = await run_agent(
         task.description,
-        name="eval_agent",
-        system_prompt=prompt,
-        tools=tools,
+        **run_options,
         budget=task.max_tokens,
         max_steps=max_steps,
         timeout=task.timeout,
         artifacts=artifacts,
         trace=True,
     )
-    return _EvalRunRecord(result)
+    return _EvalRunRecord(result, agent_profile=agent_profile)
 
 
 async def _run_workflow_mode(
@@ -304,6 +307,7 @@ async def _run_workflow_mode(
     llm_first_event_timeout: float = 180.0,
     llm_stream_idle_timeout: float = 180.0,
     save_dir: str | None = None,
+    agent_profile: str | None = None,
     **_unused: Any,
 ) -> _EvalRunRecord:
     """Run one task-bound workflow through the public OpenCollab facade."""
@@ -319,6 +323,7 @@ async def _run_workflow_mode(
     if progress_timeout is not None:
         progress_root = Path(os.environ["OPENCOLLAB_EVAL_WORKFLOW_LOG_DIR"]).parent
         workflow = guarded_workflow(workflow, progress_root, orchestration_path=artifacts / "orchestration.jsonl")
+    profile_options = {"agent_profile": agent_profile} if agent_profile is not None else {"system_prompt": prompt}
     result = await _client(
         env=env,
         model=model,
@@ -344,11 +349,11 @@ async def _run_workflow_mode(
         concurrency=_workflow_concurrency(),
         timeout=None if progress_timeout is not None else task.timeout,
         max_steps=max_steps,
-        system_prompt=prompt,
+        **profile_options,
         artifacts=artifacts,
         trace=True,
     )
-    return _EvalRunRecord(result, workflow=True)
+    return _EvalRunRecord(result, workflow=True, agent_profile=agent_profile)
 
 
 def _aggregate_tokens(sessions: Sequence[Any]) -> int:

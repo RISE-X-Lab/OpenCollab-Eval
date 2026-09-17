@@ -78,6 +78,7 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
         default=[],
         help="Allowed workflow KEY=VALUE setting, repeatable for multiple values",
     )
+    parser.add_argument("--agent-profile", choices=("single", "single2"), help="Agent profile for workflow roles")
     parser.add_argument("--openhands-command", default="", help="External Solver command template")
     parser.add_argument(
         "--openhands-empty-patch-rejections",

@@ -160,6 +160,7 @@ def _remote_payload(
         "remote_python": str(args.remote_python),
         "base_run_dir": args.base_run_dir,
         "workflow": args.workflow,
+        "agent_profile": getattr(args, "agent_profile", None),
         "workflow_env": normalize_workflow_env(args.workflow_env),
         "openhands_command": args.openhands_command,
         "openhands_empty_patch_rejections": max(0, args.openhands_empty_patch_rejections),

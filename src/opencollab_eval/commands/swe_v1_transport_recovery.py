@@ -17,6 +17,7 @@ from opencollab_eval.commands.swe_v1_prolite_common import (
     REMOTE_TERMINAL_STATUSES,
 )
 from opencollab_eval.engine.swe_v1_runner_claim import runner_claim_sha256
+from opencollab_eval.runtime_config import resolve_workflow_agent_profile
 
 
 class RemoteRunnerUnavailable(RuntimeError):
@@ -238,6 +239,7 @@ def _remote_summary_expectation(payload: dict[str, Any]) -> dict[str, Any]:
         "remote_python": payload["remote_python"],
         "invocation_id": payload["invocation_id"],
         "workflow": payload["workflow"],
+        "agent_profile": resolve_workflow_agent_profile(payload.get("agent_profile")),
         "workflow_env": payload["workflow_env"],
         "model_name": payload["model_name"],
         "llm_model": payload["llm_model"],
