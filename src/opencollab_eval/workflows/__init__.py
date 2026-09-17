@@ -10,6 +10,9 @@ from .swe_committee_v2 import swe_committee_v2
 from .validation_council_dual_coder_contract import (
     validation_council_dual_coder_contract_v1,
 )
+from .validation_council_lean_official import (
+    validation_council_lean_official_v1,
+)
 from .validation_council_solve import validation_council_solve
 from .validation_council_triple_coder_contract import (
     validation_council_triple_coder_contract_v1,
@@ -25,6 +28,7 @@ __all__ = [
     "swe_committee_v2",
     "team_pro",
     "validation_council_dual_coder_contract_v1",
+    "validation_council_lean_official_v1",
     "validation_council_triple_coder_contract_v1",
     "validation_council_solve",
 ]
