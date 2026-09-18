@@ -134,13 +134,14 @@ async def _contract_adjudicate(
     goal: str,
     candidate_a: CandidateRun,
     candidate_b: CandidateRun,
+    selector_prompt: str = CONTRACT_PROMPT,
 ) -> tuple[str, Any, str]:
     evidence, paths, truncated = contract._judge_input(candidate_a, candidate_b)
     if truncated:
         return "A", None, "contract-evidence-incomplete-default-a"
     try:
         result = await ctx.agent(
-            CONTRACT_PROMPT.format(
+            selector_prompt.format(
                 rules=SHARED_RULES,
                 goal=goal,
                 candidates=evidence,
@@ -170,6 +171,16 @@ async def validation_council_dual_coder_contract_v1(
     args: dict[str, Any],
 ) -> dict[str, Any]:
     """Compare minimal and cross-component autonomous repair strategies."""
+    return await _run_dual_coder_contract(ctx, args, selector_prompt=CONTRACT_PROMPT)
+
+
+async def _run_dual_coder_contract(
+    ctx: Any,
+    args: dict[str, Any],
+    *,
+    selector_prompt: str,
+) -> dict[str, Any]:
+    """Run the existing candidate and selection sequence with a per-call prompt."""
     goal = _complete_goal(str(args.get("goal") or args.get("description") or ""))
     if not goal:
         return {"status": "error", "error": 'missing "goal" or "description"'}
@@ -207,6 +218,7 @@ async def validation_council_dual_coder_contract_v1(
             goal=goal,
             candidate_a=candidate_a,
             candidate_b=candidate_b,
+            selector_prompt=selector_prompt,
         )
 
     source_before_adoption = await ctx.diff()
