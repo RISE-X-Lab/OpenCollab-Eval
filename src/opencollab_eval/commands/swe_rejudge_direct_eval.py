@@ -23,6 +23,7 @@ from opencollab_eval.engine.swe_v1_remote_artifacts import (
     derive_eval_verdict,
     read_eval_output_artifacts,
 )
+from opencollab_eval.engine.swe_v1_remote_execution import task_outcome
 from opencollab_eval.engine.swe_v1_remote_records import validate_task_identity
 from opencollab_eval.engine.swe_v1_remote_state import (
     MAX_JSON_DOCUMENT_BYTES,
@@ -475,6 +476,13 @@ def reconcile_launcher_report(
         executed=False,
         eval_patch_sha256=derived["eval_patch_sha256"],
     )
+    outcome = task_outcome(reconciled_row["generation"], reconciled_row["eval"])
+    reconciled_row.update(task_result=outcome, oc_failure=outcome["oc_failure"],
+                          candidate_official_resolved=outcome["candidate_official_resolved"])
+    counts = reconciled.get("counts")
+    if isinstance(counts, dict):
+        counts.update(eval_done=1, resolved=int(outcome["resolved"]), unresolved=int(outcome["status"] == "unresolved"),
+                      technical_failed=int(outcome["technical_failure"]))
     integrity = _swe_eval_layer_integrity.attempt_integrity(reconciled_row, task)
     if integrity.reasons or not integrity.direct_execution_proven:
         raise RuntimeError("reconciled launcher report lacks complete task evidence")

@@ -8,7 +8,7 @@ import re
 from typing import Any
 
 GO_TARGET_DISCOVERY_PREFIX = "OPENCOLLAB_GO_TARGET_DISCOVERY "
-_GO_DIAGNOSTIC_RE = re.compile(
+_GO_PROOF_DIAGNOSTIC_RE = re.compile(
     r"(?m)(?P<path>(?:[A-Za-z]:)?[^:\r\n]*?[^/\\:\r\n]+\.go):"
     r"[0-9]+(?::[0-9]+)?:"
 )
@@ -691,7 +691,7 @@ def go_failure_proof_matches(
         build_output = _build_output_for_package(events, failed_package)
         diagnostics = [
             match.group("path")
-            for match in _GO_DIAGNOSTIC_RE.finditer(build_output)
+            for match in _GO_PROOF_DIAGNOSTIC_RE.finditer(build_output)
         ]
         return bool(
             "[build failed]" in package_output
@@ -768,7 +768,7 @@ def go_failure_proof_matches(
             )
             if not build_failed:
                 return False
-            diagnostics = [match.group("path") for match in _GO_DIAGNOSTIC_RE.finditer(build_output)]
+            diagnostics = [match.group("path") for match in _GO_PROOF_DIAGNOSTIC_RE.finditer(build_output)]
         if not diagnostics or not all(
             _diagnostic_belongs_to_package(path, binding["package"])
             or _candidate_diagnostic_belongs_to_package(

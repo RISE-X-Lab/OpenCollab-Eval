@@ -17,9 +17,11 @@ def _write(path: Path, value: dict) -> bytes:
     return raw
 
 
+@pytest.mark.parametrize("resolved", [False, True, None])
 def test_reconciliation_binds_the_derived_verdict_to_one_launcher_row(
     tmp_path,
     monkeypatch,
+    resolved,
 ):
     task = "task-1"
     source_sha = "a" * 64
@@ -33,7 +35,7 @@ def test_reconciliation_binds_the_derived_verdict_to_one_launcher_row(
         "schema": "opencollab.prolite_direct_eval.v2",
         "status": "done",
         "task": task,
-        "resolved": False,
+        "resolved": resolved,
         "record_id": "record-1",
         "source_patch_sha256": source_sha,
         "eval_patch_sha256": eval_sha,
@@ -58,6 +60,7 @@ def test_reconciliation_binds_the_derived_verdict_to_one_launcher_row(
     _write(derived_dir / "report.json", {task: derived})
     launcher = {
         "status": "technical_eval_failed",
+        "counts": {"eval_done": 0, "resolved": 0, "unresolved": 0, "technical_failed": 1},
         "rows": [
             {
                 "index": 31,
@@ -73,6 +76,7 @@ def test_reconciliation_binds_the_derived_verdict_to_one_launcher_row(
                     "summary": source,
                     "attempt_count": 2,
                 },
+                "task_result": {"status": "technical_failure", "resolved": False, "technical_failure": True},
             }
         ],
     }
@@ -81,7 +85,7 @@ def test_reconciliation_binds_the_derived_verdict_to_one_launcher_row(
     monkeypatch.setattr(
         rejudge,
         "direct_eval_done_has_execution_proof",
-        lambda payload: payload == derived,
+        lambda payload: resolved is not None and payload == derived,
     )
     monkeypatch.setattr(
         rejudge._swe_eval_layer_integrity,
@@ -97,6 +101,12 @@ def test_reconciliation_binds_the_derived_verdict_to_one_launcher_row(
     )
     output = tmp_path / "task_31_eval_only_rejudged.json"
 
+    original_raw = launcher_path.read_bytes()
+    if resolved is None:
+        with pytest.raises(RuntimeError, match="derived verdict does not bind"):
+            rejudge.reconcile_launcher_report(launcher_path, derived_dir, output)
+        assert not output.exists() and launcher_path.read_bytes() == original_raw
+        return
     reconciled = rejudge.reconcile_launcher_report(
         launcher_path,
         derived_dir,
@@ -108,7 +118,12 @@ def test_reconciliation_binds_the_derived_verdict_to_one_launcher_row(
     assert persisted["status"] == "done"
     assert persisted["rows"][0]["eval"]["status"] == "eval_done"
     assert persisted["rows"][0]["eval"]["attempt_count"] == 2
-    assert persisted["rows"][0]["eval"]["summary"]["resolved"] is False
+    assert persisted["rows"][0]["eval"]["summary"]["resolved"] is resolved
+    assert persisted["rows"][0]["task_result"]["resolved"] is resolved
+    assert persisted["rows"][0]["task_result"]["technical_failure"] is False
+    assert persisted["counts"] == {"eval_done": 1, "resolved": int(resolved), "unresolved": int(not resolved),
+                                   "technical_failed": 0}
+    assert launcher_path.read_bytes() == original_raw
     assert persisted["rejudgement"]["launcher_report_sha256"] == hashlib.sha256(
         launcher_path.read_bytes()
     ).hexdigest()
