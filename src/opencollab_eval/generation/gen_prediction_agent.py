@@ -24,6 +24,8 @@ from .gen_prediction_constants import (
     WORKING_TOOL_NAMES,
 )
 from .gen_prediction_run_summary import RUN_SUMMARY_KEY, build_run_summary
+from opencollab_eval.benchmarks.task_specification import CONTAINER_REPO_ROOT
+
 from .gen_prediction_task_text import (
     BLIND_VALIDATION_BLOCK,
     append_repository_layout,
@@ -31,7 +33,7 @@ from .gen_prediction_task_text import (
 )
 
 
-def build_task(instance: dict) -> str:
+def build_task(instance: dict, *, repo_root: str = CONTAINER_REPO_ROOT) -> str:
     """The shared task text plus this path's grading disclosure: none.
 
     This path is blind by construction -- there is no code here that can name a
@@ -39,7 +41,7 @@ def build_task(instance: dict) -> str:
     appends is the constant notice, not a decision. The workflow path reaches
     the same text through a run-time check.
     """
-    return compose_shared_task(instance) + BLIND_VALIDATION_BLOCK
+    return compose_shared_task(instance, repo_root=repo_root) + BLIND_VALIDATION_BLOCK
 
 
 def load_instance(path: str | Path) -> dict:
@@ -132,7 +134,7 @@ def _result_metrics(result: RunResult[str], duration_s: float) -> dict[str, Any]
     #
     # ``stopped`` is every controlled halt -- budget, step ceiling, loop block,
     # cancel, context overflow -- and in all of them the agent's edits are
-    # sitting in /testbed exactly as they are after a timeout. ``failed`` is
+    # sitting in the repository tree exactly as they are after a timeout. ``failed`` is
     # still excluded: an unhandled fault leaves no promise about the workspace.
     candidate_probe_eligible = session_quiesced and result.status in {
         "completed",

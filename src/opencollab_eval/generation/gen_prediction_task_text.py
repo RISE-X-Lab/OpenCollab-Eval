@@ -43,27 +43,28 @@ pins that the two builders agree byte for byte whenever both are blind.
 from __future__ import annotations
 
 from opencollab_eval.benchmarks.task_specification import (
+    CONTAINER_REPO_ROOT,
     compose_task_specification,
 )
 
-WORKSPACE_FACTS = """\
+_WORKSPACE_FACTS_TEMPLATE = """\
 ## Where you are working
 
-The repository is checked out at /testbed and its dependencies are installed.
+The repository is checked out at {repo_root} and its dependencies are installed.
 The environment has no network access, so a download, an install, or any other
 fetch fails and the budget spent on it is gone. Nothing has to be installed,
 reinstalled, or built for the project's tests to run.
 
 Do not edit test files: a fix is graded against the project's own tests.
 
-When the run ends, the answer is read from the working tree at /testbed and
-from nowhere else. A fix you have worked out but not written into /testbed is
+When the run ends, the answer is read from the working tree at {repo_root} and
+from nowhere else. A fix you have worked out but not written into {repo_root} is
 not read at all.
 
 ## What is scored
 
 The unit that is scored is the change to the source code: whether the
-project's own tests pass against the code left in /testbed. Documentation,
+project's own tests pass against the code left in {repo_root}. Documentation,
 release notes, changelog entries, and code comments are not scored. They are
 not forbidden, and a contribution to a real project would carry them, but they
 are paid for out of the same budget as the fix.
@@ -74,7 +75,7 @@ You are finished when the change to the source is minimal, addresses the root
 cause rather than the symptom, and the project's own tests that cover the
 changed behavior pass. Once those tests pass you already hold the result:
 running them again, running a wider suite to reconfirm a pass you have, or
-rebuilding the situation somewhere outside /testbed all return what you know
+rebuilding the situation somewhere outside {repo_root} all return what you know
 already, at full price.
 
 ## What a step costs
@@ -87,8 +88,18 @@ what it returned the first time.
 
 Call submit when you are finished, with a short summary of what you changed.
 It ends your turn and records that you stopped on purpose. It does not decide
-whether your work counts: /testbed is read either way.
+whether your work counts: {repo_root} is read either way.
 """
+
+
+def workspace_facts(repo_root: str = CONTAINER_REPO_ROOT) -> str:
+    """The machine facts, naming the directory the container presents."""
+    return _WORKSPACE_FACTS_TEMPLATE.format(repo_root=repo_root)
+
+
+#: What every run is told. Kept under its own name so the runs made against it
+#: still have one.
+WORKSPACE_FACTS = workspace_facts()
 
 BLIND_VALIDATION_BLOCK = """\
 ## Blind validation mode
@@ -107,7 +118,7 @@ _CLOSING = (
 )
 
 
-def compose_shared_task(instance: dict) -> str:
+def compose_shared_task(instance: dict, *, repo_root: str = CONTAINER_REPO_ROOT) -> str:
     """Everything both arms are told, in the order both are told it.
 
     Reads only public instance fields: the repository name, the issue text, and
@@ -126,7 +137,7 @@ def compose_shared_task(instance: dict) -> str:
     return (
         f"# Issue to fix in `{instance['repo']}`\n\n"
         f"{problem}\n{hints_block}\n"
-        f"{WORKSPACE_FACTS}\n"
+        f"{workspace_facts(repo_root)}\n"
         f"{_CLOSING}\n\n"
     )
 
@@ -162,6 +173,7 @@ __all__ = [
     "BLIND_VALIDATION_BLOCK",
     "REPOSITORY_LAYOUT_HEADER",
     "WORKSPACE_FACTS",
+    "workspace_facts",
     "append_repository_layout",
     "compose_shared_task",
 ]
