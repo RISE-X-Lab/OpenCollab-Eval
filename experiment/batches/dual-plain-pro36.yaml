@@ -1,0 +1,65 @@
+# dual-plain: G22's two-candidate organization seated as a measurable team, on the
+# SWE-bench Pro mini-36 whose repositories the solver-repo sanitize leaves intact.
+#
+# THE CELL. The division of labour stated as fact, with no prohibition attached. One move
+# down from `dual-prohibit`: the sentence forbidding self-implementation is gone
+# and nothing else changes.
+#
+# THE ROSTER. An Adopter (the entry seat) and two Coders, `coder_a` and `coder_b`.
+# The Adopter can reach both; the two Coders cannot reach each other, so the
+# Adopter is the only channel between them. The card asks for them one at a
+# time: brief the first, wait for its answer, then write the second its own
+# brief. What goes into that second brief is the Adopter's -- what it learned
+# from the first is its to use or to leave out -- and which of the two answers
+# the run delivers is its choice too.
+#
+# THREE THINGS THIS IS NOT.
+#   * Not best-of-2. The two candidates are not independent: the second is
+#     briefed by an Adopter that has already read the first.
+#   * Not G22's relay. G22 forwards the first agent's output; here the Adopter
+#     writes the second brief itself, and nothing prescribes what crosses.
+#   * Not poolable with the handoff ladder. Same five moves, different roster;
+#     the two families are separate instruments and their cells do not pool.
+#
+# THE ADHERENCE NUMBER IS NOT READABLE FROM `summary.alpha`, AND THE FAILURE IS
+# SILENT. `cell_report.py` derives the delegate seats from the literal names
+# `coder` and `tester`; this roster matches neither, so alpha reads 0.000 and a
+# Clopper-Pearson interval is printed around it anyway. Read the per-seat spend
+# and the `message_agent` counts, not that field, until it derives the delegate
+# seats from the run's own `assigned.topology_nodes.entry_role`.
+#
+# WHAT IS HELD EQUAL WITH `pro-mini36-clean`. Every field below except `name`,
+# `cell` and the OpenCollab pin is that batch's, to the letter -- same 36 rows,
+# same frame content, same budget, same model env -- so a difference between
+# this cell and that one is a difference between two cards.
+#
+# CONCURRENCY IS 12, NOT THAT BATCH'S 6. It is outside `spec_identity` and does
+# not make this a different batch, but it does raise the docker daemon's load,
+# and the daemon-load failure (a `docker run -d` crossing 60 s and taking a
+# sibling run with it) is the one this smoke is sized to count.
+#
+# THE MODEL IS NOT THE GRID'S. On 2026-09-19 every key pointing at the private
+# gateway answered 401 `USER_INACTIVE` and both token-plan keys answered 429
+# with the weekly quota exhausted, leaving `configs/.env.qwen` (dashscope,
+# qwen3.8-flash) as the only live one. Resolve counts here are not comparable
+# to the grid's deepseek runs.
+name: dual-plain-pro36
+host: lthpc
+arm: team
+cell: dual-plain
+suite: pro-mini36-clean
+rows: {start: 1, stop: 36}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 12
+model_env: configs/.env.qwen
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 76c6676a2f661242598230c6265a012b9fe8e9d6
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "probe only, not a paper cell: the two-candidate roster on SWE-bench Pro mini-36; scoring is the official Pro evaluator, not `batch score`; no adherence number may be read from `summary.alpha` for this roster"
