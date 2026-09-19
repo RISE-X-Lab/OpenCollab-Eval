@@ -74,9 +74,9 @@ instead of a coder that silently never ran.
 
 **One difference that is not held equal, and why.** On the team each agent gets
 a git worktree of its own and a commit sha is the whole payload of a handoff.
-This workflow runs all three in the shared tree at /testbed and asks nobody to
+This workflow runs all three in the one repository tree and asks nobody to
 commit, which is what every workflow in this package already does and what the
-harness grades: the answer is ``git diff`` of /testbed. Worktree isolation is
+harness grades: the answer is ``git diff`` of that tree. Worktree isolation is
 not available to a workflow inside the task container today --
 ``_workflow_runtime_session.acquire_isolated_env`` builds its ``WorktreePool``
 without passing the session's container environment, so ``isolation=True``
@@ -101,6 +101,8 @@ from typing import Any
 from opencollab.workflows import workflow
 
 from ._public_api import toolset
+
+from opencollab_eval.benchmarks.task_specification import CONTAINER_REPO_ROOT
 
 # One repair round: at most two coder attempts. The team puts no bound on this
 # because nothing there schedules a retry; the script must pick a number, and a
@@ -132,28 +134,40 @@ Rules:
   test{edit_tools}. Use bash only for what no dedicated tool
   covers (for example a one-line `python -c` repro).
 {edit_rule}- Never edit test files.
-- All three of you work in the same tree at /testbed. Leave your edits in the
+- All three of you work in the same tree at {repo_root}. Leave your edits in the
   working tree: do not run `git commit`, and do not stash or revert another
   role's work.
 - Keep your report tight: at most eight lines. What changed, why, and what the
   evidence for it is. No preamble.
 """
 
+def shared_rules(repo_root: str = CONTAINER_REPO_ROOT) -> str:
+    """The rules the analyst that may write is given, for one repository root."""
+    return _RULES_TEMPLATE.format(
+        repo_root=repo_root,
+        edit_tools=", file_write/apply_patch to edit",
+        edit_rule="- Fix the root cause in the source; make the smallest correct change.\n",
+    )
+
+
+def reading_analyst_rules(repo_root: str = CONTAINER_REPO_ROOT) -> str:
+    """The same rules with the two writing tools taken off the analyst."""
+    return _RULES_TEMPLATE.format(
+        repo_root=repo_root,
+        edit_tools="",
+        edit_rule=(
+            "- You have no tool that edits the source at this step: name the root"
+            " cause and\n  the smallest correct change, and leave making it to the"
+            " Coder.\n"
+        ),
+    )
+
+
 #: What the analyst that may write was told, and what fifty ``dw-subset50-r2``
 #: runs were made against. Changing this text makes those runs a different arm.
-SHARED_RULES = _RULES_TEMPLATE.format(
-    edit_tools=", file_write/apply_patch to edit",
-    edit_rule="- Fix the root cause in the source; make the smallest correct change.\n",
-)
+SHARED_RULES = shared_rules()
 
-READING_ANALYST_RULES = _RULES_TEMPLATE.format(
-    edit_tools="",
-    edit_rule=(
-        "- You have no tool that edits the source at this step: name the root"
-        " cause and\n  the smallest correct change, and leave making it to the"
-        " Coder.\n"
-    ),
-)
+READING_ANALYST_RULES = reading_analyst_rules()
 
 BRIEF_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -258,7 +272,7 @@ ANALYST_READING_STANCE = (
 
 CODER_PROMPT = """\
 You are the Coder on a three-agent team: an Analyst, a Coder, and a Tester.
-Make the change in /testbed and then report.
+Make the change in {repo_root} and then report.
 
 Your report has two readers and they need different things. The Tester needs to
 know what to look at. The Analyst needs to know what you decided that the brief
@@ -286,7 +300,7 @@ TESTER_PROMPT = """\
 You are the Tester on a three-agent team: an Analyst, a Coder, and a Tester.
 Verify the Coder's change adversarially.
 
-Read the actual source in /testbed -- do not take the Coder's word for what is
+Read the actual source in {repo_root} -- do not take the Coder's word for what is
 there -- and run the checks that matter. Hunt for the failure: edge cases,
 missing handling, a regression in neighbouring behaviour. You do not edit
 files.
@@ -331,7 +345,7 @@ Working tree since the Coder ran: {tree_state}
 
 Choose one:
 
-- ACCEPT — the change in /testbed answers the task. The run ends here and the
+- ACCEPT — the change in {repo_root} answers the task. The run ends here and the
   tree is read as the answer.
 - REVISE — another round is worth its cost. Write a new instruction for the
   Coder and a new one for the Tester; they replace the previous ones. Say what
@@ -514,6 +528,11 @@ async def _run(
     if not goal:
         return {"status": "error", "error": 'missing "goal" or "description"'}
 
+    # The directory the container presents the repository at. Named from the
+    # one constant the single agent's task text names, so the two arms describe
+    # one machine by construction rather than by two texts that agree today.
+    repo_root = CONTAINER_REPO_ROOT
+
     # An edge counts as walked when a payload actually crossed it, not when the
     # script reached the line that would have sent one: an analyst that returns
     # an empty verification_task has left the analyst -> tester edge unwalked,
@@ -539,7 +558,9 @@ async def _run(
     brief = await seats.agent(
         "analyst",
         ANALYST_PROMPT.format(
-            rules=SHARED_RULES if analyst_may_write else READING_ANALYST_RULES,
+            rules=shared_rules(repo_root)
+            if analyst_may_write
+            else reading_analyst_rules(repo_root),
             goal=goal,
             write_stance=(
                 ANALYST_MAY_WRITE_STANCE
@@ -592,7 +613,8 @@ async def _run(
         patch = await seats.agent(
             "coder",
             CODER_PROMPT.format(
-                rules=SHARED_RULES,
+                rules=shared_rules(repo_root),
+                repo_root=repo_root,
                 goal=goal,
                 brief=_dump(brief),
                 implementation_task=implementation_task
@@ -618,7 +640,8 @@ async def _run(
         verdict_payload = await seats.agent(
             "tester",
             TESTER_PROMPT.format(
-                rules=SHARED_RULES,
+                rules=shared_rules(repo_root),
+                repo_root=repo_root,
                 goal=goal,
                 verification_task=verification_task
                 or "(the analyst left this empty -- verify against the task)",
@@ -637,7 +660,7 @@ async def _run(
         )
 
         # A PASS on a tree nobody wrote to is a report about the tester, not
-        # about the change; the harness reads /testbed either way, so let the
+        # about the change; the harness reads that tree either way, so let the
         # analyst see the contradiction rather than resolving it here.
         rounds_left = MAX_REPAIR_ROUNDS + 1 - round_no
 
@@ -655,7 +678,8 @@ async def _run(
             decision_payload = await seats.agent(
                 "analyst",
                 ADJUDICATE_PROMPT.format(
-                    rules=SHARED_RULES,
+                    rules=shared_rules(repo_root),
+                    repo_root=repo_root,
                     goal=goal,
                     brief=_dump(brief),
                     coder_report=coder_report or "(the coder reported nothing)",

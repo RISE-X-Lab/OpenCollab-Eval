@@ -45,6 +45,7 @@ from opencollab_eval.engine.evaluator_task_execution import (
     run_session_or_workflow,
 )
 from opencollab_eval.generation import gen_prediction_agent as _agent
+from opencollab_eval.benchmarks.task_specification import CONTAINER_REPO_ROOT
 from opencollab_eval.generation.gen_prediction_constants import (
     AGENT_PROMPT,
     WORKFLOW_AGENT_PROMPT,
@@ -112,7 +113,7 @@ class _ExecResult:
 class _ProbeEnvironment:
     """Answers the two listing commands the repository-map builders run."""
 
-    workspace = "/testbed"
+    workspace = CONTAINER_REPO_ROOT
 
     async def exec_cmd(self, command: str, timeout: float | None = None, **_: Any):
         if "ls-files" in command:

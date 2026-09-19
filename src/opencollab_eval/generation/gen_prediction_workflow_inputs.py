@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+from opencollab_eval.benchmarks.task_specification import CONTAINER_REPO_ROOT
+
 from .gen_prediction_task_text import BLIND_VALIDATION_BLOCK, compose_shared_task
 
 BLIND_BY_DEFAULT_WORKFLOWS = {"validation-council-solve", "swe-committee-v2"}
@@ -17,7 +19,12 @@ def _fail_to_pass_ids(instance: dict) -> list[str]:
     return list(fail_to_pass)
 
 
-def build_task(instance: dict, *, include_fail_to_pass: bool = True) -> str:
+def build_task(
+    instance: dict,
+    *,
+    include_fail_to_pass: bool = True,
+    repo_root: str = CONTAINER_REPO_ROOT,
+) -> str:
     """The shared task text plus this path's grading disclosure.
 
     The shared half is the same object the single-agent builder composes, so
@@ -36,7 +43,7 @@ def build_task(instance: dict, *, include_fail_to_pass: bool = True) -> str:
         )
     else:
         disclosure = BLIND_VALIDATION_BLOCK
-    return compose_shared_task(instance) + disclosure
+    return compose_shared_task(instance, repo_root=repo_root) + disclosure
 
 
 def build_extras(instance: dict, *, include_hidden_tests: bool = True) -> dict:

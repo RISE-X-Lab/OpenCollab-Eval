@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import re
 
+from opencollab_eval.benchmarks.task_specification import CONTAINER_REPO_ROOT
 from opencollab_eval.engine.swe_eval_records import MAX_JSONL_SCAN_BYTES
 
-DOCKER_WORKDIR = "/testbed"
+#: The directory a container is entered at. The same path the prompts name,
+#: by construction rather than by two constants that happen to agree.
+DOCKER_WORKDIR = CONTAINER_REPO_ROOT
 
 # The run limits every arm is given. They live here, in one place both
 # generators import, because they used to be written out separately and had
