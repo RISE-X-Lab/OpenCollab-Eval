@@ -27,6 +27,7 @@ from opencollab_eval.experiment.batch_spec import (
     BATCH_PROCESS_PATTERN,
     BatchSpec,
     HostConfig,
+    cell_team_file,
     spec_digest,
 )
 
@@ -141,7 +142,7 @@ def preflight_script(
     workdir = host.workdir
     oc = f"{workdir}/{host.opencollab_dir}"
     ev = f"{workdir}/{host.eval_dir}"
-    team_yaml = f"{oc}/configs/team.handoff.{spec.cell}.yaml" if spec.cell else ""
+    team_yaml = f"{oc}/{cell_team_file(spec.cell)}" if spec.cell else ""
     model_env = f"{oc}/{spec.model_env}"
     lines = [
         "set -u",

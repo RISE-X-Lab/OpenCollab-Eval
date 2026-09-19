@@ -14,6 +14,7 @@ import pytest
 from opencollab_eval.commands import batch as batch_cli
 from opencollab_eval.experiment import batch_remote, batch_score, cell_report
 from opencollab_eval.experiment.batch_spec import (
+    RUNG_CELLS,
     SpecError,
     build_instances,
     card_file_paths,
@@ -333,13 +334,15 @@ def test_a_cell_outside_the_ladder_names_its_own_team_file() -> None:
 
 
 @pytest.mark.parametrize("cell", ["x", "dual-x"])
-def test_the_two_call_sites_agree_on_where_a_cell_is_seated(experiment: dict, cell: str) -> None:
-    """The path the driver is handed and the path whose bytes are checked are one path.
+def test_every_call_site_agrees_on_where_a_cell_is_seated(experiment: dict, cell: str) -> None:
+    """Three places name a cell's team file, and they are one path.
 
-    They were two format strings before, and the ``dual-x`` case is the one
-    that tells them apart: a family that reached one and not the other would
-    launch against a file whose bytes nothing compared, i.e. a batch run under
-    an unrecorded card, which is silent.
+    They were three separate format strings, and the ``dual-x`` case is what
+    tells them apart -- a ladder cell resolves the same either way. Two of the
+    three were found by reading; the third, the path pre-flight asks the host
+    to digest the role prompts from, was found only when pre-flight refused a
+    real batch. Enumerating them here is what keeps the next one from being
+    found that way again.
     """
     repo = Path(experiment["repo"])
     (repo / "configs" / f"team.{cell}.yaml").write_text(
@@ -350,7 +353,15 @@ def test_the_two_call_sites_agree_on_where_a_cell_is_seated(experiment: dict, ce
     path.write_text(_spec_text(experiment, "cell: x", f"cell: {cell}"), encoding="utf-8")
     spec = load_spec(path)
     host = load_host(experiment["dir"] / "hosts" / "h.yaml")
-    assert spec.team_config_relpath(host) == f"{host.opencollab_dir}/{card_file_paths(spec, repo)[0]}"
+    rel = card_file_paths(spec, repo)[0]
+
+    # 1. the bytes pre-flight compares, 2. the argv the driver is launched with,
+    # 3. the file pre-flight asks the host to read the role prompts out of.
+    assert rel == cell_team_file(cell)
+    assert spec.team_config_relpath(host) == f"{host.opencollab_dir}/{rel}"
+    script = batch_remote.preflight_script(spec, host, [rel], ["img/a-1:latest"])
+    assert f"{host.workdir}/{host.opencollab_dir}/{rel}" in script
+    assert "team.handoff." not in script or not cell.startswith("dual-")
 
 
 def test_card_files_follow_prompt_file(experiment: dict) -> None:
@@ -839,8 +850,16 @@ def test_checked_in_specs_name_rung_and_cell_consistently() -> None:
             continue
         spec = load_spec(path)
         if spec.arm == "team":
-            assert spec.rung is not None, f"{path.name}: a team spec names its rung"
-            assert spec.cell is not None
+            assert spec.cell is not None, f"{path.name}: a team spec names the card it seats"
+            # A rung is a name the paper reports a number under, and only the
+            # cells in RUNG_CELLS have one. A batch on a ladder cell must say
+            # which rung it is, or its number cannot be placed; a batch on a
+            # roster outside the ladder must not, because naming one would file
+            # its number under a rung it is not comparable with.
+            if spec.cell in set(RUNG_CELLS.values()):
+                assert spec.rung is not None, f"{path.name}: a ladder cell names its rung"
+            else:
+                assert spec.rung is None, f"{path.name}: {spec.cell} is not a cell of the ladder"
         assert (EXPERIMENT / "hosts" / f"{spec.host}.yaml").exists()
         assert (EXPERIMENT / "suite" / f"{spec.suite}.csv").exists()
 
