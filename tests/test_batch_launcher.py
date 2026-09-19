@@ -17,6 +17,7 @@ from opencollab_eval.experiment.batch_spec import (
     SpecError,
     build_instances,
     card_file_paths,
+    cell_team_file,
     driver_argv,
     driver_env,
     launch_script,
@@ -312,6 +313,44 @@ def test_launch_script_is_detached_and_carries_the_switches(experiment: dict) ->
     ):
         assert key in script
     assert "PYTHONPATH=/home/u/work/OpenCollab:/home/u/work/OpenCollab-Eval/src" in script
+
+
+def test_a_cell_outside_the_ladder_names_its_own_team_file() -> None:
+    """A later family files its team configs apart from the ladder's namespace.
+
+    The first assertion is the control and the load-bearing one: every cell the
+    paper already reports must resolve to the path it resolved to before this
+    function existed, or the change is a silent renaming of every measured
+    batch. The second is the reason it exists -- OpenCollab's
+    ``tests/test_analyst_card_assembly.py`` globs ``configs/team.handoff.*.yaml``
+    and reads the hits as one instrument, so a second roster cannot be filed
+    there.
+    """
+    assert cell_team_file("cmd-plain") == "configs/team.handoff.cmd-plain.yaml"
+    assert cell_team_file("facts-v2") == "configs/team.handoff.facts-v2.yaml"
+    assert cell_team_file("dual-bare") == "configs/team.dual-bare.yaml"
+    assert cell_team_file("dual-judge") == "configs/team.dual-judge.yaml"
+
+
+@pytest.mark.parametrize("cell", ["x", "dual-x"])
+def test_the_two_call_sites_agree_on_where_a_cell_is_seated(experiment: dict, cell: str) -> None:
+    """The path the driver is handed and the path whose bytes are checked are one path.
+
+    They were two format strings before, and the ``dual-x`` case is the one
+    that tells them apart: a family that reached one and not the other would
+    launch against a file whose bytes nothing compared, i.e. a batch run under
+    an unrecorded card, which is silent.
+    """
+    repo = Path(experiment["repo"])
+    (repo / "configs" / f"team.{cell}.yaml").write_text(
+        "entry: analyst\nroles:\n  analyst: {prompt_file: handoff-experiment/analyst.x.md, tools: [bash]}\n",
+        encoding="utf-8",
+    )
+    path = experiment["dir"] / "batches" / "seat.yaml"
+    path.write_text(_spec_text(experiment, "cell: x", f"cell: {cell}"), encoding="utf-8")
+    spec = load_spec(path)
+    host = load_host(experiment["dir"] / "hosts" / "h.yaml")
+    assert spec.team_config_relpath(host) == f"{host.opencollab_dir}/{card_file_paths(spec, repo)[0]}"
 
 
 def test_card_files_follow_prompt_file(experiment: dict) -> None:

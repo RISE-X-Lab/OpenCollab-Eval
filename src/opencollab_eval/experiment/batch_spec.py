@@ -73,6 +73,25 @@ RUNG_CELLS = {
     "propose2": "cmd-propose2",
 }
 
+#: Cells whose team file is not ``configs/team.handoff.<cell>.yaml``. The
+#: handoff ladder owns that namespace, and OpenCollab's
+#: ``tests/test_analyst_card_assembly.py`` reads it as one instrument: it globs
+#: ``configs/team.handoff.*.yaml``, reduces each file to the configuration
+#: below its header, and asserts one distinct result. A second roster filed
+#: there would either fail that test or force it to be loosened, and what it
+#: asserts is the ladder's whole claim to comparability. So a family added
+#: later names its files apart and says so here.
+CELL_FILE_PREFIXES: tuple[tuple[str, str], ...] = (("dual-", "configs/team.{cell}.yaml"),)
+DEFAULT_CELL_FILE = "configs/team.handoff.{cell}.yaml"
+
+
+def cell_team_file(cell: str) -> str:
+    """The repo-relative team file a cell name seats."""
+    for prefix, pattern in CELL_FILE_PREFIXES:
+        if cell.startswith(prefix):
+            return pattern.format(cell=cell)
+    return DEFAULT_CELL_FILE.format(cell=cell)
+
 # ``pgrep -f`` matches its own caller's command line, so the pattern carries a
 # bracket that the literal string in a shell command does not match.
 BATCH_PROCESS_PATTERN = "[o]pencollab_eval.generation.gen_prediction_batch"
@@ -196,7 +215,7 @@ class BatchSpec:
     def team_config_relpath(self, host: HostConfig) -> str | None:
         if self.cell is None:
             return None
-        return f"{host.opencollab_dir}/configs/team.handoff.{self.cell}.yaml"
+        return f"{host.opencollab_dir}/{cell_team_file(self.cell)}"
 
 
 def _require(mapping: dict[str, Any], key: str, kind: type, where: str) -> Any:
@@ -261,7 +280,10 @@ def load_spec(path: str | Path) -> BatchSpec:
                 "a number reported under a rung name must come from that rung's card"
             )
     if arm in TEAM_ARMS and not isinstance(cell, str):
-        raise SpecError(f"{where}: arm {arm!r} needs a 'cell' (the team.handoff.<cell>.yaml to seat) or a 'rung'")
+        raise SpecError(
+            f"{where}: arm {arm!r} needs a 'cell' (the team config to seat, named by "
+            f"{cell_team_file('<cell>')}) or a 'rung'"
+        )
     if arm not in TEAM_ARMS and cell is not None:
         raise SpecError(f"{where}: arm {arm!r} takes no 'cell'; the driver would ignore it silently")
 
@@ -509,7 +531,7 @@ def card_file_paths(spec: BatchSpec, local_opencollab_dir: str | Path) -> list[s
     """
     if spec.cell is None:
         return []
-    rel_yaml = f"configs/team.handoff.{spec.cell}.yaml"
+    rel_yaml = cell_team_file(spec.cell)
     path = Path(local_opencollab_dir) / rel_yaml
     if not path.exists():
         raise SpecError(f"cell {spec.cell!r}: {path} does not exist")
