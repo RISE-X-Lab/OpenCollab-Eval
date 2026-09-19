@@ -282,9 +282,14 @@ class Batch:
             )
 
     @property
+    def frame_content(self) -> str:
+        """The frame content this batch's rows come from: the spec's, else the host's."""
+        return self.spec.frame_content or self.host.frame_content
+
+    @property
     def instances_text(self) -> str:
         if self._instances is None:
-            frame = load_frame_content(self.host.frame_content)
+            frame = load_frame_content(self.frame_content)
             self._instances = build_instances(self.rows, frame)
         return self._instances
 
@@ -319,7 +324,7 @@ class Batch:
             "note": self.spec.note,
             "suite_file": str(suite_file),
             "suite_sha256": hashlib.sha256(suite_file.read_bytes()).hexdigest(),
-            "frame_content_sha256": hashlib.sha256(Path(self.host.frame_content).read_bytes()).hexdigest(),
+            "frame_content_sha256": hashlib.sha256(Path(self.frame_content).read_bytes()).hexdigest(),
             "instances": {
                 "file": self.spec.instances_file,
                 "sha256": self.instances_sha,
@@ -826,7 +831,7 @@ def cmd_score(batch: Batch, remote: Ssh, *, max_workers: int, timeout: int, gold
     sdir = batch_score.score_dir(host, spec)
     stamp = time.strftime("%Y%m%d")
     if gold:
-        rows = batch_score.dataset_rows(host.frame_content, ids)
+        rows = batch_score.dataset_rows(batch.frame_content, ids)
         gold_file = batch.local_dir / "gold-predictions.jsonl"
         gold_file.parent.mkdir(parents=True, exist_ok=True)
         gold_file.write_text(

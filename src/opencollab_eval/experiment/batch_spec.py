@@ -153,6 +153,16 @@ class BatchSpec:
     #: spec is one row, the named instance is one that batch ran, and this
     #: spec's own instance is not.
     replaces: dict[str, str] | None = None
+    #: This batch's own frame content, overriding the host's. ``frame_content``
+    #: is a field of ``HostConfig`` -- machine facts, not choices -- and it is
+    #: right there for the usual case, where one machine runs one benchmark.
+    #: A second benchmark on the same machine makes it a choice, and it is the
+    #: spec's: the alternative, a second host file for one machine differing in
+    #: that field, is exactly what the ``lthpc-*`` parity test refuses. Left
+    #: unset, nothing changes for any spec already written.
+    #: Deliberately outside ``spec_identity``: it says which rows the batch
+    #: ran, and the record already pins those by the instance file's digest.
+    frame_content: str | None = None
     #: Replacements merged into *this* cell that are withdrawn, as
     #: ``{the instance the stand-in stood in for: why the withdrawal}``. A
     #: replacement is withdrawn when the fault that triggered it turns out not
@@ -366,6 +376,7 @@ def load_spec(path: str | Path) -> BatchSpec:
         model_env=_require(raw, "model_env", str, where),
         env=env,
         pins=pins,
+        frame_content=(str(Path(raw["frame_content"]).expanduser()) if raw.get("frame_content") else None),
         retry_of=retry_of,
         replaces=replaces,
         withdraw_replacements=withdraw_replacements,
