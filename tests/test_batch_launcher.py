@@ -203,6 +203,35 @@ def test_spec_cell_must_match_arm(experiment: dict) -> None:
         load_spec(path)
 
 
+def test_a_spec_may_name_its_own_frame_content(experiment: dict, tmp_path: Path) -> None:
+    """The host file says where the machine keeps its cache; the spec says which benchmark.
+
+    Two benchmarks on one machine is the case this exists for. ``frame_content``
+    is a field of ``HostConfig``, whose docstring calls itself machine facts
+    rather than choices -- and the one other way to get a second frame content
+    in, a second host file for the same machine differing in that field, is
+    what the ``lthpc-*`` parity test exists to refuse.
+    """
+    other = tmp_path / "other-frame.jsonl"
+    other.write_text(
+        "".join(
+            json.dumps(
+                {"instance_id": i, "repo": r, "problem_statement": f"other {i}", "FAIL_TO_PASS": "[]"},
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            + "\n"
+            for i, r in (("a__a-1", "a/a"), ("b__b-2", "b/b"), ("c__c-3", "c/c"))
+        ),
+        encoding="utf-8",
+    )
+    path = experiment["dir"] / "batches" / "o.yaml"
+    path.write_text(_spec_text(experiment, "pins:", f"frame_content: {other}\npins:"), encoding="utf-8")
+    batch = batch_cli.Batch(path, experiment["dir"], experiment["dir"] / "hosts" / "h.yaml")
+    assert batch.frame_content == str(other)
+    assert "other a__a-1" in batch.instances_text
+
+
 def test_spec_digest_ignores_concurrency_only(experiment: dict) -> None:
     base = load_spec(experiment["spec"])
     path = experiment["dir"] / "batches" / "c.yaml"
