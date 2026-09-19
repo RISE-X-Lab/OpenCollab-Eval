@@ -333,14 +333,26 @@ def evaluate_preflight(
         checks.append(Check(f"card bytes {rel}", got == expected, f"host {got[:12]} vs pinned {expected[:12]}"))
 
     if spec.cell is not None:
+        # The host loads the team file and hashes what each seat is actually
+        # given. Those digests must be the pinned prompts' -- which is what the
+        # card-byte checks above read from the pin -- so this says the seats
+        # are filled from the files the record names. Asking instead whether a
+        # particular role name is present, as this did, reads the roster of one
+        # family and fails every other one.
+        team_rel = cell_team_file(spec.cell)
+        pinned_prompts = {sha for rel, sha in expected_cards.items() if rel != team_rel}
         digests_raw = fact(facts, "DIGESTS")
         try:
             digests = json.loads(digests_raw)
-            ok = isinstance(digests, dict) and "analyst" in digests
+            ok = isinstance(digests, dict) and bool(digests) and set(digests.values()) == pinned_prompts
         except ValueError:
             ok = False
         checks.append(
-            Check("role prompt digests computed on host", ok, digests_raw[:160] if not ok else f"{len(digests)} roles")
+            Check(
+                "role prompt digests computed on host",
+                ok,
+                digests_raw[:160] if not ok else f"{len(digests)} seats, each given the pinned prompt",
+            )
         )
 
     checks.append(

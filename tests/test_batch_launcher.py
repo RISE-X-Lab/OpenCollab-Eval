@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import shlex
 import subprocess
 import textwrap
 from pathlib import Path
@@ -385,7 +386,12 @@ def _good_facts(spec, host, cards: dict[str, str], instances_sha: str) -> str:
         f"IMPORT_OC\t{host.workdir}/OpenCollab/opencollab/__init__.py",
         f"IMPORT_EVAL\t{host.workdir}/OpenCollab-Eval/src/opencollab_eval/__init__.py",
         *[f"CARD\t{rel}\t{sha}" for rel, sha in cards.items()],
-        'DIGESTS\t{"analyst": "aa", "coder": "bb"}',
+        # What the host answers when every seat is given the pinned prompt.
+        "DIGESTS\t"
+        + json.dumps(
+            {Path(rel).name.split(".")[0]: sha for rel, sha in cards.items() if not rel.endswith(".yaml")},
+            sort_keys=True,
+        ),
         "MODEL_ENV\tpresent",
         "MODEL\tdeepseek-v4-flash",
         "PROVIDER\topenai",
@@ -448,6 +454,28 @@ def test_preflight_fails_on_each_drift(experiment: dict, mutation: tuple[str, st
     facts = _facts(experiment).replace(*mutation)
     checks = _checks(experiment, facts)
     assert not checks[failing].ok, checks[failing]
+
+
+def test_preflight_fails_when_a_seat_is_given_something_other_than_the_pinned_prompt(
+    experiment: dict,
+) -> None:
+    """A seat filled from a file the record does not name is a batch nothing can reproduce.
+
+    The host is asked for one digest per seat. This replaces one of them with
+    the hash of some other text, leaving the card-byte checks untouched -- the
+    file on disk is still the pinned one, it is just not what reached the seat.
+    """
+    facts = _facts(experiment)
+    spec = load_spec(experiment["spec"])
+    real = batch_cli.blob_sha256(experiment["repo"], experiment["sha"], "configs/handoff-experiment/coder.md")
+    swapped = facts.replace(
+        f'"coder": "{real}"', f'"coder": "{hashlib.sha256(b"a prompt from somewhere else").hexdigest()}"'
+    )
+    assert swapped != facts, "the fixture must carry the real digest for this to test anything"
+    checks = _checks(experiment, swapped)
+    assert not checks["role prompt digests computed on host"].ok
+    assert checks["card bytes configs/handoff-experiment/coder.md"].ok
+    assert spec.cell == "x"
 
 
 def test_preflight_fails_when_card_bytes_differ_from_the_pin(experiment: dict) -> None:
@@ -568,7 +596,12 @@ def test_cli_launch_copies_data_then_starts_detached(experiment: dict, capsys) -
         ).read_text(encoding="utf-8")
     )
     assert record["host"]["model"] == "deepseek-v4-flash"
-    assert record["host"]["role_prompt_sha256"] == {"analyst": "aa", "coder": "bb"}
+    spec = load_spec(experiment["spec"])
+    assert record["host"]["role_prompt_sha256"] == {
+        Path(rel).name.split(".")[0]: batch_cli.blob_sha256(experiment["repo"], experiment["sha"], rel)
+        for rel in card_file_paths(spec, experiment["repo"])
+        if not rel.endswith(".yaml")
+    }
     assert record["launches"][0]["limit"] == 1
     assert "API_KEY" not in json.dumps(record)
 
@@ -676,6 +709,13 @@ def fake_host(tmp_path: Path, oc_repo: tuple[Path, str]) -> dict:
         "OPENCOLLAB_MODEL=fake-model\nOPENCOLLAB_PROVIDER=openai\n",
         encoding="utf-8",
     )
+    # What a host answers when every seat really is given the pinned prompt.
+    # Stand-in digests would make the check that compares them to the pin pass
+    # on a host where nothing matched.
+    seat_digests = {
+        "analyst": batch_cli.blob_sha256(repo, sha, "configs/handoff-experiment/analyst.x.md"),
+        "coder": batch_cli.blob_sha256(repo, sha, "configs/handoff-experiment/coder.md"),
+    }
     venv = tmp_path / "venv" / "bin"
     venv.mkdir(parents=True)
     py = venv / "python"
@@ -684,7 +724,7 @@ def fake_host(tmp_path: Path, oc_repo: tuple[Path, str]) -> dict:
         'case "$*" in\n'
         f"  *'import opencollab, opencollab_eval'*) echo {work}/OpenCollab/opencollab/__init__.py; "
         f"echo {work}/OpenCollab-Eval/src/opencollab_eval/__init__.py;;\n"
-        '  *declared_role_prompt_digests*) echo \'{"analyst": "aa", "coder": "bb"}\';;\n'
+        f"  *declared_role_prompt_digests*) echo {shlex.quote(json.dumps(seat_digests, sort_keys=True))};;\n"
         '  *) exec python3 "$@";;\n'
         "esac\n",
         encoding="utf-8",
@@ -709,7 +749,8 @@ def fake_host(tmp_path: Path, oc_repo: tuple[Path, str]) -> dict:
         ),
         encoding="utf-8",
     )
-    return {"work": work, "sha": sha, "eval_sha": eval_sha, "host_file": host_file, "repo": repo}
+    return {"work": work, "sha": sha, "eval_sha": eval_sha, "host_file": host_file, "repo": repo,
+            "seat_digests": seat_digests}
 
 
 def _spec_for_fake_host(experiment: dict, fake_host: dict):
@@ -739,7 +780,7 @@ def test_preflight_script_runs_under_bash_and_passes_on_a_matching_host(experime
     assert record["model"] == "fake-model" and record["provider"] == "openai"
     assert record["base_url_sha256"] == hashlib.sha256(b"https://x.example/v1").hexdigest()
     assert record["card_sha256"] == cards
-    assert record["role_prompt_sha256"] == {"analyst": "aa", "coder": "bb"}
+    assert record["role_prompt_sha256"] == fake_host["seat_digests"]
 
 
 def test_preflight_script_sees_an_edited_card_and_a_dirty_tree(experiment: dict, fake_host: dict) -> None:
