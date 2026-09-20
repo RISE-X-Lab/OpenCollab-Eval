@@ -1,0 +1,55 @@
+# A probe, not a paper cell: 36 tasks of SWE-bench Pro on the same machine and
+# the same arm as the grid, to find out what breaks when the benchmark changes.
+#
+# WHY IT IS NOT `subset-50`. The grid runs SWE-bench Verified; Pro's instances
+# are a different dataset, use different images (`jefzda/sweap-images:<tag>`,
+# amd64, 1-4 GB, prebuilt per instance rather than built by the harness), and
+# are scored by a different evaluator -- Pro's per-instance `run_script.sh` plus
+# `parser.py`, not the `swebench` package's `eval_script` + registered
+# `log_parser`. `batch score` therefore does not apply to this batch at all;
+# the probe's scoring is the official `SWE-bench_Pro-os` evaluator run beside it.
+#
+# WHY THE FRAME CONTENT IS IN THE SPEC. `frame_content` is a field of
+# `HostConfig`, which is machine facts; which benchmark's rows a batch ran on is
+# a choice, so this spec names its own (`experiment/hosts/lthpc.yaml` is left
+# alone, and the repo's `lthpc-*` parity test would refuse a second host file
+# that differed in exactly this field).
+#
+# WHY THE MODEL ENV IS NOT THE GRID'S. The grid's primary cell runs
+# `configs/.env.deepseek` (deepseek-v4-flash). On 2026-09-19 every key pointing
+# at the private gateway (`47.100.35.241:56477` -- deepseek, glm, qwen-max,
+# qwen-pg) answered 401 `USER_INACTIVE`, and both token-plan keys answered 429
+# with the weekly quota exhausted until 09-20 19:49 UTC. The only live key on
+# the host is `configs/.env.qwen` (dashscope, qwen3.8-flash), so the probe runs
+# on that. The consequence is recorded rather than hidden: this batch's resolve
+# counts are NOT comparable to the grid's deepseek runs. It is a plumbing probe,
+# so model identity is not what it measures.
+#
+# THE DRAW. 184 ids (`Mini_B_Pro_184题_instance_ids copy.txt`), of which these
+# are `random.Random(20260919).sample(sorted(ids), 36)` -- seed 20260919, drawn
+# and recorded in /root/oc-swebench-pro/draw/pro-mini36-draw.json. All 184 ids
+# are rows of `ScaleAI/SWE-bench_Pro` `data/test-00000-of-00001.parquet` (731
+# rows); the 36 span all 11 of its repos (python 14, go 12, js 8, ts 2). No
+# pre-registration artifact is written: this batch is not for the paper, so the
+# seed above is the whole provenance.
+name: pro-mini36-smoke
+host: lthpc
+arm: team
+rung: primary
+cell: facts-v2
+suite: pro-mini36
+rows: {start: 1, stop: 36}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36.jsonl
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env.qwen
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "probe only, not a paper cell: SWE-bench Pro mini-36, same arm/cell/pins as the grid; scoring is the official Pro evaluator, not `batch score`"
