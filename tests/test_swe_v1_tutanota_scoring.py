@@ -31,8 +31,7 @@ def test_tutanota_uses_real_test_runner_and_proves_completed_suites():
     assert "opencollabResults" in command
     assert 'Path("test").rglob("*")' in command
     assert "npm_config_nodedir=/usr/local npm run test:app" in command
-    assert "npm_config_nodedir=/usr/local npm run testapi -- -c" in command
-    assert "npm_config_nodedir=/usr/local npm run testclient" in command
+    assert "npm_config_nodedir=/usr/local npm test" in command
 
     patched = _patch_tutanota_suite(
         "const errCount = o.report(results, stats)\n",
