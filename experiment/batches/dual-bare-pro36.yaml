@@ -34,8 +34,13 @@
 # -- but not the model env, see below -- so that batch is not a baseline for
 # these numbers until its rows are re-run at this endpoint.
 #
-# CONCURRENCY IS 36, ONE WAVE FOR A 36-ROW CELL, AND THE FIELD THAT BUYS IT IS
-# `OPENCOLLAB_DOCKER_TIMEOUT`. At 12 against that timeout's default of 60 s, two
+# CONCURRENCY IS 24, AND THE FIELD THAT BUYS IT IS `OPENCOLLAB_DOCKER_TIMEOUT`.
+# Thirty-six -- one wave for a 36-row cell -- was tried and given up: it put the
+# shared host's five-minute load at 61.8 against 64 cores with a spike to 79.9,
+# and it bought little, because a cell at 36 ends when its slowest single run
+# ends (about 90 minutes) rather than when the work is through. At 24 the same
+# 36 rows take roughly 110 minutes and leave a third of the machine to the
+# sixteen other accounts on it. At 12 against that timeout's default of 60 s, two
 # of twelve rows once died at 94 s with the snapshot step's `docker exec`
 # crossing it, before any agent ran. Daemon dispatch is not what spends the
 # minute: at 4, 12, 24, 32 and 48 simultaneous `docker exec` against a daemon
@@ -85,7 +90,7 @@ frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
 budget_per_seat: 2000000
 max_steps: 100
 timeout: 5400
-concurrency: 36
+concurrency: 24
 model_env: configs/.env.tp-qwen38
 env:
   OPENCOLLAB_LLM_STREAM_CHAT: "true"
@@ -96,5 +101,5 @@ env:
   OPENCOLLAB_DOCKER_TIMEOUT: "300"
 pins:
   opencollab: 76c6676a2f661242598230c6265a012b9fe8e9d6
-  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+  opencollab_eval: 0e04fdb235e52987dcad49c264f563dc8614d70a
 note: "probe only, not a paper cell: the two-candidate roster on SWE-bench Pro mini-36; scoring is the official Pro evaluator, not `batch score`; no adherence number may be read from `summary.alpha` for this roster"
