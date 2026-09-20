@@ -407,6 +407,10 @@ def run_preflight(batch: Batch, remote: Ssh) -> tuple[bool, dict[str, Any]]:
     expected = batch.expected_cards()
     script = batch_remote.preflight_script(batch.spec, batch.host, list(expected), batch.images)
     facts = batch_remote.parse_facts(remote.run(script, timeout=600))
+    # A second script, because the first one is forbidden to read the API key
+    # and that ban is load-bearing: its output is parsed into batch.json.
+    probe = batch_remote.endpoint_probe_script(batch.host, batch.spec.model_env)
+    facts += batch_remote.parse_facts(remote.run(probe, timeout=180))
     checks = batch_remote.evaluate_preflight(batch.spec, batch.host, facts, expected, batch.instances_sha)
     print(f"pre-flight for {batch.spec.name} on {batch.host.ssh}:")
     ok = _print_checks(checks)
