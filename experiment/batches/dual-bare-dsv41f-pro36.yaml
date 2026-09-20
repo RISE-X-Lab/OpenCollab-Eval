@@ -1,0 +1,120 @@
+# The qwen cell's twin at the same endpoint under the same key, with the model
+# changed and nothing else. Derived from `dual-bare-pro36.yaml` by changing
+# exactly two lines -- `name` and `model_env` -- so a difference between the two
+# is a difference between two models. `model_env` is part of `spec_digest`, so
+# this is a fresh batch identity with its own out-dir; the `name` has to change
+# with it or the two would collide in one directory.
+#
+# THE FIVE MOVE TOGETHER OR NONE DOES. Splitting one ladder across two endpoints
+# is what lost the grid's qwen cells; splitting it across two models would be
+# worse, because the model is the thing being compared.
+#
+# TIME IS NOT YET KNOWN FOR THIS MODEL. The 109-minute makespan and the 2008 s
+# median run are qwen's. Read this cell's own median off its first rows before
+# extrapolating anything from them.
+#
+# dual-bare: G22's two-candidate organization seated as a measurable team, on the
+# SWE-bench Pro mini-36 whose repositories the solver-repo sanitize leaves intact.
+#
+# THE CELL. The division stated without the instruction to send anyone a message. One move
+# down from `dual-plain`.
+#
+# THE ROSTER. An Adopter (the entry seat) and two Coders, `coder_a` and `coder_b`.
+# The Adopter can reach both; the two Coders cannot reach each other, so the
+# Adopter is the only channel between them. The card asks for them one at a
+# time: brief the first, wait for its answer, then write the second its own
+# brief. What goes into that second brief is the Adopter's -- what it learned
+# from the first is its to use or to leave out -- and which of the two answers
+# the run delivers is its choice too.
+#
+# THREE THINGS THIS IS NOT.
+#   * Not best-of-2. The two candidates are not independent: the second is
+#     briefed by an Adopter that has already read the first.
+#   * Not G22's relay. G22 forwards the first agent's output; here the Adopter
+#     writes the second brief itself, and nothing prescribes what crosses.
+#   * Not poolable with the handoff ladder. Same five moves, different roster;
+#     the two families are separate instruments and their cells do not pool.
+#
+# THE ADHERENCE NUMBER IS READABLE AGAIN. `cell_report.py` used to derive the
+# delegate seats from the literal names `coder` and `tester`, which this roster
+# matches neither, so alpha read 0.000 with a Clopper-Pearson interval printed
+# around it. Since `48254f6` it reads them off the run's own
+# `assigned.topology_nodes`, and a run whose event log has no such record falls
+# back to the old names rather than inventing a number.
+#
+# WHAT IS HELD EQUAL, AND WITH WHAT. The five specs of this family differ from
+# one another in `name` and `cell` and in nothing else, so a difference between
+# two of them is a difference between two cards. With `pro-mini36-clean` the
+# shared fields are the 36 rows, the frame content, the budget and the step cap
+# -- but not the model env, see below -- so that batch is not a baseline for
+# these numbers until its rows are re-run at this endpoint.
+#
+# CONCURRENCY IS 24, AND THE FIELD THAT BUYS IT IS `OPENCOLLAB_DOCKER_TIMEOUT`.
+# Thirty-six -- one wave for a 36-row cell -- was tried and given up: it put the
+# shared host's five-minute load at 61.8 against 64 cores with a spike to 79.9,
+# and it bought little, because a cell at 36 ends when its slowest single run
+# ends (about 90 minutes) rather than when the work is through. At 24 the same
+# 36 rows take roughly 110 minutes and leave a third of the machine to the
+# sixteen other accounts on it. At 12 against that timeout's default of 60 s, two
+# of twelve rows once died at 94 s with the snapshot step's `docker exec`
+# crossing it, before any agent ran. Daemon dispatch is not what spends the
+# minute: at 4, 12, 24, 32 and 48 simultaneous `docker exec` against a daemon
+# already serving four hundred containers for seventeen accounts, the median was
+# 0.13-0.24 s and the slowest 0.37 s. What spends it is the snapshot script's own
+# walk of the repository, which concurrency worsens only through CPU and IO
+# contention -- so the timeout is raised rather than the concurrency held down.
+# The endpoint was measured apart from the daemon: 36 simultaneous completions
+# were all answered, median 4.6 s, while 48 drew eight `API-Key Requests rate
+# limit exceeded`, putting the ceiling between the two. A batch is gentler than
+# that probe anyway, since a seat calls about once a minute. Raising the timeout
+# changes `env` and so the batch identity; `concurrency` is deliberately outside
+# the identity, because a resume may use a different one -- it is not a treatment.
+#
+# ONE ENDPOINT, THREE MODELS -- AND IT IS NOT THE ONE `pro-mini36-clean` USES.
+# The token-plan endpoint serves every model of this sweep under one key
+# (`qwen3.8-flash`, `deepseek-v4-flash-0731`, `deepseek-v4.1-flash`; note the
+# first deepseek carries a date here that it does not carry elsewhere), so the
+# three runs of the sweep differ in the model and in nothing else. That is the
+# property the sweep needs and the only one it buys: `pro-mini36-clean` runs on
+# dashscope under a different account, so it is not a baseline for these numbers.
+# Two earlier revisions got this wrong in opposite directions -- one moved these
+# cells to the 47.100.35.241 gateway while the comment still claimed the
+# reference batch's endpoint, and that gateway then answered
+# `gateway_concurrency_limit` to a single request with none of our load on it.
+# The grid's qwen cells were lost to an endpoint split exactly like the first of
+# those. The rule that prevents it here: all five cells move together, or none
+# moves.
+#
+# SURVIVING A GATEWAY THAT WOBBLES. `OPENCOLLAB_LLM_MAX_RETRIES` is 30 against a
+# default of 3, and `OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET` is 600 against a
+# default of 0. The two must move together: the 60 s ceiling on exponential
+# backoff (`adapters/llm/retry.py`) applies only when a time budget exists, so
+# raising the retry count alone would let the twentieth backoff sleep for days
+# and silently spend the run's whole wall clock. With both set, a seat absorbs
+# up to ten minutes of 502s and carries on; past that it ends on a provider
+# error, which `cell_report` excludes rather than counts. That exclusion is why
+# a flaky endpoint costs rows rather than biasing them, and why the rows it
+# costs have to be re-run through `retry_of` instead of being left out.
+name: dual-bare-dsv41f-pro36
+host: lthpc
+arm: team
+cell: dual-bare
+suite: pro-mini36-clean
+rows: {start: 1, stop: 36}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 24
+model_env: configs/.env.tp-dsv41f
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+pins:
+  opencollab: 76c6676a2f661242598230c6265a012b9fe8e9d6
+  opencollab_eval: 0e04fdb235e52987dcad49c264f563dc8614d70a
+note: "probe only, not a paper cell: the two-candidate roster on SWE-bench Pro mini-36; scoring is the official Pro evaluator, not `batch score`; no adherence number may be read from `summary.alpha` for this roster"
