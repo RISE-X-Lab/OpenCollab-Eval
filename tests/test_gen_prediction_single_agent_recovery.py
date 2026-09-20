@@ -210,7 +210,7 @@ def test_single_main_cleanup_failure_stages_candidate_before_publish(
         },
     )
     monkeypatch.setattr(
-        gp, "start_container", lambda image, name, owner_token: "cid"
+        gp, "start_container", lambda image, name, owner_token, **kwargs: "cid"
     )
 
     async def fake_run_agent(*args, **kwargs):
@@ -288,7 +288,7 @@ def test_single_main_output_symlink_race_cleans_active_container(
         },
     )
     monkeypatch.setattr(
-        gp, "start_container", lambda image, name, owner_token: "cid"
+        gp, "start_container", lambda image, name, owner_token, **kwargs: "cid"
     )
 
     async def fake_run_agent(*args, **kwargs):

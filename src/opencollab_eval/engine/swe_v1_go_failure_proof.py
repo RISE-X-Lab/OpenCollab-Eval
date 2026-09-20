@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from .swe_go_dependency_build import candidate_dependency_build_failed
+from .swe_go_test_dependency import bound_test_dependency_unavailable
 
 GO_TARGET_DISCOVERY_PREFIX = "OPENCOLLAB_GO_TARGET_DISCOVERY "
 _GO_PROOF_DIAGNOSTIC_RE = re.compile(
@@ -639,9 +640,7 @@ def go_failure_proof_matches(
         exact_failure_packages.add(package)
     timeout_failure_packages = _target_timeout_failure_packages(events, bindings)
     panic_failure_packages = _target_panic_failure_packages(events, bindings)
-    runtime_failure_packages = (
-        exact_failure_packages | timeout_failure_packages | panic_failure_packages
-    )
+    runtime_failure_packages = exact_failure_packages | timeout_failure_packages | panic_failure_packages
     if (
         proof.get("dynamic_discovery") is True
         and runtime_failure_packages
@@ -662,10 +661,7 @@ def go_failure_proof_matches(
         or build_headers
     ) and (not expected_command or expected_command != observed_command):
         return False
-    if plain_diagnostics and (
-        not expected_command
-        or expected_command != observed_command
-    ):
+    if plain_diagnostics and (not expected_command or expected_command != observed_command):
         return False
     if build_headers:
         unique_headers = set(build_headers)
@@ -733,6 +729,13 @@ def go_failure_proof_matches(
         if len(matching_bindings) != 1:
             return False
         binding = matching_bindings[0]
+        # A separately executed target failure remains decisive when another
+        # bound package cannot load a dependency required by its test file.
+        if exact_failure_packages and bound_test_dependency_unavailable(
+            events, failed_package, binding["test_files"]
+        ):
+            proven_packages.append(failed_package)
+            continue
         if any(
             event.get("Test") in binding["tests"]
             and isinstance(event.get("Package"), str)
@@ -745,10 +748,7 @@ def go_failure_proof_matches(
             for event in events
             if event.get("Package") == failed_package and event.get("Action") == "output"
         )
-        if not any(
-            marker in package_output
-            for marker in ("[build failed]", "[setup failed]")
-        ):
+        if not any(marker in package_output for marker in ("[build failed]", "[setup failed]")):
             return False
         if plain_diagnostics:
             matching_headers = [

@@ -516,7 +516,7 @@ def test_start_container_rejects_invalid_full_container_id(
 def test_start_container_marker_failure_removes_created_container(monkeypatch, tmp_path):
     removed = []
     monkeypatch.setattr(
-        gp, "start_container", lambda image, name, owner_token: "cid"
+        gp, "start_container", lambda image, name, owner_token, **kwargs: "cid"
     )
 
     def fail_marker(run_dir, cid, name):
@@ -539,7 +539,8 @@ def test_start_container_marker_failure_removes_created_container(monkeypatch, t
 def test_start_container_persists_pending_owner_before_docker_run(monkeypatch, tmp_path):
     observed = {}
 
-    def fake_start(image, name, owner_token):
+    def fake_start(image, name, owner_token, *, termination_evidence_path):
+        assert termination_evidence_path == tmp_path / "container-termination-evidence.json"
         owner = json.loads(
             gp.container_owner_path(tmp_path, name).read_text(encoding="utf-8")
         )
@@ -565,7 +566,7 @@ def test_failed_start_retains_pending_owner_when_absence_is_unknown(monkeypatch,
     monkeypatch.setattr(
         gp,
         "start_container",
-        lambda image, name, owner_token: (_ for _ in ()).throw(
+        lambda image, name, owner_token, **kwargs: (_ for _ in ()).throw(
             RuntimeError("run failed")
         ),
     )

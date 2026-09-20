@@ -198,6 +198,23 @@ def _release_candidate_modules(candidate_source_paths, cwd):
             sys.path.insert(0, str(import_root))
 
 
+def _configure_project_qt_wrapper(cwd):
+    if "QUTE_QT_WRAPPER" in os.environ:
+        return
+    machinery = cwd / "qutebrowser" / "qt" / "machinery.py"
+    try:
+        source = machinery.read_text(encoding="utf-8")
+    except OSError:
+        return
+    if "QUTE_QT_WRAPPER" not in source or "PyQt6" not in source:
+        return
+    # Select the image's installed binding through the project's public option.
+    # This runs under the actual test interpreter before candidate imports.
+    if (importlib.util.find_spec("PyQt5") is None
+            and importlib.util.find_spec("PyQt6") is not None):
+        os.environ["QUTE_QT_WRAPPER"] = "PyQt6"
+
+
 def _trusted_pytest_worker(argv):
     plugin_path, candidate_source_paths, pytest_args = _worker_arguments(argv)
     cwd = Path.cwd().resolve()
@@ -206,6 +223,7 @@ def _trusted_pytest_worker(argv):
         for entry in sys.path
         if Path(entry or os.getcwd()).resolve() != cwd
     ]
+    _configure_project_qt_wrapper(cwd)
     spec = importlib.util.spec_from_file_location("opencollab_pytest_proof", plugin_path)
     if spec is None or spec.loader is None:
         raise ValueError("trusted pytest proof plugin cannot be loaded")
