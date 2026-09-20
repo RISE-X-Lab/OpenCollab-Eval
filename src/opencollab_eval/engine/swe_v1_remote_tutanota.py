@@ -188,7 +188,7 @@ for path, instrumented in patched:
             f"if {legacy_script}; then",
             "  npm_config_nodedir=/usr/local npm run test:app",
             f"elif {split_script}; then",
-            "  npm_config_nodedir=/usr/local npm run testapi",
+            "  npm_config_nodedir=/usr/local npm run testapi -- -c",
             "  opencollab_api_status=$?",
             "  npm_config_nodedir=/usr/local npm run testclient",
             "  opencollab_client_status=$?",
