@@ -132,6 +132,54 @@ def _disk_line(host: HostConfig) -> str:
     )
 
 
+def endpoint_probe_script(host: HostConfig, model_env: str) -> str:
+    """Ask the model endpoint for one token and print only the HTTP status.
+
+    Its own script rather than a line in ``preflight_script`` for two reasons.
+    The key: that script is forbidden to read it, and the ban is load-bearing --
+    its output is parsed into ``batch.json``, so a key kept out by construction
+    cannot be filtered out by mistake. And the process table: this machine is
+    shared by seventeen accounts, so an ``Authorization: Bearer`` header passed
+    on a command line is readable by all of them. Python reads the file and
+    builds the request in memory; nothing carrying the key reaches ``argv``, and
+    nothing but a status code is printed.
+
+    A completion rather than ``/models``: a gateway can list a model and still
+    refuse every completion for it. gpt-5.6-luna answered 200 to the listing and
+    502 to the completion all of 2026-09-20.
+    """
+    snippet = (
+        "import json,sys,urllib.request,urllib.error;"
+        "e=dict();"
+        "f=open(sys.argv[1],encoding='utf-8');"
+        "[e.__setitem__(*l.rstrip('\\n').split('=',1)) for l in f"
+        " if '=' in l and not l.lstrip().startswith('#')];"
+        "b=json.dumps({'model':e['OPENCOLLAB_MODEL'],"
+        "'messages':[{'role':'user','content':'ok'}],'max_tokens':1}).encode();"
+        "r=urllib.request.Request(e['OPENCOLLAB_BASE_URL'].rstrip('/')+'/chat/completions',data=b,"
+        "headers={'Authorization':'Bearer '+e['OPENCOLLAB_API_KEY'],'Content-Type':'application/json'});"
+        "\n"
+        "try:\n"
+        "    print('ENDPOINT\\t%d' % urllib.request.urlopen(r,timeout=90).getcode())\n"
+        "except urllib.error.HTTPError as x:\n"
+        "    print('ENDPOINT\\t%d' % x.code);"
+        "    print('ENDPOINT_BODY\\t%s' % x.read(160).decode('utf-8','replace').replace(chr(9),' ')"
+        ".replace(chr(10),' '))\n"
+        "except Exception as x:\n"
+        "    print('ENDPOINT\\t000');"
+        "    print('ENDPOINT_BODY\\t%s' % type(x).__name__)\n"
+    )
+    me = f"{host.workdir}/{host.opencollab_dir}/{model_env}"
+    return "\n".join(
+        [
+            "set -u",
+            f'if [ -f {_q(me)} ]; then {_q(host.python)} -c {_q(snippet)} {_q(me)}; '
+            'else printf "ENDPOINT\\tno-env\\n"; fi',
+            "",
+        ]
+    )
+
+
 def preflight_script(
     spec: BatchSpec,
     host: HostConfig,
@@ -358,6 +406,14 @@ def evaluate_preflight(
     checks.append(
         Check(
             "model env file present", fact(facts, "MODEL_ENV") == "present", f"{host.opencollab_dir}/{spec.model_env}"
+        )
+    )
+    endpoint = fact(facts, "ENDPOINT")
+    checks.append(
+        Check(
+            "endpoint answers a completion",
+            endpoint == "200",
+            f"HTTP {endpoint or '(no answer)'}" + (f": {fact(facts, 'ENDPOINT_BODY')}" if endpoint != "200" else ""),
         )
     )
     model = fact(facts, "MODEL")

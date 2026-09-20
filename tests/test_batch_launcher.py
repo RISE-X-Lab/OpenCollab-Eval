@@ -393,6 +393,7 @@ def _good_facts(spec, host, cards: dict[str, str], instances_sha: str) -> str:
             sort_keys=True,
         ),
         "MODEL_ENV\tpresent",
+        "ENDPOINT\t200",
         "MODEL\tdeepseek-v4-flash",
         "PROVIDER\topenai",
         "BASE_URL_SHA\tdeadbeef",
@@ -447,6 +448,9 @@ def test_preflight_passes_when_the_host_matches(experiment: dict) -> None:
         (("OUTDIR\tabsent", "OUTDIR\tno-batchjson"), "out-dir"),
         (("OUTDIR\tabsent", "OUTDIR\t1111111111111111111111111111111111111111111111111111111111111111"), "out-dir"),
         (("MODEL\tdeepseek-v4-flash", "MODEL\t"), "model named"),
+        (("ENDPOINT\t200", "ENDPOINT\t502"), "endpoint answers a completion"),
+        (("ENDPOINT\t200", "ENDPOINT\t401"), "endpoint answers a completion"),
+        (("ENDPOINT\t200", "MODEL_ENV\tpresent"), "endpoint answers a completion"),
         (("REMOTE_INSTANCES_SHA\tabsent", "REMOTE_INSTANCES_SHA\tzzz"), "instance file on host"),
     ],
 )
@@ -511,6 +515,27 @@ def test_resume_into_own_outdir_is_allowed(experiment: dict) -> None:
     spec = load_spec(experiment["spec"])
     facts = _facts(experiment).replace("OUTDIR\tabsent", f"OUTDIR\t{spec_digest(spec)}")
     assert _checks(experiment, facts)["out-dir"].ok
+
+
+def test_the_endpoint_probe_keeps_the_key_out_of_the_process_table(experiment: dict) -> None:
+    """Seventeen accounts share this machine, so argv is public.
+
+    The probe needs the key, which is why it is not a line in
+    ``preflight_script`` -- that script is banned from reading it. What it must
+    not do is hand it to a command: python opens the env file itself and builds
+    the header in memory, so the only key-bearing thing on the command line is
+    the file's path.
+    """
+    host = load_host(experiment["dir"] / "hosts" / "h.yaml")
+    script = batch_remote.endpoint_probe_script(host, "configs/.env.x")
+    assert "curl" not in script
+    assert "sk-" not in script
+    # Shell-quoting rewrites every apostrophe, so match on the quote-free parts.
+    assert "OPENCOLLAB_API_KEY" in script and "Authorization" in script and "Bearer " in script
+    # The env file's path appears twice: the -f test and the argv. Nothing else
+    # on the command line comes from inside the file.
+    assert script.count("configs/.env.x") == 2
+    assert "/chat/completions" in script and "max_tokens" in script
 
 
 def test_preflight_script_never_reads_the_key(experiment: dict) -> None:
@@ -725,6 +750,11 @@ def fake_host(tmp_path: Path, oc_repo: tuple[Path, str]) -> dict:
         f"  *'import opencollab, opencollab_eval'*) echo {work}/OpenCollab/opencollab/__init__.py; "
         f"echo {work}/OpenCollab-Eval/src/opencollab_eval/__init__.py;;\n"
         f"  *declared_role_prompt_digests*) echo {shlex.quote(json.dumps(seat_digests, sort_keys=True))};;\n"
+        # The endpoint probe, answered without a network: the real one was run
+        # against the live host on 2026-09-20 and reported 200 for a good env,
+        # 401 for a wrong key, 404 for a wrong model name and no-env for a
+        # missing file, so all four of its branches have been seen.
+        '  *urllib.request*) printf "ENDPOINT\\t200\\n";;\n'
         '  *) exec python3 "$@";;\n'
         "esac\n",
         encoding="utf-8",
@@ -771,6 +801,7 @@ def test_preflight_script_runs_under_bash_and_passes_on_a_matching_host(experime
         for rel in card_file_paths(spec, fake_host["repo"])
     }
     out = _bash(batch_remote.preflight_script(spec, host, list(cards), images=[]))
+    out += _bash(batch_remote.endpoint_probe_script(host, spec.model_env))
     assert "sk-verysecret" not in out
     facts = batch_remote.parse_facts(out)
     checks = {c.name: c for c in batch_remote.evaluate_preflight(spec, host, facts, cards, "abc")}
