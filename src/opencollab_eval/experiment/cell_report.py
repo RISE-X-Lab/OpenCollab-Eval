@@ -29,6 +29,9 @@ from pathlib import Path
 from typing import Any
 
 WRITE_TOOLS = frozenset({"apply_patch", "file_write"})
+#: The delegate seats of the handoff roster, used only when a run recorded no
+#: ``assigned.topology_nodes`` row to derive them from. Every team run since
+#: that row existed derives them; this is what the runs written before it get.
 DELEGATE_ROLES = frozenset({"coder", "tester"})
 #: Arms whose delivery rate is alpha: the rate at which an agent *chose* to
 #: hand work on. Deliberately narrower than ``DELIVERY_READABLE_ARMS``, which
@@ -100,6 +103,14 @@ SESSION_TERMINAL_EVENT = "session_terminal"
 #: reported no declared edges at all -- which is how an arm that declares none
 #: reads.
 ASSIGNED_TOPOLOGY_EVENT = "assigned.topology_edges"
+#: The row that names the *seats*: ``entry_role``, ``declared_roles``,
+#: ``turns_serialized`` and one ``{aid, role, entry, tools, ...}`` per node.
+#: Read for one thing only -- which seats are not the entry seat -- because
+#: naming those by their literal role names is a reader of one roster: on a
+#: team of an Adopter and two Coders the names ``coder``/``tester`` match
+#: nothing, alpha reads 0.000, and a Clopper-Pearson interval is printed
+#: around it with no complaint.
+ASSIGNED_NODES_EVENT = "assigned.topology_nodes"
 #: The tool one seat addresses another with. A declared edge is *walked* when a
 #: seat holding its ``from_role`` made at least one ``message_agent`` call that
 #: resolved to its ``to_role``. That is not alpha: alpha is whether an agent
@@ -336,8 +347,9 @@ def _event_log_facts(seat_paths: list[Path]) -> tuple[dict[str, dict[str, Any]],
     """The two things this run's event log records: its sessions and its topology.
 
     Returns the ``session_terminal`` payload of each session keyed by ``aid``,
-    and the single ``assigned.topology_edges`` payload, or ``None`` when the
-    run wrote none. Read from the event log beside the seat snapshots, and read
+    the single ``assigned.topology_edges`` payload and the single
+    ``assigned.topology_nodes`` payload, either of the last two ``None`` when
+    the run wrote none. Read from the event log beside the seat snapshots, and read
     defensively: these are the only quantities in the report that come from a
     second file, and a batch pulled before the log existed, a truncated log, or
     a log this reader cannot parse must all leave every other column exactly as
@@ -348,6 +360,7 @@ def _event_log_facts(seat_paths: list[Path]) -> tuple[dict[str, dict[str, Any]],
     """
     found: dict[str, dict[str, Any]] = {}
     topology: dict[str, Any] | None = None
+    nodes: dict[str, Any] | None = None
     for directory in dict.fromkeys(path.parent for path in seat_paths):
         for name in EVENT_LOG_NAMES:
             log = directory / name
@@ -356,7 +369,11 @@ def _event_log_facts(seat_paths: list[Path]) -> tuple[dict[str, dict[str, Any]],
             try:
                 with log.open(encoding="utf-8") as handle:
                     for line in handle:
-                        if SESSION_TERMINAL_EVENT not in line and ASSIGNED_TOPOLOGY_EVENT not in line:
+                        if (
+                            SESSION_TERMINAL_EVENT not in line
+                            and ASSIGNED_TOPOLOGY_EVENT not in line
+                            and ASSIGNED_NODES_EVENT not in line
+                        ):
                             continue
                         try:
                             event = json.loads(line)
@@ -368,9 +385,41 @@ def _event_log_facts(seat_paths: list[Path]) -> tuple[dict[str, dict[str, Any]],
                             found[str(payload.get("aid"))] = payload
                         elif kind == ASSIGNED_TOPOLOGY_EVENT:
                             topology = payload
+                        elif kind == ASSIGNED_NODES_EVENT:
+                            nodes = payload
             except OSError:
                 continue
-    return found, topology
+    return found, topology, nodes
+
+
+def delegate_roles(nodes: dict[str, Any] | None) -> frozenset[str] | None:
+    """The roles of this run's non-entry seats, or ``None`` when it named none.
+
+    Alpha is whether the entry agent *chose* to hand the work on, so the seats
+    it could hand it to are every seat but its own. Reading them off the run's
+    own node list makes that roster-independent: the literal pair
+    ``{"coder", "tester"}`` is the handoff team's answer, and on any other team
+    it matches nothing, which reads exactly like an entry agent that delegated
+    nothing -- alpha 0.000, with an interval printed around it.
+
+    ``None`` rather than an empty set when the row is missing or malformed, so
+    the caller can fall back instead of concluding that a run had no delegates.
+    """
+    if not nodes:
+        return None
+    listed = nodes.get("nodes")
+    if not isinstance(listed, list):
+        return None
+    roles = {
+        str(node.get("role"))
+        for node in listed
+        if isinstance(node, dict) and node.get("role") and not node.get("entry")
+    }
+    # A node list with no entry seat marked would make every seat a delegate,
+    # which is the same shape of error in the other direction.
+    if not roles or not any(isinstance(n, dict) and n.get("entry") for n in listed):
+        return None
+    return frozenset(roles)
 
 
 def declared_edges(topology: dict[str, Any] | None) -> set[tuple[str, str]] | None:
@@ -493,7 +542,7 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
             # none produces.
             workflow_result = record.get("workflow_result")
             seat_paths = _seat_files(cell, arm, record)
-            terminals, topology = _event_log_facts(seat_paths)
+            terminals, topology, nodes = _event_log_facts(seat_paths)
             seats: dict[str, Seat] = {}
             for path in seat_paths:
                 aid, seat = _read_seat(path)
@@ -569,7 +618,10 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
                     else {k: v for k, v in role_tokens.items() if v or k in recorded_spend}
                     == {k: v for k, v in recorded_spend.items() if v or k in role_tokens}
                 ),
-                delivered=any(s.role in DELEGATE_ROLES and s.tokens > 0 and s.assistant > 0 for s in seats.values()),
+                delivered=any(
+                    s.role in (delegate_roles(nodes) or DELEGATE_ROLES) and s.tokens > 0 and s.assistant > 0
+                    for s in seats.values()
+                ),
                 tree_snapshots=len(snapshots or []),
                 cap_hit=[aid for aid, s in seats.items() if "budget" in s.terminal.lower()],
                 cap_hit_precheck=[

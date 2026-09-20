@@ -1348,6 +1348,53 @@ def team_edges_cell(tmp_path: Path) -> Path:
     return cell
 
 
+def test_alpha_reads_the_delegate_seats_off_the_run_not_off_two_role_names(tmp_path: Path) -> None:
+    """A roster of an Adopter and two Coders delivers, and the old reader said it did not.
+
+    The literal pair ``{"coder", "tester"}`` is the handoff team's answer. On
+    this team it matches no seat, so every run reads as delivering nothing --
+    alpha 0.000 with a Clopper-Pearson interval printed around it, which is
+    what makes it worth a test: the wrong number arrives looking like a number.
+    """
+    cell = tmp_path / "dual"
+    runtime = _runtime_dir(cell, "team", "a")
+    _seat_with_messages(
+        runtime,
+        "agent_0_adopter-aa.json",
+        aid=0,
+        role="adopter",
+        targets=[{"to_role": "coder_a", "summary": "s", "content": "c"}],
+    )
+    _seat_file(runtime, "agent_1_coder_a-bb.json", aid=1, role="coder_a", tokens=5_000, assistant=2)
+    _seat_file(runtime, "agent_2_coder_b-cc.json", aid=2, role="coder_b", tokens=0, assistant=0)
+    runtime.mkdir(parents=True, exist_ok=True)
+    (runtime / "trajectory.jsonl").write_text(
+        json.dumps(
+            {
+                "type": "assigned.topology_nodes",
+                "payload": {
+                    "entry_role": "adopter",
+                    "declared_roles": ["adopter", "coder_a", "coder_b"],
+                    "nodes": [
+                        {"aid": 0, "role": "adopter", "entry": True},
+                        {"aid": 1, "role": "coder_a", "entry": False},
+                        {"aid": 2, "role": "coder_b", "entry": False},
+                    ],
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    _write_metrics(cell, [{"instance_id": "a", "run_summary": {"status": "completed", "tokens": 20_000, "steps": 4}}])
+
+    rows = cell_report.run_rows(cell, "team")
+    assert [r.delivered for r in rows] == [True]
+    assert cell_report.summarize(rows, expected_card=None)["alpha"] == 1.0
+    # The seats the run itself names, and the pair that would have been used.
+    assert cell_report.DELEGATE_ROLES.isdisjoint({"adopter", "coder_a", "coder_b"})
+
+
 def test_a_team_run_declares_its_edges_in_its_trajectory(team_edges_cell: Path) -> None:
     by_id = {r.instance_id: r for r in cell_report.run_rows(team_edges_cell, "team")}
     assert by_id["a"].edges_declared == 6
