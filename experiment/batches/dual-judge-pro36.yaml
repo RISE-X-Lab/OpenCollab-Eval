@@ -35,16 +35,21 @@
 # -- but not the model env, see below -- so that batch is not a baseline for
 # these numbers until its rows are re-run at this endpoint.
 #
-# CONCURRENCY IS 12, AND THE FIELD THAT BUYS IT IS `OPENCOLLAB_DOCKER_TIMEOUT`.
-# At 12 against that timeout's default of 60 s, two of twelve rows died at 94 s
-# with the snapshot step's `docker exec` crossing it, before any agent ran. The
-# cause is not that twelve of ours overwhelm the daemon: that daemon was already
-# serving some four hundred containers for seventeen accounts, so the ceiling
-# moves with other people's work and cannot be found by trying. Hence 300 s
-# here. Raising it changes `env` and so the batch identity, while `concurrency`
-# is deliberately outside the identity -- a resume may use a different one
-# because it is not a treatment -- so 12 is a floor, raisable in place once the
-# daemon side is seen to hold.
+# CONCURRENCY IS 36, ONE WAVE FOR A 36-ROW CELL, AND THE FIELD THAT BUYS IT IS
+# `OPENCOLLAB_DOCKER_TIMEOUT`. At 12 against that timeout's default of 60 s, two
+# of twelve rows once died at 94 s with the snapshot step's `docker exec`
+# crossing it, before any agent ran. Daemon dispatch is not what spends the
+# minute: at 4, 12, 24, 32 and 48 simultaneous `docker exec` against a daemon
+# already serving four hundred containers for seventeen accounts, the median was
+# 0.13-0.24 s and the slowest 0.37 s. What spends it is the snapshot script's own
+# walk of the repository, which concurrency worsens only through CPU and IO
+# contention -- so the timeout is raised rather than the concurrency held down.
+# The endpoint was measured apart from the daemon: 36 simultaneous completions
+# were all answered, median 4.6 s, while 48 drew eight `API-Key Requests rate
+# limit exceeded`, putting the ceiling between the two. A batch is gentler than
+# that probe anyway, since a seat calls about once a minute. Raising the timeout
+# changes `env` and so the batch identity; `concurrency` is deliberately outside
+# the identity, because a resume may use a different one -- it is not a treatment.
 #
 # ONE ENDPOINT, THREE MODELS -- AND IT IS NOT THE ONE `pro-mini36-clean` USES.
 # The token-plan endpoint serves every model of this sweep under one key
@@ -81,7 +86,7 @@ frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
 budget_per_seat: 2000000
 max_steps: 100
 timeout: 5400
-concurrency: 12
+concurrency: 36
 model_env: configs/.env.tp-qwen38
 env:
   OPENCOLLAB_LLM_STREAM_CHAT: "true"
