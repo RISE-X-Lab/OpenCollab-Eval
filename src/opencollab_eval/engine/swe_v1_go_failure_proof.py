@@ -7,6 +7,8 @@ import pathlib
 import re
 from typing import Any
 
+from .swe_go_dependency_build import candidate_dependency_build_failed
+
 GO_TARGET_DISCOVERY_PREFIX = "OPENCOLLAB_GO_TARGET_DISCOVERY "
 _GO_PROOF_DIAGNOSTIC_RE = re.compile(
     r"(?m)(?P<path>(?:[A-Za-z]:)?[^:\r\n]*?[^/\\:\r\n]+\.go):"
@@ -715,6 +717,11 @@ def go_failure_proof_matches(
         )
     proven_packages = list(runtime_failure_packages)
     for failed_package in failed_packages:
+        if candidate_dependency_build_failed(
+            events, bindings, failed_package, candidate_source_paths
+        ) and expected_command and expected_command == observed_command:
+            proven_packages.append(failed_package)
+            continue
         if failed_package in runtime_failure_packages:
             proven_packages.append(failed_package)
             continue
