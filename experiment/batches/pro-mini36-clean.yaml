@@ -1,0 +1,67 @@
+# SWE-bench Pro, second draw: 36 tasks whose repositories the solver-repo
+# sanitize leaves intact.
+#
+# WHY A SECOND DRAW. The first mini-36 (`pro-mini36-smoke`) was a uniform draw
+# from the 184-id pool and landed on four JavaScript/TypeScript repositories.
+# Those images keep their dependencies *inside* the repository directory
+# (`/app/node_modules`), and the generation path replaces that directory with a
+# disposable copy carrying only git-tracked files (see
+# `gen_prediction_snapshot_container.py`, `create_solver_snapshot` with
+# `preserve_workspace_state=False`). Verified on the probe's own containers,
+# 2026-09-19: `node_modules` absent there while a container started straight
+# from the same image reports 952 entries. Every JS/TS task would be run in an
+# environment the task itself cannot use -- the same defect that costs the
+# Verified main line 12 of its 50 tasks.
+#
+# THE POOL. Each of the 36 Pro images was started once and asked what untracked
+# or ignored dependency tree it keeps inside `/app` (`~/pro-sanitize-scan.sh` ->
+# `~/pro-scan.tsv`). Four repositories carry one (NodeBB, element-hq/element-web,
+# protonmail/webclients, tutao/tutanota) and are excluded. Two carry one that
+# the task's own tests do not need (navidrome's `ui/node_modules`, openlibrary's
+# frontend `node_modules`); they are excluded too rather than argued in, because
+# "the tests probably do not touch it" is exactly the kind of assumption this
+# subset exists to remove. Five are clean -- ansible, qutebrowser, teleport,
+# flipt, vuls -- leaving 108 of the 184 ids.
+#
+# THE DRAW. `random.Random(20260920).sample(sorted(eligible), 36)` over those
+# 108; seed and method are recorded in
+# `/root/oc-swebench-pro/draw/pro-mini36-clean-draw.json`. It is still a sample
+# of the 184 pool, not of SWE-bench Pro, and it has no JS/TS at all by
+# construction. The realised composition (go 26 / python 10) is also skewed
+# against the pool (go 57 / python 51) -- other seeds give 16-20 python, so it
+# is chance rather than a sampling bug, but any language-level reading of this
+# batch has to say so. Accepted because the batch is a plumbing probe.
+#
+# WHY THE FRAME CONTENT IS IN THE SPEC. `frame_content` is a field of
+# `HostConfig`, which is machine facts; which benchmark's rows a batch ran on is
+# a choice, so this spec names its own (`experiment/hosts/lthpc.yaml` is left
+# alone, and the repo's `lthpc-*` parity test would refuse a second host file
+# that differed in exactly this field).
+#
+# THE MODEL ENV IS NOT THE GRID'S, for an unrelated reason: on 2026-09-19 every
+# key pointing at the private gateway answered 401 `USER_INACTIVE` and both
+# token-plan keys answered 429 with the weekly quota exhausted, leaving
+# `configs/.env.qwen` (dashscope, qwen3.8-flash) as the only live key. This
+# batch's resolve counts are therefore NOT comparable to the grid's deepseek
+# runs.
+name: pro-mini36-clean
+host: lthpc
+arm: team
+rung: primary
+cell: facts-v2
+suite: pro-mini36-clean
+rows: {start: 1, stop: 36}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env.qwen
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "probe only, not a paper cell: SWE-bench Pro mini-36 drawn from the repositories the sanitize leaves intact; scoring is the official Pro evaluator, not `batch score`"
