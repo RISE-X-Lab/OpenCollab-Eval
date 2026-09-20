@@ -33,10 +33,14 @@
 # same frame content, same budget, same model env -- so a difference between
 # this cell and that one is a difference between two cards.
 #
-# CONCURRENCY IS 12, NOT THAT BATCH'S 6. It is outside `spec_identity` and does
-# not make this a different batch, but it does raise the docker daemon's load,
-# and the daemon-load failure (a `docker run -d` crossing 60 s and taking a
-# sibling run with it) is the one this smoke is sized to count.
+# CONCURRENCY IS 6, THE SAME AS THAT BATCH'S. It was 12 for one smoke, and the
+# smoke answered: two of twelve rows died at 94 s with the snapshot step's
+# `docker exec` crossing its 60 s timeout, before any agent ran. Twelve
+# containers doing that at once against one daemon is what crosses it. The
+# timeout is settable (`OPENCOLLAB_DOCKER_TIMEOUT`), but raising it is a change
+# to `env` and so to `spec_identity`, while concurrency is deliberately outside
+# it -- a resume may use a different one because it is not a treatment. So this
+# is the field that moves.
 #
 # THE MODEL IS NOT THE GRID'S. On 2026-09-19 every key pointing at the private
 # gateway answered 401 `USER_INACTIVE` and both token-plan keys answered 429
@@ -53,7 +57,7 @@ frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
 budget_per_seat: 2000000
 max_steps: 100
 timeout: 5400
-concurrency: 12
+concurrency: 6
 model_env: configs/.env.qwen
 env:
   OPENCOLLAB_LLM_STREAM_CHAT: "true"
