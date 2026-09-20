@@ -71,16 +71,19 @@
 # changes `env` and so the batch identity; `concurrency` is deliberately outside
 # the identity, because a resume may use a different one -- it is not a treatment.
 #
-# ONE ENDPOINT, THREE MODELS -- AND IT IS NOT THE ONE `pro-mini36-clean` USES.
-# The token-plan endpoint serves every model of this sweep under one key
-# (`qwen3.8-flash`, `deepseek-v4-flash-0731`, `deepseek-v4.1-flash`; note the
-# first deepseek carries a date here that it does not carry elsewhere), so the
-# three runs of the sweep differ in the model and in nothing else. That is the
-# property the sweep needs and the only one it buys: `pro-mini36-clean` runs on
-# dashscope under a different account, so it is not a baseline for these numbers.
-# Two earlier revisions got this wrong in opposite directions -- one moved these
-# cells to the 47.100.35.241 gateway while the comment still claimed the
-# reference batch's endpoint, and that gateway then answered
+# ONE ENDPOINT, TWO MODELS -- AND IT IS NOT THE ONE `pro-mini36-clean` USES.
+# The token-plan endpoint serves this cell and the qwen cells under one key
+# (`qwen3.8-flash`, `deepseek-v4.1-flash`), so those two runs of the sweep
+# differ in the model and in nothing else. That is the property the sweep needs
+# and the only one it buys: `pro-mini36-clean` runs on dashscope under a
+# different account, so it is not a baseline for these numbers, and the luna
+# cells run on the 47.100.35.241 gateway under a third key, so THEY are not
+# comparable to these as a model effect -- see their own files. A third
+# token-plan model, `deepseek-v4-flash-0731`, was specced and then dropped
+# before it ran; it is not part of this sweep.
+# Two earlier revisions got the endpoint wrong in opposite directions -- one
+# moved these cells to the 47.100.35.241 gateway while the comment still
+# claimed the reference batch's endpoint, and that gateway then answered
 # `gateway_concurrency_limit` to a single request with none of our load on it.
 # The grid's qwen cells were lost to an endpoint split exactly like the first of
 # those. The rule that prevents it here: all five cells move together, or none

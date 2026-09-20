@@ -1,17 +1,16 @@
-# The qwen cell's twin at the same endpoint under the same key, with the model
-# changed and nothing else. Derived from `dual-plain-pro36.yaml` by changing
-# exactly two lines -- `name` and `model_env` -- so a difference between the two
-# is a difference between two models. `model_env` is part of `spec_digest`, so
-# this is a fresh batch identity with its own out-dir; the `name` has to change
-# with it or the two would collide in one directory.
+# The qwen cell's counterpart on `gpt-5.6-luna`. Derived from `dual-plain-pro36.yaml`
+# by changing `name` and `model_env` and by rewriting the endpoint paragraph
+# below, which in the qwen version asserts a property this cell does not have.
+# Every field the ladder rests on -- the 36 rows, the frame content, the
+# per-seat budget, the step cap, the wall clock, the pins, the env block --
+# is byte-identical, so a difference between two luna cells is a difference
+# between two cards.
 #
-# THE FIVE MOVE TOGETHER OR NONE DOES. Splitting one ladder across two endpoints
-# is what lost the grid's qwen cells; splitting it across two models would be
-# worse, because the model is the thing being compared.
-#
-# TIME IS NOT YET KNOWN FOR THIS MODEL. The 109-minute makespan and the 2008 s
-# median run are qwen's. Read this cell's own median off its first rows before
-# extrapolating anything from them.
+# THE WALL CLOCK IS LEFT ALONE ON PURPOSE. This endpoint is about four times
+# slower per call, so `timeout: 5400` may cut runs that qwen finished. Raising
+# it would change a treatment field, which is outside the standing
+# authorization and would also make this ladder incomparable to the others.
+# Measure the first cell, report, then decide.
 #
 # dual-plain: G22's two-candidate organization seated as a measurable team, on the
 # SWE-bench Pro mini-36 whose repositories the solver-repo sanitize leaves intact.
@@ -71,20 +70,28 @@
 # changes `env` and so the batch identity; `concurrency` is deliberately outside
 # the identity, because a resume may use a different one -- it is not a treatment.
 #
-# ONE ENDPOINT, THREE MODELS -- AND IT IS NOT THE ONE `pro-mini36-clean` USES.
-# The token-plan endpoint serves every model of this sweep under one key
-# (`qwen3.8-flash`, `deepseek-v4-flash-0731`, `deepseek-v4.1-flash`; note the
-# first deepseek carries a date here that it does not carry elsewhere), so the
-# three runs of the sweep differ in the model and in nothing else. That is the
-# property the sweep needs and the only one it buys: `pro-mini36-clean` runs on
-# dashscope under a different account, so it is not a baseline for these numbers.
-# Two earlier revisions got this wrong in opposite directions -- one moved these
-# cells to the 47.100.35.241 gateway while the comment still claimed the
-# reference batch's endpoint, and that gateway then answered
-# `gateway_concurrency_limit` to a single request with none of our load on it.
-# The grid's qwen cells were lost to an endpoint split exactly like the first of
-# those. The rule that prevents it here: all five cells move together, or none
-# moves.
+# A DIFFERENT ENDPOINT UNDER A DIFFERENT KEY, AND THE COMPARISON HAS TO SAY SO.
+# The other cells of this sweep sit at the token-plan endpoint under one key,
+# which is what let their comparison say that two of them differ in the model
+# and in nothing else. This cell does not: `gpt-5.6-luna` is served by the
+# 47.100.35.241 gateway under its own key, so a difference between a luna cell
+# and a qwen cell is a difference in the model AND in the endpoint AND in the
+# account, and none of the three can be told from the other two. What survives
+# is the ladder inside this family: all five luna cells sit at this one
+# endpoint, so a difference between two of THEM is still a difference between
+# two cards. Read the luna column as its own ladder; do not read a luna-minus-
+# qwen difference as a model effect.
+#
+# WHAT THIS GATEWAY IS KNOWN TO DO. Its quota is shared with accounts we cannot
+# see: on 2026-09-20 it refused us for 45 minutes and went on answering 429
+# after our own load was gone, and it has answered `gateway_concurrency_limit`
+# to a single request with none of our load on it. Under 24 simultaneous
+# completions its median was 16.9 s against token-plan's 4.1 s, with 16 of 24
+# over ten seconds. Two consequences to watch in the first cell's readout,
+# neither of which is a reason to change a treatment field before it is
+# measured: rows may end at `wall_clock_timeout` where qwen's ended completed,
+# and a refusal storm shows up as `api_error` rows that have to be re-run
+# through `retry_of` rather than left out.
 #
 # SURVIVING A GATEWAY THAT WOBBLES. `OPENCOLLAB_LLM_MAX_RETRIES` is 30 against a
 # default of 3, and `OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET` is 600 against a
@@ -96,7 +103,7 @@
 # error, which `cell_report` excludes rather than counts. That exclusion is why
 # a flaky endpoint costs rows rather than biasing them, and why the rows it
 # costs have to be re-run through `retry_of` instead of being left out.
-name: dual-plain-dsv4f-pro36
+name: dual-plain-luna-pro36
 host: lthpc
 arm: team
 cell: dual-plain
@@ -107,7 +114,7 @@ budget_per_seat: 2000000
 max_steps: 100
 timeout: 5400
 concurrency: 24
-model_env: configs/.env.tp-dsv4f
+model_env: configs/.env.gw2-luna
 env:
   OPENCOLLAB_LLM_STREAM_CHAT: "true"
   OPENCOLLAB_REASONING_EFFORT: "max"
