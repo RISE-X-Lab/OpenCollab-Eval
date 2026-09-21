@@ -1,0 +1,94 @@
+# s2dual-prohibit: G22's two-candidate organization seated as the evaluated single agent,
+# on the SWE-bench Pro mini-36 whose repositories the solver-repo sanitize leaves
+# intact.
+#
+# THE CELL. Ladder rung 1. The command, the suspension line, and the
+# prohibition on applying the fix oneself.
+#
+# THE ROSTER. An Adopter (the entry seat) and two Coders, `coder_a` and `coder_b`.
+# The Adopter can reach both; the two Coders cannot reach each other, so the
+# Adopter is the only channel between them. The card asks for them one at a
+# time: brief the first, wait for its answer, then write the second its own
+# brief. What goes into that second brief is the Adopter's, and which of the two
+# answers the run delivers is its choice too.
+#
+# EVERY SEAT IS SINGLE2, AND THAT IS WHAT THIS FAMILY ADDS. Each role declares
+# `profile: single2`, so all three agents run the evaluated single agent: its
+# system prompt, its history shaper, its safety wrapper, and a `bash` result
+# capped at 10,000 characters, with the role's card appended to that prompt
+# rather than replacing it. The single-agent arm runs the same implementation,
+# so a difference between the two is the organization rather than the seat --
+# which is exactly what a `dual-*` number could not say, because those cells
+# seat OpenCollab's own agent against a Single2 single arm.
+#
+# NOT POOLABLE WITH `dual-*`. Same roster, same four edges, same five treatment
+# blocks byte for byte, and a different agent under them. The rows do not merge,
+# and the cells are named apart so nothing can merge them by accident.
+#
+# THREE THINGS THIS IS NOT.
+#   * Not best-of-2. The two candidates are not independent: the second is
+#     briefed by an Adopter that has already read the first.
+#   * Not G22's relay. G22 forwards the first agent's output; here the Adopter
+#     writes the second brief itself, and nothing prescribes what crosses.
+#   * Not poolable with the handoff ladder. Different roster, different body.
+#
+# WHICH ADHERENCE NUMBER TO READ. `summary.alpha` is "a delegate seat spent
+# tokens and spoke", and on this roster a run that used one Coder and never
+# addressed the other satisfies it -- while having produced one candidate, which
+# is the failure the family exists to measure. Read
+# `summary.every_delegate_rate`: every declared delegate seat spent tokens and
+# spoke, with its own Clopper-Pearson interval. The report prints it beside
+# alpha whenever the two differ.
+#
+# THE STEP CAP IS 200, NOT THE 100 THE `dual-*` CELLS RAN AT. Single2's own
+# delivery configuration is 200 steps, and a seat that is that agent runs at its
+# step cap. The two families do not pool anyway, so nothing is lost by moving
+# it, and holding 100 would have made the seats Single2 in everything but how
+# long they are allowed to work.
+#
+# WHAT IS HELD EQUAL. The five specs of this family differ from one another in
+# `name` and `cell` and in nothing else, so a difference between two of them is
+# a difference between two cards. All five move endpoints together or none
+# does.
+#
+# CONCURRENCY IS 24, AND THE FIELD THAT BUYS IT IS `OPENCOLLAB_DOCKER_TIMEOUT`.
+# Measured on the `dual-*` cells at this endpoint: 36 in one wave put the shared
+# host's five-minute load at 61.8 against 64 cores and bought little, because a
+# 36-row cell ends when its slowest single run ends; at 24 the same rows take
+# roughly 110 minutes and leave a third of the machine to the sixteen other
+# accounts on it. The 300 s docker timeout is what a snapshot step's own walk of
+# the repository needs under that contention, not what daemon dispatch costs.
+# Raising it changes `env` and so the batch identity; `concurrency` is
+# deliberately outside the identity, because a resume may use a different one.
+#
+# SURVIVING A GATEWAY THAT WOBBLES. `OPENCOLLAB_LLM_MAX_RETRIES` is 30 against a
+# default of 3, and `OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET` is 600 against a
+# default of 0. The two must move together: the 60 s ceiling on exponential
+# backoff applies only when a time budget exists, so raising the retry count
+# alone would let a late backoff sleep for days and silently spend the run's
+# wall clock. With both set, a seat absorbs up to ten minutes of 502s and
+# carries on; past that it ends on a provider error, which `cell_report`
+# excludes rather than counts.
+name: s2dual-prohibit-qwen38-pro36
+host: lthpc
+arm: team
+cell: s2dual-prohibit
+suite: pro-mini36-clean
+rows: {start: 1, stop: 36}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 5400
+concurrency: 24
+model_env: configs/.env.tp-qwen38
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+pins:
+  opencollab: d6a6df9c034bacdf6ab0f4240d797875dce7fe2a
+  opencollab_eval: 4eeb7a297e449b1212bef65ac972cf714bb46709
+note: "the two-candidate roster seated as Single2 on SWE-bench Pro mini-36; scoring is the official Pro evaluator, not `batch score`; read adherence from `summary.every_delegate_rate`, never from `summary.alpha`, which this roster satisfies with one candidate"
