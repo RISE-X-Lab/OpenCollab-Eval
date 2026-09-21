@@ -92,6 +92,6 @@ env:
   OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
   OPENCOLLAB_DOCKER_TIMEOUT: "300"
 pins:
-  opencollab: d6a6df9c034bacdf6ab0f4240d797875dce7fe2a
+  opencollab: aec262be72035d7a7af3100d766e8a0938da0894
   opencollab_eval: 4eeb7a297e449b1212bef65ac972cf714bb46709
 note: "the two-candidate roster seated as Single2 on SWE-bench Pro mini-36; scoring is the official Pro evaluator, not `batch score`; read adherence from `summary.every_delegate_rate`, never from `summary.alpha`, which this roster satisfies with one candidate"
