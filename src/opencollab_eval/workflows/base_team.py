@@ -20,7 +20,7 @@ SHARED_RULES = """\
 Rules:
 - Prefer file_read and grep for inspection.
 - Prefer file_write or apply_patch for edits.
-- Prefer run_tests for verification.
+- Verify by running the project's own test command through bash.
 - Use bash only for short behavior checks or commands the dedicated tools do not cover.
 - Fix the source root cause with a minimal patch.
 - Never edit benchmark tests, never run git commit, and leave the patch in the working tree.
@@ -103,12 +103,12 @@ def _read_tools() -> list[Any]:
 
 def _coder_tools() -> list[Any]:
     return toolset(
-        "bash", "file_read", "file_write", "apply_patch", "run_tests", "grep"
+        "bash", "file_read", "file_write", "apply_patch", "grep"
     )
 
 
 def _tester_tools() -> list[Any]:
-    return toolset("bash", "file_read", "run_tests", "grep")
+    return toolset("bash", "file_read", "grep")
 
 
 def _dump(value: Any) -> str:

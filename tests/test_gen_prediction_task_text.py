@@ -117,7 +117,6 @@ def test_the_single_arm_asks_for_exactly_the_declared_working_bundle():
         "file_read",
         "file_write",
         "grep",
-        "run_tests",
         # Ending a turn on purpose is available to every arm, so that "the
         # agent said it was finished" is a fact about the model rather than
         # about which arm it was in.

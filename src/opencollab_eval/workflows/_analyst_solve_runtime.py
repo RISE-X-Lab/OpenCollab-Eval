@@ -376,7 +376,7 @@ async def _run_phase(
         # F2P gate (the real lever): a tester PASS must NOT stand unless the run
         # carries proof the named FAIL_TO_PASS tests actually went green —
         # failed_count == 0, every required node-id present in tests_run, and
-        # matching GREEN evidence from this call's run_tests instance. Only
+        # matching GREEN evidence from this call's verifier instance. Only
         # active when ids were injected (f2p non-empty); empty -> bypass,
         # preserving today's behavior. Mirrors the tree-unchanged override: seed
         # the next round's findings and continue, or fail on the final round.

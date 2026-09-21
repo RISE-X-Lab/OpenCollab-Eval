@@ -354,7 +354,7 @@ def default_tools() -> list[Tool]:
 
     Mirrors the curated single-agent surface used by team roles (coder +
     reviewer tools) so headless eval exercises the same toolset: the bash
-    description deflects to run_tests/git_diff/grep, and apply_patch is the
+    description deflects to git_diff/grep, and apply_patch is the
     fallback when str_replace edits fail to match.
     """
     return list(
@@ -363,7 +363,6 @@ def default_tools() -> list[Tool]:
             "file_read",
             "file_write",
             "apply_patch",
-            "run_tests",
             "git_diff",
             "grep",
             headless=True,
