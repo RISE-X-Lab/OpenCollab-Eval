@@ -31,6 +31,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from opencollab_eval.experiment import batch_remote, batch_score, cell_report
 from opencollab_eval.experiment.batch_spec import (
     BatchSpec,
@@ -38,6 +40,7 @@ from opencollab_eval.experiment.batch_spec import (
     SpecError,
     build_instances,
     card_file_paths,
+    cell_team_file,
     driver_argv,
     driver_env,
     launch_script,
@@ -125,6 +128,20 @@ def commit_exists(repo: str | Path, sha: str) -> bool:
         ["git", "-C", str(repo), "cat-file", "-e", f"{sha}^{{commit}}"], capture_output=True, check=False
     )
     return proc.returncode == 0
+
+
+def blob_text(repo: str | Path, rev: str, path: str) -> str:
+    """``path`` at commit ``rev`` in the local checkout, without checking it out."""
+    proc = subprocess.run(
+        ["git", "-C", str(repo), "show", f"{rev}:{path}"],
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise SpecError(
+            f"{path} does not exist at {rev[:12]} in {repo}: {proc.stderr.decode(errors='replace').strip()}"
+        )
+    return proc.stdout.decode("utf-8")
 
 
 def blob_sha256(repo: str | Path, rev: str, path: str) -> str:
@@ -309,6 +326,31 @@ class Batch:
         pin = self.spec.pins["opencollab"]
         return {rel: blob_sha256(self.host.local_opencollab_dir, pin, rel) for rel in self.card_files}
 
+    def declared_profiles(self) -> dict[str, str]:
+        """The agent profile each seat of this cell declares, at the pin.
+
+        A card digest says which words a seat was given; it cannot say which
+        agent read them. A seat declaring ``profile: single2`` runs that
+        profile's system prompt, history shaper, safety wrapper and tool output
+        caps with the card appended -- so two cells carrying the same card
+        under different profiles are two conditions, and a record holding only
+        the digests cannot tell them apart. Read from the pinned team file, the
+        same bytes pre-flight compares on the host.
+
+        ``"default"`` is OpenCollab's own agent, which is what a seat that
+        declares nothing runs as.
+        """
+        if self.spec.cell is None:
+            return {}
+        pin = self.spec.pins["opencollab"]
+        rel = cell_team_file(self.spec.cell)
+        raw = yaml.safe_load(blob_text(self.host.local_opencollab_dir, pin, rel)) or {}
+        roles = raw.get("roles") or {}
+        return {
+            role: str((entry or {}).get("profile") or "default")
+            for role, entry in roles.items()
+        }
+
     def write_inputs(self) -> Path:
         self.local_dir.mkdir(parents=True, exist_ok=True)
         path = self.local_dir / self.spec.instances_file
@@ -333,6 +375,7 @@ class Batch:
                 "last": self.rows[-1]["instance_id"],
             },
             "expected_card_sha256": self.expected_cards(),
+            "declared_role_profiles": self.declared_profiles(),
             "driver_argv": driver_argv(self.spec, self.host),
             "driver_env": driver_env(self.spec, self.host),
         }

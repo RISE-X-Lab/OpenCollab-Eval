@@ -199,6 +199,14 @@ class RunRow:
     seat_spend_recorded: dict[str, int] | None = None
     seat_spend_agrees: bool | None = None
     delivered: bool = False
+    #: Every declared delegate seat spent tokens and spoke, not merely one of
+    #: them. On the handoff roster ``delivered`` and this differ when the
+    #: Analyst used the Coder and never the Tester; on the two-candidate
+    #: roster the difference is the whole point, because a card that says "ask
+    #: the first, then write the second its own brief" is carried out only if
+    #: both Coders ran. One candidate is the failure that matters there, and
+    #: ``delivered`` reads it as adherence.
+    every_delegate: bool = False
     tree_snapshots: int = 0
     cap_hit: list[str] = field(default_factory=list)
     cap_hit_precheck: list[str] = field(default_factory=list)
@@ -466,6 +474,34 @@ def walked_edges(seats: dict[str, Seat], declared: set[tuple[str, str]]) -> set[
     return walked
 
 
+def _every_delegate_worked(seats: dict[str, Any], nodes: dict[str, Any] | None) -> bool:
+    """Did every declared delegate seat spend tokens and speak?
+
+    ``delivered`` asks whether the entry agent handed work to *someone*, which
+    is the right question for a roster whose delegates are interchangeable. It
+    is the wrong one for a roster that declares two candidate seats and a card
+    that asks for both: a run that used one Coder and never addressed the other
+    produced one candidate, not two, and reads as adherent.
+
+    A seat that was declared and never seated counts as not having worked --
+    that is the failure this quantity exists to catch -- so the roles come from
+    the run's declared nodes rather than from the seats that happen to exist.
+    Returns ``False`` when the run declared no delegates at all, because there
+    is then nothing this could be true of.
+    """
+    declared = delegate_roles(nodes)
+    if declared is None:
+        declared = frozenset(
+            s.role for s in seats.values() if s.role in DELEGATE_ROLES
+        )
+    if not declared:
+        return False
+    worked = {
+        s.role for s in seats.values() if s.tokens > 0 and s.assistant > 0
+    }
+    return declared <= worked
+
+
 def _seat_role(path: Path, recorded: str) -> str:
     """The seat's role, from the record when it names one, else from the file.
 
@@ -622,6 +658,7 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
                     s.role in (delegate_roles(nodes) or DELEGATE_ROLES) and s.tokens > 0 and s.assistant > 0
                     for s in seats.values()
                 ),
+                every_delegate=_every_delegate_worked(seats, nodes),
                 tree_snapshots=len(snapshots or []),
                 cap_hit=[aid for aid, s in seats.items() if "budget" in s.terminal.lower()],
                 cap_hit_precheck=[
@@ -752,6 +789,10 @@ def summarize(
         alpha_readable = team
     delivered = sum(1 for r in valid if r.delivered) if alpha_readable else None
     low, high = clopper_pearson(delivered, len(valid)) if alpha_readable else (None, None)
+    every = sum(1 for r in valid if r.every_delegate) if alpha_readable else None
+    every_low, every_high = (
+        clopper_pearson(every, len(valid)) if alpha_readable else (None, None)
+    )
     cards = sorted({r.card for r in rows if r.card})
     statuses: dict[str, int] = {}
     for r in rows:
@@ -765,6 +806,14 @@ def summarize(
         "delivered": delivered,
         "alpha": (delivered / len(valid)) if (alpha_readable and valid) else None,
         "ci95": [low, high] if alpha_readable else None,
+        # Beside alpha and never instead of it: alpha is "a delegate seat was
+        # used", this is "every declared delegate seat was used". They are the
+        # same number on a roster with one delegate and diverge on any other,
+        # and on the two-candidate roster it is this one that says whether the
+        # organization the card describes actually happened.
+        "every_delegate": every,
+        "every_delegate_rate": (every / len(valid)) if (alpha_readable and valid) else None,
+        "every_delegate_ci95": [every_low, every_high] if alpha_readable else None,
         # What the arm that scripts its topology reports instead: not a rate at
         # which an agent chose, a count of how much of a fixed topology carried
         # anything.
@@ -1138,6 +1187,23 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
             )
             + excluded
         )
+        # The second rate, printed whenever it can differ from the first. On a
+        # roster with one delegate the two are the same number and saying it
+        # twice reads as two findings; on any other roster the gap between them
+        # is a fact about what the run did, and it is the quantity a
+        # two-candidate cell is actually about.
+        every = summary.get("every_delegate")
+        rate = summary.get("every_delegate_rate")
+        if every is not None and every != summary["delivered"]:
+            lo, hi = summary["every_delegate_ci95"]
+            lines.append(
+                f"every delegate seat {every}/{summary['valid']} valid"
+                + (
+                    f" = {rate:.3f}   Clopper-Pearson 95% [{lo:.3f}, {hi:.3f}]"
+                    if rate is not None
+                    else ""
+                )
+            )
         # Beside alpha, never instead of it. The team file declares which role
         # may address which; alpha says whether an agent chose to hand the work
         # on. A cell can walk an edge and deliver nothing, and reading either
