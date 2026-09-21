@@ -81,7 +81,10 @@ RUNG_CELLS = {
 #: there would either fail that test or force it to be loosened, and what it
 #: asserts is the ladder's whole claim to comparability. So a family added
 #: later names its files apart and says so here.
-CELL_FILE_PREFIXES: tuple[tuple[str, str], ...] = (("dual-", "configs/team.{cell}.yaml"),)
+CELL_FILE_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("dual-", "configs/team.{cell}.yaml"),
+    ("s2dual-", "configs/team.{cell}.yaml"),
+)
 DEFAULT_CELL_FILE = "configs/team.handoff.{cell}.yaml"
 
 

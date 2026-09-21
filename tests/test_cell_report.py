@@ -1395,6 +1395,92 @@ def test_alpha_reads_the_delegate_seats_off_the_run_not_off_two_role_names(tmp_p
     assert cell_report.DELEGATE_ROLES.isdisjoint({"adopter", "coder_a", "coder_b"})
 
 
+def _two_candidate_cell(tmp_path: Path, *, coder_b_worked: bool) -> Path:
+    """The two-candidate roster: an Adopter and two Coders that cannot see each other."""
+    cell = tmp_path / "s2dual"
+    runtime = _runtime_dir(cell, "team", "a")
+    _seat_with_messages(
+        runtime,
+        "agent_0_adopter-aa.json",
+        aid=0,
+        role="adopter",
+        targets=[{"to_role": "coder_a", "summary": "s", "content": "c"}],
+    )
+    _seat_file(runtime, "agent_1_coder_a-bb.json", aid=1, role="coder_a", tokens=5_000, assistant=2)
+    _seat_file(
+        runtime,
+        "agent_2_coder_b-cc.json",
+        aid=2,
+        role="coder_b",
+        tokens=5_000 if coder_b_worked else 0,
+        assistant=2 if coder_b_worked else 0,
+    )
+    runtime.mkdir(parents=True, exist_ok=True)
+    (runtime / "trajectory.jsonl").write_text(
+        json.dumps(
+            {
+                "type": "assigned.topology_nodes",
+                "payload": {
+                    "entry_role": "adopter",
+                    "declared_roles": ["adopter", "coder_a", "coder_b"],
+                    "nodes": [
+                        {"aid": 0, "role": "adopter", "entry": True},
+                        {"aid": 1, "role": "coder_a", "entry": False},
+                        {"aid": 2, "role": "coder_b", "entry": False},
+                    ],
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    _write_metrics(
+        cell,
+        [{"instance_id": "a", "run_summary": {"status": "completed", "tokens": 20_000, "steps": 4}}],
+    )
+    return cell
+
+
+def test_one_candidate_delivers_but_is_not_every_delegate(tmp_path: Path) -> None:
+    """The failure alpha cannot see on this roster.
+
+    The card asks the Adopter for two candidates: brief one Coder, and when its
+    answer is back write the second its own brief. A run that used one Coder
+    and never addressed the other produced ONE candidate -- which is the thing
+    this family exists to measure -- and alpha reads it as adherence, because a
+    delegate seat did spend tokens and did speak.
+    """
+    rows = cell_report.run_rows(_two_candidate_cell(tmp_path, coder_b_worked=False), "team")
+
+    assert [r.delivered for r in rows] == [True]
+    assert [r.every_delegate for r in rows] == [False]
+
+    summary = cell_report.summarize(rows, expected_card=None)
+    assert summary["alpha"] == 1.0
+    assert summary["every_delegate"] == 0
+    assert summary["every_delegate_rate"] == 0.0
+    assert all(bound is not None for bound in summary["every_delegate_ci95"])
+
+
+def test_both_candidates_make_the_second_rate_agree_with_alpha(tmp_path: Path) -> None:
+    rows = cell_report.run_rows(_two_candidate_cell(tmp_path, coder_b_worked=True), "team")
+
+    assert [r.every_delegate for r in rows] == [True]
+    summary = cell_report.summarize(rows, expected_card=None)
+    assert summary["every_delegate_rate"] == summary["alpha"] == 1.0
+
+
+def test_the_second_rate_is_printed_only_when_it_differs_from_alpha(tmp_path: Path) -> None:
+    """Saying the same number twice reads as two findings."""
+    one = cell_report.run_rows(_two_candidate_cell(tmp_path / "one", coder_b_worked=False), "team")
+    both = cell_report.run_rows(_two_candidate_cell(tmp_path / "both", coder_b_worked=True), "team")
+
+    printed = cell_report.render(one, cell_report.summarize(one, None), [])
+    assert "every delegate seat 0/1" in printed
+    printed = cell_report.render(both, cell_report.summarize(both, None), [])
+    assert "every delegate seat" not in printed
+
+
 def test_a_team_run_declares_its_edges_in_its_trajectory(team_edges_cell: Path) -> None:
     by_id = {r.instance_id: r for r in cell_report.run_rows(team_edges_cell, "team")}
     assert by_id["a"].edges_declared == 6
