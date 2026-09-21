@@ -100,7 +100,6 @@ _SINGLE_BUNDLE = (
     "file_read",
     "file_write",
     "grep",
-    "run_tests",
     "submit",
 )
 _TEAM_WORKING_BUNDLE = (
@@ -110,7 +109,6 @@ _TEAM_WORKING_BUNDLE = (
     "file_write",
     "grep",
     "message_agent",
-    "run_tests",
     "submit",
     "team_status",
 )
@@ -120,7 +118,6 @@ _TEAM_TESTER_BUNDLE = (
     "git_diff",
     "grep",
     "message_agent",
-    "run_tests",
     "submit",
     "team_status",
 )
@@ -129,10 +126,9 @@ _SCRIPTED_TESTER_BUNDLE = (
     "file_read",
     "git_diff",
     "grep",
-    "run_tests",
     "submit",
 )
-_READING_ANALYST_BUNDLE = ("bash", "file_read", "grep", "run_tests", "submit")
+_READING_ANALYST_BUNDLE = ("bash", "file_read", "grep", "submit")
 
 #: The transport keys every generator writes, in the order ``freeze`` sorts
 #: them into. Imported rather than restated: the point of the factor is that
@@ -331,7 +327,7 @@ _FACTORS: tuple[Factor, ...] = (
             "which is that arm's whole definition; it gets them back to "
             "adjudicate, so the arm is not weaker over the run than the single "
             "agent it is compared against. Everything else is the single agent's "
-            "seven working tools, literally: the same ``WORKING_TOOL_NAMES``."
+            "six working tools, literally: the same ``WORKING_TOOL_NAMES``."
         ),
         evidence=(
             "OpenCollab-Eval/src/opencollab_eval/generation/"

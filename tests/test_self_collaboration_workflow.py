@@ -625,14 +625,23 @@ def test_the_writing_analysts_rules_are_the_text_the_recorded_runs_saw():
     Splitting it into a template to serve the reading variant must not move a
     byte of what the other variant renders, or those fifty runs stop being runs
     of the arm the paper reports.
+
+    One line has moved since, and not by a refactor: OpenCollab retired the
+    built-in ``run_tests`` tool, so the rule that told these roles to prefer it
+    now tells them to run the project's tests through ``bash``. The fifty
+    recorded runs are unaffected -- a batch spec pins both repositories, and
+    theirs name the revision that carried the older line -- but a run made on
+    this revision is a run of a differently worded arm and does not pool with
+    them. The rest of the block is still pinned here byte for byte, because
+    nothing else was forced to move.
     """
     assert _module.SHARED_RULES == (
         "Rules:\n"
-        "- Prefer your dedicated tool over bash: file_read/grep to inspect,"
-        " run_tests to\n"
-        "  test, file_write/apply_patch to edit. Use bash only for what no"
-        " dedicated tool\n"
-        "  covers (for example a one-line `python -c` repro).\n"
+        "- Prefer your dedicated tool where one exists: file_read/grep to"
+        " inspect, file_write/apply_patch to edit.\n"
+        "  Run the project's tests through bash, and use bash for whatever else"
+        " no\n"
+        "  dedicated tool covers (for example a one-line `python -c` repro).\n"
         "- Fix the root cause in the source; make the smallest correct change.\n"
         "- Never edit test files.\n"
         "- All three of you work in the same tree at /testbed. Leave your edits"

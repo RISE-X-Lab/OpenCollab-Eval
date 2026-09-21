@@ -10,7 +10,12 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+import pytest
+
 from opencollab_eval.workflows.analyst_solve import analyst_solve
+from tests.retired_run_tests import FROZEN_ARM_REASON, HAVE_RUN_TESTS
+
+pytestmark = pytest.mark.skipif(not HAVE_RUN_TESTS, reason=FROZEN_ARM_REASON)
 
 
 class ScriptedCtx:

@@ -225,7 +225,6 @@ def test_single_agent_builds_stable_runtime_request(monkeypatch, tmp_path):
         "FileReadTool",
         "FileWriteTool",
         "GrepTool",
-        "RunTestsTool",
         "SubmitTool",
     ]
     assert metrics["workflow_status"] == "done"

@@ -497,7 +497,7 @@ def _read_tools() -> list[Any]:
 
 def _coder_tools() -> list[Any]:
     return toolset(
-        "bash", "file_read", "file_write", "apply_patch", "run_tests", "grep"
+        "bash", "file_read", "file_write", "apply_patch", "grep"
     )
 
 
@@ -506,7 +506,7 @@ def _tester_tools() -> list[Any]:
     # probe so a PASS is backed by a real run, not prose alone. Blindness holds
     # because the hidden FAIL_TO_PASS tests are absent from the container, not
     # because bash is. No file_write/apply_patch: these roles verify, not author.
-    return toolset("bash", "file_read", "run_tests", "grep", "git_diff")
+    return toolset("bash", "file_read", "grep", "git_diff")
 
 
 def _risk_tools() -> list[Any]:

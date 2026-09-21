@@ -130,9 +130,9 @@ DECLARED_EDGES = (
 # coder" has to say so in words.
 _RULES_TEMPLATE = """\
 Rules:
-- Prefer your dedicated tool over bash: file_read/grep to inspect, run_tests to
-  test{edit_tools}. Use bash only for what no dedicated tool
-  covers (for example a one-line `python -c` repro).
+- Prefer your dedicated tool where one exists: file_read/grep to inspect{edit_tools}.
+  Run the project's tests through bash, and use bash for whatever else no
+  dedicated tool covers (for example a one-line `python -c` repro).
 {edit_rule}- Never edit test files.
 - All three of you work in the same tree at {repo_root}. Leave your edits in the
   working tree: do not run `git commit`, and do not stash or revert another
@@ -474,7 +474,7 @@ def _analyst_tools() -> list[Any]:
     # The single agent's working set, which is also the team analyst's bundle
     # minus message_agent and team_status.
     return toolset(
-        "apply_patch", "bash", "file_read", "file_write", "grep", "run_tests", "submit"
+        "apply_patch", "bash", "file_read", "file_write", "grep", "submit"
     )
 
 
@@ -489,12 +489,12 @@ def _reading_analyst_tools() -> list[Any]:
     forbidden change -- it would make the arm weaker than the single agent it
     is compared against, readable straight off the tool list.
     """
-    return toolset("bash", "file_read", "grep", "run_tests", "submit")
+    return toolset("bash", "file_read", "grep", "submit")
 
 
 def _coder_tools() -> list[Any]:
     return toolset(
-        "apply_patch", "bash", "file_read", "file_write", "grep", "run_tests", "submit"
+        "apply_patch", "bash", "file_read", "file_write", "grep", "submit"
     )
 
 
@@ -502,7 +502,7 @@ def _tester_tools() -> list[Any]:
     # No apply_patch and no file_write: the team's tester holds git_diff in
     # their place, which is a declared role boundary rather than an arm
     # difference, so it carries over unchanged.
-    return toolset("bash", "file_read", "git_diff", "grep", "run_tests", "submit")
+    return toolset("bash", "file_read", "git_diff", "grep", "submit")
 
 
 def _dump(value: Any) -> str:

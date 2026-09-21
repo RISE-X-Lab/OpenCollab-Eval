@@ -92,13 +92,18 @@ _MISSING_CONTAINER_RE = re.compile(r"(?:no such (?:container|object)|not found)"
 #: and ``run_tests`` on top. Four capability differences on the one axis these
 #: arms are not supposed to differ on, so a gap in results could be read off the
 #: tool bundles instead of off how the work was organized.
+#:
+#: ``run_tests`` left this list when OpenCollab retired the built-in test
+#: wrapper: tests are run through ``bash`` on both sides now. Rows recorded
+#: before that are not comparable with rows recorded after, and they do not
+#: have to be -- a batch pins both repositories, so an old cell re-runs against
+#: the revision that produced it.
 WORKING_TOOL_NAMES = (
     "apply_patch",
     "bash",
     "file_read",
     "file_write",
     "grep",
-    "run_tests",
     "submit",
 )
 

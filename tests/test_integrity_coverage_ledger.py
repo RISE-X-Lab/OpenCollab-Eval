@@ -105,9 +105,20 @@ def test_integrity_coverage_ledger_is_complete_and_truthful() -> None:
         assert nodeid_path == record["test"], control_id
     assert coverage["H-07"]["status"] == "deferred"
     assert coverage["H-69"]["status"] == "partial"
-    assert coverage["H-71"]["nodeid"].endswith(
-        "test_run_tests_rejects_go_multi_selector_before_any_command"
-    )
+    # H-02, H-44 and H-71 were the three controls carried by OpenCollab's
+    # built-in test runner: a forged green had to survive a parser, a directory
+    # target had to produce a descendant that really passed, and a Go
+    # multi-selector was refused before any command ran. The runner was retired
+    # upstream, so all three lapsed at once. They are not deleted -- the risks
+    # did not go away -- but they now point at the test that pins what is left:
+    # no built-in tool claims a verified result, and only the official grader's
+    # own run decides whether a change is correct. ``partial`` says exactly
+    # that much is covered.
+    for lapsed in ("H-02", "H-44", "H-71"):
+        assert coverage[lapsed]["status"] == "partial", lapsed
+        assert coverage[lapsed]["nodeid"].endswith(
+            "test_no_built_in_tool_claims_a_verified_test_result"
+        ), lapsed
 
 
 def test_integrity_coverage_nodeids_execute_successfully() -> None:
