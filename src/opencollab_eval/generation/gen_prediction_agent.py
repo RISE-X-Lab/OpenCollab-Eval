@@ -179,8 +179,15 @@ async def run_agent(
     *,
     artifact_root: str | Path,
     runtime: Any | None = None,
+    agent_profile: str | None = None,
 ) -> dict[str, Any]:
-    """Run one agent through the public OpenCollab facade."""
+    """Run one agent through the public OpenCollab facade.
+
+    With ``agent_profile`` the profile seats its own system prompt and tools
+    (``"single2"`` is the agent the s2dual cells seat in every role), so this
+    repository's ``AGENT_PROMPT`` and working bundle are not passed: either
+    would override the profile's.
+    """
     environment = attach_container(
         container_id=cid,
         workspace=DOCKER_WORKDIR,
@@ -218,11 +225,18 @@ async def run_agent(
     print(f"  agent artifacts: {artifact_dir}")
     started = time.monotonic()
     try:
+        seat: dict[str, Any] = (
+            {
+                "system_prompt": AGENT_PROMPT.strip(),
+                "tools": builtin_tools(*WORKING_TOOL_NAMES, headless=True),
+            }
+            if agent_profile is None
+            else {"profile": agent_profile}
+        )
         result = await client.agent(
             task,
             name="swe_agent",
-            system_prompt=AGENT_PROMPT.strip(),
-            tools=builtin_tools(*WORKING_TOOL_NAMES, headless=True),
+            **seat,
             budget=budget,
             max_steps=max_steps,
             timeout=timeout,
