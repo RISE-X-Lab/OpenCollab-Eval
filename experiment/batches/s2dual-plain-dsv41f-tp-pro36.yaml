@@ -1,0 +1,46 @@
+# s2dual-plain on deepseek-v4.1-flash (experiment 2, the second model), 09-22.
+#
+# WHAT IT IS FOR. The prompt effect on the qwen3.8-flash cells is one cut, not
+# a ladder: alpha separates judge from every commanding rung (paired p<=0.0023)
+# and the commanding rungs from each other not at all. So the second model runs
+# only the two ends that matter -- judge (commands nothing) and plain (the
+# positive control of the frozen rule) -- and this is the plain half; the other
+# half is s2dual-judge-dsv41f-tp-pro36, same pins, same key, same timeout.
+#
+# PINS. OC 35c2eccc, the pin of the qwen re-runs: it carries 6df000c8, which
+# registers deepseek-v4.1-flash's 1,000,000-token window (unregistered, the
+# window fell back to the family prefix 64,000 and auto_compact ate 67% of
+# wall-clock), and the stop notice. Eval dc32491 -- the Single2 single-arm
+# plumbing, inert for a team spec, so no checkout move is needed after S1.
+#
+# TIMEOUT 7200, NOT 5400. At max reasoning the v4.1-flash pilots hit 5400 s in
+# 3 of 3 runs even with the window fixed. The r2 pilot timelines show both
+# Coders mostly start before 7200 s, so adherence is readable; the Adopter's
+# final adoption is often cut, so resolve is not judged on these two cells, and
+# judge is cut more often than plain -- report the censoring bounds.
+#
+# ENDPOINT. token-plan, key `e7c28419` (configs/.env.tp-dsv41f), off-peak only.
+# ---------------------------------------------------------------------------
+name: s2dual-plain-dsv41f-tp-pro36
+host: lthpc
+arm: team
+cell: s2dual-plain
+suite: pro-mini36-clean
+rows: {start: 1, stop: 36}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 7200
+concurrency: 36
+model_env: configs/.env.tp-dsv41f
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+pins:
+  opencollab: 35c2ecccceeddac1c0393ddf71560f9fb5aa19cd
+  opencollab_eval: dc3249158d15c60d27a18ae77e3bd74f72410509
+note: "s2dual-plain on deepseek-v4.1-flash via token-plan at the stop-notice pin, timeout 7200; adherence only (every_delegate primary, alpha secondary); resolve is not judged on this cell"
