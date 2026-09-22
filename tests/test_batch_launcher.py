@@ -332,6 +332,10 @@ def test_a_cell_outside_the_ladder_names_its_own_team_file() -> None:
     assert cell_team_file("facts-v2") == "configs/team.handoff.facts-v2.yaml"
     assert cell_team_file("dual-bare") == "configs/team.dual-bare.yaml"
     assert cell_team_file("dual-judge") == "configs/team.dual-judge.yaml"
+    assert cell_team_file("s2dual-judge") == "configs/team.s2dual-judge.yaml"
+    # The s2dual roster with the Adopter's tools changed is a family of its
+    # own in OpenCollab (``configs/s2tools``), filed apart from both.
+    assert cell_team_file("s2tools-adopt") == "configs/team.s2tools-adopt.yaml"
 
 
 @pytest.mark.parametrize("cell", ["x", "dual-x"])
