@@ -51,13 +51,15 @@
 # a difference between two cards. All five move endpoints together or none
 # does.
 #
-# CONCURRENCY IS 24, AND THE FIELD THAT BUYS IT IS `OPENCOLLAB_DOCKER_TIMEOUT`.
-# Measured on the `dual-*` cells at this endpoint: 36 in one wave put the shared
-# host's five-minute load at 61.8 against 64 cores and bought little, because a
-# 36-row cell ends when its slowest single run ends; at 24 the same rows take
-# roughly 110 minutes and leave a third of the machine to the sixteen other
-# accounts on it. The 300 s docker timeout is what a snapshot step's own walk of
-# the repository needs under that contention, not what daemon dispatch costs.
+# CONCURRENCY IS 36 (set 09-22; it was 24). The 24 was measured on the `dual-*`
+# cells, which ran at `max_steps: 100`: there a 36-row cell ended when its
+# slowest single run ended, so the extra twelve slots bought little and cost
+# 62/64 cores of five-minute load. This family is at `max_steps: 200`, and its
+# three-row qwen smoke ends on completion at 2005-3947 s or on the 2M seat
+# budget -- not on the wall -- so 24 slots against 36 rows leaves a second wave.
+# 09-22: set to 36 at the owner's direction. The 300 s docker timeout is what a
+# snapshot step's own walk of the repository needs under that contention, not
+# what daemon dispatch costs.
 # Raising it changes `env` and so the batch identity; `concurrency` is
 # deliberately outside the identity, because a resume may use a different one.
 #
@@ -69,6 +71,51 @@
 # wall clock. With both set, a seat absorbs up to ten minutes of 502s and
 # carries on; past that it ends on a provider error, which `cell_report`
 # excludes rather than counts.
+# ---------------------------------------------------------------------------
+# 09-21 ENDPOINT: THE FOURTH ACCOUNT, AND WHY MOVING IS ALLOWED HERE.
+#
+# `model_env` moved from `configs/.env.tp-qwen38` to `configs/.env.ws-qwen38`.
+# Same model, `qwen3.8-flash`; the account and the endpoint changed.
+#
+# WHY. Both token-plan keys ran their weekly quota to zero. `e7c28419` -- the one
+# `.env.tp-qwen38` holds -- resets 09-27 19:49 UTC, `ca8430b2` resets 09-25 17:04
+# UTC, and `37c2a2ab` answers 401 `invalid_api_key` and will not recover. Both
+# reset times fall after the 09-25 full-paper deadline. What running against an
+# exhausted key looks like is on disk: `dual-judge-dsv41f-pro36` has all 36 rows
+# in `preds-team.jsonl` and all 36 are `runtime_status: failed` with the same
+# 429 `quota has been exhausted`. A full row count is not a finished cell.
+#
+# WHY THIS IS NOT THE SPLIT THE HANDOFF NOTE FORBIDS. Its rule -- five cells share
+# one endpoint or none moves -- guards against a ladder half on one endpoint and
+# half on another, which is what lost the grid's qwen cells. No cell of this
+# family has run: all five out-dirs are absent from the host. Moving all five
+# before any of them starts leaves the family internally uniform, which is the
+# property the rule protects. The five still move together, or none does.
+#
+# THE NAME IS DELIBERATELY UNCHANGED. `model_env` is part of `spec_digest`, so
+# this is a fresh batch identity -- but the name only has to change when an older
+# out-dir would collide, and here there is none. The handoff note's table of
+# batch names stays correct.
+#
+# WHAT IS LOST. Nothing within this family: all five cells share the endpoint, so
+# a difference between two of them is still a difference between two cards, which
+# is the paper's claim. What is lost is any head-to-head against a cell that ran
+# on token-plan -- the old `dual-*` family, which the handoff note already
+# forbids pooling with for four other reasons.
+#
+# THERE IS NO 429 TO STOP THIS ONE. token-plan keys are `sk-sp-` and carry a weekly
+# quota, so "send it and let the quota stop it" was a way to schedule. This key is
+# `sk-ws-`: metered billing, no weekly quota, no 429, no balance reported by the
+# endpoint. It bills until told to stop. The handoff note's cost section reasons
+# about the weekly ceiling; that ceiling is gone and money replaces it. A spend
+# limit has to be set before launch and enforced by watching.
+#
+# 09-21 pre-flight on this endpoint, by sending real completions rather than
+# probing `/models`: `qwen3.8-flash` answered 200 in 1 s and the response's model
+# field matched; `reasoning_effort=max` accepted; tools returned `tool_calls`;
+# `usage` carried `reasoning_tokens`. The base URL ends in `/compatible-mode/v1`;
+# the `/api/v1` path the key arrived with answers 404 to an OpenAI-shaped POST.
+# ---------------------------------------------------------------------------
 name: s2dual-prohibit-qwen38-pro36
 host: lthpc
 arm: team
@@ -79,8 +126,8 @@ frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
 budget_per_seat: 2000000
 max_steps: 200
 timeout: 5400
-concurrency: 24
-model_env: configs/.env.tp-qwen38
+concurrency: 36
+model_env: configs/.env.ws-qwen38
 env:
   OPENCOLLAB_LLM_STREAM_CHAT: "true"
   OPENCOLLAB_REASONING_EFFORT: "max"
