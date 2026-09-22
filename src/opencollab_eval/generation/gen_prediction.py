@@ -217,6 +217,12 @@ def main() -> None:
     ap.add_argument("--budget", type=int, default=DEFAULT_BUDGET)
     ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
     ap.add_argument("--keep-container", action="store_true")
+    ap.add_argument(
+        "--agent-profile",
+        choices=("single2",),
+        default=None,
+        help="Seat this OpenCollab agent profile (its own prompt and tools) instead of AGENT_PROMPT",
+    )
     args = ap.parse_args()
     try:
         args.max_steps, args.budget, args.timeout = validate_generation_limits(
@@ -285,6 +291,7 @@ def main() -> None:
                 args.budget,
                 args.timeout,
                 artifact_root=run_dir,
+                agent_profile=args.agent_profile,
             )
         )
         metrics.update(
@@ -299,6 +306,7 @@ def main() -> None:
                 ),
                 "budget": args.budget,
                 "max_steps": args.max_steps,
+                "agent_profile": args.agent_profile,
                 **llm_transport_metrics(cfg),
             }
         )

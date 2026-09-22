@@ -103,6 +103,10 @@ _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
+#: Agent profiles a single-arm spec may name (``profile:``).
+SINGLE_ARM_PROFILES = frozenset({"single2"})
+
+
 class SpecError(ValueError):
     """The spec or host file cannot be executed as written."""
 
@@ -185,6 +189,13 @@ class BatchSpec:
     #: Deliberately outside ``spec_identity``: it says which rows the batch
     #: ran, and the record already pins those by the instance file's digest.
     frame_content: str | None = None
+    #: The OpenCollab agent profile the single arm seats, or ``None`` for this
+    #: repository's own prompt and working bundle. ``"single2"`` runs the agent
+    #: the s2dual cells seat in every role -- its own system prompt, tools,
+    #: shaper and safety wrapper -- so a team-minus-single difference on that
+    #: family is the organization and not the seat. Single arm only, and in the
+    #: identity only when set, so no spec written before it changes digest.
+    profile: str | None = None
     #: Replacements merged into *this* cell that are withdrawn, as
     #: ``{the instance the stand-in stood in for: why the withdrawal}``. A
     #: replacement is withdrawn when the fault that triggered it turns out not
@@ -367,6 +378,16 @@ def load_spec(path: str | Path) -> BatchSpec:
                 )
         withdraw_replacements = {str(k): str(v).strip() for k, v in sorted(withdrawn_raw.items())}
 
+    profile = raw.get("profile")
+    if profile is not None:
+        if profile not in SINGLE_ARM_PROFILES:
+            raise SpecError(f"{where}: profile {profile!r} is not one of {sorted(SINGLE_ARM_PROFILES)}")
+        if arm != "single":
+            raise SpecError(
+                f"{where}: profile seats one agent and belongs on the single arm; arm {arm!r} "
+                "declares its seats' profiles in its own configuration"
+            )
+
     pins_raw = _require(raw, "pins", dict, where)
     pins: dict[str, str] = {}
     for key in ("opencollab", "opencollab_eval"):
@@ -402,6 +423,7 @@ def load_spec(path: str | Path) -> BatchSpec:
         env=env,
         pins=pins,
         frame_content=(str(Path(raw["frame_content"]).expanduser()) if raw.get("frame_content") else None),
+        profile=profile,
         retry_of=retry_of,
         replaces=replaces,
         withdraw_replacements=withdraw_replacements,
@@ -439,6 +461,10 @@ def spec_identity(spec: BatchSpec) -> dict[str, Any]:
         # would have changed the digest of every spec already launched, so
         # every finished batch would have read as a different batch on resume.
         identity["retry_of"] = spec.retry_of
+    if spec.profile is not None:
+        # Only when set, for the reason ``retry_of`` gives: an unconditional key
+        # would move the digest of every spec already launched.
+        identity["profile"] = spec.profile
     if spec.replaces is not None:
         # Written into the identity for the same two reasons ``retry_of`` is,
         # and only when set for the same one: a replacement must never be
@@ -581,6 +607,9 @@ def driver_argv(spec: BatchSpec, host: HostConfig, limit: int | None = None) -> 
     ]
     if limit is not None:
         argv += ["--limit", str(limit)]
+    if spec.profile is not None:
+        # ``--pass-through`` takes the rest of argv, so it goes last.
+        argv += ["--pass-through", "--agent-profile", spec.profile]
     return argv
 
 
