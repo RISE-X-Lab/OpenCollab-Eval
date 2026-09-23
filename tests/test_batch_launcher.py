@@ -1099,6 +1099,85 @@ def test_sync_reports_a_checkout_that_did_not_land(experiment: dict, capsys) -> 
     assert "RESULT: NOT synced" in capsys.readouterr().out
 
 
+def _guard_facts_with_a_driver(tmp_path: Path, driver_pythonpath: str | None, host_file: str) -> list:
+    """Run the real guard script here, beside a real process that looks like a driver.
+
+    The attribution happens in the shell on the host (it reads the driver's
+    environment), so a fake remote cannot test it. The fake driver's command
+    line carries the batch pattern and a mark unique to this test; its
+    PYTHONPATH is the one a launch from some checkout would set.
+    """
+    import dataclasses
+    import os
+    import time
+
+    host = dataclasses.replace(load_host(EXPERIMENT / "hosts" / host_file), workdir=str(tmp_path))
+    mark = f"guard-attribution-test-{os.getpid()}"
+    argv0 = f"python -m opencollab_eval.generation.gen_prediction_batch --out-dir {mark}"
+    env = {"PATH": os.environ["PATH"]}
+    if driver_pythonpath is not None:
+        env["PYTHONPATH"] = driver_pythonpath
+    driver = subprocess.Popen(["bash", "-c", f'exec -a "{argv0}" sleep 60'], env=env)
+    try:
+        time.sleep(0.5)
+        out = subprocess.run(
+            ["bash", "-s"], input=batch_remote.sync_guard_script(host),
+            capture_output=True, text=True, timeout=60, check=True,
+        ).stdout
+    finally:
+        driver.kill()
+        driver.wait()
+    return [f for f in batch_remote.parse_facts(out) if len(f) > 1 and mark in f[1]]
+
+
+def _checkout_pythonpath(tmp_path: Path, host_file: str) -> str:
+    import dataclasses
+
+    return dataclasses.replace(load_host(EXPERIMENT / "hosts" / host_file), workdir=str(tmp_path)).pythonpath
+
+
+_NEEDS_PROC = pytest.mark.skipif(
+    not Path("/proc/self/environ").exists() or subprocess.run(["which", "pgrep"], capture_output=True).returncode,
+    reason="the guard reads /proc/<pid>/environ and uses pgrep",
+)
+
+
+@_NEEDS_PROC
+def test_sync_guard_counts_a_driver_only_against_its_own_checkout(tmp_path: Path) -> None:
+    """A batch running from `lthpc` must not stop a sync of `lthpc-b`, and must stop one of `lthpc`.
+
+    The second checkout exists so a second pin can run while a batch holds the
+    first; a guard that counts every driver on the machine refuses that sync
+    whenever anything runs anywhere, which is the one situation it exists for.
+    """
+    from_a = _checkout_pythonpath(tmp_path, "lthpc.yaml")
+
+    own = _guard_facts_with_a_driver(tmp_path, from_a, "lthpc.yaml")
+    other = _guard_facts_with_a_driver(tmp_path, from_a, "lthpc-b.yaml")
+
+    assert [f[0] for f in own] == ["RUNNING"]
+    assert [f[0] for f in other] == ["ELSEWHERE"]
+
+
+@_NEEDS_PROC
+def test_sync_guard_counts_a_driver_it_cannot_attribute_against_every_checkout(tmp_path: Path) -> None:
+    """No PYTHONPATH to read means no evidence the driver is elsewhere: refuse, as before."""
+    facts = _guard_facts_with_a_driver(tmp_path, None, "lthpc-b.yaml")
+
+    assert [f[0] for f in facts] == ["RUNNING"]
+
+
+def test_sync_proceeds_past_drivers_on_other_checkouts(experiment: dict, capsys) -> None:
+    guard = _guard() + "ELSEWHERE\t4242 python -m ...gen_prediction_batch --out-dir t1\n"
+    remote = SyncRemote(guard, _synced(experiment))
+
+    assert _sync(experiment, remote) == 0
+
+    out = capsys.readouterr().out
+    assert "RESULT: synced" in out
+    assert "1 driver(s) on other checkouts" in out
+
+
 def test_go_does_not_launch_when_sync_refuses(experiment: dict, capsys) -> None:
     remote = SyncRemote(_guard(running="4242 python -m ...gen_prediction_batch"))
 
