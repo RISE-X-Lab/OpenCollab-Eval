@@ -1,0 +1,51 @@
+# s2dual-judge on gpt-5.6-luna (experiment 2, the third model), 09-23.
+#
+# WHAT IT IS. The reference cell (judge: nothing about the Coders is commanded) of the s2dual family, as J'/P' on qwen3.8-flash and
+# D1/D2 on deepseek-v4.1-flash, on gpt-5.6-luna. Every field the family rests on
+# -- the 36 rows, the frame content, budget_per_seat 2M, max_steps 200, the env
+# block, the cards -- is the qwen cells'; model_env, timeout and concurrency move.
+#
+# ENDPOINT AND WHAT A DIFFERENCE MEANS. The private gateway (configs/.env.gw2-luna,
+# key `ad30c9bd`, http://47.100.35.241/v1) -- a different endpoint and account
+# from token-plan, so luna against qwen or deepseek differs in model, endpoint
+# and account at once. Read luna as its own judge/plain pair.
+#
+# CONCURRENCY 6. On 09-21 this gateway refused the family en masse: a luna cell
+# at concurrency 24 came back 34/36 `failed`, a smoke at 12 came back 10/12,
+# on `Concurrency limit exceeded for user` and `gateway_queue_full`; the
+# refusals ran for the whole batch. Single calls answered in 3-14 s on 09-22
+# 17:43-20:04 UTC. A 3-row smoke goes first; `failed` must be 0 before the rest.
+#
+# TIMEOUT 7200, as the deepseek cells: this endpoint is slower per call, and
+# the wall clock is a censoring bound to report, not a treatment.
+#
+# CONTEXT WINDOW. OC 4b231b0e registers gpt-5.6-luna at 272,000 (the owner's
+# figure, 09-22; a probe that day answered 273,010 input tokens with 200).
+# Unregistered, the model had no window and history compaction never fired on
+# window pressure. Runs made before this row are not pooled with these.
+#
+# PINS. OC 4b231b0e (iclr-2027: the stop notice + knobs-0922), Eval 3ff64deb.
+# ---------------------------------------------------------------------------
+name: s2dual-judge-luna-pro36
+host: lthpc
+arm: team
+cell: s2dual-judge
+suite: pro-mini36-clean
+rows: {start: 1, stop: 36}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 7200
+concurrency: 6
+model_env: configs/.env.gw2-luna
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+pins:
+  opencollab: 4b231b0e128696768e168521eddb634fd8951927
+  opencollab_eval: 3ff64deb72b1879449a3f1d11d52fde329088d04
+note: "s2dual-judge on gpt-5.6-luna via the private gateway at N2 (window 272,000), timeout 7200, concurrency 6; adherence primary"
