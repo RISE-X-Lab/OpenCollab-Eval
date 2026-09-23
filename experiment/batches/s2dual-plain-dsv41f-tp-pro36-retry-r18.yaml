@@ -1,0 +1,35 @@
+# Retry of s2dual-plain-dsv41f-tp-pro36 row 18 (D2, deepseek-v4.1-flash plain at the stop-notice pin).
+#
+# The first attempt failed with: execution cleanup timed out: TimeoutError: owned execution did not quiesce after cancellation; patch extraction skipped
+# A failed run is excluded from every denominator, so the row has no reading
+# until it is re-run. Same pins, key, env, caps and timeout as D2; merged by
+# `retry_of`. One spec per contiguous run of failed rows (EXPERIMENT-LOG
+# §31/§33): a wider interval would re-run a row that already has a reading,
+# and merge_attempts would silently replace it with a second draw of the same
+# task. The four D2 retry specs run together, after D2 has finished and before
+# the host is synced to N2 for the B cells.
+# ---------------------------------------------------------------------------
+name: s2dual-plain-dsv41f-tp-pro36-retry-r18
+host: lthpc
+arm: team
+cell: s2dual-plain
+suite: pro-mini36-clean
+rows: {start: 18, stop: 18}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 7200
+concurrency: 1
+model_env: configs/.env.tp-dsv41f
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+retry_of: s2dual-plain-dsv41f-tp-pro36
+pins:
+  opencollab: 35c2ecccceeddac1c0393ddf71560f9fb5aa19cd
+  opencollab_eval: dc3249158d15c60d27a18ae77e3bd74f72410509
+note: "retry of s2dual-plain-dsv41f-tp-pro36 row 18: execution cleanup timed out: TimeoutError: owned execution did not quiesce after cancellation; patch extraction skipped"
