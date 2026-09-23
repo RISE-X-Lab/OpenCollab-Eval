@@ -6,12 +6,13 @@
 # experiment 1 are read against this floor; J' against the old judge already gave the team-side
 # figure (25 vs 25, 1:1 on 34 tasks).
 #
-# PINS are S1's (OC 35c2eccc, Eval dc32491), which are also D2's: it runs in the old-pin segment
-# with D2's four retries (never beside them: those first, or after), then the host syncs back to
-# N2 for luna. Scored like S1 with the official Pro evaluator.
+# PINS are S1's (OC 35c2eccc, Eval dc32491), which are also D2's. HOST lthpc-b: the same machine's
+# second checkout, synced to these pins while lthpc stays at N2 for luna (owner 09-23). It starts
+# after the N2 qwen retries end: they share the key (ca8430b2), measured clean at 36 and
+# rate-limited at 48 on 09-20. Scored like S1 with the official Pro evaluator.
 # ---------------------------------------------------------------------------
 name: s2single-qwen38-tp-r2-pro36
-host: lthpc
+host: lthpc-b
 arm: single
 profile: single2
 suite: pro-mini36-clean
