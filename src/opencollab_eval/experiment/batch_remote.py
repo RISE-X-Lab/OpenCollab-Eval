@@ -54,6 +54,14 @@ def sync_guard_script(host: HostConfig) -> str:
     pre-flight uses: a decoy whose command line contains the pattern, so a
     check that has stopped matching anything says so instead of reading as
     "nothing is running".
+
+    A driver counts against this tree only if it runs from it: its PYTHONPATH,
+    which the launcher sets from the same host fields (`HostConfig.pythonpath`),
+    names this tree's OpenCollab or Eval ``src``. One running from another
+    checkout on the same machine (``lthpc-b`` beside ``lthpc``) is reported as
+    ELSEWHERE and does not stop this sync -- the second checkout exists for
+    exactly that. A driver whose environment cannot be read (another user's, or
+    one launched without PYTHONPATH) cannot be placed, so it still counts.
     """
     oc = f"{host.workdir}/{host.opencollab_dir}"
     ev = f"{host.workdir}/{host.eval_dir}"
@@ -67,7 +75,11 @@ def sync_guard_script(host: HostConfig) -> str:
             'printf "OC_DIRTY\t%s\n" "$(git -C "$OC" status --porcelain -uno 2>/dev/null | wc -l)"',
             'printf "EV_DIRTY\t%s\n" "$(git -C "$EV" status --porcelain -uno 2>/dev/null | wc -l)"',
             f'pgrep -af "{BATCH_PROCESS_PATTERN}" | grep -vF {_q(SYNC_DECOY_MARK)} | while IFS= read -r line; do '
-            'printf "RUNNING\t%s\n" "$(printf "%s" "$line" | cut -c1-300)"; done',
+            'pid=${line%% *}; '
+            "pp=$(tr '\\0' '\\n' < \"/proc/$pid/environ\" 2>/dev/null | sed -n 's/^PYTHONPATH=//p' | head -n 1); "
+            "tag=RUNNING; "
+            'if [ -n "$pp" ]; then tag=ELSEWHERE; case ":$pp:" in *":$OC:"*|*":$EV/src:"*) tag=RUNNING;; esac; fi; '
+            'printf "%s\t%s\n" "$tag" "$(printf "%s" "$line" | cut -c1-300)"; done',
             f"setsid nohup bash -c 'sleep 6; echo {SYNC_DECOY_MARK}' < /dev/null > /dev/null 2>&1 &",
             "sleep 1",
             f'printf "DECOY_HIT\t%s\n" "$(pgrep -af "{BATCH_PROCESS_PATTERN}" | grep -cF {_q(SYNC_DECOY_MARK)})"',

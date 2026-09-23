@@ -474,6 +474,7 @@ def cmd_sync(batch: Batch, remote: Ssh) -> int:
     # A fact line can carry tabs of its own (a process command line does), so
     # these read by index rather than unpacking a pair.
     running = [f[1] for f in facts if f[0] == "RUNNING" and len(f) > 1]
+    elsewhere = [f[1] for f in facts if f[0] == "ELSEWHERE" and len(f) > 1]
     decoy = next((f[1] for f in facts if f[0] == "DECOY_HIT" and len(f) > 1), "0")
     before = {f[0]: f[1] for f in facts if f[0].endswith("_BEFORE") and len(f) > 1}
     dirty = {f[0]: f[1] for f in facts if f[0].endswith("_DIRTY") and len(f) > 1}
@@ -486,6 +487,8 @@ def cmd_sync(batch: Batch, remote: Ssh) -> int:
         print("  REFUSED: the running-batch check found not even its own decoy, so a quiet")
         print("           result from it means nothing. Nothing was changed.")
         return 1
+    if elsewhere:
+        print(f"  {len(elsewhere)} driver(s) on other checkouts of this machine; they do not use this tree")
     if running:
         print(f"  REFUSED: {len(running)} driver(s) alive on this host; a checkout would move")
         print("           the code under a running batch. Nothing was changed.")
