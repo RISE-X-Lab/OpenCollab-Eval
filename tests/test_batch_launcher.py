@@ -542,6 +542,46 @@ def test_the_endpoint_probe_keeps_the_key_out_of_the_process_table(experiment: d
     assert "/chat/completions" in script and "max_tokens" in script
 
 
+@pytest.mark.parametrize(("kind", "answer"), [("file", "present"), ("symlink", "symlink")])
+def test_preflight_tells_a_symlinked_model_env_from_a_file(
+    experiment: dict, tmp_path: Path, kind: str, answer: str
+) -> None:
+    """OpenCollab's loader refuses a symlinked env file, so pre-flight must not call one present.
+
+    On 09-23 a second checkout got its key files as symlinks: pre-flight said
+    "model env file present" (``[ -f ]`` follows the link) and every run died in
+    0.8 s on `config env path is not a regular file`. The real script runs here,
+    because the distinction is made in the shell on the host.
+    """
+    import dataclasses
+
+    spec = load_spec(experiment["spec"])
+    host = dataclasses.replace(load_host(experiment["dir"] / "hosts" / "h.yaml"), workdir=str(tmp_path / "w"))
+    env_path = Path(host.workdir) / host.opencollab_dir / spec.model_env
+    env_path.parent.mkdir(parents=True)
+    real = tmp_path / "real.env"
+    real.write_text("OPENCOLLAB_MODEL=m\n", encoding="utf-8")
+    if kind == "symlink":
+        env_path.symlink_to(real)
+    else:
+        env_path.write_text(real.read_text(encoding="utf-8"), encoding="utf-8")
+
+    out = subprocess.run(
+        ["bash", "-s"], input=batch_remote.preflight_script(spec, host, [], []),
+        capture_output=True, text=True, timeout=120,
+    ).stdout
+
+    assert batch_remote.fact(batch_remote.parse_facts(out), "MODEL_ENV") == answer
+
+
+def test_preflight_says_what_to_do_about_a_symlinked_model_env(experiment: dict) -> None:
+    check = _checks(experiment, _facts(experiment).replace("MODEL_ENV\tpresent", "MODEL_ENV\tsymlink"))[
+        "model env file present"
+    ]
+    assert not check.ok
+    assert "symlink" in check.detail and "ln" in check.detail
+
+
 def test_preflight_script_never_reads_the_key(experiment: dict) -> None:
     spec = load_spec(experiment["spec"])
     host = load_host(experiment["dir"] / "hosts" / "h.yaml")
