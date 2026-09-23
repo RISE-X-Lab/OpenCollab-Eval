@@ -16,10 +16,12 @@
 # refusals ran for the whole batch. Single calls answered in 3-14 s on 09-22
 # 17:43-20:04 UTC. A 3-row smoke goes first; `failed` must be 0 before the rest.
 #
-# CONCURRENCY 18 (09-23 20:4x UTC, owner: "并发可以开到18"). With no batch running,
-# ~/gw-load-probe.py on this gateway answered 6/6, 12/12, 18/18 with 200
-# (median 2.8 / 5.8 / 6.3 s, max 13.2 s). G1's first 3 rows (the smoke) ran at 6;
-# the rest resume at 18. refusal_scan.sh watches for the 09-21 refusal strings.
+# CONCURRENCY 18 WAS REFUSED (09-23). On the owner's word the G1 rest resumed at 18 at
+# 20:45 UTC after a short-request probe answered 18/18 with 200; within 25 minutes 8 of the
+# 12 rows that came back had failed on `APIError: Concurrency limit exceeded for user`
+# (provider retries run up to 600 s, so the refusals surface late). Stopped at 21:08 UTC;
+# back to 6. A short probe passing N is not a long run passing N: raise this only after the
+# gateway's per-user limit is raised, and watch refusal_scan.sh for the first 30 minutes.
 #
 # TIMEOUT 7200, as the deepseek cells: this endpoint is slower per call, and
 # the wall clock is a censoring bound to report, not a treatment.
@@ -41,7 +43,7 @@ frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
 budget_per_seat: 2000000
 max_steps: 200
 timeout: 7200
-concurrency: 18
+concurrency: 6
 model_env: configs/.env.gw2-luna
 env:
   OPENCOLLAB_LLM_STREAM_CHAT: "true"
@@ -53,4 +55,4 @@ env:
 pins:
   opencollab: 4b231b0e128696768e168521eddb634fd8951927
   opencollab_eval: 3ff64deb72b1879449a3f1d11d52fde329088d04
-note: "s2dual-judge on gpt-5.6-luna via the private gateway at N2 (window 272,000), timeout 7200, concurrency 18; adherence primary"
+note: "s2dual-judge on gpt-5.6-luna via the private gateway at N2 (window 272,000), timeout 7200, concurrency 6; adherence primary"
