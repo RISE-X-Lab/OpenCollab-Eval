@@ -232,7 +232,11 @@ def preflight_script(
         lines.append(f'printf "DIGESTS\\t%s\\n" "$(cd "$W" && PYTHONPATH="$PP" "$PY" -c {_q(snippet)} 2>&1 | tail -1)"')
     lines += [
         f"ME={_q(model_env)}",
-        'if [ -f "$ME" ]; then printf "MODEL_ENV\\tpresent\\n"; '
+        # A symlink first: `[ -f ]` follows it, and OpenCollab's loader refuses
+        # a symlinked env file (`config env path is not a regular file`), so a
+        # run started on one dies in its first second.
+        'if [ -L "$ME" ]; then printf "MODEL_ENV\\tsymlink\\n"; '
+        'elif [ -f "$ME" ]; then printf "MODEL_ENV\\tpresent\\n"; '
         'printf "MODEL\\t%s\\n" "$(grep -E "^OPENCOLLAB_MODEL=" "$ME" | tail -1 | cut -d= -f2-)"; '
         'printf "PROVIDER\\t%s\\n" "$(grep -E "^OPENCOLLAB_PROVIDER=" "$ME" | tail -1 | cut -d= -f2-)"; '
         'printf "BASE_URL_SHA\\t%s\\n" "$(grep -E "^OPENCOLLAB_BASE_URL=" "$ME" | tail -1 | cut -d= -f2- '
@@ -415,11 +419,11 @@ def evaluate_preflight(
             )
         )
 
-    checks.append(
-        Check(
-            "model env file present", fact(facts, "MODEL_ENV") == "present", f"{host.opencollab_dir}/{spec.model_env}"
-        )
-    )
+    env_state = fact(facts, "MODEL_ENV")
+    env_detail = f"{host.opencollab_dir}/{spec.model_env}"
+    if env_state == "symlink":
+        env_detail += " is a symlink, which OpenCollab refuses; link it hard instead (ln, not ln -s)"
+    checks.append(Check("model env file present", env_state == "present", env_detail))
     endpoint = fact(facts, "ENDPOINT")
     checks.append(
         Check(
