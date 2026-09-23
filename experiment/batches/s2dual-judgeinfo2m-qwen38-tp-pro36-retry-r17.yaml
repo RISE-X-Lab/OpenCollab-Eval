@@ -1,0 +1,36 @@
+# Second attempt at s2dual-judgeinfo2m-qwen38-tp-pro36 row 17 (B2, qwen3.8-flash, judge card
+# plus the budget sentence at 2,000,000, at the N2 pin).
+#
+# Attempt 1 (B2) failed at 5415 s with: execution cleanup timed out: TimeoutError: owned
+# execution did not quiesce after cancellation; patch extraction skipped (runtime_reason:
+# worktree pool release failed or timed out) -- the run reached the 5400 s wall clock and its
+# cancellation did not quiesce, the shape of D2 rows 18 and 31. At most three counted attempts
+# per row, declared before the retries run; attempts we stop ourselves do not count. Deferred
+# until after G1/G2 (owner 09-23: the big cells first); runs alone, never beside another cell.
+# Same pins, key, env, caps and timeout as B2; merged by `retry_of`. Named -retry-r17 so the
+# review scripts' `<name>-retry-*` glob reads it.
+# ---------------------------------------------------------------------------
+name: s2dual-judgeinfo2m-qwen38-tp-pro36-retry-r17
+host: lthpc
+arm: team
+cell: s2dual-judgeinfo-2m
+suite: pro-mini36-clean
+rows: {start: 17, stop: 17}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 5400
+concurrency: 1
+model_env: configs/.env.tp3-qwen38
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+retry_of: s2dual-judgeinfo2m-qwen38-tp-pro36
+pins:
+  opencollab: 4b231b0e128696768e168521eddb634fd8951927
+  opencollab_eval: 3ff64deb72b1879449a3f1d11d52fde329088d04
+note: "second attempt at s2dual-judgeinfo2m-qwen38-tp-pro36 row 17: attempt 1 failed (cleanup did not quiesce after the wall-clock cancellation)"
