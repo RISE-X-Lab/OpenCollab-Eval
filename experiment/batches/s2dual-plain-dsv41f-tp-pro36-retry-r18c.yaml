@@ -8,9 +8,13 @@
 # Runs after G1/G2 with the host synced back to OC 35c2eccc / Eval dc32491, alone.
 # Same pins, key, env, caps and timeout as D2; merged by `retry_of`. Named -retry-r18c so the
 # review scripts' `<name>-retry-*` glob reads it.
+# HOST lthpc-b (09-23 22:xZ, owner: a copy of the repository for retries): the same machine
+# with a second checkout (OpenCollab-b / OpenCollab-Eval-b), synced to this spec's pins while
+# lthpc stays at N2 for luna. `check_retry` accepts it because the host files differ only in
+# the checkout directories (Eval 471338e); the pins are the D2 ones, so the same commit runs.
 # ---------------------------------------------------------------------------
 name: s2dual-plain-dsv41f-tp-pro36-retry-r18c
-host: lthpc
+host: lthpc-b
 arm: team
 cell: s2dual-plain
 suite: pro-mini36-clean
