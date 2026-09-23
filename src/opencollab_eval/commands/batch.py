@@ -69,6 +69,19 @@ EXPERIMENT_DIR = REPO_ROOT / "experiment"
 #: both is refused at load time.
 RETRY_MAY_DIFFER = frozenset({"name", "rows", "retry_of", "replaces", "note", "concurrency"})
 
+#: The host-file fields in which two checkouts of one machine differ (``lthpc``
+#: and ``lthpc-b``): which directory holds the code. A retry may name the other
+#: checkout -- that is what the second one is for -- because the pins are still
+#: compared, so the commit that runs is the one the original ran; any other
+#: host field (workdir, python, scoring dataset) would be another instrument.
+CHECKOUT_ONLY_FIELDS = frozenset({"name", "opencollab_dir", "eval_dir"})
+
+
+def same_machine(a: HostConfig, b: HostConfig) -> bool:
+    """Two host files that differ at most in which checkout they use."""
+    fa, fb = vars(a), vars(b)
+    return all(fa[key] == fb[key] for key in fa if key not in CHECKOUT_ONLY_FIELDS)
+
 #: The same list for a replacement, plus ``suite``. A replacement runs an
 #: instance the cell never drew, and the reserve row it comes from need not
 #: live in the file the cell was sliced out of -- the ordered draw is longer
@@ -185,6 +198,7 @@ class Batch:
         self.spec: BatchSpec = load_spec(spec_path)
         host_file = host_path or (experiment_dir / "hosts" / f"{self.spec.host}.yaml")
         self.host: HostConfig = load_host(host_file)
+        self.hosts_dir = Path(host_file).parent
         self.suite_dir = experiment_dir / "suite"
         for key, repo in (("opencollab", self.host.local_opencollab_dir), ("opencollab_eval", REPO_ROOT)):
             sha = self.spec.pins[key]
@@ -230,6 +244,10 @@ class Batch:
             for key in set(mine) | set(theirs)
             if key not in RETRY_MAY_DIFFER and mine.get(key) != theirs.get(key)
         )
+        if "host" in differ:
+            other = self.hosts_dir / f"{theirs.get('host')}.yaml"
+            if other.exists() and same_machine(self.host, load_host(other)):
+                differ.remove("host")
         if differ:
             detail = "; ".join(f"{key}: this {mine.get(key)!r} vs {name} {theirs.get(key)!r}" for key in differ)
             raise SpecError(

@@ -183,6 +183,38 @@ def test_plan_accepts_a_retry_of_one_row_of_the_original(experiment: dict, capsy
     assert "retry of t1" in capsys.readouterr().out
 
 
+def _second_host(experiment: dict, name: str, edit: tuple[str, str]) -> None:
+    """A host file that is the fixture's own ``h.yaml`` with one edit and a new name."""
+    text = (experiment["dir"] / "hosts" / "h.yaml").read_text(encoding="utf-8")
+    assert edit[0] in text, edit[0]
+    text = text.replace("name: h\n", f"name: {name}\n").replace(*edit)
+    (experiment["dir"] / "hosts" / f"{name}.yaml").write_text(text, encoding="utf-8")
+
+
+def test_plan_accepts_a_retry_from_a_second_checkout_of_the_same_machine(experiment: dict, capsys) -> None:
+    """``lthpc-b`` beside ``lthpc``: the same machine, the same pins, the code in another directory.
+
+    The second checkout exists so a retry at an older pin can run while a batch
+    holds the first one; refusing the host name alone would make it unusable for
+    the retries it is for. The pins are still compared, so the commit that runs
+    is the one the original ran.
+    """
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    _second_host(experiment, "h-b", ("opencollab_dir: OpenCollab\n", "opencollab_dir: OpenCollab-b\n"))
+    path = _retry_spec(experiment, "t1r", "rows: {start: 2, stop: 2}", ("host: h\n", "host: h-b\n"))
+    assert _plan(experiment, path) == 0
+    assert "retry of t1" in capsys.readouterr().out
+
+
+def test_plan_refuses_a_retry_on_another_machine(experiment: dict, capsys) -> None:
+    """A host that differs in anything but the checkout directories is a different instrument."""
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    _second_host(experiment, "g", ("workdir: /home/u/work\n", "workdir: /home/u/elsewhere\n"))
+    path = _retry_spec(experiment, "t1r", "rows: {start: 2, stop: 2}", ("host: h\n", "host: g\n"))
+    assert _plan(experiment, path) == 2
+    assert "host" in capsys.readouterr().err
+
+
 def _metrics(cell: Path, rows: list[dict]) -> None:
     cell.mkdir(parents=True, exist_ok=True)
     (cell / "metrics.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
