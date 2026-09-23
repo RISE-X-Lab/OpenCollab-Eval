@@ -304,12 +304,51 @@ SEAT_AT_BATCH_ROOT_ARMS = frozenset({"single"})
 SINGLE_SEAT_FILE = "agent.json"
 
 
-def _agent_files(cell: Path, arm: str, instance_id: str) -> list[Path]:
+#: Arms where one run is one attempt directory, ``solver-<hex>/runtime-<hex>``,
+#: and the record names it (``trajectory_path``). When a resumed launch runs an
+#: instance a second time in the same out-dir, both attempts' snapshots sit
+#: under the one instance root; reading all of them let the attempt whose random
+#: directory name sorted last supply every seat of every row of that instance.
+#: Best-of-N keeps several candidate directories for one run, so it stays on
+#: the instance-wide glob.
+ATTEMPT_SCOPED_ARMS = frozenset({"team"})
+
+
+def _attempt_dir(root: Path, record: dict[str, Any] | None) -> Path | None:
+    """The attempt directory the record names, under the pulled ``root``, if present.
+
+    ``trajectory_path`` was written on the machine that ran the batch, so only
+    its tail below ``trajectories/`` is used.
+    """
+    raw = str((record or {}).get("trajectory_path") or "")
+    if not raw:
+        return None
+    path = Path(raw)
+    if path.suffix == ".jsonl":
+        path = path.parent
+    parts = path.parts
+    if "trajectories" not in parts:
+        return None
+    tail = parts[len(parts) - parts[::-1].index("trajectories"):]
+    if not tail:
+        return None
+    directory = root.joinpath(*tail)
+    return directory if directory.is_dir() else None
+
+
+def _agent_files(
+    cell: Path, arm: str, instance_id: str, record: dict[str, Any] | None = None
+) -> list[Path]:
     """Per-seat snapshots for one run, for the arms that write them per instance."""
     root = cell / f"logs-{arm}" / instance_id / "trajectories"
     if not root.exists():
         return []
     found: set[Path] = set()
+    attempt = _attempt_dir(root, record) if arm in ATTEMPT_SCOPED_ARMS else None
+    if attempt is not None:
+        for pattern in _SEAT_FILE_PATTERNS:
+            found.update(attempt.glob(pattern.rsplit("/", 1)[-1]))
+        return sorted(found)
     for pattern in _SEAT_FILE_PATTERNS:
         found.update(root.glob(pattern))
     return sorted(found)
@@ -341,7 +380,7 @@ def _seat_files(cell: Path, arm: str, record: dict[str, Any]) -> list[Path]:
     """The snapshots of one run, from whichever place its arm keeps them."""
     if arm in SEAT_AT_BATCH_ROOT_ARMS:
         return _single_agent_files(cell, record)
-    return _agent_files(cell, arm, record["instance_id"])
+    return _agent_files(cell, arm, record["instance_id"], record)
 
 
 def _int_or_none(value: Any) -> int | None:
