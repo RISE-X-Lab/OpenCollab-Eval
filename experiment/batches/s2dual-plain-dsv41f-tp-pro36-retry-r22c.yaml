@@ -1,0 +1,37 @@
+# Third and last counted attempt at s2dual-plain-dsv41f-tp-pro36 row 22 (D2, deepseek-v4.1-flash plain at the stop-notice pin).
+#
+# Attempt 1 (D2) failed with: RuntimeError: Execution environment has been revoked. Session cannot continue.
+# Attempt 2 (s2dual-plain-dsv41f-tp-pro36-retry-r22) failed with: RuntimeError: Execution environment has been revoked. Session cannot continue.
+# The attempt -retry-r22b (10:30-10:38Z) was stopped by us on 09-23 10:38Z to free the host
+# for the B cells (owner: the big cells first); an attempt we stop does not count.
+# At most three counted attempts per row, declared before the retries ran: retrying until
+# success would filter out the attempts in which the Adopter ran a long IO command.
+# This is the last one: if it fails, the row stays failed (merge_attempts keeps the last attempt).
+# Runs after G1/G2 with the host synced back to OC 35c2eccc / Eval dc32491, alone.
+# Same pins, key, env, caps and timeout as D2; merged by `retry_of`. Named -retry-r22c so the
+# review scripts' `<name>-retry-*` glob reads it.
+# ---------------------------------------------------------------------------
+name: s2dual-plain-dsv41f-tp-pro36-retry-r22c
+host: lthpc
+arm: team
+cell: s2dual-plain
+suite: pro-mini36-clean
+rows: {start: 22, stop: 22}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 7200
+concurrency: 1
+model_env: configs/.env.tp-dsv41f
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+retry_of: s2dual-plain-dsv41f-tp-pro36
+pins:
+  opencollab: 35c2ecccceeddac1c0393ddf71560f9fb5aa19cd
+  opencollab_eval: dc3249158d15c60d27a18ae77e3bd74f72410509
+note: "third and last counted attempt at s2dual-plain-dsv41f-tp-pro36 row 22; the stopped attempt -retry-r22b does not count"
