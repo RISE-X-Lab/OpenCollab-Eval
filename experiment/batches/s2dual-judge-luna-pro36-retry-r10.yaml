@@ -1,0 +1,35 @@
+# Retry of s2dual-judge-luna-pro36 (G1, gpt-5.6-luna, judge card, N2 pin) rows 10-10: flipt-7161f7b8.
+#
+# Attempt 1 is not counted. It ran in the 18-way resume (20:45-21:08 UTC, 09-23) and failed on
+# `APIError: Concurrency limit exceeded for user`: the gateway refused our own concurrency
+# setting, as with attempts we stop ourselves, so it does not use up one of the row's three.
+#
+# At most three counted attempts per row, declared before any retry ran; never retried until
+# success. Launched after G1's main driver exits, so luna's requests stay under the gateway's
+# per-user limit (12). Same fields and pins as G1; merged by `retry_of`; named -retry-r10
+# so the review scripts' `<name>-retry-*` glob reads it.
+# ---------------------------------------------------------------------------
+name: s2dual-judge-luna-pro36-retry-r10
+host: lthpc
+arm: team
+cell: s2dual-judge
+suite: pro-mini36-clean
+rows: {start: 10, stop: 10}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 7200
+concurrency: 1
+model_env: configs/.env.gw2-luna
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+retry_of: s2dual-judge-luna-pro36
+pins:
+  opencollab: 4b231b0e128696768e168521eddb634fd8951927
+  opencollab_eval: 3ff64deb72b1879449a3f1d11d52fde329088d04
+note: "retry of s2dual-judge-luna-pro36 rows 10-10 (flipt-7161f7b8)"
