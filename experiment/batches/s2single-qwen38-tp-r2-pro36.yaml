@@ -1,0 +1,35 @@
+# S1r: s2single-qwen38-tp-pro36 (S1) run a second time, every field and pin unchanged but the name.
+#
+# WHAT IT IS FOR. Same-task re-run of the single arm: how often a task's resolved flips between
+# two runs of the same agent under the same conditions (plan 2026-09-22 section 2, "S1r", marked
+# recommended; the read-out is "S1 against S1r flip rate"). Team-minus-single differences in
+# experiment 1 are read against this floor; J' against the old judge already gave the team-side
+# figure (25 vs 25, 1:1 on 34 tasks).
+#
+# PINS are S1's (OC 35c2eccc, Eval dc32491), which are also D2's: it runs in the old-pin segment
+# with D2's four retries (never beside them: those first, or after), then the host syncs back to
+# N2 for luna. Scored like S1 with the official Pro evaluator.
+# ---------------------------------------------------------------------------
+name: s2single-qwen38-tp-r2-pro36
+host: lthpc
+arm: single
+profile: single2
+suite: pro-mini36-clean
+rows: {start: 1, stop: 36}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 5400
+concurrency: 36
+model_env: configs/.env.tp3-qwen38
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+pins:
+  opencollab: 35c2ecccceeddac1c0393ddf71560f9fb5aa19cd
+  opencollab_eval: dc3249158d15c60d27a18ae77e3bd74f72410509
+note: "S1r: re-run of S1 under a new name, same fields and pins; Single2 alone (profile single2) on SWE-bench Pro mini-36, token-plan qwen3.8-flash; the single arm of the s2dual family, the S in ITT/PP/CACE; scoring is the official Pro evaluator, not `batch score`"
