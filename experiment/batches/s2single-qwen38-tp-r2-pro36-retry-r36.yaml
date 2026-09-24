@@ -1,0 +1,35 @@
+# Retry of s2single-qwen38-tp-r2-pro36 (S1r, Single2 alone, qwen3.8-flash, S1's pins) rows 36-36: qutebrowser-e70f5b03.
+#
+# This is counted attempt 2. Attempt 1 (the main batch at concurrency 36) was revoked: the agent ran
+# `cd / && grep -rl ... /` over the whole filesystem, the command timed out and did not quiesce (the
+# ledger's agent-triggered revocation, as G1's rows 3 and 31).
+#
+# At most three counted attempts per row, declared before any retry ran; never retried until
+# success. Launched after S1r's main driver exits (retries after the big cells). Same fields and pins
+# as S1r, host lthpc-b as S1r; merged by `retry_of`; named -retry-r36 so the review scripts'
+# `<name>-retry-*` glob reads it.
+# ---------------------------------------------------------------------------
+name: s2single-qwen38-tp-r2-pro36-retry-r36
+host: lthpc-b
+arm: single
+profile: single2
+suite: pro-mini36-clean
+rows: {start: 36, stop: 36}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 5400
+concurrency: 1
+model_env: configs/.env.tp3-qwen38
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+retry_of: s2single-qwen38-tp-r2-pro36
+pins:
+  opencollab: 35c2ecccceeddac1c0393ddf71560f9fb5aa19cd
+  opencollab_eval: dc3249158d15c60d27a18ae77e3bd74f72410509
+note: "retry of s2single-qwen38-tp-r2-pro36 rows 36-36 (qutebrowser-e70f5b03)"
