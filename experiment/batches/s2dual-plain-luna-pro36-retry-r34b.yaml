@@ -1,0 +1,41 @@
+# Retry of s2dual-plain-luna-pro36 (G2, gpt-5.6-luna, plain card, N2 pin) rows 34-34:
+# qutebrowser-6b320dc1.
+#
+# Attempt 1 (the main batch, 02:32-04:32Z on 09-24) stopped validly but on the 7,200 s wall clock,
+# after running mostly through the luna gateway's slowdown; the lead ruled that a gateway problem
+# and had the row rerun as -retry-r34.
+# -retry-r34 (10:18-11:52Z) failed: the Adopter ran `grep -R "def _parse_value" -n ..` from
+# /testbed, that is over the whole of `/`, which timed out after 122 s at 11:34:16Z; the container
+# command did not quiesce and the Adopter's execution environment was revoked (the ledger's
+# agent-triggered mechanism). The report's merge fell back to attempt 1.
+# The lead asked on 09-24 at 12:2xZ for one more attempt at this row ("第 34 行再补一次吧").
+# A gateway failure of this attempt is retried until one succeeds. If the agents make it fail, no
+# further attempt is made and the merge falls back to attempt 1 again.
+#
+# Same fields and pins as G2; merged by `retry_of` (the last valid attempt started wins); named
+# -retry-r34b so the review scripts' `<name>-retry-*` glob reads it.
+# ---------------------------------------------------------------------------
+name: s2dual-plain-luna-pro36-retry-r34b
+host: lthpc
+arm: team
+cell: s2dual-plain
+suite: pro-mini36-clean
+rows: {start: 34, stop: 34}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 7200
+concurrency: 1
+model_env: configs/.env.gw2-luna
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+retry_of: s2dual-plain-luna-pro36
+pins:
+  opencollab: 4b231b0e128696768e168521eddb634fd8951927
+  opencollab_eval: 3ff64deb72b1879449a3f1d11d52fde329088d04
+note: "second rerun of s2dual-plain-luna-pro36 row 34 (qutebrowser-6b320dc1): -retry-r34 revoked by the Adopter's own grep over /; lead asked for one more"
