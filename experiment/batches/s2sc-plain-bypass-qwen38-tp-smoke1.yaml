@@ -1,0 +1,55 @@
+# s2sc-plain-bypass, smoke (09-24): rows 1-12 of the 36 Pro tasks, run next to the
+# other topology's plain smoke on the same rows. What the smoke is for is the
+# machinery, not the reading: every seat seated as Single2 with its own card,
+# the nine tools on every role, the topology the scheduler records equal to the
+# cell's, the cards stating it, messages only along declared edges, refusals
+# and stop notices behaving, and the report reading alpha and every off the
+# coder and tester seats. Under plain the Coder is handed work in most runs, so
+# this is also where refused coder->analyst attempts (pipeline) and stop
+# notices along one-way edges get exercised, which the judge smoke barely
+# reached. Its adherence numbers are not the cell's and are not read against
+# the other topology.
+#
+# THE CELL. the plain block, the handoff ladder's cmd-plain with its sentence asking the
+# Analyst to message the Tester deleted (neither topology has analyst->tester):
+# the Analyst is asked to hand the implementation to the Coder and told nothing
+# about the Tester, so whether the Tester works is left to the topology.
+# Topology: analyst->coder, coder->analyst, coder->tester, tester->analyst: the Coder can report
+# to the Analyst directly or hand its commit to the Tester first.
+#
+# HELD TO s2dual-judge (J'): model qwen3.8-flash on token-plan with key
+# ca8430b2 (configs/.env.tp3-qwen38), reasoning_effort max, 2,000,000 per
+# seat, 200 steps, 5400 s wall clock, the same env. Every seat is Single2 and
+# holds Single2's nine-tool bundle, the Tester included. OC ec89629f =
+# 3f4ae4c1 (the judge smoke's pin) + the plain block and its two cells' cards
+# and team files; the judge cells' cards and team files are the same bytes as
+# at 3f4ae4c1, and nothing in the runtime changed. Eval 36bbb22 = 3ff64deb +
+# the s2sc cell prefix.
+#
+# HOST. lthpc-b, synced to these pins after the judge smoke's drivers exit.
+# The two plain smoke specs run at the same time, 24 runs in all, under the
+# key's rate limit.
+# ---------------------------------------------------------------------------
+name: s2sc-plain-bypass-qwen38-tp-smoke1
+host: lthpc-b
+arm: team
+cell: s2sc-plain-bypass
+suite: pro-mini36-clean
+rows: {start: 1, stop: 12}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 5400
+concurrency: 12
+model_env: configs/.env.tp3-qwen38
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+pins:
+  opencollab: ec89629f3e1dbc7f4f3a52e03ce5966ee759139f
+  opencollab_eval: 36bbb22e00ea4ca66187a0918275f4409baa60ad
+note: "self-collaboration smoke, plain block, topology bypass: the handoff roles seated as Single2, rows 1-12; machinery check only, not a reading of the cell"
