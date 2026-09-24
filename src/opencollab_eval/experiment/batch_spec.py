@@ -85,6 +85,7 @@ CELL_FILE_PREFIXES: tuple[tuple[str, str], ...] = (
     ("dual-", "configs/team.{cell}.yaml"),
     ("s2dual-", "configs/team.{cell}.yaml"),
     ("s2tools-", "configs/team.{cell}.yaml"),
+    ("s2sc-", "configs/team.{cell}.yaml"),
 )
 DEFAULT_CELL_FILE = "configs/team.handoff.{cell}.yaml"
 
