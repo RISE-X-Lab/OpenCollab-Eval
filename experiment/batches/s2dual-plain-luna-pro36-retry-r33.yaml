@@ -1,0 +1,38 @@
+# Retry of s2dual-plain-luna-pro36 (G2, gpt-5.6-luna, plain card, N2 pin) rows 33-33: qutebrowser-479aa075.
+#
+# Attempt 1 (the main batch at concurrency 10) failed on a gateway error, not on anything the agents
+# did, during the luna gateway's slowdown from 02:42Z on 09-24 (output per call fell from 27-33 to
+# 9-11 tokens/s and streams were cut): `APIError: Upstream response stream was interrupted`. OC's retry list does not name this error,
+# so the seat that got it ended at once (its coder_a had ended the same way at 02:44:50Z).
+# By default this attempt is not counted toward the three (the failure is the gateway's, not the
+# agents'); the lead has not ruled on it yet.
+#
+# At most three counted attempts per row, declared before any retry ran; never retried until
+# success. Launched after G2's main driver exits, with the other luna retries, at most six luna runs
+# at a time, and only once the gateway has recovered. Same fields and pins as G2; merged by
+# `retry_of`; named -retry-r33 so the review scripts' `<name>-retry-*` glob reads it.
+# ---------------------------------------------------------------------------
+name: s2dual-plain-luna-pro36-retry-r33
+host: lthpc
+arm: team
+cell: s2dual-plain
+suite: pro-mini36-clean
+rows: {start: 33, stop: 33}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 7200
+concurrency: 1
+model_env: configs/.env.gw2-luna
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+retry_of: s2dual-plain-luna-pro36
+pins:
+  opencollab: 4b231b0e128696768e168521eddb634fd8951927
+  opencollab_eval: 3ff64deb72b1879449a3f1d11d52fde329088d04
+note: "retry of s2dual-plain-luna-pro36 rows 33-33 (qutebrowser-479aa075)"
