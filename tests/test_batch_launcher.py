@@ -336,6 +336,10 @@ def test_a_cell_outside_the_ladder_names_its_own_team_file() -> None:
     # The s2dual roster with the Adopter's tools changed is a family of its
     # own in OpenCollab (``configs/s2tools``), filed apart from both.
     assert cell_team_file("s2tools-adopt") == "configs/team.s2tools-adopt.yaml"
+    # The handoff roles seated as Single2 over topologies with edges removed
+    # (``configs/s2sc``) are a third family, filed apart the same way.
+    assert cell_team_file("s2sc-judge-bypass") == "configs/team.s2sc-judge-bypass.yaml"
+    assert cell_team_file("s2sc-judge-pipeline") == "configs/team.s2sc-judge-pipeline.yaml"
 
 
 @pytest.mark.parametrize("cell", ["x", "dual-x"])
