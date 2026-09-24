@@ -5,11 +5,12 @@
 # 9-11 tokens/s and streams were cut): `APITimeoutError: Request timed out.` Its Adopter had already ended at 02:43:46Z on
 # `Upstream response stream was interrupted` (not on OC's retry list) and its coder_a at 03:12:10Z
 # on a gateway 502.
-# By default this attempt is not counted toward the three (the failure is the gateway's, not the
-# agents'); the lead has not ruled on it yet.
+# It does not count toward the three attempts: the lead ruled on 09-24 that a failure caused by the
+# gateway is not capped and may be retried until an attempt succeeds.
 #
-# At most three counted attempts per row, declared before any retry ran; never retried until
-# success. Launched after G2's main driver exits, with the other luna retries, at most six luna runs
+# Failures the agents cause (such as revocations) get at most three counted attempts per row,
+# declared before any retry ran, and are never retried until success. Launched after G2's main
+# driver exits, with the other luna retries, at most six luna runs
 # at a time, and only once the gateway has recovered. Same fields and pins as G2; merged by
 # `retry_of`; named -retry-r36 so the review scripts' `<name>-retry-*` glob reads it.
 # ---------------------------------------------------------------------------

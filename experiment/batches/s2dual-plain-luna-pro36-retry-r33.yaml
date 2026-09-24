@@ -4,11 +4,12 @@
 # did, during the luna gateway's slowdown from 02:42Z on 09-24 (output per call fell from 27-33 to
 # 9-11 tokens/s and streams were cut): `APIError: Upstream response stream was interrupted`. OC's retry list does not name this error,
 # so the seat that got it ended at once (its coder_a had ended the same way at 02:44:50Z).
-# By default this attempt is not counted toward the three (the failure is the gateway's, not the
-# agents'); the lead has not ruled on it yet.
+# It does not count toward the three attempts: the lead ruled on 09-24 that a failure caused by the
+# gateway is not capped and may be retried until an attempt succeeds.
 #
-# At most three counted attempts per row, declared before any retry ran; never retried until
-# success. Launched after G2's main driver exits, with the other luna retries, at most six luna runs
+# Failures the agents cause (such as revocations) get at most three counted attempts per row,
+# declared before any retry ran, and are never retried until success. Launched after G2's main
+# driver exits, with the other luna retries, at most six luna runs
 # at a time, and only once the gateway has recovered. Same fields and pins as G2; merged by
 # `retry_of`; named -retry-r33 so the review scripts' `<name>-retry-*` glob reads it.
 # ---------------------------------------------------------------------------
