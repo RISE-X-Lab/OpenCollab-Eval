@@ -1,0 +1,40 @@
+# Retry of s2dual-plain-luna-pro36 (G2, gpt-5.6-luna, plain card, N2 pin) rows 35-35: qutebrowser-bedc9f7f.
+#
+# Attempt 1 (the main batch at concurrency 10) failed on a gateway error, not on anything the agents
+# did, during the luna gateway's slowdown from 02:42Z on 09-24 (output per call fell from 27-33 to
+# 9-11 tokens/s and streams were cut): `APIError: Upstream response stream was interrupted`. OC's retry list does not name this error,
+# so the seat that got it ended at once (its Adopter and coder_a had each ended the same way earlier, at 02:43:23Z and
+# 02:57:05Z, and been woken again).
+# It does not count toward the three attempts: the lead ruled on 09-24 that a failure caused by the
+# gateway is not capped and may be retried until an attempt succeeds.
+#
+# Failures the agents cause (such as revocations) get at most three counted attempts per row,
+# declared before any retry ran, and are never retried until success. Launched after G2's main
+# driver exits, with the other luna retries, at most six luna runs
+# at a time, and only once the gateway has recovered. Same fields and pins as G2; merged by
+# `retry_of`; named -retry-r35 so the review scripts' `<name>-retry-*` glob reads it.
+# ---------------------------------------------------------------------------
+name: s2dual-plain-luna-pro36-retry-r35
+host: lthpc
+arm: team
+cell: s2dual-plain
+suite: pro-mini36-clean
+rows: {start: 35, stop: 35}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 7200
+concurrency: 1
+model_env: configs/.env.gw2-luna
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+retry_of: s2dual-plain-luna-pro36
+pins:
+  opencollab: 4b231b0e128696768e168521eddb634fd8951927
+  opencollab_eval: 3ff64deb72b1879449a3f1d11d52fde329088d04
+note: "retry of s2dual-plain-luna-pro36 rows 35-35 (qutebrowser-bedc9f7f)"
