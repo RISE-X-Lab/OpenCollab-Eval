@@ -1,0 +1,45 @@
+# Retry of s2dual-plain-luna-pro36 (G2, gpt-5.6-luna, plain card, N2 pin) rows 34-34:
+# qutebrowser-6b320dc1.
+#
+# Attempt 1 (the main batch, 02:32-04:32Z on 09-24) stopped validly but on the 7,200 s wall clock,
+# after running mostly through the luna gateway's slowdown. -retry-r34 (10:18-11:52Z) was revoked
+# after the Adopter's own grep over `/` timed out; the lead then asked for one more attempt,
+# -retry-r34b.
+# -retry-r34b (12:43-13:47Z) stopped validly but the gateway ended it. Its calls' median output
+# speed was 27.4 tokens/s in the first 15 minutes and 4.6-12.5 in the three 15-minute windows from
+# 12:58 to 13:43Z, and six of the Coders' calls never finished (the endings on record all read
+# `Upstream response stream was interrupted`). The Adopter had stopped on a loop block with about
+# 670,000 tokens left, so a Coder's message could still have woken it, but coder_a's last call
+# (started 13:38Z) and coder_b's (13:46Z) were cut before either Coder had committed, and neither
+# came back. No patch. This is the shape the lead ruled a gateway failure on 09-24 (G1 row 3: both
+# Coders ended by gateway errors while the Adopter could still have been woken).
+# A gateway failure uses none of the three attempts and is retried until one succeeds. If the agents
+# make this attempt fail, no further attempt is made and the merge falls back to attempt 1.
+#
+# Same fields and pins as G2; merged by `retry_of` (the last valid attempt started wins); named
+# -retry-r34c so the review scripts' `<name>-retry-*` glob reads it.
+# ---------------------------------------------------------------------------
+name: s2dual-plain-luna-pro36-retry-r34c
+host: lthpc
+arm: team
+cell: s2dual-plain
+suite: pro-mini36-clean
+rows: {start: 34, stop: 34}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 7200
+concurrency: 1
+model_env: configs/.env.gw2-luna
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+retry_of: s2dual-plain-luna-pro36
+pins:
+  opencollab: 4b231b0e128696768e168521eddb634fd8951927
+  opencollab_eval: 3ff64deb72b1879449a3f1d11d52fde329088d04
+note: "third rerun of s2dual-plain-luna-pro36 row 34 (qutebrowser-6b320dc1): -retry-r34b valid but both Coders ended for good by gateway cuts while the Adopter could still be woken"
