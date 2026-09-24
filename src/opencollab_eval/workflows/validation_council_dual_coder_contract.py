@@ -179,6 +179,7 @@ async def _run_dual_coder_contract(
     args: dict[str, Any],
     *,
     selector_prompt: str,
+    adjudicator: Any = None,
 ) -> dict[str, Any]:
     """Run the existing candidate and selection sequence with a per-call prompt."""
     goal = _complete_goal(str(args.get("goal") or args.get("description") or ""))
@@ -213,7 +214,8 @@ async def _run_dual_coder_contract(
     judge_result: Any = None
     if needs_judge:
         await ctx.phase("dual-coder-contract-adjudication")
-        winner, judge_result, reason = await _contract_adjudicate(
+        choose = adjudicator if adjudicator is not None else _contract_adjudicate
+        winner, judge_result, reason = await choose(
             ctx,
             goal=goal,
             candidate_a=candidate_a,

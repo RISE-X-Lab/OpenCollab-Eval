@@ -33,6 +33,9 @@ runtime layers and explains which entrypoints produce candidates or official
 verdicts. [final-report.md](final-report.md) is the complete input and evidence
 contract for `oc-eval final-report`.
 
+[G22 file evidence](g22-file-evidence.md) describes complete candidate evidence
+files and the read-only v3 selector.
+
 The machine-readable [integrity coverage ledger](integrity-coverage.json) maps
 known integrity requirements to owners, implementation files, tests, and exact
 test node IDs. It is verified by the test suite and should be updated with the

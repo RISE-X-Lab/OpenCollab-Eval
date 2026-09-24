@@ -13,6 +13,7 @@ BLIND_BY_DEFAULT_WORKFLOWS = {
     "evidence-action-council-v1",
     "validation-council-dual-coder-contract-v1",
     "validation-council-dual-coder-selection-v2",
+    "validation-council-dual-coder-selection-v3",
     "validation-council-g20-coder-contract-v1",
     "validation-council-g20-coder-red-green-v1",
     "validation-council-lean-official-v1",
