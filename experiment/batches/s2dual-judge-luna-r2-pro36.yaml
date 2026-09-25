@@ -1,0 +1,72 @@
+# WHAT IT IS. s2dual-judge-luna-pro36 rerun on OC b559c095, which changes two texts an agent reads
+# under serialized turns (09-25): team_status prints a teammate that is waiting for the team gate as
+# "queued (runs only after the agent now running ends its turn)" instead of "busy", and submit's
+# description adds "It is also how you wait: if you are waiting for a teammate's answer, submit what
+# you have so far -- the answer reopens your turn." Why: on the original cell the luna Adopter read
+# "coder_a -- busy", waited inside its own turn and never submitted, so the Coders ran only after its
+# budget was gone (run log section 9, 09-25). Everything else is the original spec byte for byte:
+# OC 4b231b0e..ec89629f touches no runtime code (configs/tests/scripts for other cells only), and
+# Eval 3ff64deb..bf9337b changes launcher, preflight and report only.
+# The original spec's own header follows.
+# s2dual-judge on gpt-5.6-luna (experiment 2, the third model), 09-23.
+#
+# WHAT IT IS. The reference cell (judge: nothing about the Coders is commanded) of the s2dual family, as J'/P' on qwen3.8-flash and
+# D1/D2 on deepseek-v4.1-flash, on gpt-5.6-luna. Every field the family rests on
+# -- the 36 rows, the frame content, budget_per_seat 2M, max_steps 200, the env
+# block, the cards -- is the qwen cells'; model_env, timeout and concurrency move.
+#
+# ENDPOINT AND WHAT A DIFFERENCE MEANS. The private gateway (configs/.env.gw2-luna,
+# key `ad30c9bd`, http://47.100.35.241/v1) -- a different endpoint and account
+# from token-plan, so luna against qwen or deepseek differs in model, endpoint
+# and account at once. Read luna as its own judge/plain pair.
+#
+# CONCURRENCY 6. On 09-21 this gateway refused the family en masse: a luna cell
+# at concurrency 24 came back 34/36 `failed`, a smoke at 12 came back 10/12,
+# on `Concurrency limit exceeded for user` and `gateway_queue_full`; the
+# refusals ran for the whole batch. Single calls answered in 3-14 s on 09-22
+# 17:43-20:04 UTC. A 3-row smoke goes first; `failed` must be 0 before the rest.
+#
+# CONCURRENCY 18 WAS REFUSED (09-23). On the owner's word the G1 rest resumed at 18 at
+# 20:45 UTC after a short-request probe answered 18/18 with 200; within 25 minutes 8 of the
+# 12 rows that came back had failed on `APIError: Concurrency limit exceeded for user`
+# (provider retries run up to 600 s, so the refusals surface late). Stopped at 21:08 UTC;
+# back to 6. A short probe passing N is not a long run passing N: raise this only after the
+# gateway's per-user limit is raised, and watch refusal_scan.sh for the first 30 minutes.
+#
+# CONCURRENCY 10 (09-23 21:4x UTC). The owner raised the gateway's per-user limit and says 12 is
+# the most it allows now. A team run holds at most one request in flight (turns are serialized),
+# so 10 runs stay under 12 with room for a provider retry or a slow-closing stream.
+#
+# TIMEOUT 7200, as the deepseek cells: this endpoint is slower per call, and
+# the wall clock is a censoring bound to report, not a treatment.
+#
+# CONTEXT WINDOW. OC 4b231b0e registers gpt-5.6-luna at 272,000 (the owner's
+# figure, 09-22; a probe that day answered 273,010 input tokens with 200).
+# Unregistered, the model had no window and history compaction never fired on
+# window pressure. Runs made before this row are not pooled with these.
+#
+# PINS. OC 4b231b0e (iclr-2027: the stop notice + knobs-0922), Eval 3ff64deb.
+# ---------------------------------------------------------------------------
+name: s2dual-judge-luna-r2-pro36
+host: lthpc
+arm: team
+cell: s2dual-judge
+suite: pro-mini36-clean
+rows: {start: 1, stop: 36}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 7200
+concurrency: 10
+model_env: configs/.env.gw2-luna
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+pins:
+  opencollab: b559c0955db1c8f950bacea78370d76a66b32e3f
+  opencollab_eval: bf9337bc8afc304b2b024744a95c02544b511ce1
+note: "rerun on OC b559c095 (team_status queued, submit is how to wait): s2dual-judge on gpt-5.6-luna via the private gateway at N2 (window 272,000), timeout 7200, concurrency 10; adherence primary"
