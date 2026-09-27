@@ -7,11 +7,11 @@ import os
 import subprocess
 import sys
 import urllib.request
-from pathlib import Path
 
 import pytest
 
-from e2e.deterministic_swe_driver import (
+from opencollab_eval.patch_diff import patch_paths
+from tests.e2e.deterministic_swe_driver import (
     E2E_MAX_OUTPUT_TOKENS,
     E2E_TOKEN_BUDGET,
     TARGET_TEST,
@@ -24,8 +24,8 @@ from e2e.deterministic_swe_driver import (
     validate_runtime_identity,
     wait_for_service,
 )
-from e2e.evidence_publish import publish_production_evidence
-from e2e.fake_openai_server import (
+from tests.e2e.evidence_publish import publish_production_evidence
+from tests.e2e.fake_openai_server import (
     EXPECTED_THINKING,
     FAKE_API_KEY,
     MODEL,
@@ -33,7 +33,7 @@ from e2e.fake_openai_server import (
     SOURCE_PATH,
     validate_generation_request,
 )
-from opencollab_eval.patch_diff import patch_paths
+from tests.support.paths import TEST_ROOT
 
 
 def _request_payload() -> dict:
@@ -54,7 +54,7 @@ def _request_payload() -> dict:
 def test_production_command_keeps_budget_headroom_for_the_first_model_call(
     monkeypatch, tmp_path
 ):
-    monkeypatch.setattr("e2e.deterministic_swe_driver.shutil.which", lambda _name: "/usr/bin/docker")
+    monkeypatch.setattr("tests.e2e.deterministic_swe_driver.shutil.which", lambda _name: "/usr/bin/docker")
     command = _production_command(
         executable=tmp_path / "bin" / "oc-eval",
         ssh_command="ssh",
@@ -252,7 +252,7 @@ def test_process_watchdog_terminates_a_timed_out_process_group(tmp_path):
         [
             sys.executable,
             "-m",
-            "e2e.process_watchdog",
+            "tests.e2e.process_watchdog",
             "--timeout",
             "0.1",
             "--grace",
@@ -265,7 +265,7 @@ def test_process_watchdog_terminates_a_timed_out_process_group(tmp_path):
                 f"Path({str(pid_path)!r}).write_text(str(os.getpid())); time.sleep(30)"
             ),
         ],
-        cwd=Path(__file__).parents[1],
+        cwd=TEST_ROOT.parent,
         env={key: value for key, value in os.environ.items() if key not in PROVIDER_KEY_NAMES},
         timeout=5,
         check=False,

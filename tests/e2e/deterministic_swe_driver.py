@@ -20,17 +20,18 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from e2e.evidence_publish import publish_production_evidence
-from e2e.fake_openai_server import (
+from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid
+from opencollab_eval.patch_diff import patch_paths
+from tests.e2e.evidence_publish import publish_production_evidence
+from tests.e2e.fake_openai_server import (
     EXPECTED_THINKING,
     FAKE_API_KEY,
     MODEL,
     PROVIDER_KEY_NAMES,
     SOURCE_PATH,
 )
-from e2e.integrity_evidence import require_sanitized_snapshot
-from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid
-from opencollab_eval.patch_diff import patch_paths
+from tests.e2e.integrity_evidence import require_sanitized_snapshot
+from tests.support.paths import TEST_ROOT
 
 TARGET_TEST = "test_calculator.py::test_add"
 OWNER_LABEL = "opencollab.eval.deterministic-e2e"
@@ -276,7 +277,7 @@ def _start_fake_service(
     process = subprocess.Popen(
         [
             sys.executable,
-            "-m", "e2e.fake_openai_server",
+            "-m", "tests.e2e.fake_openai_server",
             "--port", str(port), "--trace", str(trace), "--ready-file", str(ready),
             "--forbidden-env-value", forbidden_env_value,
         ],
@@ -285,7 +286,7 @@ def _start_fake_service(
         text=True,
         start_new_session=True,
         env=_clean_environment(),
-        cwd=Path(__file__).parents[1],
+        cwd=TEST_ROOT.parent,
     )
     (artifact_dir / "fake-model.pid").write_text(str(process.pid) + "\n", encoding="ascii")
     try:

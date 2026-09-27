@@ -36,7 +36,7 @@ OpenCollab-Eval currently imports the following public OpenCollab surfaces.
 
 The retired `opencollab.sdk` package and OpenCollab implementation layers such
 as `adapters`, `application`, `bootstrap`, `domain`, and `harness` stay outside
-this dependency boundary. `tests/test_boundaries.py` defines the imports
+this dependency boundary. `tests/packaging/test_boundaries.py` defines the imports
 accepted from production code and tests, then checks those public names against
 the installed OpenCollab package.
 

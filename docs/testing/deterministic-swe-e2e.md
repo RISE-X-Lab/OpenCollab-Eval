@@ -83,7 +83,7 @@ patch application, using the evaluator's existing exact-target result parser.
 The test checks that the hidden filename and target stay outside model input.
 
 ```bash
-pytest -q tests/test_duo_evaluator_smoke.py
+pytest -q tests/evaluation/test_duo_evaluator_smoke.py
 ```
 
 The Docker E2E above covers privileged controller proof, official harness

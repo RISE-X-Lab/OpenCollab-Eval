@@ -35,27 +35,44 @@ tmp_root="$($python_bin -c 'import os; print(os.path.realpath(os.environ.get("TM
 venv_dir="$(mktemp -d "$tmp_root/opencollab-eval-wheel-test.XXXXXX")"
 trap 'rm -rf "$venv_dir"' EXIT
 
+"$python_bin" - "$1" "$2" <<'PYARTIFACT'
+from pathlib import PurePosixPath
+import sys
+import zipfile
+
+for path in sys.argv[1:]:
+    with zipfile.ZipFile(path) as archive:
+        unwanted = [
+            name for name in archive.namelist()
+            if {"tests", "__pycache__", ".pytest_cache", ".ruff_cache"}
+            & set(PurePosixPath(name).parts)
+            or name.endswith((".pyc", ".pyo"))
+        ]
+        assert not unwanted, (path, "development artifacts in wheel", unwanted)
+print("Paired wheels contain runtime distributions without test or cache trees.")
+PYARTIFACT
+
 "$python_bin" -m venv "$venv_dir"
 chmod 755 "$venv_dir"
 "$venv_dir/bin/pip" install "$1" "${2}[swebench]" pytest pytest-asyncio
 site_packages="$($venv_dir/bin/python -c 'import site; print(site.getsitepackages()[0])')"
-cp -R "$repo_root/tests" "$venv_dir/eval-tests"
+cp -R "$repo_root/tests" "$venv_dir/tests"
 
 (
   cd "$venv_dir"
   PATH="$venv_dir/bin:$PATH" \
   OPENCOLLAB_EXPECTED_WHEEL_ROOT="$site_packages" \
     OPENCOLLAB_EVAL_EXPECTED_WHEEL_ROOT="$site_packages" \
-    PYTHONPATH="$venv_dir/eval-tests" \
+    PYTHONPATH="$venv_dir" \
     "$venv_dir/bin/pytest" -q -p no:cacheprovider -c /dev/null -o asyncio_mode=auto \
       --import-mode=importlib \
-      --ignore="$venv_dir/eval-tests/test_conventional_title_check.py" \
-      --ignore="$venv_dir/eval-tests/test_hygiene_check.py" \
-      --ignore="$venv_dir/eval-tests/test_public_readiness.py" \
-      --ignore="$venv_dir/eval-tests/test_publication_workflows.py" \
-      --ignore="$venv_dir/eval-tests/test_release_metadata.py" \
-      --ignore="$venv_dir/eval-tests/test_secret_history_check.py" \
-      "$venv_dir/eval-tests"
+      --ignore="$venv_dir/tests/packaging/test_conventional_title_check.py" \
+      --ignore="$venv_dir/tests/packaging/test_hygiene_check.py" \
+      --ignore="$venv_dir/tests/packaging/test_public_readiness.py" \
+      --ignore="$venv_dir/tests/packaging/test_publication_workflows.py" \
+      --ignore="$venv_dir/tests/packaging/test_release_metadata.py" \
+      --ignore="$venv_dir/tests/packaging/test_secret_history_check.py" \
+      "$venv_dir/tests"
 )
 
 (

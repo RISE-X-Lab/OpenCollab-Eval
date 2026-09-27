@@ -133,9 +133,9 @@ if [[ "$ready" -ne 1 ]]; then
   exit 1
 fi
 
-cd "$repo_root/tests"
-"$venv/bin/python" -m e2e.process_watchdog --timeout 300 --grace 30 -- \
-  "$venv/bin/python" -m e2e.integrity_docker_smoke \
+cd "$repo_root"
+"$venv/bin/python" -m tests.e2e.process_watchdog --timeout 300 --grace 30 -- \
+  "$venv/bin/python" -m tests.e2e.integrity_docker_smoke \
   --output "$output/integrity-docker-smoke.json"
 for index in $(seq 1 "$runs"); do
   run_id="det-e2e-$(date +%s)-$$-$index"
@@ -143,9 +143,9 @@ for index in $(seq 1 "$runs"); do
   env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u DASHSCOPE_API_KEY \
     -u GLM_PROXY_CLIENT_TOKEN -u KIMI_API_KEY -u MOONSHOT_API_KEY -u OPENCOLLAB_API_KEY \
     -u OPENCOLLAB_PROXY_CLIENT_TOKEN -u OPENCOLLAB_READ_TOKEN -u OPENAI_API_KEY \
-    "$venv/bin/python" -m e2e.process_watchdog --timeout 600 --grace 30 -- \
+    "$venv/bin/python" -m tests.e2e.process_watchdog --timeout 600 --grace 30 -- \
       "$venv/bin/python" \
-      -m e2e.deterministic_swe_driver \
+      -m tests.e2e.deterministic_swe_driver \
       --output "$output" --python "$venv/bin/python" --ssh-command "$ssh_command" \
       --ssh-host "$ssh_host" --run-id "$run_id"
   active_run_id=""
