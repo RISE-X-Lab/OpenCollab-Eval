@@ -51,7 +51,7 @@ def test_container_inspect_retries_transient_daemon_failure(monkeypatch) -> None
 
     assert cleaned is True
     assert record["status"] == "removed"
-    assert inspect_calls == 3  # one transient retry, then the post-remove proof
+    assert inspect_calls == 4  # retry, resource capture, and post-remove proof
 
 
 def test_container_remove_retries_transient_daemon_failure(monkeypatch) -> None:

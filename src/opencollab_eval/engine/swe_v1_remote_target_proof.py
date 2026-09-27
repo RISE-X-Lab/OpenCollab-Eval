@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import inspect
 import json
 import pathlib
 import re
@@ -20,6 +19,10 @@ from opencollab_eval.engine.swe_v1_remote_nodebb_mocha import (
     nodebb_mocha_selector_title,
     nodebb_mocha_target_file_command,
     nodebb_mocha_titles_are_unambiguous,
+)
+from opencollab_eval.engine.swe_v1_remote_tutanota import (
+    _patch_tutanota_suite,  # noqa: F401
+    tutanota_test_command,  # noqa: F401
 )
 
 
@@ -233,86 +236,6 @@ def mocha_test_command(tests, selected, target_file=""):
     return " &&\n".join(commands)
 
 
-def _patch_tutanota_suite(text, targets):
-    text = re.sub(r"(?ms)^[ \t]*// OPENCOLLAB_OSPEC_BEGIN[ \t]*$.*?^[ \t]*// OPENCOLLAB_OSPEC_END[ \t]*$\n?", "", text)
-    legacy = list(
-        re.finditer(
-            r"(?m)^(?P<i>[ \t]*)(?P<s>(?:(?:const|let)\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*)?o\.report\s*\([^\n]*\)\s*;?)[ \t]*$",
-            text,
-        )
-    )
-
-    def block(indent, lines):
-        return (
-            "\n".join(indent + line for line in ["// OPENCOLLAB_OSPEC_BEGIN", *lines, "// OPENCOLLAB_OSPEC_END"]) + "\n"
-        )
-
-    if len(legacy) == 1:
-        match = legacy[0]
-        addition = block(
-            match["i"],
-            [
-                "const opencollabTargets = " + json.dumps(targets),
-                "const opencollabResults = results.map((result) => ({task: result.task, context: result.context, pass: result.pass}))",
-                'console.log("OPENCOLLAB_OSPEC_RESULTS " + JSON.stringify({targets: opencollabTargets, results: opencollabResults}))',
-            ],
-        )
-        return text[: match.end()] + "\n" + addition + text[match.end() :]
-    if legacy:
-        raise ValueError("legacy ospec report call is not unique")
-    runs = list(
-        re.finditer(r"(?m)^(?P<i>[ \t]*)const (?P<var>[A-Za-z_$][A-Za-z0-9_$]*) = await o\.run\([^\n]*\)[ \t]*$", text)
-    )
-    prints = list(re.finditer(r"(?m)^(?P<i>[ \t]*)o\.printReport\((?P<var>[A-Za-z_$][A-Za-z0-9_$]*)\)[ \t]*$", text))
-    if len(runs) != 1 or len(prints) != 1 or runs[0]["var"] != prints[0]["var"] or runs[0].end() >= prints[0].start():
-        raise ValueError("cannot locate a unique OTest execution and reporting call")
-    run, report = runs[0], prints[0]
-    before = block(
-        run["i"],
-        [
-            "let opencollabRootResult: any = null",
-            "const opencollabO: any = o",
-            "const opencollabOriginalRunSpec = opencollabO.runSpec",
-            "opencollabO.runSpec = async function (...args: any[]) {",
-            "  const value = await opencollabOriginalRunSpec.apply(this, args)",
-            "  if (Array.isArray(args[1]) && args[1].length === 0) opencollabRootResult = value",
-            "  return value",
-            "}",
-        ],
-    )
-    after = block(
-        report["i"],
-        [
-            "opencollabO.runSpec = opencollabOriginalRunSpec",
-            'if (!opencollabRootResult) throw new Error("OTest root result was not captured")',
-            "const opencollabResults: any[] = []",
-            "function opencollabVisit(spec: any, parents: string[]) {",
-            "  const context = parents.concat(spec.name)",
-            "  for (const child of spec.specResults) opencollabVisit(child, context)",
-            "  for (const result of spec.testResults) {",
-            '    if (!Array.isArray(result.errors) || typeof result.skipped !== "boolean") throw new Error("Unexpected OTest result")',
-            "    opencollabResults.push({task: result.name, context, pass: result.errors.length === 0 && !result.skipped, skipped: result.skipped})",
-            "  }",
-            "}",
-            "opencollabVisit(opencollabRootResult, [])",
-            'console.log("OPENCOLLAB_OSPEC_RESULTS " + JSON.stringify({targets: '
-            + json.dumps(targets)
-            + ", results: opencollabResults}))",
-        ],
-    )
-    return text[: run.start()] + before + text[run.start() : report.end()] + "\n" + after + text[report.end() :]
-
-
-def tutanota_test_command(tests):
-    patcher = "import re,json\nfrom pathlib import Path\n" + inspect.getsource(_patch_tutanota_suite)
-    patcher += (
-        '\np=Path("test/tests/Suite.ts")\np.write_text(_patch_tutanota_suite(p.read_text(), '
-        + repr([str(x) for x in tests])
-        + "))\n"
-    )
-    return "python3 -I -c " + shlex.quote(patcher) + " && npm_config_nodedir=/usr/local npm run test:app"
-
-
 def go_test_packages_from_patch(row):
     packages = []
     patch = str(row.get("test_patch") or "")
@@ -517,12 +440,21 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
             file_name = item.split(" | ", 1)[0].rsplit("/", 1)[-1].rsplit(".", 1)[0]
             suite_name = file_name.removesuffix("Test")
             if not ordinal_match and not matching:
-                matching = [
-                    result
-                    for result in results
-                    if suite_name in str(result.get("task") or "")
-                    or suite_name in json.dumps(result.get("context"), ensure_ascii=False)
-                ]
+                matching = []
+                for result in results:
+                    source_name = (
+                        str(result.get("source") or "")
+                        .rsplit("/", 1)[-1]
+                        .rsplit(".", 1)[0]
+                    )
+                    context = result.get("context")
+                    context_parts = context if isinstance(context, list) else str(context or "").split(" > ")
+                    if (
+                        source_name == file_name
+                        or str(result.get("task") or "") in {file_name, suite_name}
+                        or any(str(part).strip() in {file_name, suite_name} for part in context_parts)
+                    ):
+                        matching.append(result)
             if not matching:
                 continue
             observed.append(item)

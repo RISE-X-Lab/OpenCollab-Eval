@@ -8,12 +8,14 @@ import os
 import re
 import stat
 import subprocess
+import time
 import uuid
 from pathlib import Path
 
 from opencollab_eval.commands.swebench_process import process_start_identity as _process_start_identity
 from opencollab_eval.engine.swe_eval_records import open_regular_binary, read_bounded_json
 
+from .container_resource_evidence import collect_resource_evidence
 from .gen_prediction_config import _docker_timeout_from_env
 from .gen_prediction_constants import (
     _ACTIVATE,
@@ -87,6 +89,8 @@ def _remove_labeled_container(
     owner_token: str,
     *,
     foreign_proves_absence: bool,
+    evidence_path: Path | None = None,
+    trigger: str = "labeled_container_removal",
 ) -> bool:
     state = _container_owner_label_state(reference, owner_token)
     if state == "absent":
@@ -95,7 +99,7 @@ def _remove_labeled_container(
         return foreign_proves_absence
     if state != "matching":
         return False
-    return remove_container(reference)
+    return remove_container(reference, evidence_path=evidence_path, trigger=trigger)
 
 
 def _require_creation_cleanup(
@@ -104,11 +108,14 @@ def _require_creation_cleanup(
     cause: BaseException,
     *,
     foreign_proves_absence: bool,
+    evidence_path: Path | None = None,
 ) -> None:
     if _remove_labeled_container(
         reference,
         owner_token,
         foreign_proves_absence=foreign_proves_absence,
+        evidence_path=evidence_path,
+        trigger="creation_failure_cleanup",
     ):
         return
     raise RuntimeError(
@@ -122,6 +129,7 @@ def start_container(
     owner_token: str | None = None,
     *,
     temporary_directory: Path | None = None,
+    termination_evidence_path: Path | None = None,
 ) -> str:
     owner_token = owner_token or uuid.uuid4().hex
     if re.fullmatch(r"[0-9a-f]{32}", owner_token) is None:
@@ -174,6 +182,7 @@ def start_container(
             owner_token,
             exc,
             foreign_proves_absence=True,
+            evidence_path=termination_evidence_path,
         )
         raise
     if res.returncode != 0:
@@ -183,6 +192,7 @@ def start_container(
             owner_token,
             error,
             foreign_proves_absence=True,
+            evidence_path=termination_evidence_path,
         )
         raise error
     cid = res.stdout.strip()
@@ -193,6 +203,7 @@ def start_container(
             owner_token,
             error,
             foreign_proves_absence=True,
+            evidence_path=termination_evidence_path,
         )
         raise error
     try:
@@ -238,6 +249,7 @@ exit 2
             owner_token,
             exc,
             foreign_proves_absence=False,
+            evidence_path=termination_evidence_path,
         )
         raise
     return cid
@@ -253,8 +265,37 @@ def _container_is_absent(reference: str) -> bool:
     return result.returncode != 0 and _MISSING_CONTAINER_RE.search(detail) is not None
 
 
-def remove_container(reference: str) -> bool:
+def _container_termination_evidence(reference: str) -> dict:
+    return collect_resource_evidence(
+        reference,
+        lambda: _docker("inspect", "--type", "container", reference, timeout=30),
+    )
+
+
+def _record_container_termination_evidence(path: Path, trigger: str, evidence: dict) -> None:
+    try:
+        document = json.loads(path.read_text())
+    except (OSError, ValueError):
+        document = {"schema": "opencollab.generation_container_termination_history.v1", "captures": []}
+    document["captures"].append({"trigger": trigger, "evidence": evidence})
+    document["updated_epoch"] = time.time()
+    _atomic_write_text(path, json.dumps(document, ensure_ascii=False, indent=2) + "\n")
+
+
+def remove_container(
+    reference: str,
+    *,
+    evidence_path: Path | None = None,
+    trigger: str = "container_removal",
+) -> bool:
     """Remove a container and return only after Docker proves it is absent."""
+    if evidence_path is not None:
+        try:
+            _record_container_termination_evidence(
+                evidence_path, trigger, _container_termination_evidence(reference)
+            )
+        except Exception as exc:
+            print(f"  warning: container termination evidence failed for {reference}: {exc!r}")
     try:
         result = _docker("rm", "-f", reference, timeout=30)
     except Exception as exc:  # noqa: BLE001 - retain ownership on unknown teardown
@@ -424,10 +465,13 @@ def write_container_marker(run_dir: Path, cid: str, name: str) -> None:
 
 def _remove_owned_container(record: dict) -> bool:
     reference = record.get("container_id") or record["container_name"]
+    evidence_value = record.get("_termination_evidence_path")
+    evidence_path = Path(evidence_value) if isinstance(evidence_value, str) else None
     return _remove_labeled_container(
         reference,
         record["owner_token"],
         foreign_proves_absence=not bool(record.get("container_id")),
+        evidence_path=evidence_path,
     )
 
 
@@ -452,7 +496,10 @@ def recover_stale_container_owners(run_dir: Path) -> bool:
             continue
         if record["state"] == "kept" or _owner_is_live(record):
             continue
-        if not _remove_owned_container(record):
+        if not _remove_owned_container({
+            **record,
+            "_termination_evidence_path": str(run_dir / "container-termination-evidence.json"),
+        }):
             recovered = False
             continue
         _clear_compatibility_markers(run_dir, record.get("container_id") or None, record["container_name"])
@@ -475,13 +522,27 @@ def start_container_with_marker(
     pending = _create_pending_owner(run_dir, name)
     try:
         if temporary_directory is None:
-            cid = start_container(image, name, pending["owner_token"])
+            cid = start_container(
+                image,
+                name,
+                pending["owner_token"],
+                termination_evidence_path=run_dir / "container-termination-evidence.json",
+            )
         else:
-            cid = start_container(image, name, pending["owner_token"], temporary_directory=temporary_directory)
+            cid = start_container(
+                image,
+                name,
+                pending["owner_token"],
+                temporary_directory=temporary_directory,
+                termination_evidence_path=run_dir / "container-termination-evidence.json",
+            )
         write_container_marker(run_dir, cid, name)
     except BaseException:
         current = _read_owner(container_owner_path(run_dir, name)) or pending
-        if _remove_owned_container(current):
+        if _remove_owned_container({
+            **current,
+            "_termination_evidence_path": str(run_dir / "container-termination-evidence.json"),
+        }):
             _clear_compatibility_markers(run_dir, current.get("container_id") or None, name)
             _unlink_owner(container_owner_path(run_dir, name))
         raise
@@ -580,7 +641,10 @@ def remove_container_and_clear_marker(run_dir: Path, cid: str) -> bool:
             break
     if record is None:
         return False
-    if not _remove_owned_container(record):
+    if not _remove_owned_container({
+        **record,
+        "_termination_evidence_path": str(run_dir / "container-termination-evidence.json"),
+    }):
         return False
     clear_container_marker(run_dir, cid, record["container_name"])
     return True

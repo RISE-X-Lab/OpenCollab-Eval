@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .container_resource_evidence import collect_resource_evidence
+
 CID_RE = re.compile(r"[0-9a-f]{64}")
 TASK_ID_RE = re.compile(r"solver-[0-9a-f]{32}")
 EXPECTED_OWNERS = {
@@ -117,6 +119,10 @@ def _inspect_labels(cid: str) -> tuple[str, dict[str, str], str]:
     return "present", labels if isinstance(labels, dict) else {}, detail
 
 
+def _termination_evidence(cid: str) -> dict[str, Any]:
+    return collect_resource_evidence(cid, lambda: _docker(["docker", "inspect", cid], 20))
+
+
 def _query_task_containers(solver_task_id: str) -> tuple[list[str] | None, str]:
     result = _docker(
         [
@@ -199,6 +205,7 @@ def _remove_container(
     ):
         record["status"] = "owner_mismatch"
         return False, record
+    record["termination_evidence"] = _termination_evidence(cid)
     removed = _docker(["docker", "rm", "-f", cid], 30)
     absent_status, _labels, absent_detail = _inspect_labels(cid)
     absent = absent_status == "absent"
