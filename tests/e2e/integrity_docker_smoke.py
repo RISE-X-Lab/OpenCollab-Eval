@@ -10,15 +10,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-from e2e.deterministic_swe_driver import (
-    OWNER_LABEL,
-    SOURCE_PATH,
-    _build_image,
-    _cleanup_docker,
-    _run,
-    _synthetic_sources,
-)
-from e2e.integrity_evidence import require_sanitized_snapshot
 from opencollab_eval.engine.workspace_integrity import WorkspaceIntegrityError
 from opencollab_eval.generation.gen_prediction_patch import (
     extract_patch_trusted,
@@ -26,6 +17,15 @@ from opencollab_eval.generation.gen_prediction_patch import (
 )
 from opencollab_eval.generation.gen_prediction_snapshot import prepare_solver_git_snapshot
 from opencollab_eval.patch_diff import patch_paths
+from tests.e2e.deterministic_swe_driver import (
+    OWNER_LABEL,
+    SOURCE_PATH,
+    _build_image,
+    _cleanup_docker,
+    _run,
+    _synthetic_sources,
+)
+from tests.e2e.integrity_evidence import require_sanitized_snapshot
 
 
 def _start(image: str, name: str, run_id: str, command: list[str] | None = None) -> str:

@@ -12,7 +12,7 @@ from opencollab_eval.engine.swe_v1_remote_core import *
 from opencollab_eval.engine.swe_v1_remote_health import http_health  # noqa: F401
 from opencollab_eval.engine.swe_v1_remote_state import *
 from opencollab_eval.patch_diff import *
-from opencollab_eval.runtime_config import resolve_generation_environment
+from opencollab_eval.runtime_config import resolve_generation_environment, resolve_solver_agent_profile
 from opencollab_eval.runtime_config import runtime_identity_limits as identity_limits
 
 
@@ -268,7 +268,7 @@ def generation_runtime_identity():
         "max_steps": limits[1],
         "llm_base_url_sha256": hashlib.sha256(remote_proxy_base_url.encode("utf-8")).hexdigest(),
         "workflow_env": effective_workflow_env(),
-        "agent_profile": "single2" if workflow == "single2" else agent_profile,
+        "agent_profile": resolve_solver_agent_profile(workflow, agent_profile),
     }
     if run_id:
         identity["run_id"] = run_id

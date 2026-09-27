@@ -8,7 +8,7 @@ Python 代码定义控制流程，其中包括智能体
 分支和修复轮次。验证门禁与停止条件也由 Python 代码管理，模型在这套控制流内
 分析并修改仓库。
 
-该包依赖 OpenCollab 0.7.1 或更高 0.7.x 版本中的工作流编写接口。
+该包依赖 OpenCollab 0.8.0 或更高 0.8.x 版本中的工作流编写接口。
 
 ```python
 from opencollab.builtin_workflows import duo
@@ -130,5 +130,5 @@ python -m opencollab_eval.generation.gen_prediction_workflow \
 
 可以直接通过 OpenCollab 调用 Duo。评测调用方使用
 `opencollab_eval.workflows.duo`，它引用同一个公开函数。
-`oc-eval duo` 默认选择统一的 `duo` 和 `agent_profile="single2"`，
+`oc-eval duo` 默认选择统一的 `duo` 和 `agent_profile="base"`，解析后记录为 `single2`，
 裁决者始终通过文件读取完整证据。`oc-eval g22` 调用同一评测器。

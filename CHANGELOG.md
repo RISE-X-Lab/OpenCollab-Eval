@@ -2,6 +2,31 @@
 
 All notable changes to OpenCollab-Eval are recorded in this file.
 
+## [0.8.1] - 2026-09-27
+
+Directory traversal transfers descriptor ownership before closing the parent.
+A termination signal arriving immediately after that close preserves the
+original interruption and closes the current child descriptor.
+
+Tests are grouped by generation, evaluation, orchestration, transport,
+packaging, and end-to-end behavior. Shared preparation uses explicit support
+packages, and copied test suites preserve package imports outside the checkout.
+Repeated setup functions are shared within their behavior area.
+
+The installed-wheel checks, deterministic evaluation scripts, and cross-project
+coverage references use the organized test paths. Wheels contain runtime files,
+while source distributions retain the complete development tests.
+
+## [0.8.0] - 2026-09-27
+
+Standalone generation selects Base through OpenCollab's named profile API,
+currently resolving to Single2. CLI aliases and the single-agent evaluation
+entry use the same implementation and store its concrete profile name.
+Existing records retain their original profile attribution during reuse checks.
+The previous Single-specific model wrapper has been removed.
+
+OpenCollab-Eval now requires OpenCollab 0.8.x for public profile resolution.
+
 ## [0.7.1] - Unreleased
 
 Duo uses a single OpenCollab built-in workflow with task-oriented role prompts

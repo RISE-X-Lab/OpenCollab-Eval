@@ -1,6 +1,6 @@
 # Releasing OpenCollab-Eval
 
-OpenCollab-Eval 0.7.1 is paired with OpenCollab 0.7.1. Releases use the verified compatible OpenCollab release. PyPI publishing is outside the current release process.
+OpenCollab-Eval 0.8.1 is paired with OpenCollab 0.8.1. Releases use the verified compatible OpenCollab release. PyPI publishing is outside the current release process.
 
 ## Release invariants
 
@@ -40,7 +40,7 @@ Build the OpenCollab wheel from its published tag, then build the evaluator sour
 set -euo pipefail
 release_version="${RELEASE_VERSION:?set the OCE release version}"
 opencollab_release_tag="${OPENCOLLAB_RELEASE_TAG:?set a compatible signed OC release tag}"
-opencollab_release_sha=e513455a29817d335fdfa80f8ff2e988676ac3af
+opencollab_release_sha="$(git -C ../OpenCollab rev-parse "${opencollab_release_tag}^{}")"
 artifact_root="$(mktemp -d -t "opencollab-eval-${release_version}.XXXXXX")"
 mkdir -p "$artifact_root/opencollab" "$artifact_root/sdist" "$artifact_root/wheel" "$artifact_root/assets"
 

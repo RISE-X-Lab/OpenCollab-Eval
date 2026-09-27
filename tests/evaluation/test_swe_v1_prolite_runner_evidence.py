@@ -1,0 +1,8 @@
+"""Remote runner evidence compatibility collector."""
+
+# ruff: noqa: F403
+
+from tests.evaluation.swe_v1_prolite_runner_evidence_evaluation_tests import *
+from tests.evaluation.swe_v1_prolite_runner_evidence_generation_tests import *
+from tests.evaluation.swe_v1_prolite_runner_evidence_identity_tests import *
+from tests.evaluation.swe_v1_prolite_runner_evidence_patch_tests import *

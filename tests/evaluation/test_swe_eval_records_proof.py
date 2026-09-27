@@ -1,0 +1,483 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from copy import deepcopy
+from pathlib import Path
+
+import pytest
+
+from opencollab_eval.engine.swe_eval_discovery import _reports_from_payload
+from opencollab_eval.engine.swe_eval_records import direct_eval_done_has_execution_proof
+from opencollab_eval.engine.swe_v1_remote_target_proof import jest_test_command
+from opencollab_eval.engine.swe_v1_remote_test_plan import prolite_test_plan
+from tests.support.generation_proof_test_support import (
+    candidate_eval_proof_fields,
+    candidate_source_projection_fields,
+)
+
+
+def _add_candidate_projection(payload: dict) -> None:
+    task = payload.setdefault("task", "task-1")
+    record_id = payload.setdefault("record_id", "a" * 32)
+    payload.setdefault("eval_image_id", "sha256:" + "9" * 64)
+    eval_patch_sha256 = payload["eval_patch_sha256"]
+    expectation, projection = candidate_eval_proof_fields(
+        task,
+        record_id,
+        eval_patch_sha256,
+        source_candidate_tree="",
+        expected_candidate_tree="",
+        base_commit="c" * 40,
+        base_tree="d" * 40,
+    )
+    payload.update(
+        candidate_expectation=expectation,
+        candidate_projection=projection,
+        source_candidate_projection=candidate_source_projection_fields(expectation),
+    )
+
+
+def _valid_direct_eval_pass_payload() -> dict:
+    evidence = {
+        "status": 0,
+        "command_matches_plan": True,
+        "log_artifact_safe": True,
+        "target_proof_matches_plan": True,
+        "target_failure_proof_matches_plan": False,
+        "artifact_safe": True,
+    }
+    payload = {
+        "schema": "opencollab.prolite_direct_eval.v2",
+        "status": "done",
+        "resolved": True,
+        "eval_spec_sha256": "e" * 64,
+        "eval_patch_sha256": "a" * 64,
+        "technical_reasons": [],
+        "output_artifact_errors": [],
+        "docker_exit": 0,
+        "cleanup_quiesced": True,
+        "container_cleanup": {"ok": True},
+        "tests_status": {
+            "base_commit_status": 0,
+            "service_bootstrap_status": 0,
+            "before_repo_status": 0,
+            "post_before_base_status": 0,
+            "model_patch_status": 0,
+            "test_patch_status": 0,
+            "fail_to_pass_status": 0,
+            "pass_to_pass_status": 0,
+            "fail_to_pass_plan": prolite_test_plan(
+                {"repo_language": "go"}, ["pkg/widget_test.go::TestWidget"]
+            ),
+            "pass_to_pass_plan": prolite_test_plan({"repo_language": "go"}, []),
+            "fail_to_pass_evidence": [evidence],
+            "pass_to_pass_evidence": [],
+        },
+    }
+    _add_candidate_projection(payload)
+    return payload
+
+
+@pytest.mark.parametrize("alias", ["patch_sha256", "patch_sha", "model_patch_sha256"])
+def test_direct_eval_accepts_mixed_case_sha256_aliases(alias: str) -> None:
+    """Equivalent SHA-256 spellings must not hide a valid direct result."""
+    payload = _valid_direct_eval_pass_payload()
+    source_sha = payload["candidate_expectation"]["source_patch_sha256"]
+    payload[alias] = source_sha.upper()
+    payload["eval_patch_sha256"] = payload["eval_patch_sha256"].upper()
+
+    assert direct_eval_done_has_execution_proof(payload) is True
+
+
+def test_direct_eval_rejects_invalid_or_different_sha256_aliases() -> None:
+    payload = _valid_direct_eval_pass_payload()
+    source_sha = payload["candidate_expectation"]["source_patch_sha256"]
+    payload["patch_sha"] = source_sha.upper()
+    payload["patch_sha256"] = source_sha
+    payload["eval_patch_sha256"] = payload["eval_patch_sha256"].upper()
+    assert direct_eval_done_has_execution_proof(payload) is True
+
+    different = deepcopy(payload)
+    different["patch_sha"] = "b" * 64
+    assert direct_eval_done_has_execution_proof(different) is False
+
+    invalid = deepcopy(payload)
+    invalid["eval_patch_sha256"] = "a" * 63
+    assert direct_eval_done_has_execution_proof(invalid) is False
+
+    assert (
+        direct_eval_done_has_execution_proof(
+            payload,
+            expected_eval_spec_sha256=("e" * 63),
+        )
+        is False
+    )
+
+
+def test_direct_eval_accepts_mixed_case_nested_sha256_identity() -> None:
+    """Nested candidate proof digests use the same case-insensitive contract."""
+    from opencollab_eval.engine.eval_candidate_projection import source_projection_sha256
+
+    payload = _valid_direct_eval_pass_payload()
+    for container in (
+        payload["candidate_expectation"],
+        payload["candidate_projection"],
+        payload["source_candidate_projection"],
+    ):
+        for field in ("run_identity_sha256", "source_patch_sha256", "eval_patch_sha256"):
+            container[field] = container[field].upper()
+    source_projection = payload["source_candidate_projection"]
+    payload["candidate_projection"]["source_projection_sha256"] = (
+        source_projection_sha256(source_projection).upper()
+    )
+    payload["eval_patch_sha256"] = payload["eval_patch_sha256"].upper()
+    payload["patch_sha256"] = payload["candidate_expectation"]["source_patch_sha256"]
+
+    assert direct_eval_done_has_execution_proof(payload) is True
+
+
+def test_direct_eval_unresolved_accepts_structured_failure_proof() -> None:
+    failure_evidence = {
+        "status": 1,
+        "command_matches_plan": True,
+        "log_artifact_safe": True,
+        "target_proof_matches_plan": False,
+        "target_failure_proof_matches_plan": True,
+        "artifact_safe": True,
+    }
+    payload = {
+        "schema": "opencollab.prolite_direct_eval.v2",
+        "status": "done",
+        "resolved": False,
+        "eval_spec_sha256": "e" * 64,
+        "eval_patch_sha256": "a" * 64,
+        "technical_reasons": [],
+        "output_artifact_errors": [],
+        "docker_exit": 0,
+        "cleanup_quiesced": True,
+        "container_cleanup": {"ok": True},
+        "tests_status": {
+            "base_commit_status": 0,
+            "service_bootstrap_status": 0,
+            "before_repo_status": 0,
+            "post_before_base_status": 0,
+            "model_patch_status": 0,
+            "test_patch_status": 0,
+            "fail_to_pass_status": 1,
+            "pass_to_pass_status": 0,
+            "fail_to_pass_plan": {
+                "schema": "opencollab.prolite_test_plan.v2",
+                "adapter": "go-test-json",
+                "coverage": "exact_test_events",
+                "coverage_verified": True,
+                "declared_targets": ["pkg/widget_test.go::TestWidget"],
+                "target_batches": [["pkg/widget_test.go::TestWidget"]],
+                "commands": ["go test -count=1 -json ./pkg -run '^TestWidget$'"],
+                "proofs": [
+                    {
+                        "kind": "go_json_test_pass",
+                        "test": "TestWidget",
+                        "package": "./pkg",
+                        "test_file": "pkg/widget_test.go",
+                    }
+                ],
+                "runtime_dependencies": [],
+            },
+            "pass_to_pass_plan": {
+                "schema": "opencollab.prolite_test_plan.v2",
+                "adapter": "unsupported",
+                "coverage": "none",
+                "coverage_verified": False,
+                "declared_targets": [],
+                "target_batches": [],
+                "commands": [],
+                "proofs": [],
+                "runtime_dependencies": [],
+            },
+            "fail_to_pass_evidence": [failure_evidence],
+            "pass_to_pass_evidence": [],
+        },
+    }
+    _add_candidate_projection(payload)
+
+    relabelled = dict(payload)
+    relabelled["patch_sha256"] = "b" * 64
+    assert direct_eval_done_has_execution_proof(relabelled) is False
+
+    assert direct_eval_done_has_execution_proof(payload) is True
+
+    conflicting_task = json.loads(json.dumps(payload))
+    conflicting_task["instance_id"] = "task-2"
+    assert direct_eval_done_has_execution_proof(conflicting_task) is False
+    assert _reports_from_payload(Path("report.json"), conflicting_task) == []
+
+    nested_mismatch = {"task-2": json.loads(json.dumps(payload))}
+    assert _reports_from_payload(Path("report.json"), nested_mismatch) == []
+    nested_matching = {"task-1": json.loads(json.dumps(payload))}
+    assert len(_reports_from_payload(Path("report.json"), nested_matching)) == 1
+
+    # Discovery is a cache/status boundary and must not accept a done summary
+    # whose evaluator image identity is absent.
+    missing_image = dict(payload)
+    missing_image.pop("eval_image_id")
+    assert direct_eval_done_has_execution_proof(missing_image) is True
+    assert _reports_from_payload(Path("report.json"), missing_image) == []
+
+    for section in ("candidate_projection", "source_candidate_projection"):
+        for field in tuple(payload[section]):
+            damaged = json.loads(json.dumps(payload))
+            damaged[section].pop(field)
+            assert direct_eval_done_has_execution_proof(damaged) is False
+        damaged = json.loads(json.dumps(payload))
+        damaged[section]["unexpected"] = True
+        assert direct_eval_done_has_execution_proof(damaged) is False
+
+    payload.pop("eval_patch_sha256")
+    assert direct_eval_done_has_execution_proof(payload) is False
+
+    payload["eval_patch_sha256"] = "a" * 64
+    failure_evidence["target_failure_proof_matches_plan"] = False
+    assert direct_eval_done_has_execution_proof(payload) is False
+
+
+def test_direct_eval_accepts_structured_pass_with_nonzero_suite_exit() -> None:
+    evidence = {
+        "status": 1,
+        "command_matches_plan": True,
+        "log_artifact_safe": True,
+        "target_proof_matches_plan": True,
+        "target_failure_proof_matches_plan": False,
+        "artifact_safe": True,
+    }
+    plan = prolite_test_plan(
+        {"repo_language": "go"},
+        ["pkg/widget_test.go::TestWidget"],
+    )
+    payload = {
+        "schema": "opencollab.prolite_direct_eval.v2",
+        "status": "done",
+        "resolved": True,
+        "eval_spec_sha256": "e" * 64,
+        "eval_patch_sha256": "a" * 64,
+        "technical_reasons": [],
+        "output_artifact_errors": [],
+        "docker_exit": 0,
+        "cleanup_quiesced": True,
+        "container_cleanup": {"ok": True},
+        "tests_status": {
+            "base_commit_status": 0,
+            "service_bootstrap_status": 0,
+            "before_repo_status": 0,
+            "post_before_base_status": 0,
+            "model_patch_status": 0,
+            "test_patch_status": 0,
+            "fail_to_pass_status": 1,
+            "pass_to_pass_status": 0,
+            "fail_to_pass_plan": plan,
+            "pass_to_pass_plan": prolite_test_plan({"repo_language": "go"}, []),
+            "fail_to_pass_evidence": [evidence],
+            "pass_to_pass_evidence": [],
+        },
+    }
+    _add_candidate_projection(payload)
+
+    assert direct_eval_done_has_execution_proof(payload) is True
+    payload["resolved"] = False
+    assert direct_eval_done_has_execution_proof(payload) is False
+
+
+def test_direct_eval_rejects_metadata_stripped_pytest_green() -> None:
+    payload = {
+        "schema": "opencollab.prolite_direct_eval.v2",
+        "status": "done",
+        "resolved": True,
+        "eval_spec_sha256": "e" * 64,
+        "eval_patch_sha256": "a" * 64,
+        "technical_reasons": [],
+        "output_artifact_errors": [],
+        "docker_exit": 0,
+        "cleanup_quiesced": True,
+        "container_cleanup": {"ok": True},
+        "tests_status": {
+            "base_commit_status": 0,
+            "service_bootstrap_status": 0,
+            "before_repo_status": 0,
+            "post_before_base_status": 0,
+            "model_patch_status": 0,
+            "test_patch_status": 0,
+            "fail_to_pass_status": 0,
+            "pass_to_pass_status": 0,
+            "fail_to_pass_plan": {
+                "commands": ["pytest target"],
+                "coverage_verified": True,
+            },
+            "pass_to_pass_plan": {
+                "schema": "opencollab.prolite_test_plan.v2",
+                "adapter": "unsupported",
+                "coverage": "none",
+                "coverage_verified": False,
+                "declared_targets": [],
+                "target_batches": [],
+                "commands": [],
+                "proofs": [],
+                "runtime_dependencies": [],
+            },
+            "fail_to_pass_evidence": [
+                {
+                    "status": 0,
+                    "command_matches_plan": True,
+                    "log_artifact_safe": True,
+                    "target_proof_matches_plan": True,
+                    "target_failure_proof_matches_plan": False,
+                    "artifact_safe": True,
+                }
+            ],
+            "pass_to_pass_evidence": [],
+        },
+    }
+    _add_candidate_projection(payload)
+
+    assert direct_eval_done_has_execution_proof(payload) is False
+
+
+def test_direct_eval_rejects_jest_evidence_for_a_different_test_file() -> None:
+    f2p_plan = prolite_test_plan(
+        {"repo_language": "javascript"},
+        ["test/a.test.js"],
+    )
+    f2p_plan["commands"] = [jest_test_command(["test/b.test.js"])]
+    payload = {
+        "schema": "opencollab.prolite_direct_eval.v2",
+        "status": "done",
+        "resolved": True,
+        "eval_spec_sha256": "e" * 64,
+        "eval_patch_sha256": "a" * 64,
+        "technical_reasons": [],
+        "output_artifact_errors": [],
+        "docker_exit": 0,
+        "cleanup_quiesced": True,
+        "container_cleanup": {"ok": True},
+        "tests_status": {
+            "base_commit_status": 0,
+            "service_bootstrap_status": 0,
+            "before_repo_status": 0,
+            "post_before_base_status": 0,
+            "model_patch_status": 0,
+            "test_patch_status": 0,
+            "fail_to_pass_status": 0,
+            "pass_to_pass_status": 0,
+            "fail_to_pass_plan": f2p_plan,
+            "pass_to_pass_plan": prolite_test_plan(
+                {"repo_language": "javascript"},
+                [],
+            ),
+            "fail_to_pass_evidence": [
+                {
+                    "status": 0,
+                    "command_matches_plan": True,
+                    "log_artifact_safe": True,
+                    "target_proof_matches_plan": True,
+                    "target_failure_proof_matches_plan": False,
+                    "artifact_safe": True,
+                }
+            ],
+            "pass_to_pass_evidence": [],
+        },
+    }
+
+    assert direct_eval_done_has_execution_proof(payload) is False
+
+
+def test_direct_eval_reuse_requires_controller_bound_runtime_file_identity() -> None:
+    row = {
+        "repo": "NodeBB/NodeBB",
+        "repo_language": "js",
+        "selected_test_files_to_run": ["test/a.js"],
+        "test_patch": "diff --git a/test/a.js b/test/a.js\n",
+    }
+    f2p_plan = prolite_test_plan(
+        row,
+        ["test/a.js | works"],
+        target_file="/eval_input/f2p.targets.json",
+    )
+    p2p_plan = prolite_test_plan(row, [], target_file="/eval_input/p2p.targets.json")
+    evidence = {
+        "status": 0,
+        "command_matches_plan": True,
+        "log_artifact_safe": True,
+        "target_proof_matches_plan": True,
+        "target_failure_proof_matches_plan": False,
+        "artifact_safe": True,
+    }
+    payload = {
+        "schema": "opencollab.prolite_direct_eval.v2",
+        "status": "done",
+        "resolved": True,
+        "eval_spec_sha256": "e" * 64,
+        "eval_patch_sha256": "a" * 64,
+        "eval_image_id": "sha256:" + "1" * 64,
+        "technical_reasons": [],
+        "output_artifact_errors": [],
+        "docker_exit": 0,
+        "cleanup_quiesced": True,
+        "container_cleanup": {"ok": True},
+        "tests_status": {
+            "base_commit_status": 0,
+            "service_bootstrap_status": 0,
+            "before_repo_status": 0,
+            "post_before_base_status": 0,
+            "model_patch_status": 0,
+            "test_patch_status": 0,
+            "fail_to_pass_status": 0,
+            "pass_to_pass_status": 0,
+            "fail_to_pass_plan": f2p_plan,
+            "pass_to_pass_plan": p2p_plan,
+            "fail_to_pass_evidence": [evidence],
+            "pass_to_pass_evidence": [],
+        },
+    }
+    _add_candidate_projection(payload)
+
+    assert direct_eval_done_has_execution_proof(payload) is False
+
+    specs = f2p_plan["runtime_dependencies"]
+    content_sha256 = "b" * 64
+    payload["runtime_dependency_identities"] = {
+        "schema": "opencollab.runtime_dependency_identities.v1",
+        "image_id": payload["eval_image_id"],
+        "entries": [
+            {"root": "package.json", "content_sha256": content_sha256},
+            {"root": "config.json", "content_sha256": "c" * 64},
+        ],
+    }
+    payload["runtime_dependencies"] = {
+        "schema": "opencollab.eval_runtime_dependencies.v1",
+        "phase": "restored",
+        "source": "pinned_image_runtime_with_trusted_public_preparation",
+        "solver_visible": False,
+        "spec_sha256": hashlib.sha256(
+            json.dumps(specs, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+        "entries": [
+            {
+                "root": "package.json",
+                "required_paths": ["package.json"],
+                "kind": "file",
+                "candidate_protected": False,
+                "content_sha256": content_sha256,
+            },
+            {
+                "root": "config.json",
+                "required_paths": ["config.json"],
+                "kind": "file",
+                "candidate_protected": False,
+                "content_sha256": "c" * 64,
+            },
+        ],
+    }
+
+    assert direct_eval_done_has_execution_proof(payload) is True
+
+    payload["runtime_dependencies"]["entries"][0]["content_sha256"] = "d" * 64
+    assert direct_eval_done_has_execution_proof(payload) is False

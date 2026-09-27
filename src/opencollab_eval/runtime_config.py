@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from opencollab.profiles import resolve_profile_name
+
 SINGLE2_AUTHORIZED_BUDGET = 1_000_000_000_000
 SINGLE2_AUTHORIZED_MAX_STEPS = 1_000_000_000_000
 
@@ -34,12 +36,17 @@ __all__ = ["resolve_runtime_config"]
 
 
 def resolve_workflow_agent_profile(profile: str | None) -> str | None:
-    """Normalize the generator's default spelling to the public workflow API."""
-    if profile in {None, "single", "default"}:
-        return None
-    if profile == "single2":
-        return profile
-    raise ValueError(f"unsupported workflow agent profile: {profile}")
+    """Keep omitted role configuration and normalize explicit profile names."""
+    return None if profile is None else resolve_profile_name(profile)
+
+
+def resolve_solver_agent_profile(workflow, profile: str | None) -> str | None:
+    """Resolve standalone Base defaults separately from workflow role defaults."""
+    if workflow == "single2":
+        return resolve_profile_name("single2")
+    if workflow is None or workflow == "single-agent":
+        return resolve_profile_name(profile)
+    return resolve_workflow_agent_profile(profile)
 
 
 def resolve_generation_environment(configured, *, environment=None):
@@ -63,8 +70,7 @@ def effective_generation_limits(*, budget, max_steps, environment=None):
 
 def resolve_agent_generation_limits(profile, max_steps, budget):
     """Restore Single2's explicit evaluation limits after unbounded parsing."""
-    if profile not in {"single", "single2"}:
-        raise ValueError(f"unsupported single-agent profile: {profile}")
+    profile = resolve_profile_name(profile)
     if profile == "single2":
         return (
             SINGLE2_AUTHORIZED_MAX_STEPS if max_steps is None else max_steps,
@@ -80,9 +86,9 @@ def runtime_identity_limits(workflow, budget, max_steps, environment=None, *, ag
         max_steps=max_steps,
         environment=environment,
     )
-    if workflow == "single2" or (workflow == "single-agent" and agent_profile == "single2"):
+    if workflow in {"single-agent", "single2"}:
         effective_max_steps, effective_budget = resolve_agent_generation_limits(
-            "single2",
+            resolve_solver_agent_profile(workflow, agent_profile),
             effective_max_steps,
             effective_budget,
         )

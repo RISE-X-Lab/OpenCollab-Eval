@@ -14,7 +14,7 @@ review replies use Chinese while retaining an English Conventional Commit type.
 The dependency direction is `opencollab_eval -> opencollab public API`.
 Production code may use the documented root facade and the public
 `opencollab.builtin_workflows`, `opencollab.environments`, `opencollab.patches`,
-`opencollab.tools`, and `opencollab.workflows` modules. It must never import the retired `opencollab.sdk` package or
+`opencollab.profiles`, `opencollab.tools`, and `opencollab.workflows` modules. It must never import the retired `opencollab.sdk` package or
 `opencollab.adapters`, `opencollab.application`, `opencollab.bootstrap`,
 `opencollab.domain`, or `opencollab.harness`.
 

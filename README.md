@@ -10,7 +10,7 @@
 
 OpenCollab-Eval owns candidate generation, isolated official evaluation, and
 result evidence for [OpenCollab](https://github.com/RISE-X-Lab/OpenCollab).
-The current source version is **0.7.1** and requires **OpenCollab >=0.7.1,<0.8**.
+The current source version is **0.8.1** and requires **OpenCollab >=0.8,<0.9**.
 
 <a id="duo-quick-start"></a>
 
@@ -22,11 +22,12 @@ public requirements against concrete changed paths and evidence for each
 candidate. The evaluator then tests the adopted patch in a fresh official
 workspace.
 
-The exact workflow is `duo`. Set
-`agent_profile` to `"single2"` in the JSON configuration. The lower-level
-runners expose the same selection through `--agent-profile single2`, and Eval
-passes `agent_profile="single2"` to the OpenCollab public workflow API. The
-default Single profile selects a different agent configuration. Coding roles use
+The exact workflow is `duo`. Its default `agent_profile="base"` resolves to
+`single2`. The lower-level runners accept `--agent-profile base` and the
+explicit `--agent-profile single2` selection. Eval passes the resolved
+`agent_profile="single2"` to the OpenCollab public workflow API and records it
+in configuration and generation evidence. The compatibility names `single`
+and `default` resolve to the same Base profile. Coding roles use
 `bash`, `file_read`, `file_write`, `apply_patch`, `git_diff`, and `grep`.
 Project tests run through native Bash, and OpenCollab retains their observed
 command and execution result. The adjudicator receives the role's restricted tool set.
@@ -64,7 +65,7 @@ python -c 'from importlib.metadata import version; print("OC", version("opencoll
 cd OpenCollab-Eval
 ```
 
-The printed package versions should both be at least 0.7.1 and remain in 0.7.x. The editable installation
+The printed package versions should both be at least 0.8.0 and remain in 0.8.x. The editable installation
 uses the code in the two clones. `oc-eval --version` reports the installed Eval
 version. [CONTRIBUTING.md](CONTRIBUTING.md) covers development setup.
 
@@ -234,7 +235,7 @@ config = {
     "context_window": int(os.environ["CONTEXT_WINDOW"]),
     "max_output_tokens": int(os.environ["MAX_OUTPUT_TOKENS"]),
     "llm_timeout": 3600,
-    "agent_profile": "single2",
+    "agent_profile": "base",
     "workflow_env": {
         "OPENCOLLAB_WIRE_PROTOCOL": "responses",
         "OPENCOLLAB_REASONING_EFFORT": "max",
@@ -248,7 +249,7 @@ Path(sys.argv[1]).write_text(json.dumps(config, indent=2) + "\n")
 PY_CONFIG
 ```
 
-`oc-eval duo` selects the Duo workflow, the Single2 role profile, and the
+`oc-eval duo` selects the Duo workflow, the Base role profile resolved to Single2, and the
 existing official parallel runner. The default configuration removes cumulative
 token and step caps through `OPENCOLLAB_UNBOUNDED_LIMITS=true`. The wrapper
 provides 1000000000000 token and step values as fallback settings. To enforce
@@ -483,7 +484,7 @@ OpenCollab-Eval is licensed under [MulanPSL-2.0](LICENSE).
 
 本文对应上方[英文原文](#english)。OpenCollab-Eval 负责
 [OpenCollab](https://github.com/RISE-X-Lab/OpenCollab) 的候选生成、隔离正式评测与结果证据。
-当前源码版本为 **0.7.1**，依赖 **OpenCollab >=0.7.1,<0.8**。
+当前源码版本为 **0.8.1**，依赖 **OpenCollab >=0.8,<0.9**。
 
 <a id="duo-quick-start-zh-cn"></a>
 
@@ -493,10 +494,10 @@ Duo 是 OpenCollab 的内置工作流，依次执行 coder A、coder B、机械�
 选择者逐项核对公开要求，并引用对应候选的实际修改路径与证据。
 评测器随后在新的正式工作区测试采用补丁。
 
-准确的 workflow 名称为 `duo`。
-请在 JSON 配置中将 `agent_profile` 显式设为 `"single2"`。底层 runner 使用
-`--agent-profile single2` 选择相同配置，Eval 将 `agent_profile="single2"` 传入 OpenCollab 公开 workflow API。
-默认 Single profile 使用另一套 agent 配置。
+准确的 workflow 名称为 `duo`。默认的 `agent_profile="base"` 解析为 `single2`。
+底层 runner 接受 `--agent-profile base` 和显式的 `--agent-profile single2`。
+Eval 将解析后的 `agent_profile="single2"` 传入 OpenCollab 公开 workflow API，并写入配置与生成证据。
+兼容名称 `single` 和 `default` 也解析为同一个 Base profile。
 coder 可用的原生工具为 `bash`、`file_read`、`file_write`、`apply_patch`、`git_diff` 与 `grep`。
 项目测试通过原生 Bash 执行，OpenCollab 保留观察到的命令与执行结果。
 裁决角色使用该角色受限的工具集合。
@@ -533,7 +534,7 @@ python -c 'from importlib.metadata import version; print("OC", version("opencoll
 cd OpenCollab-Eval
 ```
 
-输出的两个包版本均应至少为 0.7.1，并保持在 0.7.x 范围内。editable 安装使用两个 clone 内的源码。
+输出的两个包版本均应至少为 0.8.0，并保持在 0.8.x 范围内。editable 安装使用两个 clone 内的源码。
 `oc-eval --version` 显示已安装的 Eval 版本。
 开发环境说明见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
@@ -687,7 +688,7 @@ config = {
     "context_window": int(os.environ["CONTEXT_WINDOW"]),
     "max_output_tokens": int(os.environ["MAX_OUTPUT_TOKENS"]),
     "llm_timeout": 3600,
-    "agent_profile": "single2",
+    "agent_profile": "base",
     "workflow_env": {
         "OPENCOLLAB_WIRE_PROTOCOL": "responses",
         "OPENCOLLAB_REASONING_EFFORT": "max",
@@ -701,7 +702,7 @@ Path(sys.argv[1]).write_text(json.dumps(config, indent=2) + "\n")
 PY_CONFIG
 ```
 
-`oc-eval duo` 会选择 Duo workflow、Single2 角色 profile 与已有正式并行 runner。
+`oc-eval duo` 会选择 Duo workflow、解析为 Single2 的 Base 角色 profile 与已有正式并行 runner。
 默认配置通过 `OPENCOLLAB_UNBOUNDED_LIMITS=true` 移除累计 token 与步数上限，
 入口为 token 与步数提供 1000000000000 的回退值。
 需要显式预算上限时，将该 workflow 变量设为 `false`，并在 JSON 中设置 `budget` 与 `max_steps`。

@@ -119,8 +119,9 @@ def open_directory_no_symlinks(path: str | os.PathLike[str]) -> int:
             if not stat.S_ISDIR(os.fstat(next_fd).st_mode):
                 os.close(next_fd)
                 raise NotADirectoryError(absolute)
-            os.close(fd)
-            fd = next_fd
+            # Own the child before closing the parent, which may raise from a signal handler.
+            previous_fd, fd = fd, next_fd
+            os.close(previous_fd)
         result = fd
         fd = -1
         return result
@@ -146,8 +147,9 @@ def ensure_directory_no_symlinks(path: str | os.PathLike[str]) -> None:
             if not stat.S_ISDIR(os.fstat(next_fd).st_mode):
                 os.close(next_fd)
                 raise NotADirectoryError(absolute)
-            os.close(fd)
-            fd = next_fd
+            # Own the child before closing the parent, which may raise from a signal handler.
+            previous_fd, fd = fd, next_fd
+            os.close(previous_fd)
     finally:
         os.close(fd)
 

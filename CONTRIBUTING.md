@@ -16,6 +16,9 @@ ruff check .
 pytest -q
 ```
 
+The [test guide](tests/README.md) maps the suite to its behavior areas and
+describes focused directory runs and shared preparation.
+
 The checkout of OpenCollab must match the compatible version declared in
 `pyproject.toml`. The wheel contract test builds both repositories and verifies
 the installed boundary without editable imports.
