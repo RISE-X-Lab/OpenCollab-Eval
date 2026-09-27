@@ -168,29 +168,37 @@ def bind_llm_transport(metrics: dict) -> None:
                 metrics[metric_key] = value
 
 
+LLM_TRANSPORT_METRIC_KEYS = ("llm_base_url_sha256", "reasoning_effort", "wire_protocol", "workflow_env")
+LLM_ENV_KEYS = (
+    "OPENCOLLAB_MAX_OUTPUT_TOKENS",
+    "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY",
+    "OPENCOLLAB_TEMPERATURE",
+    "OPENCOLLAB_THINKING",
+    "OPENCOLLAB_THINKING_PARAMS",
+    "OPENCOLLAB_TOP_P",
+    "OPENCOLLAB_WIRE_PROTOCOL",
+    "OPENCOLLAB_REASONING_EFFORT",
+    "OPENCOLLAB_LLM_MAX_RETRIES",
+    "OPENCOLLAB_LLM_CONNECT_TIMEOUT",
+    "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT",
+    "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT",
+    "OPENCOLLAB_LLM_STREAM_CHAT",
+    "OPENCOLLAB_LLM_USER_AGENT",
+    "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT",
+    "OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS",
+)
+
+
+def observed_llm_env() -> dict[str, str]:
+    """Return the provider settings supplied to this process."""
+    return {key: os.environ[key] for key in LLM_ENV_KEYS if key in os.environ}
+
+
 def llm_transport_metrics(cfg: dict) -> dict:
     """Record supplied provider settings and the observed process environment."""
-    environment_keys = (
-        "OPENCOLLAB_MAX_OUTPUT_TOKENS",
-        "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY",
-        "OPENCOLLAB_TEMPERATURE",
-        "OPENCOLLAB_THINKING",
-        "OPENCOLLAB_THINKING_PARAMS",
-        "OPENCOLLAB_TOP_P",
-        "OPENCOLLAB_WIRE_PROTOCOL",
-        "OPENCOLLAB_REASONING_EFFORT",
-        "OPENCOLLAB_LLM_MAX_RETRIES",
-        "OPENCOLLAB_LLM_CONNECT_TIMEOUT",
-        "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT",
-        "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT",
-        "OPENCOLLAB_LLM_STREAM_CHAT",
-        "OPENCOLLAB_LLM_USER_AGENT",
-        "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT",
-        "OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS",
-    )
     return {
         "wire_protocol": cfg.get("wire_protocol", "chat_completions"),
         "reasoning_effort": cfg.get("reasoning_effort"),
         "llm_base_url_sha256": cfg.get("base_url_sha256"),
-        "workflow_env": {key: os.environ[key] for key in environment_keys if key in os.environ},
+        "workflow_env": observed_llm_env(),
     }

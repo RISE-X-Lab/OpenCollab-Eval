@@ -1,0 +1,438 @@
+"""What an unattended batch has to get right before it is left alone.
+
+Each test here pins one way a batch of twenty runs comes back unusable without
+anything having crashed: the pairs it produced are not pairs, work already paid
+for is paid for twice, or the machine it ran on had no image under the name the
+generator derived.
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib
+import json
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from opencollab_eval.generation import gen_prediction_batch as batch
+
+
+def _instance(iid: str, image: str | None = None) -> dict[str, object]:
+    record: dict[str, object] = {"instance_id": iid, "repo": "acme/widget"}
+    if image is not None:
+        record["image"] = image
+    return record
+
+
+def test_arms_are_interleaved_so_a_stopped_batch_still_has_pairs() -> None:
+    instances = [_instance("a-1"), _instance("a-2"), _instance("a-3")]
+
+    plan = batch.plan_batch(instances, ["single", "team"], {})
+
+    # Task-major: both arms of a-1 come before either arm of a-2. Stopping
+    # after any even prefix leaves whole pairs, which is the unit the paired
+    # comparison is made of.
+    assert [(inst["instance_id"], arm) for inst, arm in plan] == [
+        ("a-1", "single"),
+        ("a-1", "team"),
+        ("a-2", "single"),
+        ("a-2", "team"),
+        ("a-3", "single"),
+        ("a-3", "team"),
+    ]
+
+
+def test_work_already_in_the_predictions_file_is_not_run_again() -> None:
+    instances = [_instance("a-1"), _instance("a-2")]
+    done = {"single": {"a-1"}, "team": set()}
+
+    plan = batch.plan_batch(instances, ["single", "team"], done)
+
+    assert [(inst["instance_id"], arm) for inst, arm in plan] == [
+        ("a-1", "team"),
+        ("a-2", "single"),
+        ("a-2", "team"),
+    ]
+
+
+def test_completed_ids_come_from_the_predictions_file(tmp_path: Path) -> None:
+    predictions = tmp_path / "preds-single.jsonl"
+    predictions.write_text(
+        json.dumps({"instance_id": "a-1", "model_patch": ""})
+        + "\n"
+        + "this line is not json\n"
+        + json.dumps({"instance_id": "a-2", "model_patch": "diff"})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # A line that cannot be read is not evidence that its run happened, and it
+    # is not a reason to refuse to continue the batch either.
+    assert batch.completed_instance_ids(predictions) == {"a-1", "a-2"}
+    assert batch.completed_instance_ids(tmp_path / "absent.jsonl") == set()
+
+
+def test_the_instance_s_own_image_name_is_the_one_passed_down(tmp_path: Path) -> None:
+    command = batch.build_command(
+        arm="single",
+        instance_path=tmp_path / "a-1.json",
+        predictions=tmp_path / "preds-single.jsonl",
+        team_config=None,
+        budget_per_seat=1000,
+        max_steps=5,
+        timeout=60.0,
+        image="swebench/sweb.eval.x86_64.acme_1776_widget-1:latest",
+    )
+
+    # Without this the generator derives `sweb.eval.<arch>.<id>:latest`, which
+    # is not the name a host that pulled the published images actually has.
+    assert "--image" in command
+    assert command[command.index("--image") + 1].startswith("swebench/")
+
+
+def test_only_the_team_arm_is_handed_a_team_configuration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(batch, "declared_role_names", lambda path: ("a", "b", "c"))
+    shared = dict(
+        instance_path=tmp_path / "a-1.json",
+        predictions=tmp_path / "preds.jsonl",
+        team_config=tmp_path / "team.yaml",
+        budget_per_seat=1000,
+        max_steps=5,
+        timeout=60.0,
+        image=None,
+    )
+
+    single = batch.build_command(arm="single", **shared)
+    team = batch.build_command(arm="team", **shared)
+
+    assert "--team-config" not in single
+    assert "--team-config" in team
+    assert single[2] == batch.ARM_MODULES["single"]
+    assert team[2] == batch.ARM_MODULES["team"]
+
+
+def test_the_team_arm_refuses_to_run_without_its_configuration(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="team-config"):
+        batch.build_command(
+            arm="team",
+            instance_path=tmp_path / "a-1.json",
+            predictions=tmp_path / "preds.jsonl",
+            team_config=None,
+            budget_per_seat=1000,
+            max_steps=5,
+            timeout=60.0,
+            image=None,
+        )
+
+
+def test_a_seat_is_worth_the_same_on_both_arms(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Equal pools would not be equal budgets.
+
+    A team divides its pool by the number of roles its file declares, so
+    handing a three-role team the pool a solo agent gets leaves each seat with
+    a third of it. What has to match across arms is the seat, so the driver
+    multiplies -- and the step and time ceilings, which are per session on both
+    arms, are passed through unchanged.
+    """
+    monkeypatch.setattr(batch, "declared_role_names", lambda path: ("analyst", "coder", "tester"))
+    shared = dict(
+        instance_path=tmp_path / "a-1.json",
+        predictions=tmp_path / "preds.jsonl",
+        team_config=tmp_path / "team.yaml",
+        budget_per_seat=1_000_000,
+        max_steps=60,
+        timeout=1800.0,
+        image=None,
+    )
+
+    def value(command: list[str], flag: str) -> str:
+        return command[command.index(flag) + 1]
+
+    single = batch.build_command(arm="single", **shared)
+    team = batch.build_command(arm="team", **shared)
+
+    assert value(single, "--budget") == "1000000"
+    assert value(team, "--budget") == "3000000"
+    for flag in ("--max-steps", "--timeout"):
+        assert value(single, flag) == value(team, flag), flag
+
+
+def test_the_pool_follows_the_team_file_rather_than_a_remembered_number(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The count comes out of the file, so adding a fourth role changes the pool
+    # without anyone having to notice.
+    monkeypatch.setattr(batch, "declared_role_names", lambda path: ("a", "b", "c", "d"))
+
+    assert batch.pool_for("single", 500, None) == 500
+    assert batch.pool_for("team", 500, tmp_path / "four.yaml") == 2000
+
+
+def test_a_directory_of_instances_is_read_in_a_fixed_order(tmp_path: Path) -> None:
+    for iid in ("c-3", "a-1", "b-2"):
+        (tmp_path / f"{iid}.json").write_text(json.dumps(_instance(iid)), encoding="utf-8")
+
+    loaded = batch.load_instances(tmp_path)
+
+    # A resumed batch has to continue in the order the first one used.
+    assert [record["instance_id"] for record in loaded] == ["a-1", "b-2", "c-3"]
+
+
+def test_a_jsonl_list_of_instances_keeps_its_file_order(tmp_path: Path) -> None:
+    source = tmp_path / "instances.jsonl"
+    source.write_text(
+        "\n".join(json.dumps(_instance(iid)) for iid in ("c-3", "a-1")) + "\n",
+        encoding="utf-8",
+    )
+
+    assert [r["instance_id"] for r in batch.load_instances(source)] == ["c-3", "a-1"]
+
+
+def test_a_file_that_is_not_an_instance_is_refused(tmp_path: Path) -> None:
+    path = tmp_path / "notes.json"
+    path.write_text(json.dumps({"note": "no instance_id here"}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="not an instance record"):
+        batch.load_instances(path)
+
+
+def _instance_file(tmp_path: Path, iid: str) -> Path:
+    source = tmp_path / "instances.jsonl"
+    source.write_text(json.dumps(_instance(iid)) + "\n", encoding="utf-8")
+    return source
+
+
+def _args(tmp_path: Path, **overrides: object) -> argparse.Namespace:
+    values: dict[str, object] = {
+        "instances": str(_instance_file(tmp_path, "a-1")),
+        "arm": ["single"],
+        "out_dir": str(tmp_path / "out"),
+        "team_config": None,
+        "image": None,
+        "budget_per_seat": 1000,
+        "max_steps": 5,
+        "timeout": 60.0,
+        "limit": None,
+        "dry_run": False,
+        "pass_through": [],
+    }
+    values.update(overrides)
+    return argparse.Namespace(**values)
+
+
+def _completed_run(predictions: Path, iid: str, returncode: int):
+    def fake_run(command, **kwargs):
+        predictions.parent.mkdir(parents=True, exist_ok=True)
+        with predictions.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"instance_id": iid, "model_patch": "diff"}) + "\n")
+        return subprocess.CompletedProcess(command, returncode)
+
+    return fake_run
+
+
+def test_a_run_that_exited_non_zero_but_wrote_a_prediction_is_not_a_lost_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The two questions the batch has to keep apart.
+
+    A generator exits non-zero whenever the run did not finish normally -- a
+    spent token budget, a reached step ceiling -- and it writes its prediction
+    before doing so. Counting those as failures tells whoever resumes the batch
+    to re-run work that is already done, and hides the runs that really did
+    lose a row.
+    """
+    args = _args(tmp_path)
+    predictions = Path(args.out_dir) / "preds-single.jsonl"
+    monkeypatch.setattr(batch.subprocess, "run", _completed_run(predictions, "a-1", returncode=1))
+
+    exit_code = batch.run_batch(args)
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "1 run(s) exiting non-zero" in out
+    assert "produced no prediction row" not in out
+
+
+def test_a_run_that_wrote_nothing_is_reported_and_fails_the_batch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = _args(tmp_path)
+    monkeypatch.setattr(
+        batch.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(command, 1),
+    )
+
+    exit_code = batch.run_batch(args)
+
+    assert exit_code == 1
+    out = capsys.readouterr().out
+    assert "1 run(s) produced no prediction row" in out
+    assert "single a-1" in out
+
+
+def test_staging_an_instance_swaps_the_file_instead_of_rewriting_it(
+    tmp_path: Path,
+) -> None:
+    """Two arms of one task share this directory and stage the same name.
+
+    Writing in place truncates first, so the other arm's generator can open
+    the file mid-write and read an instance record that stops in the middle of
+    the problem statement. Staging under a temporary name and renaming makes
+    the swap atomic, and a reader already holding the previous file reads it to
+    the end -- which is what this checks, because it is the same property and
+    it can be checked without racing anything.
+    """
+    staging = tmp_path / "instances"
+    first_record = _instance("a-1")
+    first_record["problem_statement"] = "first"
+
+    path = batch._instance_path(first_record, staging)
+    reader = path.open("r", encoding="utf-8")
+    try:
+        second_record = _instance("a-1")
+        second_record["problem_statement"] = "second"
+        assert batch._instance_path(second_record, staging) == path
+
+        assert json.loads(reader.read())["problem_statement"] == "first"
+    finally:
+        reader.close()
+
+    # The new record is what anyone opening it now gets, with no debris left.
+    assert json.loads(path.read_text(encoding="utf-8"))["problem_statement"] == "second"
+    assert [entry.name for entry in staging.iterdir()] == ["a-1.json"]
+
+
+def test_a_workflow_arm_is_selected_by_name_and_never_handed_the_team_file(
+    tmp_path: Path,
+) -> None:
+    # A workflow is sequenced by its own code, so the team's configuration has
+    # nothing to say about it. Passing it anyway would make the two arms differ
+    # by a file neither of them reads the same way.
+    command = batch.build_command(
+        arm="self-collaboration",
+        instance_path=tmp_path / "a-1.json",
+        predictions=tmp_path / "preds.jsonl",
+        team_config=tmp_path / "team.yaml",
+        budget_per_seat=1000,
+        max_steps=5,
+        timeout=60.0,
+        image=None,
+    )
+
+    assert "--team-config" not in command
+    assert command[command.index("--workflow") + 1] == "self-collaboration"
+    assert command[2] == batch.ARM_MODULES["self-collaboration"]
+
+
+def test_a_workflow_arm_is_funded_per_seat_from_the_count_its_own_module_declares() -> None:
+    # The seat count is read off the workflow rather than tabulated here, so a
+    # workflow cannot end up funded for a different number of seats than the
+    # number it caps each call against.
+    # `from ... import self_collaboration` binds the decorated function, not
+    # the module it lives in, so ask the import system for the module.
+    module = importlib.import_module("opencollab_eval.workflows.self_collaboration")
+
+    assert batch.workflow_seats("self-collaboration") == module.SEATS
+    assert batch.pool_for("self-collaboration", 1000, None) == 1000 * module.SEATS
+
+
+def test_an_unknown_workflow_is_refused_rather_than_funded_for_one_seat() -> None:
+    with pytest.raises(ValueError, match="unknown workflow"):
+        batch.workflow_seats("no-such-workflow")
+
+
+def _batch_args(tmp_path: Path, **overrides: object) -> argparse.Namespace:
+    instances = tmp_path / "instances.jsonl"
+    instances.write_text(
+        json.dumps({"instance_id": "a__b-1", "image": "img", "problem_statement": "x"}) + "\n",
+        encoding="utf-8",
+    )
+    defaults = dict(
+        instances=str(instances),
+        out_dir=str(tmp_path / "out"),
+        arm=["single"],
+        team_config=None,
+        image=None,
+        budget_per_seat=1000,
+        max_steps=5,
+        timeout=60.0,
+        limit=None,
+        dry_run=True,
+        pass_through=[],
+        concurrency=1,
+    )
+    defaults.update(overrides)
+    return argparse.Namespace(**defaults)
+
+
+@pytest.mark.parametrize("bad", [0, -1, True, 1.5, "2"])
+def test_a_concurrency_that_is_not_a_positive_count_is_refused(tmp_path: Path, bad: object) -> None:
+    # Zero would run nothing while reporting success, and a float or a bool
+    # would reach ThreadPoolExecutor as something it does not mean.
+    with pytest.raises(ValueError, match="concurrency"):
+        batch.run_batch(_batch_args(tmp_path, concurrency=bad))
+
+
+def test_runs_go_out_in_the_planned_order_so_whole_tasks_are_in_flight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # With three arms and a concurrency of three, the three jobs in flight are
+    # the three arms of one task -- which is what makes an interrupted batch
+    # usable, and is a property of the submission order, not of the pool.
+    monkeypatch.setattr(batch, "declared_role_names", lambda path: ("a", "b", "c"))
+    instances = tmp_path / "two-instances.jsonl"
+    instances.write_text(
+        "\n".join(json.dumps({"instance_id": f"a__b-{n}", "image": "img"}) for n in (1, 2)),
+        encoding="utf-8",
+    )
+    submitted: list[tuple[str, str]] = []
+
+    def fake_run_one(*, command, log_dir):
+        submitted.append((Path(log_dir).parent.name, Path(log_dir).name))
+        return 0, 0.1
+
+    monkeypatch.setattr(batch, "_run_one", fake_run_one)
+    args = _batch_args(
+        tmp_path,
+        instances=str(instances),
+        arm=["single", "team", "self-collaboration"],
+        team_config=str(tmp_path / "team.yaml"),
+        dry_run=False,
+        concurrency=3,
+    )
+
+    batch.run_batch(args)
+
+    # The pool takes jobs off a FIFO queue, so the first three it starts are
+    # the first three submitted: all three arms of task 1.
+    order = [iid for _arm, iid in submitted]
+    assert set(order[:3]) == {"a__b-1"}
+    assert set(order[3:]) == {"a__b-2"}
+    assert sorted(arm for arm, _iid in submitted[:3]) == [
+        "logs-self-collaboration",
+        "logs-single",
+        "logs-team",
+    ]
+
+
+def test_unbounded_default_commands_omit_numeric_caps(tmp_path):
+    command = batch.build_command(
+        arm="single",
+        instance_path=tmp_path / "task.json",
+        predictions=tmp_path / "predictions.jsonl",
+        team_config=None,
+        budget_per_seat=None,
+        max_steps=None,
+        timeout=1800.0,
+        image=None,
+    )
+    assert "--budget" not in command
+    assert "--max-steps" not in command
+    assert "None" not in command
+
+
+def test_workflow_pool_can_be_unbounded():
+    assert batch.pool_for("self-collaboration", None, None) is None

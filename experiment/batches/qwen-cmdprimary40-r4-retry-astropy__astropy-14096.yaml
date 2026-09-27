@@ -1,0 +1,21 @@
+name: qwen-cmdprimary40-r4-retry-astropy__astropy-14096
+host: lthpc
+arm: team
+rung: primary
+cell: facts-v2
+suite: subset-50
+rows: {start: 10, stop: 10}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 1
+model_env: configs/.env.qwen
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+retry_of: qwen-cmdprimary40-r4
+note: "retry of qwen-cmdprimary40-r4 row 10 after a docker failure before any model step: container start failed while a previous container's removal was still in progress. Eight of the batch's 37 attempts exited non-zero and seven produced no prediction row; every one of the seven died in container setup or teardown on the shared host, not in the model loop, which is the instrument-failure bucket of the exclusion rule (99b-protocol.tex, D21)."

@@ -1,0 +1,51 @@
+# s2tools-noedit on qwen3.8-flash (experiment 4, the Adopter's tools), 09-23.
+#
+# WHAT IT IS. The s2dual roster (an Adopter and two Coders, every seat Single2)
+# with the Adopter's two edit tools taken away: it holds bash, file_read,
+# git_diff, grep, message_agent, team_status and submit -- no file_write, no
+# apply_patch. The Coders keep theirs. The card is s2dual-judge's with the three
+# places that name the tools rewritten to match (configs/s2tools/); nothing about
+# the Coders is commanded.
+#
+# WHAT IT IS FOR. Whether removing the Adopter's edit tools moves adherence,
+# read against J' (paired, same 36 tasks) and shown next to the bare rung, the
+# one-change counterpart among the prompt cells. bash stays, because taking a
+# candidate needs `git checkout`, so the Adopter can still write files through
+# bash: the post-run check counts how often it does (in s2dual-judge-qwen38-pro36 31 of 36
+# Adopters wrote files through bash as well as with the edit tools).
+#
+# PINS. OC 4b231b0e = iclr-2027 at 35c2eccc (the stop notice, the pin of J', P'
+# and S1) + knobs-0922: the `adopt` tool, the s2tools card family, the
+# gpt-5.6-luna context-window row, and the three budget-informed cards. For an
+# s2dual cell all of it is inert but the card itself: `adopt` is seated only by
+# the s2tools team files, and the luna row is keyed to that model's exact name.
+# Eval 3ff64deb: the s2tools cell prefix on top of dc32491 (the S1 pin); inert
+# for s2dual cells.
+#
+# ENDPOINT. token-plan, key `ca8430b2` (configs/.env.tp3-qwen38), as J', P' and
+# S1. If that key runs out, the whole cell moves to configs/.env.tp-qwen38
+# (`e7c28419`) under a new name; no cell mixes two keys.
+# ---------------------------------------------------------------------------
+name: s2tools-noedit-qwen38-tp-pro36
+host: lthpc
+arm: team
+cell: s2tools-noedit
+suite: pro-mini36-clean
+rows: {start: 1, stop: 36}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 5400
+concurrency: 36
+model_env: configs/.env.tp3-qwen38
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+pins:
+  opencollab: 4b231b0e128696768e168521eddb634fd8951927
+  opencollab_eval: 3ff64deb72b1879449a3f1d11d52fde329088d04
+note: "experiment 4: s2dual roster, Adopter without file_write and apply_patch (bash kept); card rewritten only where it names tools"

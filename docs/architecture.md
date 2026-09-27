@@ -32,6 +32,8 @@ OpenCollab-Eval currently imports the following public OpenCollab surfaces.
 | `opencollab.builtin_workflows` | `duo`, `get_builtin_workflows`, and `run_dual_coder` |
 | `opencollab.patches` | Generic Git diff blocks and paths |
 | `opencollab.profiles` | `BASE_PROFILE` and `resolve_profile_name` |
+| `opencollab.models` | Offline `inspect_model_runtime` queries |
+| `opencollab.teams` | `declared_role_names`, `declared_role_tools`, `declared_role_prompt_digests`, `declared_role_profiles` |
 | `opencollab.workflows` | `workflow` |
 
 The retired `opencollab.sdk` package and OpenCollab implementation layers such
@@ -262,3 +264,9 @@ establish target execution.
 A new report field should derive from durable bounded artifacts and retain the
 identity fields needed to join it to the same task, run, candidate, and
 evaluation attempt.
+
+## ICLR research capabilities in the integration branch
+
+The integration branch retains batch specifications, historical run conditions, sampling lists, and offline analysis tools. Callers explicitly select the host configuration used by a batch. Model behavior inspection uses `opencollab.models.inspect_model_runtime`; static source inspection reads the explicitly selected package directory.
+
+The grading extension uses SWE-bench 5.0.2, which retains skipped F2P nodes in the failure denominator. Existing result identity and official-test evidence checks continue to govern result acceptance.
