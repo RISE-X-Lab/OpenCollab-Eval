@@ -40,7 +40,7 @@ accepted from production code and tests, then checks those public names against
 the installed OpenCollab package.
 
 This boundary gives OpenCollab-Eval a versioned runtime dependency through
-`opencollab>=0.7.0,<0.8`. A change to OpenCollab internals remains invisible here
+`opencollab>=0.7.1,<0.8`. A change to OpenCollab internals remains invisible here
 as long as the documented public API remains compatible.
 
 ## Package map

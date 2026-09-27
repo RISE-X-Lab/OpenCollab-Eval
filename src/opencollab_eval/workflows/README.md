@@ -10,7 +10,7 @@ Python code defines the control flow, including agent fan-out and repair rounds.
 It also owns the verification gates and stop conditions. Models inspect and
 edit the repository within that control flow.
 
-The package depends on the workflow-authoring surface in OpenCollab 0.7.0 or a
+The package depends on the workflow-authoring surface in OpenCollab 0.7.1 or a
 later 0.7.x release.
 
 ```python

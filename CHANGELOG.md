@@ -2,7 +2,14 @@
 
 All notable changes to OpenCollab-Eval are recorded in this file.
 
-## [Unreleased]
+## [0.7.1] - Unreleased
+
+Duo and Duo v3 now use OpenCollab's built-in workflow implementations. The
+original G22 commands and workflow identities remain compatible.
+
+OpenCollab-Eval requires OpenCollab 0.7.1 or a later 0.7.x version, which
+provides the public workflow, command-evidence, and patch-parsing APIs used
+by the evaluator.
 
 ## [0.7.0] - 2026-09-14
 
@@ -73,7 +80,7 @@ truncated, or mismatched execution output.
 - Prevented stale checkpoints, malformed streaming responses, duplicate model starts, cleanup races, and parser-specific evidence gaps from producing untrusted terminal results.
 - Raised the deterministic SWE test budget so OpenCollab 0.5.0 can preserve the configured output allowance after conservative input reservation.
 
-[Unreleased]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.7.0...HEAD
+[0.7.1]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.7.0...HEAD
 [0.5.1]: https://github.com/RISE-X-Lab/OpenCollab-Eval/releases/tag/v0.5.1
 [0.5.0]: https://github.com/RISE-X-Lab/OpenCollab-Eval/releases/tag/v0.5.0
 

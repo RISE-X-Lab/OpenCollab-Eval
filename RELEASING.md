@@ -1,6 +1,6 @@
 # Releasing OpenCollab-Eval
 
-OpenCollab-Eval 0.7.0 is paired with OpenCollab 0.7.0. Releases use the verified compatible OpenCollab release. PyPI publishing is outside the current release process.
+OpenCollab-Eval 0.7.1 is paired with OpenCollab 0.7.1. Releases use the verified compatible OpenCollab release. PyPI publishing is outside the current release process.
 
 ## Release invariants
 
