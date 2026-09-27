@@ -102,6 +102,15 @@ def discover_specs(repo: Path, base: str) -> list[dict[str, object]]:
     ]
 
 
+def select_store(repo: Path, token: str) -> Path:
+    """Prefer a writable sibling on the workspace mount for the container user."""
+    repo = repo.resolve()
+    parent = repo.parent
+    if not (os.access(parent, os.W_OK | os.X_OK) and parent.stat().st_dev == repo.stat().st_dev):
+        parent = Path("/tmp")
+    return parent / f".opencollab-generation-runtime-{token}"
+
+
 def stash_image_dependencies(repo: Path, base: str, store: Path) -> list[str]:
     specs = discover_specs(repo, base)
     store.mkdir(mode=0o700)
@@ -134,7 +143,9 @@ def remove_runtime_paths(repo: Path, roots: list[str]) -> None:
 def main() -> int:
     action, workspace, argument = sys.argv[1:]
     repo = Path(workspace)
-    if action == "stash":
+    if action == "select-store":
+        print(json.dumps(str(select_store(repo, argument))))
+    elif action == "stash":
         print(json.dumps(stash_image_dependencies(repo, sys.stdin.read().strip(), Path(argument))))
     elif action == "restore":
         restore_image_dependencies(repo, Path(argument))

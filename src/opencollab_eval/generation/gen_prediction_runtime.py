@@ -57,7 +57,10 @@ def stash_solver_runtime_dependencies(
     workspace: str = DOCKER_WORKDIR,
 ) -> SolverRuntimeDependencies:
     _install_helpers(container_id)
-    store = f"/tmp/opencollab-generation-runtime-{secrets.token_hex(8)}"
+    # Select on the container filesystem with the image's configured user.
+    # Writable siblings retain cheap same-mount moves, while rootless images
+    # with a read-only parent retain the original owned /tmp store.
+    store = json.loads(_run(container_id, "select-store", workspace, secrets.token_hex(8)))
     roots = json.loads(_run(container_id, "stash", workspace, store, expected_base_commit + "\n"))
     return SolverRuntimeDependencies(store, tuple(roots), workspace)
 

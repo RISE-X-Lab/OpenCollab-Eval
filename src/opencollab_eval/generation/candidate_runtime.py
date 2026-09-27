@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import fcntl
 import json
 import os
@@ -9,6 +10,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path, PurePosixPath
 
@@ -91,7 +93,8 @@ def hydrate(store, workspace):
         fcntl.flock(lock, fcntl.LOCK_EX)
         if marker.exists():
             return False
-        # Both locations are on the task's /tmp bind. Only renames happen here.
+        # The dependency store can be on the image filesystem while linked
+        # candidate worktrees live on a separate /tmp mount.
         for name in config["roots"]:
             target = workspace / name
             if target.exists() or target.is_symlink():
@@ -109,12 +112,36 @@ def hydrate(store, workspace):
                 target = workspace / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 cached = claimed / name
-                cached.rename(target)
-                installed.append((target, cached))
+                try:
+                    cached.rename(target)
+                except OSError as exc:
+                    if exc.errno != errno.EXDEV:
+                        raise
+                    # An ignored directory becomes an untracked Git path when
+                    # replaced by a symlink. Materialize it on the worktree
+                    # mount, then publish it with a same-filesystem rename.
+                    with tempfile.TemporaryDirectory(prefix=".opencollab-hydrate-", dir=target.parent) as temp:
+                        staged = Path(temp) / target.name
+                        if cached.is_dir() and not cached.is_symlink():
+                            shutil.copytree(cached, staged, symlinks=True)
+                        elif cached.is_symlink():
+                            staged.symlink_to(os.readlink(cached))
+                        else:
+                            shutil.copy2(cached, staged)
+                        staged.rename(target)
+                    installed.append((target, cached, False))
+                else:
+                    installed.append((target, cached, True))
         except BaseException:
-            for target, cached in reversed(installed):
-                cached.parent.mkdir(parents=True, exist_ok=True)
-                target.rename(cached)
+            for target, cached, moved in reversed(installed):
+                if moved:
+                    cached.parent.mkdir(parents=True, exist_ok=True)
+                    target.rename(cached)
+                else:
+                    if target.is_dir() and not target.is_symlink():
+                        shutil.rmtree(target)
+                    else:
+                        target.unlink()
             raise
         marker.write_text(
             json.dumps(

@@ -1,10 +1,33 @@
 from __future__ import annotations
 
+import json
 import threading
 import time
 
 import pytest
 from test_swe_g11_parallel_runner import _args, _load_module
+
+
+def test_capacity_control_updates_and_retains_last_valid_value(tmp_path, monkeypatch):
+    module = _load_module()
+    config = module.resolve_config(
+        _args(max_workers=50, min_workers=2, output_dir=tmp_path)
+    )
+    capacity = tmp_path / "capacity.json"
+    capacity.write_text(json.dumps({"generation_workers": 4}))
+    monkeypatch.setenv(module.CAPACITY_CONTROL_FILE_ENV, str(capacity))
+    scheduler = module.SchedulerState(current_workers=2)
+
+    module._refresh_capacity_control(config, scheduler)
+    assert scheduler.current_workers == 4
+
+    capacity.write_text("{invalid")
+    module._refresh_capacity_control(config, scheduler)
+    assert scheduler.current_workers == 4
+
+    capacity.write_text(json.dumps({"generation_workers": 80}))
+    module._refresh_capacity_control(config, scheduler)
+    assert scheduler.current_workers == 50
 
 
 def test_missing_report_is_not_retried_while_remote_ownership_is_unknown(

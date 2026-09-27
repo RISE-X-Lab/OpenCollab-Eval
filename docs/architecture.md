@@ -197,6 +197,15 @@ artifacts. It receives public task text and the configured model connection.
 Judge targets, reference material, future repository history, and artifacts
 from other runs stay outside that workspace.
 
+The container user selects a dependency store beside the resolved source
+workspace when its parent is writable and shares the workspace filesystem.
+Other layouts use an independent store under `/tmp`. Snapshot preparation
+retains the existing move-or-copy behavior for the selected filesystem.
+Prepared candidate dependency copies live under the container's
+`/tmp`. A candidate on another mount receives a staged copy followed by a
+rename on its own filesystem. A failed installation rolls back roots already
+placed in the candidate.
+
 The official-evaluation container receives the bound candidate patch, judge
 test specification, parser-backed test programs, and an allowlisted output
 directory. It creates its own public baseline and validates the applied

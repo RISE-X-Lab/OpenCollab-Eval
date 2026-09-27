@@ -169,6 +169,15 @@ platforms. Other provider transports use the persistent `launchd` relay by
 default. CI and Linux automation should pass `--no-persistent-proxy` and
 provide an already managed relay and tunnel.
 
+The parallel runner also reads `OPENCOLLAB_EVAL_CAPACITY_CONTROL_FILE` on the
+controller host. The external JSON document supplies `generation_workers` as
+the number of active task workers, each of which can issue multiple provider
+requests. Effective values range from 1 through `--max-workers`, with larger
+positive integers capped at that maximum. A configured control file makes
+the initial worker count `--min-workers` and enables one-second updates while
+normal or technical recovery tasks are in flight. Invalid reads keep the last
+valid value. Active tasks finish after a reduction.
+
 ## Advanced module entrypoints
 
 Advanced commands are installed package modules. Their interfaces are intended
