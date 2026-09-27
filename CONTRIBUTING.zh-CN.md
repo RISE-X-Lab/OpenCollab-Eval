@@ -15,6 +15,8 @@ ruff check .
 pytest -q
 ```
 
+[测试指南](tests/README.md) 按行为领域说明测试目录，并介绍按目录运行测试与共享准备代码。
+
 OpenCollab 检出版本必须与 `pyproject.toml` 中声明的兼容版本一致。wheel 契约测试会构建两个仓库，并在不使用可编辑导入的情况下验证安装后的边界。
 
 发布前请构建两个 wheel 并验证打包后的契约。

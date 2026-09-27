@@ -73,7 +73,7 @@ pytest 命令、隔离候选工作区、裁决采用与评测器补丁捕获。�
 测试还会检查隐藏文件名和目标始终位于模型输入之外。
 
 ```bash
-pytest -q tests/test_duo_evaluator_smoke.py
+pytest -q tests/evaluation/test_duo_evaluator_smoke.py
 ```
 
 上方 Docker E2E 在生产评测环境中验证具有独立权限的 controller 证据、

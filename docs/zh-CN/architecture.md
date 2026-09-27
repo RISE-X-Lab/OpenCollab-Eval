@@ -34,7 +34,7 @@ OpenCollab-Eval 使用以下 OpenCollab 公开接口。
 
 已退役的 `opencollab.sdk` 包以及 OpenCollab 的 `adapters`、`application`、
 `bootstrap`、`domain` 和 `harness` 等实现层均位于该依赖边界之外。
-`tests/test_boundaries.py` 规定生产代码与测试可以使用哪些导入，并根据已安装的
+`tests/packaging/test_boundaries.py` 规定生产代码与测试可以使用哪些导入，并根据已安装的
 OpenCollab 包检查这些公开名称。
 
 OpenCollab-Eval 通过 `opencollab>=0.8,<0.9` 声明运行时依赖的版本范围。
