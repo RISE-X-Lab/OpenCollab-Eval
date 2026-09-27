@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 
+from tests.support.swe_runner_fixtures import no_existing_remote_runner as _no_existing_remote_runner  # noqa: F401
 from tests.support.swe_v1_prolite_runner_test_support import (
     SimpleNamespace,
     _remote_namespace,
@@ -14,20 +15,6 @@ from tests.support.swe_v1_prolite_runner_test_support import (
     subprocess,
     threading,
 )
-
-
-@pytest.fixture(autouse=True)
-def _no_existing_remote_runner(monkeypatch):
-    monkeypatch.setattr(
-        runner._controller,
-        "recover_existing_remote_summary",
-        lambda **kwargs: None,
-    )
-    monkeypatch.setattr(
-        runner._controller,
-        "probe_preexisting_remote_execution",
-        lambda **kwargs: None,
-    )
 
 
 def test_remote_cleanup_ps_scan_and_container_markers_are_bounded(monkeypatch):

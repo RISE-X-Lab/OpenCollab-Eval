@@ -23,9 +23,11 @@ from opencollab_eval.engine import swe_v1_remote_records as remote_records
 from opencollab_eval.engine import swe_v1_remote_state as remote_state
 from opencollab_eval.engine import swe_v1_remote_target_proof as remote_target_proof
 from tests.support.package_test_support import resource_path
+from tests.support.swe_runner_fixtures import verified_remote_runtime as _verified_runtime  # noqa: F401
 from tests.support.swe_v1_prolite_runner_support import (
     _complete_remote_config,
 )
+from tests.support.swe_v1_transport_recovery_support import _eval_only_args
 
 REMOTE_IMPLEMENTATION_SOURCE = "\n".join(
     inspect.getsource(module)
@@ -63,19 +65,6 @@ raise SystemExit(namespace["main"]())
 """
 
 
-class _NoopHealthServer:
-    server_port = 1
-
-    def serve_forever(self) -> None:
-        return None
-
-    def shutdown(self) -> None:
-        return None
-
-    def server_close(self) -> None:
-        return None
-
-
 def _proof_namespace() -> dict[str, object]:
     return {
         "fail_to_pass_execution_proof": remote_target_proof.fail_to_pass_execution_proof,
@@ -86,18 +75,6 @@ def _command_namespace() -> dict[str, object]:
     namespace = dict(vars(remote_target_proof))
     namespace.update(vars(remote_commands))
     return namespace
-
-
-def _patch_fallback_function() -> str:
-    match = re.search(
-        r"apply_patch_with_fallback\(\) \{.*?\n\}",
-        remote_eval_script.DIRECT_EVAL_SCRIPT,
-        re.S,
-    )
-    assert match is not None
-    return match.group(0)
-
-
 
 
 def test_ensure_remote_proxy_falls_back_when_default_remote_port_is_busy():
@@ -297,57 +274,6 @@ def test_probe_terminal_remote_summary_rejects_invalid_owner(monkeypatch):
         host="example",
         base_run_dir="/remote/run",
     ) is None
-
-
-def _eval_only_args(**overrides):
-    values = {
-        "ssh_command": "ssh",
-        "eval_only": True,
-        "no_sync_runtime": True,
-        "expected_runtime_tree_sha256": "a" * 64,
-        "host": "example",
-        "remote_proxy_base_url": "http://remote",
-        "remote_runtime_repo": "/remote/repo",
-        "remote_root": "/remote",
-        "base_run_dir": "/remote/run",
-        "workflow": "team-pro",
-        "model_name": "model",
-        "session_prefix": "session",
-        "image_repository": "registry.example/swebench",
-        "start_index": 1,
-        "limit": 1,
-        "budget": 1000,
-        "max_steps": 3,
-        "swe_timeout": 10,
-        "task_wall_timeout": 10,
-        "eval_timeout": 10,
-        "llm_timeout": 10,
-        "checkpoint_interval": 0,
-        "max_task_starts": 1,
-        "dry_run": False,
-        "total_timeout": 30,
-    }
-    values.update(overrides)
-    return SimpleNamespace(**values)
-
-
-@pytest.fixture(autouse=True)
-def _verified_runtime(monkeypatch):
-    monkeypatch.setattr(
-        runner,
-        "verify_remote_runtime",
-        lambda **kwargs: {"sha256": "a" * 64},
-    )
-    monkeypatch.setattr(
-        runner._controller,
-        "recover_existing_remote_summary",
-        lambda **kwargs: None,
-    )
-    monkeypatch.setattr(
-        runner._controller,
-        "probe_preexisting_remote_execution",
-        lambda **kwargs: None,
-    )
 
 
 def test_runtime_drift_stops_before_remote_runner_and_model_launch(monkeypatch):

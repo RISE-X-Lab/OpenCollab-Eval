@@ -6,26 +6,8 @@ from types import SimpleNamespace
 import pytest
 
 import opencollab_eval.commands.swe_v1_prolite_runner as runner
+from tests.support.swe_runner_fixtures import verified_remote_runtime as _verified_runtime  # noqa: F401
 from tests.support.swe_v1_transport_recovery_support import _eval_only_args
-
-
-@pytest.fixture(autouse=True)
-def _verified_runtime(monkeypatch):
-    monkeypatch.setattr(
-        runner,
-        "verify_remote_runtime",
-        lambda **kwargs: {"sha256": "a" * 64},
-    )
-    monkeypatch.setattr(
-        runner._controller,
-        "recover_existing_remote_summary",
-        lambda **kwargs: None,
-    )
-    monkeypatch.setattr(
-        runner._controller,
-        "probe_preexisting_remote_execution",
-        lambda **kwargs: None,
-    )
 
 
 def _summary_pair(*, task_starts: int, eval_only: bool, eval_dir: str):

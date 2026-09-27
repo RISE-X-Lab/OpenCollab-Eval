@@ -8,19 +8,18 @@ from types import SimpleNamespace
 import pytest
 
 from opencollab_eval.commands import swe_rejudge_queue as queue
-from tests.support.swe_rejudge_queue_reliability_support import (
-    _accept_terminal,
-    _plan,
-    _terminal_report,
-)
 
 
 def test_queue_refresh_filters_late_other_candidate_verdict(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
+    rejudge_reliability_plan,
 ):
     """Parent refresh must bind same-index history to the planned candidate."""
-    _accept_terminal(monkeypatch)
-    plan, parent = _plan(tmp_path)
+    accept_rejudge_terminal(monkeypatch)
+    plan, parent = rejudge_reliability_plan(tmp_path)
     job = queue._read_plan(plan)["jobs"][0]
     (parent / "parallel_summary.json").write_text(
         json.dumps(
@@ -42,7 +41,7 @@ def test_queue_refresh_filters_late_other_candidate_verdict(
         encoding="utf-8",
     )
     late_other = parent / "task_25_eval_only_late_other.json"
-    _terminal_report(
+    write_rejudge_terminal_report(
         late_other,
         index=25,
         patch_sha256="b" * 64,
@@ -54,7 +53,7 @@ def test_queue_refresh_filters_late_other_candidate_verdict(
     def fake_run(argv, *, log, timeout):
         del log, timeout
         output = Path(argv[argv.index("--json-output") + 1])
-        _terminal_report(
+        write_rejudge_terminal_report(
             output,
             index=25,
             patch_sha256=job["source_patch_sha256"],
@@ -94,17 +93,23 @@ def test_queue_refresh_filters_late_other_candidate_verdict(
         candidate_identities=identities,
     ) == child_reports
 
-def test_queue_accepts_recomputed_eval_hash_for_same_candidate(tmp_path, monkeypatch):
+def test_queue_accepts_recomputed_eval_hash_for_same_candidate(
+    tmp_path,
+    monkeypatch,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
+    rejudge_reliability_plan,
+):
     """A derived eval-hash change must not force a duplicate official run."""
-    _accept_terminal(monkeypatch)
-    plan, parent = _plan(tmp_path)
+    accept_rejudge_terminal(monkeypatch)
+    plan, parent = rejudge_reliability_plan(tmp_path)
     value = json.loads(plan.read_text(encoding="utf-8"))
     job = value["jobs"][0]
     job["eval_patch_sha256"] = "b" * 64
     plan.write_text(json.dumps(value), encoding="utf-8")
 
     existing = parent / "task_25_eval_only_recomputed.json"
-    _terminal_report(existing, index=25, patch_sha256=job["source_patch_sha256"], resolved=True)
+    write_rejudge_terminal_report(existing, index=25, patch_sha256=job["source_patch_sha256"], resolved=True)
     payload = json.loads(existing.read_text(encoding="utf-8"))
     payload["rows"][0]["generation"]["eval_patch_sha256"] = "c" * 64
     existing.write_text(json.dumps(payload), encoding="utf-8")
@@ -135,11 +140,15 @@ def test_queue_accepts_recomputed_eval_hash_for_same_candidate(tmp_path, monkeyp
     }
 
 def test_queue_refreshes_parent_for_later_job_after_summary_terminal(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
+    rejudge_reliability_plan,
 ):
     """A terminal summary row must not hide a later task report."""
-    _accept_terminal(monkeypatch)
-    plan, parent = _plan(tmp_path)
+    accept_rejudge_terminal(monkeypatch)
+    plan, parent = rejudge_reliability_plan(tmp_path)
     value = json.loads(plan.read_text(encoding="utf-8"))
     first = value["jobs"][0]
     second = {
@@ -181,7 +190,7 @@ def test_queue_refreshes_parent_for_later_job_after_summary_terminal(
     def fake_run(argv, *, log, timeout):
         del log, timeout
         output = Path(argv[argv.index("--json-output") + 1])
-        _terminal_report(output, index=27, patch_sha256="b" * 64, resolved=True)
+        write_rejudge_terminal_report(output, index=27, patch_sha256="b" * 64, resolved=True)
         payload = json.loads(output.read_text(encoding="utf-8"))
         payload["rows"][0]["task"] = second["task"]
         payload["rows"][0]["generation"]["record_id"] = second["record_id"]
@@ -204,11 +213,15 @@ def test_queue_refreshes_parent_for_later_job_after_summary_terminal(
     assert child_reports == [refreshes[0].json_output]
 
 def test_queue_quarantines_malformed_historical_report_before_refresh(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
+    rejudge_reliability_plan,
 ):
     """One bad historical file must not erase a valid new terminal result."""
-    _accept_terminal(monkeypatch)
-    plan, parent = _plan(tmp_path)
+    accept_rejudge_terminal(monkeypatch)
+    plan, parent = rejudge_reliability_plan(tmp_path)
     (parent / "parallel_summary.json").write_text(
         json.dumps(
             {
@@ -234,7 +247,7 @@ def test_queue_quarantines_malformed_historical_report_before_refresh(
     def fake_run(argv, *, log, timeout):
         del log, timeout
         output = Path(argv[argv.index("--json-output") + 1])
-        _terminal_report(output, index=25, patch_sha256="a" * 64, resolved=True)
+        write_rejudge_terminal_report(output, index=25, patch_sha256="a" * 64, resolved=True)
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(queue, "_run_bounded_child", fake_run)
@@ -254,9 +267,15 @@ def test_queue_quarantines_malformed_historical_report_before_refresh(
     assert len(backups) == 1
     assert backups[0].read_text(encoding="utf-8") == '{"rows":['
 
-def test_queue_quarantine_does_not_overwrite_existing_backup(tmp_path, monkeypatch):
-    _accept_terminal(monkeypatch)
-    plan, parent = _plan(tmp_path)
+def test_queue_quarantine_does_not_overwrite_existing_backup(
+    tmp_path,
+    monkeypatch,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
+    rejudge_reliability_plan,
+):
+    accept_rejudge_terminal(monkeypatch)
+    plan, parent = rejudge_reliability_plan(tmp_path)
     (parent / "parallel_summary.json").write_text(
         json.dumps(
             {
@@ -284,7 +303,7 @@ def test_queue_quarantine_does_not_overwrite_existing_backup(tmp_path, monkeypat
     def fake_run(argv, *, log, timeout):
         del log, timeout
         output = Path(argv[argv.index("--json-output") + 1])
-        _terminal_report(output, index=25, patch_sha256="a" * 64, resolved=True)
+        write_rejudge_terminal_report(output, index=25, patch_sha256="a" * 64, resolved=True)
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(queue, "_run_bounded_child", fake_run)
@@ -300,10 +319,16 @@ def test_queue_quarantine_does_not_overwrite_existing_backup(tmp_path, monkeypat
 
 
 @pytest.mark.parametrize("alias", ["task", "instance_id", "task_id"])
-def test_queue_accepts_legacy_task_identity_aliases(tmp_path, monkeypatch, alias):
+def test_queue_accepts_legacy_task_identity_aliases(
+    tmp_path,
+    monkeypatch,
+    alias,
+    accept_rejudge_terminal,
+    rejudge_reliability_plan,
+):
     """Legacy rows remain reusable when their canonical task alias is present."""
-    _accept_terminal(monkeypatch)
-    plan, parent = _plan(tmp_path)
+    accept_rejudge_terminal(monkeypatch)
+    plan, parent = rejudge_reliability_plan(tmp_path)
     job = queue._read_plan(plan)["jobs"][0]
     row = {
         "index": job["index"],
@@ -323,13 +348,19 @@ def test_queue_accepts_legacy_task_identity_aliases(tmp_path, monkeypatch, alias
     assert queue._terminal_report(job) == (report, "verified")
 
 
-def test_queue_accepts_uppercase_legacy_report_hashes(tmp_path, monkeypatch):
+def test_queue_accepts_uppercase_legacy_report_hashes(
+    tmp_path,
+    monkeypatch,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
+    rejudge_reliability_plan,
+):
     """Hex digest casing must not make a valid terminal candidate disappear."""
-    _accept_terminal(monkeypatch)
-    plan, parent = _plan(tmp_path)
+    accept_rejudge_terminal(monkeypatch)
+    plan, parent = rejudge_reliability_plan(tmp_path)
     job = queue._read_plan(plan)["jobs"][0]
     report = parent / "parallel_summary.json"
-    _terminal_report(
+    write_rejudge_terminal_report(
         report,
         index=job["index"],
         patch_sha256=job["source_patch_sha256"].upper(),
@@ -346,8 +377,8 @@ def test_queue_accepts_uppercase_legacy_report_hashes(tmp_path, monkeypatch):
     assert queue._terminal_report(job) == (report, "verified")
 
 
-def test_queue_canonicalizes_uppercase_plan_hashes(tmp_path):
-    plan, _parent = _plan(tmp_path, patch_sha256=("ab" * 32).upper())
+def test_queue_canonicalizes_uppercase_plan_hashes(tmp_path, rejudge_reliability_plan):
+    plan, _parent = rejudge_reliability_plan(tmp_path, patch_sha256=("ab" * 32).upper())
 
     job = queue._read_plan(plan)["jobs"][0]
 
@@ -355,9 +386,9 @@ def test_queue_canonicalizes_uppercase_plan_hashes(tmp_path):
     assert job["eval_patch_sha256"] == ("ab" * 32)
 
 
-def test_queue_rejects_conflicting_legacy_task_aliases(tmp_path):
+def test_queue_rejects_conflicting_legacy_task_aliases(tmp_path, rejudge_reliability_plan):
     """Conflicting task aliases must not silently choose one identity."""
-    plan, parent = _plan(tmp_path)
+    plan, parent = rejudge_reliability_plan(tmp_path)
     job = queue._read_plan(plan)["jobs"][0]
     row = {
         "index": job["index"],
@@ -380,13 +411,20 @@ def test_queue_rejects_conflicting_legacy_task_aliases(tmp_path):
 
 
 @pytest.mark.parametrize("legacy_index", ["25", " 25 "])
-def test_queue_normalizes_legacy_numeric_string_indices(tmp_path, monkeypatch, legacy_index):
+def test_queue_normalizes_legacy_numeric_string_indices(
+    tmp_path,
+    monkeypatch,
+    legacy_index,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
+    rejudge_reliability_plan,
+):
     """Legacy JSON reports may serialize the positive index as a string."""
-    _accept_terminal(monkeypatch)
-    plan, parent = _plan(tmp_path)
+    accept_rejudge_terminal(monkeypatch)
+    plan, parent = rejudge_reliability_plan(tmp_path)
     job = queue._read_plan(plan)["jobs"][0]
     terminal = parent / "task_25_eval_only_legacy_index.json"
-    _terminal_report(
+    write_rejudge_terminal_report(
         terminal,
         index=job["index"],
         patch_sha256=job["source_patch_sha256"],
@@ -418,9 +456,9 @@ def test_queue_normalizes_legacy_numeric_string_indices(tmp_path, monkeypatch, l
     assert queue._observed_eval_attempts(job) == 3
 
 
-def test_queue_counts_legacy_top_level_attempts_before_retry(tmp_path, monkeypatch):
+def test_queue_counts_legacy_top_level_attempts_before_retry(tmp_path, monkeypatch, rejudge_reliability_plan):
     """A legacy top-level row must consume its persisted retry budget."""
-    plan, parent = _plan(tmp_path)
+    plan, parent = rejudge_reliability_plan(tmp_path)
     job = queue._read_plan(plan)["jobs"][0]
     row = {
         "index": job["index"],
@@ -447,9 +485,9 @@ def test_queue_counts_legacy_top_level_attempts_before_retry(tmp_path, monkeypat
     assert result["counts"] == {"budget_exhausted": 1}
 
 
-def test_queue_counts_a_mirrored_top_level_row_only_once(tmp_path):
+def test_queue_counts_a_mirrored_top_level_row_only_once(tmp_path, rejudge_reliability_plan):
     """A top-level/``results`` mirror is one cumulative ledger, not two."""
-    plan, parent = _plan(tmp_path)
+    plan, parent = rejudge_reliability_plan(tmp_path)
     job = queue._read_plan(plan)["jobs"][0]
     row = {
         "index": job["index"],
@@ -470,9 +508,9 @@ def test_queue_counts_a_mirrored_top_level_row_only_once(tmp_path):
     assert queue._observed_eval_attempts(job) == 3
 
 
-def test_queue_preserves_distinct_nested_duplicate_attempt_ledgers(tmp_path):
+def test_queue_preserves_distinct_nested_duplicate_attempt_ledgers(tmp_path, rejudge_reliability_plan):
     """Rows from separate nested result ledgers retain their cumulative counts."""
-    plan, parent = _plan(tmp_path)
+    plan, parent = rejudge_reliability_plan(tmp_path)
     job = queue._read_plan(plan)["jobs"][0]
     row = {
         "index": job["index"],

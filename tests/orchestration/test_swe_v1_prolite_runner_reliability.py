@@ -7,53 +7,15 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 import opencollab_eval.commands.swe_v1_prolite_runner as runner
 from opencollab_eval.engine import swe_v1_remote_commands as remote_commands
 from tests.support.package_test_support import resource_path
+from tests.support.swe_runner_fixtures import verified_remote_runtime as _verified_runtime  # noqa: F401
 from tests.support.swe_v1_prolite_runner_test_support import _remote_namespace
-
-
-def _eval_only_args(**overrides):
-    values = {
-        "ssh_command": "ssh",
-        "eval_only": True,
-        "no_sync_runtime": True,
-        "expected_runtime_tree_sha256": "a" * 64,
-        "host": "example",
-        "remote_proxy_base_url": "http://remote",
-        "remote_runtime_repo": "/remote/repo",
-        "remote_root": "/remote",
-        "base_run_dir": "/remote/run",
-        "workflow": "team-pro",
-        "model_name": "model",
-        "session_prefix": "session",
-        "image_repository": "registry.example/swebench",
-        "start_index": 1,
-        "limit": 1,
-        "budget": 1000,
-        "max_steps": 3,
-        "swe_timeout": 10,
-        "task_wall_timeout": 10,
-        "eval_timeout": 10,
-        "llm_timeout": 10,
-        "checkpoint_interval": 0,
-        "max_task_starts": 1,
-        "dry_run": False,
-        "total_timeout": 30,
-    }
-    values.update(overrides)
-    return SimpleNamespace(**values)
-
-
-@pytest.fixture(autouse=True)
-def _verified_runtime(monkeypatch):
-    monkeypatch.setattr(runner, "verify_remote_runtime", lambda **kwargs: {"sha256": "a" * 64})
-    monkeypatch.setattr(runner._controller, "recover_existing_remote_summary", lambda **kwargs: None)
-    monkeypatch.setattr(runner._controller, "probe_preexisting_remote_execution", lambda **kwargs: None)
+from tests.support.swe_v1_transport_recovery_support import _eval_only_args
 
 
 def test_run_remote_uses_remaining_end_to_end_timeout_after_preflight(monkeypatch):

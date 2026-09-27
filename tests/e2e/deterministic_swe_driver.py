@@ -31,6 +31,7 @@ from tests.e2e.fake_openai_server import (
     SOURCE_PATH,
 )
 from tests.e2e.integrity_evidence import require_sanitized_snapshot
+from tests.e2e.process_watchdog import terminate as terminate_process_group
 from tests.support.paths import TEST_ROOT
 
 TARGET_TEST = "test_calculator.py::test_add"
@@ -88,25 +89,7 @@ def _clean_environment(extra: dict[str, str] | None = None) -> dict[str, str]:
 
 
 def _terminate_process_group(process: subprocess.Popen[str], *, grace: float = 15) -> bool:
-    if process.poll() is not None:
-        return True
-    try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return True
-    try:
-        process.wait(timeout=grace)
-        return True
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            return True
-        try:
-            process.wait(timeout=5)
-            return True
-        except subprocess.TimeoutExpired:
-            return False
+    return terminate_process_group(process, grace)
 
 
 def _run(

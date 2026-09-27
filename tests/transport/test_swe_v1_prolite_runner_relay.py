@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.support.swe_runner_fixtures import verified_remote_runtime as _verified_runtime  # noqa: F401
 from tests.support.swe_v1_prolite_runner_test_support import (
     _complete_remote_config,
     remote_state,
@@ -50,25 +51,6 @@ def _eval_only_args() -> SimpleNamespace:
         eval_dir_name="official_eval",
         dry_run=False,
         total_timeout=240000,
-    )
-
-
-@pytest.fixture(autouse=True)
-def _verified_runtime(monkeypatch):
-    monkeypatch.setattr(
-        runner,
-        "verify_remote_runtime",
-        lambda **kwargs: {"sha256": "a" * 64},
-    )
-    monkeypatch.setattr(
-        runner._controller,
-        "recover_existing_remote_summary",
-        lambda **kwargs: None,
-    )
-    monkeypatch.setattr(
-        runner._controller,
-        "probe_preexisting_remote_execution",
-        lambda **kwargs: None,
     )
 
 

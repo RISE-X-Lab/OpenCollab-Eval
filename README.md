@@ -10,7 +10,7 @@
 
 OpenCollab-Eval owns candidate generation, isolated official evaluation, and
 result evidence for [OpenCollab](https://github.com/RISE-X-Lab/OpenCollab).
-The current source version is **0.8.0** and requires **OpenCollab >=0.8,<0.9**.
+The current source version is **0.8.1** and requires **OpenCollab >=0.8,<0.9**.
 
 <a id="duo-quick-start"></a>
 
@@ -484,7 +484,7 @@ OpenCollab-Eval is licensed under [MulanPSL-2.0](LICENSE).
 
 本文对应上方[英文原文](#english)。OpenCollab-Eval 负责
 [OpenCollab](https://github.com/RISE-X-Lab/OpenCollab) 的候选生成、隔离正式评测与结果证据。
-当前源码版本为 **0.8.0**，依赖 **OpenCollab >=0.8,<0.9**。
+当前源码版本为 **0.8.1**，依赖 **OpenCollab >=0.8,<0.9**。
 
 <a id="duo-quick-start-zh-cn"></a>
 

@@ -5,6 +5,7 @@ import shutil
 import tarfile
 from pathlib import Path
 
+from tests.support.swe_runner_fixtures import no_existing_remote_runner as _no_existing_remote_runner  # noqa: F401
 from tests.support.swe_v1_prolite_runner_test_support import (
     SimpleNamespace,
     os,
@@ -14,20 +15,6 @@ from tests.support.swe_v1_prolite_runner_test_support import (
     subprocess,
     sys,
 )
-
-
-@pytest.fixture(autouse=True)
-def _no_existing_remote_runner(monkeypatch):
-    monkeypatch.setattr(
-        runner._controller,
-        "recover_existing_remote_summary",
-        lambda **kwargs: None,
-    )
-    monkeypatch.setattr(
-        runner._controller,
-        "probe_preexisting_remote_execution",
-        lambda **kwargs: None,
-    )
 
 
 def _run_runtime_sync_command_locally(command, *, timeout=120, input_text=None):

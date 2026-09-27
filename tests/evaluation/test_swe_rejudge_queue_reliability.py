@@ -9,11 +9,6 @@ from types import SimpleNamespace
 import pytest
 
 from opencollab_eval.commands import swe_rejudge_queue as queue
-from tests.support.swe_rejudge_queue_reliability_support import (
-    _accept_terminal,
-    _plan,
-    _terminal_report,
-)
 
 
 def test_queue_child_timeout_kills_descendants_in_owned_process_group(tmp_path):
@@ -103,9 +98,9 @@ def test_queue_invalid_environment_timeout_is_task_scoped(tmp_path, monkeypatch)
     assert next(iter(result["jobs"].values()))["status"] == "invalid_timeout"
 
 
-def test_queue_ignores_partial_historical_artifact_before_startup(tmp_path, monkeypatch):
+def test_queue_ignores_partial_historical_artifact_before_startup(tmp_path, monkeypatch, rejudge_reliability_plan):
     """A stale partial JSON must not abort queue startup or parent reconciliation."""
-    plan, parent = _plan(tmp_path)
+    plan, parent = rejudge_reliability_plan(tmp_path)
     (parent / "parallel_summary.json").write_text(
         json.dumps(
             {
@@ -145,12 +140,16 @@ def test_queue_ignores_partial_historical_artifact_before_startup(tmp_path, monk
 
 
 def test_queue_prefers_the_planned_identity_over_historical_rows(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
+    rejudge_reliability_plan,
 ):
     """A stale report must not block a candidate that matches the queue plan."""
-    _accept_terminal(monkeypatch)
-    plan, parent = _plan(tmp_path)
-    _terminal_report(
+    accept_rejudge_terminal(monkeypatch)
+    plan, parent = rejudge_reliability_plan(tmp_path)
+    write_rejudge_terminal_report(
         parent / "task_25_eval_only_historical.json",
         index=25,
         patch_sha256="b" * 64,
@@ -182,7 +181,7 @@ def test_queue_prefers_the_planned_identity_over_historical_rows(
         del log, timeout
         calls += 1
         output = Path(argv[argv.index("--json-output") + 1])
-        _terminal_report(output, index=25, patch_sha256="a" * 64, resolved=True)
+        write_rejudge_terminal_report(output, index=25, patch_sha256="a" * 64, resolved=True)
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(queue, "_run_bounded_child", fake_run)
@@ -198,11 +197,15 @@ def test_queue_prefers_the_planned_identity_over_historical_rows(
 
 
 def test_queue_does_not_promote_a_cleanup_failure_to_terminal(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
+    rejudge_reliability_plan,
 ):
     """A valid report cannot hide a non-zero child/cleanup result."""
-    _accept_terminal(monkeypatch)
-    plan, parent = _plan(tmp_path)
+    accept_rejudge_terminal(monkeypatch)
+    plan, parent = rejudge_reliability_plan(tmp_path)
     (parent / "parallel_summary.json").write_text(
         json.dumps(
             {
@@ -230,7 +233,7 @@ def test_queue_does_not_promote_a_cleanup_failure_to_terminal(
         del log, timeout
         calls += 1
         output = Path(argv[argv.index("--json-output") + 1])
-        _terminal_report(output, index=25, patch_sha256="a" * 64, resolved=True)
+        write_rejudge_terminal_report(output, index=25, patch_sha256="a" * 64, resolved=True)
         return SimpleNamespace(returncode=125)
 
     monkeypatch.setattr(queue, "_run_bounded_child", fake_run)
@@ -249,11 +252,14 @@ def test_queue_does_not_promote_a_cleanup_failure_to_terminal(
 
 
 def test_queue_malformed_child_report_is_task_scoped_and_bounded(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
+    accept_rejudge_terminal,
+    rejudge_reliability_plan,
 ):
     """A malformed report cannot crash the queue or erase its launch count."""
-    _accept_terminal(monkeypatch)
-    plan, parent = _plan(tmp_path)
+    accept_rejudge_terminal(monkeypatch)
+    plan, parent = rejudge_reliability_plan(tmp_path)
     (parent / "parallel_summary.json").write_text(
         json.dumps(
             {
@@ -294,8 +300,8 @@ def test_queue_malformed_child_report_is_task_scoped_and_bounded(
     assert job_state["launch_count"] == 2
 
 
-def test_queue_ignores_final_attempt_count_from_another_candidate(tmp_path):
-    plan, parent = _plan(tmp_path)
+def test_queue_ignores_final_attempt_count_from_another_candidate(tmp_path, rejudge_reliability_plan):
+    plan, parent = rejudge_reliability_plan(tmp_path)
     (parent / "final_eval_layer_report.json").write_text(
         json.dumps(
             {
@@ -317,8 +323,8 @@ def test_queue_ignores_final_attempt_count_from_another_candidate(tmp_path):
     assert queue._observed_eval_attempts(job) == 0
 
 
-def test_queue_uses_final_attempt_count_only_for_exact_candidate(tmp_path):
-    plan, parent = _plan(tmp_path)
+def test_queue_uses_final_attempt_count_only_for_exact_candidate(tmp_path, rejudge_reliability_plan):
+    plan, parent = rejudge_reliability_plan(tmp_path)
     (parent / "final_eval_layer_report.json").write_text(
         json.dumps(
             {
@@ -341,8 +347,8 @@ def test_queue_uses_final_attempt_count_only_for_exact_candidate(tmp_path):
     assert queue._observed_eval_attempts(job) == 7
 
 
-def test_queue_ignores_parent_attempt_count_from_another_candidate(tmp_path):
-    plan, parent = _plan(tmp_path)
+def test_queue_ignores_parent_attempt_count_from_another_candidate(tmp_path, rejudge_reliability_plan):
+    plan, parent = rejudge_reliability_plan(tmp_path)
     (parent / "parallel_summary.json").write_text(
         json.dumps(
             {
@@ -375,10 +381,13 @@ def test_queue_ignores_parent_attempt_count_from_another_candidate(tmp_path):
 def test_queue_retries_a_transient_child_spawn_exception(
     tmp_path,
     monkeypatch,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
+    rejudge_reliability_plan,
 ):
     """A child launch error is task-scoped and consumes one bounded retry."""
-    _accept_terminal(monkeypatch)
-    plan, parent = _plan(tmp_path)
+    accept_rejudge_terminal(monkeypatch)
+    plan, parent = rejudge_reliability_plan(tmp_path)
     (parent / "parallel_summary.json").write_text(
         json.dumps(
             {
@@ -407,7 +416,7 @@ def test_queue_retries_a_transient_child_spawn_exception(
         if calls == 1:
             raise OSError("transient evaluator spawn failure")
         output = Path(argv[argv.index("--json-output") + 1])
-        _terminal_report(output, index=25, patch_sha256="a" * 64, resolved=False)
+        write_rejudge_terminal_report(output, index=25, patch_sha256="a" * 64, resolved=False)
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(queue, "_run_bounded_child", fake_run)
@@ -422,12 +431,9 @@ def test_queue_retries_a_transient_child_spawn_exception(
     assert "transient evaluator spawn failure" not in job_state
 
 
-def test_queue_treats_corrupt_persisted_launch_count_as_exhausted(
-    tmp_path,
-    monkeypatch,
-):
+def test_queue_treats_corrupt_persisted_launch_count_as_exhausted(tmp_path, monkeypatch, rejudge_reliability_plan):
     """A malformed checkpoint must not be coerced to a fresh retry budget."""
-    plan, parent = _plan(tmp_path)
+    plan, parent = rejudge_reliability_plan(tmp_path)
     (parent / "parallel_summary.json").write_text(
         json.dumps(
             {
