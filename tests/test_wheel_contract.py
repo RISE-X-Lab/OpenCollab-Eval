@@ -29,7 +29,7 @@ def test_opencollab_sdk_can_come_from_the_built_wheel() -> None:
     sdk_version = Version(distribution_version("opencollab")).release
     assert (0, 7, 1) <= sdk_version < (0, 8)
     assert callable(opencollab.builtin_workflows.duo)
-    assert callable(opencollab.builtin_workflows.duo_v3)
+    assert [spec.name for spec in opencollab.builtin_workflows.get_builtin_workflows().list_specs()] == ["duo"]
     assert callable(opencollab.patches.patch_paths)
     assert callable(opencollab.tools.evidence_tools)
     assert callable(opencollab.tools.builtin_tools)

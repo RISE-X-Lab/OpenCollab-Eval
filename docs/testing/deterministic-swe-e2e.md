@@ -73,7 +73,7 @@ disappeared, and real provider variables were absent.
 
 ## Local Duo migration smoke
 
-The local Duo smoke exercises `duo` and `duo-v3` through the installed
+The local Duo smoke exercises the single `duo` workflow through the installed
 OpenCollab-Eval `run_eval_task` entry. Scripted HTTP responses drive actual
 file tools, native public pytest commands, isolated candidate worktrees,
 adjudication, adoption, and evaluator patch capture. A fresh Git scoring

@@ -4,8 +4,8 @@ All notable changes to OpenCollab-Eval are recorded in this file.
 
 ## [0.7.1] - Unreleased
 
-Duo and Duo v3 now use OpenCollab's built-in workflow implementations. The
-original G22 commands and workflow identities remain compatible.
+Duo uses a single OpenCollab built-in workflow with task-oriented role prompts
+and complete file evidence. The G22 command remains an alias for Duo.
 
 OpenCollab-Eval requires OpenCollab 0.7.1 or a later 0.7.x version, which
 provides the public workflow, command-evidence, and patch-parsing APIs used

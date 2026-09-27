@@ -27,7 +27,7 @@ OpenCollab-Eval 使用以下 OpenCollab 公开接口。
 | `opencollab` | `OpenCollab` 和 `RunResult` |
 | `opencollab.environments` | `Environment`、`attach_container`、`docker_environment` 和 `worktree_environment` |
 | `opencollab.tools` | `BuiltinToolName`、`Tool`、`builtin_tools` 和 `evidence_tools` |
-| `opencollab.builtin_workflows` | `duo`、`duo_v3`、`get_builtin_workflows` 和 `run_dual_coder` |
+| `opencollab.builtin_workflows` | `duo`、`get_builtin_workflows` 和 `run_dual_coder` |
 | `opencollab.patches` | 通用 Git diff 分块与路径解析 |
 | `opencollab.workflows` | `workflow` |
 
@@ -158,8 +158,8 @@ Solver 关闭后，控制器检查进程是否静止，并冻结工作区的最�
 ## Solver 集成
 
 Duo 编排位于 OpenCollab 的 `opencollab.builtin_workflows`。
-`duo` 与 `duo-v3` 分别选择内联证据和文件证据。
-原有 `oc-eval g22` 命令与长工作流名称保持兼容。
+统一的 `duo` 名称使用通用任务提示和文件证据分页读取。
+`oc-eval g22` 命令调用同一工作流。
 评测工作流位于 `opencollab_eval.workflows`。它们使用 OpenCollab 的工作流
 装饰器与工具工厂，同时把基准秘密留在工作流参数之外。
 

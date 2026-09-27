@@ -1,14 +1,12 @@
-# Duo v3 file evidence
+# Duo file evidence
 
 **English** | [简体中文](zh-CN/g22-file-evidence.md)
 
-`duo-v3` is owned by OpenCollab and keeps the Duo coder prompts, A/B
-sequence, mechanical choice, structured decision validation, default-A rule,
-and candidate adoption. Its adjudicator receives references to complete
-evidence files and the `read_candidate_evidence` tool instead of inline diffs.
-The original `validation-council-dual-coder-selection-v2` and
-`validation-council-dual-coder-selection-v3` names remain compatible with their
-existing workflow identities. Import `duo_v3` from `opencollab.builtin_workflows`.
+Duo is owned by OpenCollab and exposes one workflow named `duo`. Its
+task-oriented roles retain A/B generation, mechanical choice, validated
+adjudication, conservative fallback and candidate adoption. The adjudicator
+reads complete files through `read_candidate_evidence`.
+Import `duo` from `opencollab.builtin_workflows`.
 
 Use the optional workflow argument `candidate_evidence_dir` to place retained
 evidence beneath the run's artifact directory. Each adjudication gets its own
@@ -17,7 +15,7 @@ created. Its location is written to the workflow log. Archive that directory
 along with the workflow trace.
 
 Each candidate has an exact UTF-8 `candidate.diff`, a JSONL index, and its public
-command/test records. Index rows identify original paths, text/binary kind, and
+command/test records and a separately labeled model result report. Index rows identify original paths, text/binary kind, and
 character ranges within the diff. Full binary patches, permission changes,
 deletions, and missing final newlines remain in the saved evidence. Public
 records shared by A and B have a separate file.
@@ -34,7 +32,6 @@ message manageable, including files with enormous single lines. The judge can
 continue reading without a total-read limit. Cite original changed paths from
 the index in the decision schema, rather than artifact storage paths.
 
-This is an explicit selector-input version change. Preserve old results and
-traces when using v3 to inspect existing candidates. A new selector decision is
-not a verifier result; score the adopted candidate with the original tests and
-resources before reporting a benchmark outcome.
+Preserve the run's evidence and trace with its actual adopted candidate.
+A selector decision records candidate adoption. Benchmark outcomes come from
+the evaluator's original tests and resources.

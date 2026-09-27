@@ -23,8 +23,7 @@ _PUBLIC_MODULES = frozenset(
 _PUBLIC_NAMES = {
     "opencollab": frozenset({"OpenCollab", "RunError", "RunResult", "workflow"}),
     "opencollab.builtin_workflows": frozenset({
-        "CONTRACT_PROMPT", "duo", "duo_v3", "get_builtin_workflows", "run_dual_coder",
-        "validation_council_dual_coder_selection_v2", "validation_council_dual_coder_selection_v3",
+        "CONTRACT_PROMPT", "duo", "get_builtin_workflows", "run_dual_coder",
     }),
     "opencollab.patches": frozenset({
         "decode_git_c_path", "diff_target_path", "git_diff_endpoint", "git_header_tokens",
@@ -268,7 +267,7 @@ def test_public_import_boundary_accepts_documented_import_forms() -> None:
         "from opencollab.environments import Environment, attach_container\n"
         "from opencollab.tools import Tool, VerificationTool, builtin_tools\n"
         "from opencollab.workflows import WorkflowContext\n"
-        "from opencollab.builtin_workflows import duo, duo_v3, get_builtin_workflows, run_dual_coder\n"
+        "from opencollab.builtin_workflows import duo, get_builtin_workflows, run_dual_coder\n"
         "from opencollab.patches import patch_paths\n"
         "from opencollab.tools import BashEvidence, evidence_tools, has_pass_evidence\n"
     )

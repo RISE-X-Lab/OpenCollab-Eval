@@ -11,7 +11,7 @@ Python 代码定义控制流程，其中包括智能体
 该包依赖 OpenCollab 0.7.1 或更高 0.7.x 版本中的工作流编写接口。
 
 ```python
-from opencollab.builtin_workflows import duo, duo_v3
+from opencollab.builtin_workflows import duo
 from opencollab.tools import Tool, builtin_tools
 from opencollab.workflows import WorkflowContext, workflow
 ```
@@ -24,7 +24,6 @@ from opencollab.workflows import WorkflowContext, workflow
 | 名称 | 结构 |
 | --- | --- |
 | `duo` | OpenCollab 内置双 coder，按公开要求选择候选 |
-| `duo-v3` | 使用完整证据文件和只读证据工具的 OpenCollab Duo |
 | `base-team` | 分析员先给出简报，随后进入有界的编码与测试循环 |
 | `self-collab` | 按阶段执行，并审查计划和各阶段结果 |
 | `split-solve` | 分别完成独立子任务，随后统一验证 |
@@ -129,10 +128,7 @@ python -m opencollab_eval.generation.gen_prediction_workflow \
 `opencollab_eval.workflows` 导入工作流函数，与 OpenCollab 内部的工作流
 发现实现相互独立。
 
-可以直接通过 OpenCollab 调用 Duo。评测调用方也可以继续使用
+可以直接通过 OpenCollab 调用 Duo。评测调用方使用
 `opencollab_eval.workflows.duo`，它引用同一个公开函数。
-`validation-council-dual-coder-selection-v2` 与
-`validation-council-dual-coder-selection-v3` 作为兼容入口，保留原名称与导入路径。
-`oc-eval duo` 默认使用 `duo` 和 `agent_profile="single2"`。
-在 JSON 配置中将 `workflow` 设为 `duo-v3` 即可选择文件证据版本。
-`oc-eval g22` 命令调用同一个评测器。
+`oc-eval duo` 默认选择统一的 `duo` 和 `agent_profile="single2"`，
+裁决者始终通过文件读取完整证据。`oc-eval g22` 调用同一评测器。

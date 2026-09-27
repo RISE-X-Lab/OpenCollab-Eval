@@ -11,7 +11,7 @@ import sys
 
 import pytest
 from openai import DefaultAsyncHttpxClient
-from opencollab.builtin_workflows import duo, duo_v3
+from opencollab.builtin_workflows import duo
 from opencollab.environments import local_environment
 
 from opencollab_eval.engine.evaluator import EvalTask, run_eval_task
@@ -105,8 +105,8 @@ def _script_model(monkeypatch, source, public_command, *, file_evidence):
         payload = json.loads(request.content)
         requests.append(payload)
         prompt = next(item["content"] for item in payload["messages"] if item["role"] == "user")
-        role = "A" if "You are autonomous coder A." in prompt else "B" if "You are autonomous coder B." in prompt else (
-            "judge" if "You are the read-only contract adjudicator" in prompt else None
+        role = "A" if "You are candidate A," in prompt else "B" if "You are candidate B," in prompt else (
+            "judge" if "You are the read-only adjudicator" in prompt else None
         )
         assert role is not None
         assert (source / "widget.py").read_text() == ORIGINAL
@@ -150,7 +150,7 @@ def _script_model(monkeypatch, source, public_command, *, file_evidence):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("workflow", "file_evidence"), [(duo, False), (duo_v3, True)])
+@pytest.mark.parametrize(("workflow", "file_evidence"), [(duo, True)])
 async def test_duo_captured_patch_passes_scoring_in_a_fresh_workspace(tmp_path, monkeypatch, workflow, file_evidence):
     monkeypatch.delenv("OPENCOLLAB_UNBOUNDED_LIMITS", raising=False)
     monkeypatch.delenv("OPENCOLLAB_EVAL_NO_PROGRESS_TIMEOUT", raising=False)

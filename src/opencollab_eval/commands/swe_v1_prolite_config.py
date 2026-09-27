@@ -552,12 +552,12 @@ def sync_runtime(
             "from opencollab import OpenCollab, RunResult; "
             "from opencollab.environments import attach_container; "
             "from opencollab.tools import builtin_tools, evidence_tools; "
-            "from opencollab.builtin_workflows import duo, duo_v3; "
+            "from opencollab.builtin_workflows import duo; "
             "from opencollab.patches import patch_paths; "
             "from opencollab.workflows import workflow; "
             f"assert opencollab.__version__=={distribution_version!r}; "
             "assert OpenCollab and RunResult and attach_container and builtin_tools and workflow; "
-            "assert evidence_tools and duo and duo_v3 and patch_paths"
+            "assert evidence_tools and duo and patch_paths"
         )
     )
     prepare_commands.append(

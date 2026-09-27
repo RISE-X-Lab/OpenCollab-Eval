@@ -31,12 +31,10 @@ default Single profile selects a different agent configuration. Coding roles use
 Project tests run through native Bash, and OpenCollab retains their observed
 command and execution result. The adjudicator receives the role's restricted tool set.
 
-Import Duo directly with `from opencollab.builtin_workflows import duo`. Select
-`duo-v3` in the configuration for complete saved candidate evidence and a
-read-only evidence tool. The legacy `oc-eval g22` command and workflow names
-`validation-council-dual-coder-selection-v2` and
-`validation-council-dual-coder-selection-v3` remain compatible. Their existing
-Python import paths continue to resolve to OpenCollab implementations.
+Import Duo with `from opencollab.builtin_workflows import duo`. The single
+`duo` workflow uses task-oriented prompts and complete saved candidate evidence
+with the read-only `read_candidate_evidence` tool. `oc-eval g22` remains a
+command alias for the same evaluator.
 
 The tutorial below runs on one Linux worker with Docker. The model is a
 user-selected OpenAI-compatible **Responses** endpoint. Set the model name,
@@ -503,12 +501,9 @@ coder 可用的原生工具为 `bash`、`file_read`、`file_write`、`apply_patc
 项目测试通过原生 Bash 执行，OpenCollab 保留观察到的命令与执行结果。
 裁决角色使用该角色受限的工具集合。
 
-可以通过 `from opencollab.builtin_workflows import duo` 直接导入 Duo。
-配置中选择 `duo-v3` 时，裁决角色使用完整的候选证据文件和只读证据工具。
-原有 `oc-eval g22` 命令与工作流名称
-`validation-council-dual-coder-selection-v2` 和
-`validation-council-dual-coder-selection-v3` 保持兼容。
-原有 Python 导入路径继续引用 OpenCollab 中的实现。
+通过 `from opencollab.builtin_workflows import duo` 导入 Duo。
+统一的 `duo` 工作流采用通用任务提示、完整候选证据文件和只读
+`read_candidate_evidence` 工具。`oc-eval g22` 保留为同一评测命令的别名。
 
 下方教程在一台有 Docker 的 Linux worker 上运行。
 模型使用用户配置的 OpenAI 兼容 **Responses** 入口。

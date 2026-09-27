@@ -16,11 +16,8 @@ from opencollab_eval.commands import swe_g11_parallel_runner as parallel
 from opencollab_eval.runtime_config import SINGLE2_AUTHORIZED_BUDGET, SINGLE2_AUTHORIZED_MAX_STEPS
 
 WORKFLOW = "duo"
-WORKFLOWS = frozenset({
-    "duo", "duo-v3",
-    "validation-council-dual-coder-selection-v2",
-    "validation-council-dual-coder-selection-v3",
-})
+WORKFLOWS = frozenset({"duo"})
+
 DEFAULT_WORKFLOW_ENV = {
     "OPENCOLLAB_WIRE_PROTOCOL": "responses",
     "OPENCOLLAB_REASONING_EFFORT": "max",
@@ -47,7 +44,7 @@ def resolve_config(path: Path, overrides: dict[str, Any] | None = None) -> paral
     data.update({key: value for key, value in (overrides or {}).items() if value is not None})
     workflow_name = str(data.get("workflow", WORKFLOW))
     if workflow_name not in WORKFLOWS:
-        raise ValueError("duo requires the duo or duo-v3 workflow, or a compatible G22 name")
+        raise ValueError("duo requires workflow=duo")
     settings = {
         "runner_transport": "local",
         "workflow": workflow_name,

@@ -16,7 +16,7 @@ from gen_prediction_workflow_support import (
 from gen_prediction_workflow_support import (
     trusted_proof as _trusted_proof,
 )
-from opencollab.builtin_workflows import duo, duo_v3
+from opencollab.builtin_workflows import duo
 
 from opencollab_eval.engine.evaluator import EvalResult
 from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid
@@ -121,7 +121,7 @@ def _assert_generate_defers_container_patch_extraction(
     ("selected_profile", "configured_profile"),
     [(None, None), ("single2", None), (None, "single2")],
 )
-@pytest.mark.parametrize(("workflow", "workflow_name"), [(duo, "duo"), (duo_v3, "duo-v3")])
+@pytest.mark.parametrize(("workflow", "workflow_name"), [(duo, "duo")])
 def test_workflow_generation_resolves_and_records_agent_profile(
     monkeypatch, tmp_path, selected_profile, configured_profile, workflow, workflow_name,
 ):

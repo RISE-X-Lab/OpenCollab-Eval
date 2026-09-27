@@ -66,7 +66,7 @@ official proof、validation summary 和 cleanup result。成功要求 patch hash
 ## 本地 Duo 迁移实跑
 
 本地 Duo 测试通过已安装 OpenCollab-Eval 的 `run_eval_task` 入口，
-分别运行 `duo` 和 `duo-v3`。脚本化 HTTP 响应驱动真实文件工具、原生公开
+运行统一的 `duo`。脚本化 HTTP 响应驱动真实文件工具、原生公开
 pytest 命令、隔离候选工作区、裁决采用与评测器补丁捕获。新的 Git 评分工作区
 接收捕获补丁，并加入事先保留在生成环境之外的隐藏回归测试。原源码上的两个
 目标均失败，应用补丁后均通过，结果由评测器已有的精确目标解析器处理。

@@ -29,7 +29,7 @@ OpenCollab-Eval currently imports the following public OpenCollab surfaces.
 | `opencollab` | `OpenCollab` and `RunResult` |
 | `opencollab.environments` | `Environment`, `attach_container`, `docker_environment`, and `worktree_environment` |
 | `opencollab.tools` | `BuiltinToolName`, `Tool`, `builtin_tools`, and `evidence_tools` |
-| `opencollab.builtin_workflows` | `duo`, `duo_v3`, `get_builtin_workflows`, and `run_dual_coder` |
+| `opencollab.builtin_workflows` | `duo`, `get_builtin_workflows`, and `run_dual_coder` |
 | `opencollab.patches` | Generic Git diff blocks and paths |
 | `opencollab.workflows` | `workflow` |
 
@@ -176,8 +176,8 @@ Target tests start only after these tree identities agree.
 ## Solver integration
 
 Duo orchestration lives under OpenCollab's `opencollab.builtin_workflows`. Its
-`duo` and `duo-v3` names select inline and file evidence respectively. The
-legacy `oc-eval g22` command and long workflow names remain compatible.
+single `duo` name uses task-oriented prompts and paged file evidence.
+The `oc-eval g22` command invokes that same workflow.
 Evaluation-owned workflows live under `opencollab_eval.workflows`. They use
 OpenCollab workflow decorators and tool factories while keeping benchmark
 secrets outside workflow arguments.

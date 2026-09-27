@@ -29,12 +29,9 @@ oc-eval duo --config CONFIG [--indices INDICES] [--workers COUNT]
             [--run-id ID] [--output-dir DIRECTORY] [--dry-run]
 ```
 
-该命令通过正式评测器运行 OpenCollab 内置 Duo 工作流。JSON 配置中的
-`workflow` 默认为 `duo`，`agent_profile` 默认为 `single2`。
-选择 `duo-v3` 可使用完整候选证据文件与只读裁决工具。
-`--dry-run` 输出有效配置。原有 `oc-eval g22` 命令与工作流名称
-`validation-council-dual-coder-selection-v2` 和
-`validation-council-dual-coder-selection-v3` 保持兼容。
+该命令通过正式评测器运行统一的 OpenCollab Duo。`workflow` 为 `duo`，
+`agent_profile` 默认为 `single2`。裁决者通过只读工具读取完整证据文件。
+`--dry-run` 输出有效配置，`oc-eval g22` 保留为命令别名。
 模型参数、预算、超时与评测选项沿用已有并行 runner。
 
 ### `oc-eval run`
