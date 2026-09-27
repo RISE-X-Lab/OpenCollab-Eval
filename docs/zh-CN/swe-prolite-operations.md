@@ -136,11 +136,15 @@ OpenHands 需要 Python 3.12 与打包的 `run_openhands_cli.sh` 资源。Claude
 
 并行运行器能够在共享压力出现后降低并发，并在任务顺利完成后恢复并发。若固定并发属于实验协议的一部分，请使用 `--no-adaptive-concurrency`。单项任务或单个镜像失败不会暂停其他任务。只有直接探测表明共享 Docker、存储、队列或运行时基础设施失败时，才会暂停整个批次。
 
+将 `OPENCOLLAB_EVAL_CAPACITY_CONTROL_FILE` 设置为控制器宿主机上的外部 JSON 文件，可以在任务运行期间调整生成并发。文件中的 `generation_workers` 字段表示并行运行的任务 worker 数，一个 worker 在解题期间可以发起多次提供商请求。有效并发值范围为 1 到 `--max-workers`，超过上限的正整数按上限执行。运行器在读到有效值前以 `--min-workers` 启动，每秒在普通队列和技术恢复队列中检查文件，读取失败或文件尚未写完整时沿用上次接受的值。调高数值会在已有任务仍运行时派发等待任务。调低数值后，已有任务继续完成，随后按较小的并发数量补派任务。容量变化会写入调度事件。
+
 ## 运行时同步
 
 同步后的运行时包含 OpenCollab 公开软件包、OpenCollab-Eval 软件包、选定的 shell 资源和一份清单。生成开始前，本地与远程源代码树的 SHA-256 必须一致。
 
 `--no-sync-runtime` 仅能与 `--expected-runtime-tree-sha256` 一同使用。此组合会固定一个已经安装的运行时，并拒绝任何不匹配。只有操作人员已经同步并验证过这棵精确代码树时，才能使用该组合。
+
+镜像依赖暂存使用源工作区旁的目录，使大型忽略包目录能够在同一文件系统上移动。候选副本在容器的 `/tmp` 下准备。恢复到其他挂载点时，程序先在候选所在文件系统创建实际副本，再重命名到依赖路径。依赖准备传输沿用已配置的 `OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS` 时间预算，省略该设置时使用 `OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT`。
 
 ## 输出布局
 

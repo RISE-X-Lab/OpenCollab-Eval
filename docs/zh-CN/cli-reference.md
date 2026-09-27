@@ -116,6 +116,8 @@ python -m opencollab_eval.commands.swe_eval_run --help
 
 分离进程模式是通过 `launchd` 实现的 macOS 操作便利功能。直接提供商传输可以在受支持的平台上以前台方式运行。其他提供商传输默认使用持久化 `launchd` 中继。CI 与 Linux 自动化应传入 `--no-persistent-proxy`，并提供已经妥善管理的中继和隧道。
 
+并行运行器还会读取控制器宿主机上的 `OPENCOLLAB_EVAL_CAPACITY_CONTROL_FILE`。外部 JSON 文件用 `generation_workers` 指定并行运行的任务 worker 数，每个 worker 在解题期间可以发起多次提供商请求。有效范围为 1 到 `--max-workers`，超过上限的正整数按上限执行。指定控制文件后，初始并发数为 `--min-workers`，普通任务和技术恢复任务运行期间每秒刷新一次。无效读取继续使用上次有效值，降低并发后在途任务继续完成。
+
 ## 高级模块入口
 
 高级命令是已安装软件包中的模块。它们面向仓库操作人员与测试，其接口的演进速度可能快于顶层 CLI。

@@ -182,6 +182,18 @@ part of the experiment protocol. A single task or image failure does not pause
 other tasks. A batch pause requires a direct failed probe of shared Docker,
 storage, queue, or runtime infrastructure.
 
+Set `OPENCOLLAB_EVAL_CAPACITY_CONTROL_FILE` to an external JSON file on the
+controller host to adjust generation concurrency while tasks are running.
+Its `generation_workers` field counts concurrently active task workers. A
+worker can issue multiple provider requests while solving its task. The
+effective worker count ranges from 1 through `--max-workers`, with larger
+positive integers capped at that maximum. The runner starts at `--min-workers`
+until it reads a valid value, checks the file every second in the normal and technical recovery
+queues, and keeps the last accepted value through incomplete or unavailable
+reads. Increasing the value dispatches pending tasks while earlier tasks are
+still running. Decreasing it lets active tasks finish before filling the
+smaller worker window. Capacity updates are recorded in scheduler events.
+
 ## Runtime synchronization
 
 The synchronized runtime contains the OpenCollab public package, the
@@ -192,6 +204,14 @@ remote source-tree SHA-256 values must match before generation.
 `--expected-runtime-tree-sha256`. This combination pins an already installed
 runtime and rejects any mismatch. It should be used only when the operator has
 already synchronized and verified that exact tree.
+
+Image dependency stashing uses a store beside the source workspace, allowing
+same-filesystem moves for large ignored package directories. Candidate copies
+are prepared beneath the container's `/tmp`. Hydration onto another mount
+stages a materialized copy on the candidate filesystem before renaming it into
+place. Dependency preparation transport uses the existing
+`OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS` allowance when configured and
+otherwise uses `OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT`.
 
 ## Output layout
 

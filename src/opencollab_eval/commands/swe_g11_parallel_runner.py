@@ -17,6 +17,7 @@ from typing import Any
 
 from opencollab_eval.commands import _swe_g11_config as _config
 from opencollab_eval.commands import _swe_g11_reports as _reports
+from opencollab_eval.commands import swe_g11_capacity_control as _capacity_control
 from opencollab_eval.commands import swe_g11_parallel_process as _parallel_process
 from opencollab_eval.commands import swe_g11_shared_health as _shared_health
 from opencollab_eval.commands import swe_g11_task_execution as _task_execution
@@ -62,6 +63,10 @@ aggregate = _reports.aggregate
 compact_progress = _reports.compact_progress
 write_markdown = _reports.write_markdown
 save_progress = _reports.save_progress
+
+CAPACITY_CONTROL_FILE_ENV = _capacity_control.CAPACITY_CONTROL_FILE_ENV
+_capacity_control_workers = _capacity_control.capacity_control_workers
+_refresh_capacity_control = _capacity_control.refresh_capacity_control
 
 
 def _run_task_process(command: list[str]) -> subprocess.CompletedProcess[str]:
@@ -390,6 +395,7 @@ def _run_technical_recovery_tail(
                 _technical_queue.RecoveryAttempt,
             ] = futures,
         ) -> None:
+            _refresh_capacity_control(config, scheduler)
             while pending and not scheduler.halted and len(futures) < scheduler.current_workers:
                 attempt = pending.pop(0)
                 futures[
@@ -406,8 +412,12 @@ def _run_technical_recovery_tail(
             while futures:
                 done, _ = concurrent.futures.wait(
                     futures,
+                    timeout=_capacity_control.wait_timeout(),
                     return_when=concurrent.futures.FIRST_COMPLETED,
                 )
+                if not done:
+                    submit_ready(executor)
+                    continue
                 for future in done:
                     attempt = futures.pop(future)
                     previous = selected[attempt.index]
@@ -523,12 +533,19 @@ def _run_parallel(config: ParallelConfig) -> dict[str, Any]:
     results: list[dict[str, Any]] = []
     futures: dict[concurrent.futures.Future[dict[str, Any]], int] = {}
     pending = list(config.indices)
-    scheduler = SchedulerState(current_workers=config.max_workers)
+    initial_workers = (
+        min(config.max_workers, config.min_workers)
+        if os.environ.get(CAPACITY_CONTROL_FILE_ENV, "").strip()
+        else config.max_workers
+    )
+    scheduler = SchedulerState(current_workers=initial_workers)
+    _refresh_capacity_control(config, scheduler)
 
     def current_scheduler() -> dict[str, Any]:
         return scheduler_snapshot(config, scheduler, pending=list(pending))
 
     def submit_ready(executor: concurrent.futures.ThreadPoolExecutor) -> None:
+        _refresh_capacity_control(config, scheduler)
         while pending and not scheduler.halted and len(futures) < scheduler.current_workers:
             index = pending.pop(0)
             futures[executor.submit(run_one, per_task_config, index)] = index
@@ -543,6 +560,7 @@ def _run_parallel(config: ParallelConfig) -> dict[str, Any]:
                 continue
             done, _ = concurrent.futures.wait(
                 futures,
+                timeout=_capacity_control.wait_timeout(),
                 return_when=concurrent.futures.FIRST_COMPLETED,
             )
             completed_batch: list[tuple[int, dict[str, Any]]] = []
