@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from tests.support.paths import SOURCE_ROOT
 from tests.support.swe_eval_status_support import (
-    SimpleNamespace,
     _strict_modern_prediction,
     hashlib,
     importlib,
@@ -108,11 +107,11 @@ def test_smoke_batch_returns_failure_when_generator_fails(monkeypatch, tmp_path)
     )
     observed = {}
 
-    def fake_make_test_spec(instance, namespace, arch):
+    def fake_instance_image(instance, namespace, arch):
         observed["arch"] = arch
-        return SimpleNamespace(instance_image_key="image")
+        return "image"
 
-    monkeypatch.setattr(driver, "make_test_spec", fake_make_test_spec)
+    monkeypatch.setattr(driver, "instance_image", fake_instance_image)
 
     def fake_run(*args, **kwargs):
         observed["command"] = args[0]

@@ -446,19 +446,36 @@ def _official_eval(
     artifact_dir: Path,
 ) -> dict[str, Any]:
     import docker
+    from swebench.harness.constants import END_TEST_OUTPUT, START_TEST_OUTPUT
     from swebench.harness.grading import get_logs_eval
     from swebench.harness.run_evaluation import run_instance
-    from swebench.harness.test_spec.test_spec import make_test_spec
+    from swebench.harness.utils import make_test_spec
 
-    spec = make_test_spec(instance, namespace=namespace, arch=architecture)
-    expected_image = f"{namespace}/sweb.eval.{spec.arch}.{instance['instance_id']}:latest"
-    if spec.instance_image_key != expected_image:
+    expected_image = f"{namespace}/sweb.eval.{architecture}.{instance['instance_id']}:latest"
+    evaluation_instance = {
+        **instance,
+        "image": expected_image,
+        "log_parser": "parse_log_pytest",
+        "eval_type": "pass_and_fail",
+        "eval_script": "\n".join([
+            "cd /testbed",
+            "source /opt/miniconda3/bin/activate testbed",
+            "git apply - <<'OPENCOLLAB_E2E_TEST_PATCH'",
+            instance["test_patch"].rstrip(),
+            "OPENCOLLAB_E2E_TEST_PATCH",
+            f"echo '{START_TEST_OUTPUT}'",
+            f"PYTHONDONTWRITEBYTECODE=1 python -m pytest -rA {TARGET_TEST}",
+            f"echo '{END_TEST_OUTPUT}'",
+        ]),
+    }
+    spec = make_test_spec(evaluation_instance)
+    if spec.image != expected_image:
         raise RuntimeError("official TestSpec selected an unexpected image identity")
     model = str(prediction["model_name_or_path"]).replace("/", "__")
     report_relative = Path("logs") / "run_evaluation" / run_id / model / instance["instance_id"]
     with _working_directory(workspace):
         result = run_instance(
-            spec, prediction, False, False, docker.from_env(), run_id,
+            spec, prediction, docker.from_env(), run_id,
             timeout=120, rewrite_reports=False,
         )
     report_dir = workspace / report_relative
@@ -478,7 +495,7 @@ def _official_eval(
     collected = validate_official_execution(status_map, output, found=found)
     patch_sha = _sha256_file(patch_path)
     expected_sha = prediction["patch_sha256"]
-    if result != {"completed": True, "resolved": True} or target_report.get("resolved") is not True:
+    if result != (instance["instance_id"], report) or target_report.get("resolved") is not True:
         raise RuntimeError("official evaluation did not resolve the exact candidate")
     if patch_sha != expected_sha:
         raise RuntimeError("official evaluation patch differs from the bound candidate")
@@ -488,8 +505,8 @@ def _official_eval(
         "function": "run_instance",
         "instance_id": instance["instance_id"],
         "run_id": run_id,
-        "container_name": spec.get_instance_container_name(run_id),
-        "image": spec.instance_image_key,
+        "container_name": f"sweb.eval.{instance['instance_id'].lower()}.{run_id}",
+        "image": spec.image,
         "target_test": TARGET_TEST,
         "test_command": "pytest -rA",
         "collected_tests": collected,
