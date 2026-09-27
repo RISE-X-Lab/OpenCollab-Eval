@@ -1,0 +1,49 @@
+# The qwen half of the pair. Two runs of the Team arm at the ladder's `primary`
+# rung under `qwen3.8-flash`, on OpenCollab be6fa3bf -- the first commit at
+# which the harness knows this model at all.
+#
+# Not a ladder cell and not a number the paper reports: two runs estimate
+# nothing. It answers three questions before a 40-run batch is paid for:
+#
+#   1. does a run under this model file reach the endpoint, record a
+#      trajectory, and come back through `report`;
+#   2. does every request carry `message_agent` in its tool list, and what
+#      `tool_choice` value does it carry -- the two facts the trajectory does
+#      not record, and without which a qwen alpha of 0 cannot be read either
+#      way;
+#   3. what a step costs in wall clock and tokens on this host.
+#
+# The earlier `lthpc-smoke-qwen-primary` ran at 9175297e, where this model was
+# not in the capability table and silently took the dataclass defaults: no
+# context window (fixed 120k compaction thresholds) and forced tool choice
+# left enabled. Its two runs are therefore a different instrument and are not
+# pooled with anything here.
+#
+# subset-50 rows 2-3 (sympy-24213, xarray-4075), the same two rows the
+# deepseek half runs, so the two models are paired on the task.
+#
+# `PYTHONPATH` and `OC_TOOLLOG_DIR` are observability only; see the deepseek
+# half's header for what the prepended directory contains and why the import
+# path is unaffected. Neither variable is set for the 40-run batch.
+name: lthpc-smoke2-qwen-primary
+host: lthpc
+arm: team
+rung: primary
+cell: facts-v2
+suite: subset-50
+rows: {start: 2, stop: 3}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 2
+model_env: configs/.env.qwen
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  PYTHONPATH: "/home/xuzhenhua/oc-toollog:/home/xuzhenhua/OpenCollab:/home/xuzhenhua/OpenCollab-Eval/src"
+  OC_TOOLLOG_DIR: "/home/xuzhenhua/oc-toollog/logs-lthpc-smoke2-qwen-primary"
+pins:
+  opencollab: be6fa3bf8cc8d61732bf07e00fe5b721220b82f5
+  opencollab_eval: 898d5807305edbac17917ad18a2dafc85dae7487
+note: "lthpc qwen smoke at OpenCollab be6fa3bf, not a ladder cell: 2 runs of Team primary (facts-v2) on subset-50 rows 2-3 under qwen3.8-flash, the first commit whose capability table knows the model; checks end-to-end recording, per-step cost, and -- through a request log kept outside both repositories -- whether message_agent is in the tool list every request carries and what tool_choice is sent"

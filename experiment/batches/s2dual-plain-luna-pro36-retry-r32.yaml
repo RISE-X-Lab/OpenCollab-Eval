@@ -1,0 +1,41 @@
+# Retry of s2dual-plain-luna-pro36 (G2, gpt-5.6-luna, plain card, N2 pin) rows 32-32: qutebrowser-1af602b2.
+#
+# Attempt 1 (the main batch at concurrency 10, 02:13-04:13Z on 09-24) stopped validly, but on the
+# 7,200 s wall clock, after running mostly through the luna gateway's slowdown from 02:42Z (output
+# per call fell from 27-33 to 9-11 tokens/s and streams were cut; the Adopter's session at 02:43:46Z
+# and coder_a's at 02:55:23Z ended on `Upstream response stream was interrupted` and were woken
+# again (10 and 4 more calls)).
+# In healthy gateway time luna rows do not reach the wall clock (G1 0/36).
+# The lead ruled on 09-24 that this wall-clock stop is the gateway's problem and to rerun the row.
+# Rerunning a row the gateway damaged uses none of the three attempts, and a gateway failure of this
+# attempt is retried until one succeeds.
+#
+# If the agents make this attempt fail (such as a revocation), no further attempt is made and the
+# report's merge falls back to attempt 1, the last valid one. At most six luna runs at a time.
+# Same fields and pins as G2; merged by `retry_of` (the last valid attempt started wins); named
+# -retry-r32 so the review scripts' `<name>-retry-*` glob reads it.
+# ---------------------------------------------------------------------------
+name: s2dual-plain-luna-pro36-retry-r32
+host: lthpc
+arm: team
+cell: s2dual-plain
+suite: pro-mini36-clean
+rows: {start: 32, stop: 32}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 7200
+concurrency: 1
+model_env: configs/.env.gw2-luna
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+retry_of: s2dual-plain-luna-pro36
+pins:
+  opencollab: 4b231b0e128696768e168521eddb634fd8951927
+  opencollab_eval: 3ff64deb72b1879449a3f1d11d52fde329088d04
+note: "rerun of s2dual-plain-luna-pro36 row 32 (qutebrowser-1af602b2): attempt 1 valid but cut off at the wall clock in the gateway slowdown"

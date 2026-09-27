@@ -1,0 +1,117 @@
+# TEMPLATE -- not launchable as written. Copy, substitute the four <...> fields.
+#
+# The breadth arm: one adherence measurement per model, on the twelve tasks
+# every other cell in the paper has already run.
+#
+# What this arm is for, in one sentence: the paper's second leg says the
+# realized treatment swings across [0,1] under changes no paper reports, and a
+# swing across models is only credible if the models were compared on the same
+# tasks, under the same wording, with the same instrument.
+#
+# ---------------------------------------------------------------- task count
+#
+# `rows: {start: 1, stop: 12}` over `subset-50`, which is the first twelve of
+# the forty the deepseek and qwen ladders ran. Twelve, not forty, for reasons
+# that were computed rather than guessed (2026-09-10):
+#
+#   * Twelve separates the claim this table makes. A model at alpha ~ 0 gives
+#     [0.000, 0.310] and one at alpha ~ 0.9 gives [0.555, 0.997]: disjoint. Six
+#     does not separate them ([0.000, 0.461] vs [0.359, 0.996]); eight is the
+#     floor. Twelve is the floor plus room for two or three provider failures,
+#     which is not a hypothetical -- `luna-cmdprimary40` lost 27 runs of 50 to
+#     a provider 503.
+#   * Forty separates nothing further. The homogeneity test across models is
+#     already at power 0.99 at twelve under the conservative spread; the pair
+#     this table cannot separate (0.35 vs 0.60) stays inseparable at forty.
+#     What forty buys is a narrower row, at 3.3x the money and 3.3x the wall
+#     clock -- and the wall clock does not fit before the data freeze.
+#   * Twelve is not a commitment. The suite is an ordered list and the twelve
+#     are its prefix, so a cell can be grown to forty later by appending rows
+#     13-40; nothing already paid for is re-run. Growing is the design's
+#     intended move, not a workaround.
+#
+# So: this table reports alpha, edges_walked and cost. It must NOT report
+# resolve rate -- at n=12 that is noise, and we have the measurement that says
+# so (six empty patches, same task and same config, four of them non-empty on
+# one rerun).
+#
+# ------------------------------------------------------------- which rungs
+#
+# Three cells per model. Two are fixed and one is chosen after the first two
+# land:
+#
+#   1. `primary` / `facts-v2` -- the cell that corresponds to what published
+#      work actually does. This is the table's headline column.
+#   2. `prohibit` / `cmd-prohibit` -- this model's own positive control. Our
+#      harness was written against an OpenAI-style tool protocol; if a model
+#      shows alpha = 0 we cannot otherwise distinguish "this model does not
+#      delegate" from "our instrument cannot record its delegation", and that
+#      second possibility is the exact charge this paper levels at others.
+#      deepseek reaches 0.925 here, so a model that is still at zero under
+#      prohibit is an instrument red flag, not a finding.
+#   3. the adaptive third -- `bare` if primary and prohibit are far apart,
+#      `plain` if the gap sits high. Three measurements over five rungs bracket
+#      the step to within two adjacent rungs; three FIXED rungs do not, and our
+#      own two models are the counterexample (primary/bare/plain resolves
+#      deepseek but degenerates on qwen, where bare = plain = 0.950).
+#
+# Cells 1 and 2 have no dependency on each other and may be launched together.
+#
+# ------------------------------------------------------- provider pinning
+#
+# OpenRouter routes one model id to several back-ends that differ in
+# quantization, context window and sampling defaults, and it may route
+# differently from one request to the next. Unpinned, "the model" is not an
+# identified variable -- which is the failure this paper is about.
+#
+# The pin rides in `OPENCOLLAB_THINKING_PARAMS`. That value is merged into the
+# request as `extra_body` (openai_provider.py:138) and `provider` is not one of
+# the framework-controlled fields, so it reaches OpenRouter's JSON body
+# untouched. `OPENCOLLAB_THINKING` only gates that merge and does nothing else,
+# so setting it changes exactly one field in the request. NO CODE CHANGE.
+#
+# `allow_fallbacks: false` with a single-element `order` means OpenRouter
+# either serves that back-end or returns an error. A run that completed
+# therefore ran on the pinned provider, which is what makes the pin verifiable
+# from the batch record alone: `<batch>.launch/batch.json:driver_env` carries
+# the value, and every run in a batch shares it.
+#
+# Choose <provider-name> from `orprobe endpoints <model-id>`, and confirm the
+# pin is honoured with `orprobe check <model-id> --provider <provider-name>`
+# BEFORE launching. That check also reports whether reasoning text comes back.
+#
+# ------------------------------------------------------------------- pins
+#
+# The breadth arm needs capability-table entries for models OpenCollab has
+# never seen (`MODEL_CONTEXT_WINDOWS` has no `gpt-5` key at all, so those
+# models resolve to a null context window; the `qwen` family key says 131,072
+# where qwen3.8-flash is really 983,616). Generate them with
+# `orprobe capabilities <ids...>`, which reads the context length from
+# OpenRouter rather than from anyone's memory.
+#
+# That is a change to OpenCollab after the 2026-09-07 code freeze, so the
+# breadth cells carry their own pin. It is additive and inert for the deepseek
+# and qwen cells, whose entries already exist and are not touched.
+#
+name: or-<family>-<model-slug>-<rung>12
+host: lthpc
+arm: team
+rung: <primary | prohibit | bare | plain>
+cell: <facts-v2 | cmd-prohibit | cmd-bare | cmd-plain>
+suite: subset-50
+rows: {start: 1, stop: 12}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env.or-<model-slug>
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_THINKING: "true"
+  OPENCOLLAB_THINKING_PARAMS: '{"provider": {"order": ["<provider-name>"], "allow_fallbacks": false}}'
+pins:
+  opencollab: <sha after the capability-table commit>
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "breadth arm: <model-id> at the <rung> rung on the ladder's first twelve tasks, provider pinned to <provider-name>"

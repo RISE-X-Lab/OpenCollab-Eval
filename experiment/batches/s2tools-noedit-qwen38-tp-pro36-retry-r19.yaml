@@ -1,0 +1,35 @@
+# Second attempt at s2tools-noedit-qwen38-tp-pro36 row 19 (vuls-d576b6c6; T1, qwen3.8-flash, judge card
+# with the Adopter's file_write and apply_patch removed, bash kept, at the N2 pin).
+#
+# Attempt 1 (T1): failed at the 5400 s wall clock: cleanup did not quiesce after cancellation; patch extraction skipped (shape of B2 row 17).
+# At most three counted attempts per row, declared before the retries run; attempts we stop
+# ourselves do not count. T1 lost 5/36 rows against 0-1/36 in B1/B2/B4, so the loss may vary
+# by setting (the Adopter can edit only through bash); retrying until success would filter
+# that out, hence the cap. Deferred until after G1/G2 (owner 09-23: the big cells first); runs
+# alone, never beside another cell. Same pins, key, env, caps and timeout as T1; merged by
+# `retry_of`. Named -retry-r19 so the review scripts' `<name>-retry-*` glob reads it.
+# ---------------------------------------------------------------------------
+name: s2tools-noedit-qwen38-tp-pro36-retry-r19
+host: lthpc
+arm: team
+cell: s2tools-noedit
+suite: pro-mini36-clean
+rows: {start: 19, stop: 19}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 5400
+concurrency: 1
+model_env: configs/.env.tp3-qwen38
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+retry_of: s2tools-noedit-qwen38-tp-pro36
+pins:
+  opencollab: 4b231b0e128696768e168521eddb634fd8951927
+  opencollab_eval: 3ff64deb72b1879449a3f1d11d52fde329088d04
+note: "second attempt at s2tools-noedit-qwen38-tp-pro36 row 19: attempt 1 lost (vuls-d576b6c6)"

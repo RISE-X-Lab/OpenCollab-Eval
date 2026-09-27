@@ -30,6 +30,8 @@ services, bootstrap internals, domain modules, harness code, and the retired
 | `duo` | OpenCollab built-in dual coder with public requirement selection |
 | `base-team` | Analyst brief followed by a bounded coder and tester loop |
 | `self-collab` | Sequential phases with plan review and per-phase verification |
+| `self-collaboration` | Three budget seats with Analyst analysis, Coder implementation, Tester verification, and Analyst adjudication |
+| `self-collaboration-reading-analyst` | The same scripted run with reading tools for the initial Analyst phase |
 | `split-solve` | Independent subtasks followed by combined verification |
 | `scout-solve` | Parallel read-only reconnaissance followed by one repair loop |
 | `analyst-solve` | Analyst-led reconnaissance, phased repair, and final verification |
@@ -146,3 +148,28 @@ Duo can be called through OpenCollab directly. Evaluation callers can use
 `oc-eval duo` uses the single `duo` workflow with `agent_profile="base"`
 by default, resolves it to `single2`, and records the resolved name. It always supplies complete file evidence to the adjudicator.
 The `oc-eval g22` command invokes that same evaluator.
+
+The `self-collaboration` workflows keep three seat budgets across repeated
+sessions and allow one repair round. The reading variant restricts the first
+Analyst phase to its reading bundle. Both record phase edges and source-tree
+snapshots in their workflow result.
+
+The generator also accepts `--team-config /path/to/team.yaml` for a prebuilt
+team that uses isolated worktrees and serialized turns. Team and workflow
+selection are mutually exclusive. Single agents, workflows, and teams share
+public issue text, requirements, interface descriptions, hints, and an
+environment-derived repository listing. Native Base selects Single2 and keeps
+its own prompt and tools. Each metric row carries `run_summary` and the
+observed provider transport settings. Team rows also retain the role cards,
+role tools, and recorded delivery-tree boundaries.
+
+Best-of-N uses `opencollab_eval.generation.gen_prediction_best_of_n`. It splits
+one run budget across independent candidate containers, preserves each
+candidate record, and continues after a candidate startup or runtime failure.
+Container cleanup failures retain the existing ownership behavior. Its
+selector keeps the recorded ICLR placeholder rule and reports arbitrary
+selections through `best_of_n.arbitrary_choice`.
+
+The batch driver is `opencollab_eval.generation.gen_prediction_batch`. Explicit
+arm settings supply the research budget, step ceiling, and deadline. Omitted
+generic token and step caps retain the current runtime defaults.

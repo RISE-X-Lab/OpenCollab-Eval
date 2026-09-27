@@ -1,0 +1,2 @@
+{"instance_id": "beta__beta-1", "submitted_patch_chars": 1200, "run_summary": {"steps": 25, "tokens": 700000, "status": "completed", "reason": null, "duration_s": 12.5, "error": null}}
+{"instance_id": "beta__beta-2", "submitted_patch_chars": 950, "run_summary": {"steps": 31, "tokens": 810000, "status": "completed", "reason": null, "duration_s": 12.5, "error": null}}

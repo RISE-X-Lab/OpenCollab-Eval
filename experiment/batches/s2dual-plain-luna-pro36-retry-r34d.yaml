@@ -1,0 +1,42 @@
+# Retry of s2dual-plain-luna-pro36 (G2, gpt-5.6-luna, plain card, N2 pin) rows 34-34:
+# qutebrowser-6b320dc1.
+#
+# Attempt 1 (the main batch, 02:32-04:32Z on 09-24) stopped validly but on the 7,200 s wall clock in
+# the luna gateway's slowdown. -retry-r34 (10:18-11:52Z) was revoked after the Adopter's own grep
+# over `/` timed out; the lead then asked for one more attempt. -retry-r34b (12:43-13:47Z) stopped
+# validly but the gateway ended it (both Coders' last calls cut before either had committed, while
+# the Adopter could still have been woken; no patch).
+# -retry-r34c (14:08-14:15Z) failed on the gateway: the Adopter's stream was cut at 14:13:51Z and
+# coder_a's at 14:15:03Z, with no message in flight to wake either. Its first 15 minutes read 11
+# calls, median output 8.5 tokens/s and two cut streams.
+# A gateway failure uses none of the three attempts and is retried until one succeeds; this attempt
+# is launched only after the gateway has had time to recover. If the agents make it fail, no further
+# attempt is made and the merge falls back to attempt 1.
+#
+# Same fields and pins as G2; merged by `retry_of` (the last valid attempt started wins); named
+# -retry-r34d so the review scripts' `<name>-retry-*` glob reads it.
+# ---------------------------------------------------------------------------
+name: s2dual-plain-luna-pro36-retry-r34d
+host: lthpc
+arm: team
+cell: s2dual-plain
+suite: pro-mini36-clean
+rows: {start: 34, stop: 34}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 7200
+concurrency: 1
+model_env: configs/.env.gw2-luna
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+retry_of: s2dual-plain-luna-pro36
+pins:
+  opencollab: 4b231b0e128696768e168521eddb634fd8951927
+  opencollab_eval: 3ff64deb72b1879449a3f1d11d52fde329088d04
+note: "fourth rerun of s2dual-plain-luna-pro36 row 34 (qutebrowser-6b320dc1): -retry-r34c failed on two cut streams in its first 7 minutes"

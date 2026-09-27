@@ -1,0 +1,201 @@
+# s2dual-judge: G22's two-candidate organization seated as the evaluated single agent,
+# on the SWE-bench Pro mini-36 whose repositories the solver-repo sanitize leaves
+# intact.
+#
+# THE CELL. The reference cell, and the only one that commands nothing.
+# Its block names no role and states no division of labour; everything the
+# Adopter knows about the two Coders it knows from the shared body. This is
+# the cell an adherence number means the most on, and the one where the
+# organization is most likely not to happen.
+#
+# THE ROSTER. An Adopter (the entry seat) and two Coders, `coder_a` and `coder_b`.
+# The Adopter can reach both; the two Coders cannot reach each other, so the
+# Adopter is the only channel between them. The card asks for them one at a
+# time: brief the first, wait for its answer, then write the second its own
+# brief. What goes into that second brief is the Adopter's, and which of the two
+# answers the run delivers is its choice too.
+#
+# EVERY SEAT IS SINGLE2, AND THAT IS WHAT THIS FAMILY ADDS. Each role declares
+# `profile: single2`, so all three agents run the evaluated single agent: its
+# system prompt, its history shaper, its safety wrapper, and a `bash` result
+# capped at 10,000 characters, with the role's card appended to that prompt
+# rather than replacing it. The single-agent arm runs the same implementation,
+# so a difference between the two is the organization rather than the seat --
+# which is exactly what a `dual-*` number could not say, because those cells
+# seat OpenCollab's own agent against a Single2 single arm.
+#
+# NOT POOLABLE WITH `dual-*`. Same roster, same four edges, same five treatment
+# blocks byte for byte, and a different agent under them. The rows do not merge,
+# and the cells are named apart so nothing can merge them by accident.
+#
+# THREE THINGS THIS IS NOT.
+#   * Not best-of-2. The two candidates are not independent: the second is
+#     briefed by an Adopter that has already read the first.
+#   * Not G22's relay. G22 forwards the first agent's output; here the Adopter
+#     writes the second brief itself, and nothing prescribes what crosses.
+#   * Not poolable with the handoff ladder. Different roster, different body.
+#
+# WHICH ADHERENCE NUMBER TO READ. `summary.alpha` is "a delegate seat spent
+# tokens and spoke", and on this roster a run that used one Coder and never
+# addressed the other satisfies it -- while having produced one candidate, which
+# is the failure the family exists to measure. Read
+# `summary.every_delegate_rate`: every declared delegate seat spent tokens and
+# spoke, with its own Clopper-Pearson interval. The report prints it beside
+# alpha whenever the two differ.
+#
+# THE STEP CAP IS 200, NOT THE 100 THE `dual-*` CELLS RAN AT. Single2's own
+# delivery configuration is 200 steps, and a seat that is that agent runs at its
+# step cap. The two families do not pool anyway, so nothing is lost by moving
+# it, and holding 100 would have made the seats Single2 in everything but how
+# long they are allowed to work.
+#
+# WHAT IS HELD EQUAL. The five specs of this family differ from one another in
+# `name` and `cell` and in nothing else, so a difference between two of them is
+# a difference between two cards. All five move endpoints together or none
+# does.
+#
+# CONCURRENCY IS 24, AND THE FIELD THAT BUYS IT IS `OPENCOLLAB_DOCKER_TIMEOUT`.
+# Measured on the `dual-*` cells at this endpoint: 36 in one wave put the shared
+# host's five-minute load at 61.8 against 64 cores and bought little, because a
+# 36-row cell ends when its slowest single run ends; at 24 the same rows take
+# roughly 110 minutes and leave a third of the machine to the sixteen other
+# accounts on it. The 300 s docker timeout is what a snapshot step's own walk of
+# the repository needs under that contention, not what daemon dispatch costs.
+# Raising it changes `env` and so the batch identity; `concurrency` is
+# deliberately outside the identity, because a resume may use a different one.
+#
+# SURVIVING A GATEWAY THAT WOBBLES. `OPENCOLLAB_LLM_MAX_RETRIES` is 30 against a
+# default of 3, and `OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET` is 600 against a
+# default of 0. The two must move together: the 60 s ceiling on exponential
+# backoff applies only when a time budget exists, so raising the retry count
+# alone would let a late backoff sleep for days and silently spend the run's
+# wall clock. With both set, a seat absorbs up to ten minutes of 502s and
+# carries on; past that it ends on a provider error, which `cell_report`
+# excludes rather than counts.
+# ---------------------------------------------------------------------------
+# 09-21 ENDPOINT: THE FOURTH ACCOUNT, AND WHY MOVING IS ALLOWED HERE.
+#
+# `model_env` moved from `configs/.env.tp-qwen38` to `configs/.env.ws-qwen38`.
+# Same model, `qwen3.8-flash`; the account and the endpoint changed.
+#
+# WHY. Both token-plan keys ran their weekly quota to zero. `e7c28419` -- the one
+# `.env.tp-qwen38` holds -- resets 09-27 19:49 UTC, `ca8430b2` resets 09-25 17:04
+# UTC, and `37c2a2ab` answers 401 `invalid_api_key` and will not recover. Both
+# reset times fall after the 09-25 full-paper deadline. What running against an
+# exhausted key looks like is on disk: `dual-judge-dsv41f-pro36` has all 36 rows
+# in `preds-team.jsonl` and all 36 are `runtime_status: failed` with the same
+# 429 `quota has been exhausted`. A full row count is not a finished cell.
+#
+# WHY THIS IS NOT THE SPLIT THE HANDOFF NOTE FORBIDS. Its rule -- five cells share
+# one endpoint or none moves -- guards against a ladder half on one endpoint and
+# half on another, which is what lost the grid's qwen cells. No cell of this
+# family has run: all five out-dirs are absent from the host. Moving all five
+# before any of them starts leaves the family internally uniform, which is the
+# property the rule protects. The five still move together, or none does.
+#
+# THE NAME IS DELIBERATELY UNCHANGED. `model_env` is part of `spec_digest`, so
+# this is a fresh batch identity -- but the name only has to change when an older
+# out-dir would collide, and here there is none. The handoff note's table of
+# batch names stays correct.
+#
+# WHAT IS LOST. Nothing within this family: all five cells share the endpoint, so
+# a difference between two of them is still a difference between two cards, which
+# is the paper's claim. What is lost is any head-to-head against a cell that ran
+# on token-plan -- the old `dual-*` family, which the handoff note already
+# forbids pooling with for four other reasons.
+#
+# THERE IS NO 429 TO STOP THIS ONE. token-plan keys are `sk-sp-` and carry a weekly
+# quota, so "send it and let the quota stop it" was a way to schedule. This key is
+# `sk-ws-`: metered billing, no weekly quota, no 429, no balance reported by the
+# endpoint. It bills until told to stop. The handoff note's cost section reasons
+# about the weekly ceiling; that ceiling is gone and money replaces it. A spend
+# limit has to be set before launch and enforced by watching.
+#
+# 09-21 pre-flight on this endpoint, by sending real completions rather than
+# probing `/models`: `qwen3.8-flash` answered 200 in 1 s and the response's model
+# field matched; `reasoning_effort=max` accepted; tools returned `tool_calls`;
+# `usage` carried `reasoning_tokens`. The base URL ends in `/compatible-mode/v1`;
+# the `/api/v1` path the key arrived with answers 404 to an OpenAI-shaped POST.
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 09-21: THE DEEPSEEK TWIN OF THE s2dual FAMILY.
+#
+# Derived from `s2dual-judge-pro36.yaml` by changing exactly two lines --
+# `name` and `model_env`. Same endpoint, same key, same 36 rows, same cards,
+# same budget, same step cap, same env block. The model is the only difference,
+# which is the property this pair is for: a qwen-to-deepseek difference here is
+# a difference between two models and nothing else.
+#
+# THAT PROPERTY IS ONLY TRUE BECAUSE BOTH FAMILIES START ON THE SAME ACCOUNT.
+# The old `dual-*` sweep lost it: its qwen cells ran on token-plan, whose key
+# then exhausted its weekly quota, so its deepseek cells could only be moved.
+# The s2dual family never ran anywhere else -- its qwen cells started on
+# `.env.ws-qwen38` -- so this twin on `.env.ws-dsv41f` is the comparison the
+# sweep was designed to make. Do not move either family off this endpoint.
+#
+# THIS MODEL IS PRICED BY TIME OF DAY AND THE OTHER ONE IS NOT.
+# `deepseek-v4.1-flash` on this endpoint: input 1 offpeak / 2 peak, output
+# 4 offpeak / 8 peak, per million tokens. `qwen3.8-flash` has a single
+# `standard` band at 0.8 / 2.7 and does not move. So scheduling a cell into the
+# offpeak window halves this family's bill and does nothing for the qwen one --
+# the opposite of what the offpeak note says, which reasons about a weekly quota
+# that this key does not have.
+#
+# COST IS NOT KNOWN FROM OUR OWN DATA. The harness records `tokens_used` only:
+# no input/output split, no cache hits. Those three are billed at 1, 4 and 0.1,
+# so the same token count can differ several-fold in money. Read the bill from
+# the console, not from `metrics.jsonl`.
+#
+# TIME IS NOT KNOWN FOR THIS MODEL EITHER. The qwen twin's first row took
+# 2005 s at 45 steps against a 200 cap. Read this cell's own median off its
+# first rows before extrapolating.
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# r2: RE-RUN AT A FIXED CONTEXT WINDOW.
+#
+# Same cell, same cards, same rows, same model, same endpoint as
+# `s2dual-judge-dsv41f-pro36`. Two lines differ -- `name` and the opencollab
+# `pin` -- because the instrument changed under it.
+#
+# WHAT CHANGED. `deepseek-v4.1-flash` had no row in _EXACT_MODEL_CAPABILITIES,
+# so it matched the "deepseek" family prefix and ran on a 64,000-token window
+# against the 1,000,000 the endpoint reports. The compaction trigger therefore
+# sat at 31,000 while histories ran 44,000-55,000, the reactive shaping chain
+# fired every turn, and it fell through to AutoCompactShaper -- an extra model
+# call per turn carrying reasoning_effort=max over a sync bridge. Measured on
+# the r1 smoke: 127 of 147 calls, 73.7 s of blocking each, 67% of wall clock.
+# All three rows hit the 5,400 s timeout before the adopter handed anything
+# over, so both candidate seats recorded 0 steps -- an adherence reading the
+# instrument produced, not the roster. Fixed in opencollab 6df000c8.
+#
+# WHY THE NAME HAD TO MOVE. `pins` is part of `spec_digest`; changing it makes
+# this a different batch identity, and an unchanged `name` would resume into
+# r1's out-dir and run nothing. r1's three rows stay on disk untouched -- they
+# are the evidence for the defect and must not be overwritten.
+#
+# NOT COMPARABLE TO r1. The two ran on different instruments. r1's rows are
+# kept as the before-picture, not pooled with these.
+# ---------------------------------------------------------------------------
+name: s2dual-judge-dsv41f-r2-pro36
+host: lthpc
+arm: team
+cell: s2dual-judge
+suite: pro-mini36-clean
+rows: {start: 1, stop: 36}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 5400
+concurrency: 24
+model_env: configs/.env.ws-dsv41f
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+pins:
+  opencollab: 6df000c8a1c3a6617dc943423cbf277a0aa0f402
+  opencollab_eval: 4eeb7a297e449b1212bef65ac972cf714bb46709
+note: "the two-candidate roster seated as Single2 on SWE-bench Pro mini-36; scoring is the official Pro evaluator, not `batch score`; read adherence from `summary.every_delegate_rate`, never from `summary.alpha`, which this roster satisfies with one candidate"

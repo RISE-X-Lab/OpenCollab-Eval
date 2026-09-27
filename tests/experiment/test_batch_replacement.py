@@ -1,0 +1,445 @@
+"""A pre-registered instance whose evaluation environment is unusable.
+
+``pylint-dev__pylint-4661`` is row 39 of ``subset-50``. Its SWE-bench
+evaluation environment does not run -- the benchmark's own gold patch does not
+resolve there -- so no run of any arm on that instance can be scored, and the
+score is the outcome the grid reads. A broken environment is not a random
+event, so its replacement cannot be chosen after the fact: the draw carries an
+ordered reserve for exactly this, and the replacement is the first row of it
+that no cell has run.
+
+That makes two out-dirs one cell again, but the other way round from a retry.
+A retry adds a second attempt at an instance the cell keeps; a replacement
+takes an instance *out* of every denominator and puts a different one in. The
+run rows of the instance that left are not deleted -- a paid run that no
+number counts still has to be findable -- so they move to ``excluded`` in the
+JSON with the reason they left.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from opencollab_eval.commands import batch as batch_cli
+from opencollab_eval.experiment import cell_report
+from opencollab_eval.experiment.batch_spec import SpecError, load_spec, spec_digest, spec_identity
+from tests.experiment import batch_support as launcher
+from tests.experiment.test_batch_retry import CMDPLAIN30_DIGEST
+
+EXPERIMENT = launcher.EXPERIMENT
+_spec_text = launcher._spec_text
+
+_oc_repo = pytest.fixture(name="oc_repo")(launcher.oc_repo.__wrapped__)
+_experiment = pytest.fixture(name="experiment")(launcher.experiment.__wrapped__)
+
+REASON = "eval environment unusable: replaced by {instance} per ordered draw"
+
+
+def _plan(experiment: dict, path: Path) -> int:
+    return batch_cli.main(
+        ["--experiment-dir", str(experiment["dir"]), "plan", str(path)], remote_factory=lambda h: None
+    )
+
+
+def _report(experiment: dict, path: Path, json_out: Path) -> int:
+    return batch_cli.main(
+        [
+            "--experiment-dir",
+            str(experiment["dir"]),
+            "report",
+            str(path),
+            "--scanner",
+            "none",
+            "--json",
+            str(json_out),
+        ],
+        remote_factory=lambda h: None,
+    )
+
+
+def _replacement_spec(
+    experiment: dict,
+    name: str,
+    rows: str,
+    instance: str,
+    *,
+    batch: str = "t1",
+    edit: tuple[str, str] | None = None,
+) -> Path:
+    text = _spec_text(
+        experiment, "name: t1", f"name: {name}\nreplaces: {{batch: {batch}, instance: {instance}}}"
+    ).replace("rows: {start: 1, stop: 2}", rows)
+    if edit is not None:
+        assert edit[0] in text, edit[0]
+        text = text.replace(*edit)
+    path = experiment["dir"] / "batches" / f"{name}.yaml"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _retry_spec(experiment: dict, name: str, of: str, rows: str, suite: str) -> Path:
+    text = (
+        _spec_text(experiment, "name: t1", f"name: {name}\nretry_of: {of}")
+        .replace("rows: {start: 1, stop: 2}", rows)
+        .replace("suite: tiny\n", f"suite: {suite}\n")
+    )
+    path = experiment["dir"] / "batches" / f"{name}.yaml"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _metrics(cell: Path, rows: list[dict]) -> None:
+    cell.mkdir(parents=True, exist_ok=True)
+    (cell / "metrics.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+
+
+def _run(instance: str, status: str = "completed", tokens: int = 10, reason: str = "") -> dict:
+    summary = {"status": status, "tokens": tokens}
+    if reason:
+        summary["reason"] = reason
+    return {"instance_id": instance, "run_summary": summary}
+
+
+# --- the spec field ---------------------------------------------------------------
+
+
+def test_replaces_changes_the_identity_only_for_the_specs_that_use_it(experiment: dict) -> None:
+    """The same rule ``retry_of`` had to obey: a new key must not move an old digest.
+
+    ``spec_digest`` is how the pre-flight decides whether an out-dir holds this
+    batch. A key written into the identity unconditionally would change the
+    digest of every spec already launched, and every finished batch would read
+    as a different batch on resume.
+    """
+    assert spec_digest(load_spec(EXPERIMENT / "batches" / "cmdplain30.yaml")) == CMDPLAIN30_DIGEST
+    base = load_spec(experiment["spec"])
+    assert "replaces" not in spec_identity(base)
+    path = _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2")
+    spec = load_spec(path)
+    assert spec.replaces == {"batch": "t1", "instance": "b__b-2"}
+    assert spec_identity(spec)["replaces"] == {"batch": "t1", "instance": "b__b-2"}
+    assert spec_digest(spec) != spec_digest(base)
+
+
+def test_replaces_must_name_a_batch_and_an_instance(experiment: dict) -> None:
+    path = experiment["dir"] / "batches" / "bad.yaml"
+    path.write_text(_spec_text(experiment, "name: t1", "name: bad\nreplaces: {batch: t1}"), encoding="utf-8")
+    with pytest.raises(SpecError, match="replaces"):
+        load_spec(path)
+
+
+def test_replaces_may_not_name_this_batch_itself(experiment: dict) -> None:
+    path = _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2", batch="t1x")
+    with pytest.raises(SpecError, match="own name"):
+        load_spec(path)
+
+
+def test_a_spec_is_either_a_retry_or_a_replacement(experiment: dict) -> None:
+    """A retry of a replacement batch is a retry: it must not be merged twice.
+
+    ``replaces`` is what the replacement merge looks for. A spec carrying both
+    would be folded in once as the replacement's second attempt and once as a
+    second replacement of the same instance.
+    """
+    path = experiment["dir"] / "batches" / "bad.yaml"
+    path.write_text(
+        _spec_text(experiment, "name: t1", "name: bad\nretry_of: t1\nreplaces: {batch: t1, instance: b__b-2}"),
+        encoding="utf-8",
+    )
+    with pytest.raises(SpecError, match="never both"):
+        load_spec(path)
+
+
+# --- what plan refuses ------------------------------------------------------------
+
+
+def test_plan_refuses_a_replacement_whose_original_was_never_planned(experiment: dict, capsys) -> None:
+    path = _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2")
+    assert _plan(experiment, path) == 2
+    assert "replaces" in capsys.readouterr().err
+
+
+def test_plan_refuses_a_replacement_that_changes_a_paid_field(experiment: dict, capsys) -> None:
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    path = _replacement_spec(
+        experiment,
+        "t1x",
+        "rows: {start: 3, stop: 3}",
+        "b__b-2",
+        edit=("budget_per_seat: 2000000", "budget_per_seat: 1000000"),
+    )
+    assert _plan(experiment, path) == 2
+    assert "budget_per_seat" in capsys.readouterr().err
+
+
+def test_plan_refuses_a_replacement_of_more_than_one_instance(experiment: dict, capsys) -> None:
+    """One broken instance is one replacement. A slice would silently regrow the cell."""
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    path = _replacement_spec(experiment, "t1x", "rows: {start: 1, stop: 3}", "b__b-2")
+    assert _plan(experiment, path) == 2
+    assert "exactly one" in capsys.readouterr().err
+
+
+def test_plan_refuses_replacing_an_instance_the_original_never_ran(experiment: dict, capsys) -> None:
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    path = _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "c__c-3")
+    assert _plan(experiment, path) == 2
+    assert "c__c-3" in capsys.readouterr().err
+
+
+def test_plan_refuses_a_replacement_the_original_already_ran(experiment: dict, capsys) -> None:
+    """Re-running an instance the cell already has is a retry, not a replacement."""
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    path = _replacement_spec(experiment, "t1x", "rows: {start: 1, stop: 1}", "b__b-2")
+    assert _plan(experiment, path) == 2
+    assert "a__a-1" in capsys.readouterr().err
+
+
+def test_plan_accepts_a_one_row_replacement_from_another_suite(experiment: dict, capsys) -> None:
+    """The suite may differ: the reserve row need not live in the file the cell ran."""
+    (experiment["dir"] / "suite" / "reserve.csv").write_text(
+        "order,instance_id,repo,difficulty,image\n1,c__c-3,c/c,>4 hours,img/c-3:latest\n", encoding="utf-8"
+    )
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    path = _replacement_spec(
+        experiment, "t1x", "rows: {start: 1, stop: 1}", "b__b-2", edit=("suite: tiny\n", "suite: reserve\n")
+    )
+    assert _plan(experiment, path) == 0
+    assert "replaces b__b-2 of t1" in capsys.readouterr().out
+
+
+# --- what report does with it -----------------------------------------------------
+
+
+def test_report_drops_the_replaced_instance_and_merges_the_replacement(
+    experiment: dict, tmp_path: Path, capsys
+) -> None:
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    path = _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2")
+    assert _plan(experiment, path) == 0
+    root = tmp_path / "batches"
+    _metrics(root / "t1", [_run("a__a-1", tokens=10), _run("b__b-2", tokens=20)])
+    _metrics(root / "t1x", [_run("c__c-3", tokens=30)])
+
+    out = tmp_path / "r.json"
+    assert _report(experiment, Path(experiment["spec"]), out) == 0
+    doc = json.loads(out.read_text(encoding="utf-8"))
+
+    assert [r["instance_id"] for r in doc["runs"]] == ["a__a-1", "c__c-3"]
+    assert doc["summary"]["runs"] == 2 and doc["summary"]["valid"] == 2
+    assert doc["summary"]["replaced"] == ["b__b-2"] and doc["summary"]["replaced_count"] == 1
+    # The paid run that left every denominator is still in the document.
+    assert [e["instance_id"] for e in doc["excluded"]] == ["b__b-2"]
+    assert doc["excluded"][0]["excluded_reason"] == REASON.format(instance="c__c-3")
+    assert doc["excluded"][0]["tokens"] == 20
+    row = next(r for r in doc["runs"] if r["instance_id"] == "c__c-3")
+    assert row["replacement_for"] == "b__b-2" and row["source_batch"] == "t1x" and row["attempt"] == 1
+    printed = capsys.readouterr().out
+    assert "merged replacement: t1x" in printed
+    assert "b__b-2" in printed and "c__c-3" in printed
+
+
+def test_a_replacement_run_can_itself_be_retried(experiment: dict, tmp_path: Path) -> None:
+    """The two mechanisms stack: the replacement is a batch like any other."""
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    assert _plan(experiment, _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2")) == 0
+    assert _plan(experiment, _retry_spec(experiment, "t1xr", "t1x", "rows: {start: 3, stop: 3}", "tiny")) == 0
+    root = tmp_path / "batches"
+    _metrics(root / "t1", [_run("a__a-1", tokens=10), _run("b__b-2", tokens=20)])
+    _metrics(root / "t1x", [_run("c__c-3", status="failed", tokens=1, reason="APIError")])
+    _metrics(root / "t1xr", [_run("c__c-3", tokens=90)])
+
+    out = tmp_path / "r.json"
+    assert _report(experiment, Path(experiment["spec"]), out) == 0
+    doc = json.loads(out.read_text(encoding="utf-8"))
+    row = next(r for r in doc["runs"] if r["instance_id"] == "c__c-3")
+    assert (row["attempt"], row["attempts"], row["source_batch"]) == (2, 2, "t1xr")
+    assert row["tokens"] == 90 and row["replacement_for"] == "b__b-2"
+    assert doc["summary"]["valid"] == 2 and doc["summary"]["replaced"] == ["b__b-2"]
+    assert doc["summary"]["retried"] == ["c__c-3"]
+
+
+def test_a_replacement_that_was_never_pulled_leaves_the_paid_run_in_place(
+    experiment: dict, tmp_path: Path, capsys
+) -> None:
+    """The positive control on the drop: nothing leaves a denominator for nothing.
+
+    Dropping the replaced instance the moment a replacement spec exists would
+    shrink the cell by one before the replacement had run.
+    """
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    assert _plan(experiment, _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2")) == 0
+    root = tmp_path / "batches"
+    _metrics(root / "t1", [_run("a__a-1", tokens=10), _run("b__b-2", tokens=20)])
+
+    out = tmp_path / "r.json"
+    assert _report(experiment, Path(experiment["spec"]), out) == 0
+    doc = json.loads(out.read_text(encoding="utf-8"))
+    assert [r["instance_id"] for r in doc["runs"]] == ["a__a-1", "b__b-2"]
+    assert doc["summary"]["replaced"] == [] and doc["excluded"] == []
+    assert "not merged" in capsys.readouterr().out
+
+
+def test_a_cell_with_no_replacement_carries_an_empty_ledger(experiment: dict, tmp_path: Path) -> None:
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    root = tmp_path / "batches"
+    _metrics(root / "t1", [_run("a__a-1", tokens=10), _run("b__b-2", tokens=20)])
+    out = tmp_path / "r.json"
+    assert _report(experiment, Path(experiment["spec"]), out) == 0
+    doc = json.loads(out.read_text(encoding="utf-8"))
+    assert doc["summary"]["replaced"] == [] and doc["summary"]["replaced_count"] == 0
+    assert doc["excluded"] == []
+    rows = cell_report.run_rows(root / "t1", "team")
+    assert "replaced" not in cell_report.render(rows, cell_report.summarize(rows), [])
+
+
+# --- withdrawing a replacement ----------------------------------------------------
+#
+# A replacement is withdrawn when the fault that triggered it turns out not to
+# have been the instance's. The trigger for ``pylint-dev__pylint-4661`` was
+# "the benchmark's own gold patch does not resolve there"; re-run on a machine
+# with a network the gold patch resolves, so the condition never held and the
+# stand-in never had a reason to be in the cell.
+#
+# Withdrawing is not "the replacement never happened". Both runs were paid for
+# and both stay in the document: the drawn instance goes back into every
+# denominator, and the stand-in's run takes the place in ``excluded`` the drawn
+# run had. That is why this is a spec field the report reads rather than an
+# edit to a report JSON.
+
+WITHDRAWN = "replacement withdrawn: this run stood in for {instance}, which is back in the cell. {why}"
+WHY = "the trigger was the machine, not the instance."
+
+
+def _withdraw(experiment: dict, instance: str, why: str = WHY) -> Path:
+    """Declare on the cell's own spec that a replacement merged into it is withdrawn."""
+    path = Path(experiment["spec"])
+    path.write_text(
+        path.read_text(encoding="utf-8") + f'withdraw_replacements:\n  {instance}: "{why}"\n', encoding="utf-8"
+    )
+    return path
+
+
+def test_withdrawing_a_replacement_does_not_move_the_cell_digest(experiment: dict) -> None:
+    """A withdrawal changes what a finished batch reports, never what it ran.
+
+    ``replaces`` and ``retry_of`` are in the identity because they change which
+    out-dir a launch may resume into. A withdrawal is declared after the paying
+    is over, so writing it into the identity would make every finished batch
+    read as a different batch -- and would make the pre-flight refuse the
+    out-dir that holds the very runs the withdrawal is about.
+    """
+    before = spec_digest(load_spec(experiment["spec"]))
+    spec = load_spec(_withdraw(experiment, "b__b-2"))
+    assert spec.withdraw_replacements == {"b__b-2": WHY}
+    assert "withdraw_replacements" not in spec_identity(spec)
+    assert spec_digest(spec) == before
+
+
+def test_a_withdrawal_must_say_why(experiment: dict) -> None:
+    """The reason is the field's content, not decoration: it is what ``excluded_reason`` prints."""
+    with pytest.raises(SpecError, match="withdraw_replacements"):
+        load_spec(_withdraw(experiment, "b__b-2", why=""))
+
+
+def test_the_stand_in_spec_may_not_declare_its_own_withdrawal(experiment: dict) -> None:
+    """The withdrawal is the cell's decision about its own report, so it lives on the cell.
+
+    A ``withdraw_replacements`` on the stand-in's spec would be read by nothing
+    -- the replacement merge reads the launch record, not this file -- and
+    would silently leave the stand-in in the cell.
+    """
+    path = _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2")
+    path.write_text(path.read_text(encoding="utf-8") + 'withdraw_replacements:\n  b__b-2: "x"\n', encoding="utf-8")
+    with pytest.raises(SpecError, match="the cell it stands in for"):
+        load_spec(path)
+
+
+def test_report_puts_the_drawn_instance_back_and_excludes_the_stand_in(
+    experiment: dict, tmp_path: Path, capsys
+) -> None:
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    assert _plan(experiment, _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2")) == 0
+    root = tmp_path / "batches"
+    _metrics(root / "t1", [_run("a__a-1", tokens=10), _run("b__b-2", tokens=20)])
+    _metrics(root / "t1x", [_run("c__c-3", tokens=30)])
+    _withdraw(experiment, "b__b-2")
+
+    out = tmp_path / "r.json"
+    assert _report(experiment, Path(experiment["spec"]), out) == 0
+    doc = json.loads(out.read_text(encoding="utf-8"))
+
+    assert [r["instance_id"] for r in doc["runs"]] == ["a__a-1", "b__b-2"]
+    assert doc["summary"]["runs"] == 2 and doc["summary"]["valid"] == 2
+    # Nothing is replaced any more, and the ledger says a replacement was.
+    assert doc["summary"]["replaced"] == [] and doc["summary"]["replaced_count"] == 0
+    assert doc["summary"]["replacements_withdrawn"] == ["b__b-2"]
+    assert doc["summary"]["replacements_withdrawn_count"] == 1
+    assert doc["summary"]["replacements_withdrawn_by"] == [["b__b-2", "c__c-3", "t1x", WHY]]
+    # The paid stand-in run is still in the document, and says why it counts for nothing.
+    assert [e["instance_id"] for e in doc["excluded"]] == ["c__c-3"]
+    assert doc["excluded"][0]["excluded_reason"] == WITHDRAWN.format(instance="b__b-2", why=WHY)
+    assert doc["excluded"][0]["tokens"] == 30
+    assert doc["excluded"][0]["replacement_for"] == "b__b-2"
+    printed = capsys.readouterr().out
+    assert "withdrawn replacement: c__c-3" in printed and "b__b-2" in printed
+
+
+def test_report_refuses_a_withdrawal_that_names_no_merged_replacement(experiment: dict, tmp_path: Path, capsys) -> None:
+    """A mistyped instance id has to be an error, not a report that silently kept the stand-in."""
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    assert _plan(experiment, _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2")) == 0
+    root = tmp_path / "batches"
+    _metrics(root / "t1", [_run("a__a-1", tokens=10), _run("b__b-2", tokens=20)])
+    _metrics(root / "t1x", [_run("c__c-3", tokens=30)])
+    _withdraw(experiment, "a__a-1")
+
+    assert _report(experiment, Path(experiment["spec"]), tmp_path / "r.json") == 2
+    assert "a__a-1" in capsys.readouterr().err
+
+
+def test_a_cell_with_no_withdrawal_carries_an_empty_withdrawal_ledger(experiment: dict, tmp_path: Path) -> None:
+    """Present on every cell, so 'nothing was withdrawn' and 'this report does not say' differ."""
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    _metrics(tmp_path / "batches" / "t1", [_run("a__a-1"), _run("b__b-2")])
+    out = tmp_path / "r.json"
+    assert _report(experiment, Path(experiment["spec"]), out) == 0
+    summary = json.loads(out.read_text(encoding="utf-8"))["summary"]
+    assert summary["replacements_withdrawn"] == [] and summary["replacements_withdrawn_count"] == 0
+    assert summary["replacements_withdrawn_by"] == []
+
+
+@pytest.mark.parametrize("withdraw", [False, True])
+def test_prediction_merge_uses_the_reports_active_replacement_policy(
+    experiment: dict,
+    tmp_path: Path,
+    withdraw: bool,
+) -> None:
+    import importlib.util
+
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    replacement = _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2")
+    assert _plan(experiment, replacement) == 0
+    root = tmp_path / "batches"
+    _metrics(root / "t1", [_run("a__a-1"), _run("b__b-2")])
+    _metrics(root / "t1x", [_run("c__c-3")])
+    for name, ids in [("t1", ["a__a-1", "b__b-2"]), ("t1x", ["c__c-3"])]:
+        (root / name / "preds-team.jsonl").write_text(
+            "".join(json.dumps({"instance_id": instance, "model_patch": "patch"}) + "\n" for instance in ids)
+        )
+    spec_path = Path(experiment["spec"])
+    if withdraw:
+        spec_path.write_text(spec_path.read_text() + "\nwithdraw_replacements: {b__b-2: corrected environment}\n")
+    module_spec = importlib.util.spec_from_file_location(
+        "merged_predictions_regression", EXPERIMENT / "analysis/merged_preds.py"
+    )
+    assert module_spec and module_spec.loader
+    module = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(module)
+    lines, _table = module.build(spec_path, Path(experiment["dir"]))
+    assert [json.loads(line)["instance_id"] for line in lines] == (
+        ["a__a-1", "b__b-2"] if withdraw else ["a__a-1", "c__c-3"]
+    )

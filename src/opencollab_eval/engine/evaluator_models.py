@@ -33,6 +33,7 @@ class EvalResult:
     submission_eligible: bool = True
     agent_failures: tuple[dict[str, Any], ...] = ()
     runtime_state: dict[str, Any] | None = None
+    tree_snapshots: Any | None = None
 
 
 @dataclass

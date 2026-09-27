@@ -1,0 +1,38 @@
+# Second attempt at s2tools-adopt-qwen38-tp-pro36 row 3 (ansible-cd9c4eb5; T2, qwen3.8-flash, judge card with the
+# Adopter's bash, file_write and apply_patch removed and adopt(sha) added, at the N2 pin).
+#
+# Attempt 1 (T2): failed at the Adopter's step 2-3: the model streamed a tool call named `bash`,
+# which this Adopter is not offered; OC openai_provider.py:634 raises TransientProviderError on an
+# unregistered tool name, the retry sends the same prompt, the model asks for bash again, and the
+# seat errors out. All three T2 failures (rows 3, 12, 14) are this one; T1 (bash kept) has none
+# of it, so the loss varies by setting and is model-triggered: a retry may well repeat it.
+# At most three counted attempts per row, declared before the retries run; attempts we stop
+# ourselves do not count; never retried until success (that would filter the setting's own loss).
+# Run after the qwen/deepseek cells and before luna (owner 09-23 21:xZ: luna last), beside the
+# other N2 retry specs only, never beside a full cell. Same pins, key, env, caps and timeout as
+# T2; merged by `retry_of`. Named -retry-r3 so the review scripts' `<name>-retry-*` glob reads it.
+# ---------------------------------------------------------------------------
+name: s2tools-adopt-qwen38-tp-pro36-retry-r3
+host: lthpc
+arm: team
+cell: s2tools-adopt
+suite: pro-mini36-clean
+rows: {start: 3, stop: 3}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 5400
+concurrency: 1
+model_env: configs/.env.tp3-qwen38
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+retry_of: s2tools-adopt-qwen38-tp-pro36
+pins:
+  opencollab: 4b231b0e128696768e168521eddb634fd8951927
+  opencollab_eval: 3ff64deb72b1879449a3f1d11d52fde329088d04
+note: "second attempt at s2tools-adopt-qwen38-tp-pro36 row 3: attempt 1 failed (Adopter called the unoffered bash; ansible-cd9c4eb5)"

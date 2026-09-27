@@ -42,6 +42,7 @@ class ExecutionConfig:
     resume_from_checkpoint: bool
     context_window: int | None = None
     agent_profile: str | None = None
+    team_config: Any = None
 
 
 @dataclass
@@ -244,6 +245,34 @@ async def run_session_or_workflow(
     prompt = f"{config.prompt}\n\n{repo_map}" if repo_map else config.prompt
     remaining = controller.remaining_time()
     execution_task = replace(state.task, timeout=state.task.timeout if remaining is None else remaining)
+    if config.team_config is not None:
+        state.workflow_ctx = await facade._run_team_mode(
+            task=execution_task,
+            env=state.env,
+            tracer=tracer,
+            team_config=config.team_config,
+            model=config.model,
+            provider=config.provider,
+            api_key=config.api_key,
+            base_url=config.base_url,
+            max_steps=config.max_steps,
+            temperature=config.temperature,
+            top_p=config.top_p,
+            max_output_tokens=config.max_output_tokens,
+            context_window=config.context_window,
+            thinking=config.thinking,
+            thinking_params=config.thinking_params,
+            wire_protocol=config.wire_protocol,
+            reasoning_effort=config.reasoning_effort,
+            llm_timeout=config.llm_timeout,
+            llm_connect_timeout=config.llm_connect_timeout,
+            llm_first_event_timeout=config.llm_first_event_timeout,
+            llm_stream_idle_timeout=config.llm_stream_idle_timeout,
+            save_dir=run_dir,
+        )
+        if state.workflow_ctx.workflow_error:
+            state.error = state.workflow_ctx.workflow_error
+        return
     if config.workflow is None:
         state.session = await facade._run_single_session(
             task=execution_task,
@@ -293,7 +322,7 @@ async def run_session_or_workflow(
         temperature=config.temperature,
         top_p=config.top_p,
         max_output_tokens=config.max_output_tokens,
-            context_window=config.context_window,
+        context_window=config.context_window,
         thinking=config.thinking,
         thinking_params=config.thinking_params,
         wire_protocol=config.wire_protocol,
