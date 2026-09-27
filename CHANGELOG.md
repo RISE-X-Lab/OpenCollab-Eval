@@ -2,7 +2,18 @@
 
 All notable changes to OpenCollab-Eval are recorded in this file.
 
-## [0.8.0] - Unreleased
+## [0.8.1] - 2026-09-27
+
+Tests are grouped by generation, evaluation, orchestration, transport,
+packaging, and end-to-end behavior. Shared preparation uses explicit support
+packages, and copied test suites preserve package imports outside the checkout.
+Repeated setup functions are shared within their behavior area.
+
+The installed-wheel checks, deterministic evaluation scripts, and cross-project
+coverage references use the organized test paths. Wheels contain runtime files,
+while source distributions retain the complete development tests.
+
+## [0.8.0] - 2026-09-27
 
 Standalone generation selects Base through OpenCollab's named profile API,
 currently resolving to Single2. CLI aliases and the single-agent evaluation

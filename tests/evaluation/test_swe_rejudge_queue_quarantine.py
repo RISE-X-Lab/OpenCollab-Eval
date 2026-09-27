@@ -8,11 +8,6 @@ from opencollab_eval.commands import swe_rejudge_queue as queue
 from opencollab_eval.commands.swe_v1_prolite_report import (
     eval_only_reconciliation_reports,
 )
-from tests.support.swe_rejudge_queue_reliability_support import (
-    _accept_terminal,
-    _plan,
-    _terminal_report,
-)
 
 
 def _seed_identity_summary(parent: Path, job: dict[str, object]) -> None:
@@ -38,10 +33,14 @@ def _seed_identity_summary(parent: Path, job: dict[str, object]) -> None:
 
 
 def test_replace_failure_keeps_failed_child_out_of_future_terminal_scan(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
+    rejudge_reliability_plan,
 ):
-    _accept_terminal(monkeypatch)
-    plan, parent = _plan(tmp_path)
+    accept_rejudge_terminal(monkeypatch)
+    plan, parent = rejudge_reliability_plan(tmp_path)
     job = queue._read_plan(plan)["jobs"][0]
     _seed_identity_summary(parent, job)
     child: list[Path] = []
@@ -50,7 +49,7 @@ def test_replace_failure_keeps_failed_child_out_of_future_terminal_scan(
         del log, timeout
         output = Path(argv[argv.index("--json-output") + 1])
         child.append(output)
-        _terminal_report(output, index=25, patch_sha256="a" * 64, resolved=True)
+        write_rejudge_terminal_report(output, index=25, patch_sha256="a" * 64, resolved=True)
         return SimpleNamespace(returncode=125)
 
     monkeypatch.setattr(queue, "_run_bounded_child", fake_run)
@@ -77,10 +76,14 @@ def test_replace_failure_keeps_failed_child_out_of_future_terminal_scan(
 
 
 def test_valid_child_refresh_survives_malformed_retirement_failure(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
+    rejudge_reliability_plan,
 ):
-    _accept_terminal(monkeypatch)
-    plan, parent = _plan(tmp_path)
+    accept_rejudge_terminal(monkeypatch)
+    plan, parent = rejudge_reliability_plan(tmp_path)
     job = queue._read_plan(plan)["jobs"][0]
     _seed_identity_summary(parent, job)
     malformed = parent / "task_99_eval_only_old.json"
@@ -91,7 +94,7 @@ def test_valid_child_refresh_survives_malformed_retirement_failure(
         del log, timeout
         output = Path(argv[argv.index("--json-output") + 1])
         child.append(output)
-        _terminal_report(output, index=25, patch_sha256="a" * 64, resolved=True)
+        write_rejudge_terminal_report(output, index=25, patch_sha256="a" * 64, resolved=True)
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(queue, "_run_bounded_child", fake_run)

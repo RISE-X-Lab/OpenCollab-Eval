@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "opencollab-eval"
-version = "0.8.0"
+version = "0.8.1"
 description = "Independent evaluation layer for OpenCollab solvers."
 readme = "README.md"
 requires-python = ">=3.10"

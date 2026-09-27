@@ -12,50 +12,6 @@ import pytest
 from opencollab_eval.commands import swe_rejudge_queue as queue
 
 
-def _accept_terminal(monkeypatch) -> None:
-    monkeypatch.setattr(
-        queue._swe_eval_layer_integrity,
-        "attempt_integrity",
-        lambda row, task: SimpleNamespace(
-            direct_execution_proven=True,
-            reasons=(),
-        ),
-    )
-
-
-def _terminal_report(
-    path: Path,
-    *,
-    index: int,
-    patch_sha256: str,
-    resolved: bool,
-    summary_status: str = "eval_done",
-) -> None:
-    path.write_text(
-        json.dumps(
-            {
-                "rows": [
-                    {
-                        "index": index,
-                        "task": "instance_owner__repo-25",
-                        "generation": {
-                            "record_id": "record-25",
-                            "patch_sha256": patch_sha256,
-                            "source_patch_sha256": patch_sha256,
-                            "eval_patch_sha256": patch_sha256,
-                        },
-                        "eval": {
-                            "status": "eval_done",
-                            "summary": {"status": summary_status, "resolved": resolved},
-                        },
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-
-
 def _plan(tmp_path: Path, *, patch_sha256: str = "a" * 64) -> tuple[Path, Path]:
     parent = tmp_path / "parent"
     parent.mkdir()
@@ -88,19 +44,24 @@ def _plan(tmp_path: Path, *, patch_sha256: str = "a" * 64) -> tuple[Path, Path]:
     return plan, parent
 
 
-def test_queue_rejects_conflicting_terminal_verdicts(tmp_path, monkeypatch):
-    _accept_terminal(monkeypatch)
+def test_queue_rejects_conflicting_terminal_verdicts(
+    tmp_path,
+    monkeypatch,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
+):
+    accept_rejudge_terminal(monkeypatch)
     plan, parent = _plan(tmp_path)
-    _terminal_report(
+    write_rejudge_terminal_report(
         parent / "task_25_eval_only_seed.json",
         index=25,
         patch_sha256="a" * 64,
         resolved=False,
     )
     stale = parent / "task_25_eval_only_stale.json"
-    _terminal_report(stale, index=25, patch_sha256="a" * 64, resolved=True)
+    write_rejudge_terminal_report(stale, index=25, patch_sha256="a" * 64, resolved=True)
     current = parent / "task_25_eval_only_current.json"
-    _terminal_report(current, index=25, patch_sha256="a" * 64, resolved=False)
+    write_rejudge_terminal_report(current, index=25, patch_sha256="a" * 64, resolved=False)
     monkeypatch.setattr(
         queue,
         "update_parent_fact_report",
@@ -113,11 +74,16 @@ def test_queue_rejects_conflicting_terminal_verdicts(tmp_path, monkeypatch):
     assert next(iter(result["jobs"].values()))["status"] == "terminal_verdict_conflict"
 
 
-def test_queue_skips_a_single_exact_terminal_candidate(tmp_path, monkeypatch):
-    _accept_terminal(monkeypatch)
+def test_queue_skips_a_single_exact_terminal_candidate(
+    tmp_path,
+    monkeypatch,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
+):
+    accept_rejudge_terminal(monkeypatch)
     plan, parent = _plan(tmp_path)
     current = parent / "task_25_eval_only_current.json"
-    _terminal_report(current, index=25, patch_sha256="a" * 64, resolved=False)
+    write_rejudge_terminal_report(current, index=25, patch_sha256="a" * 64, resolved=False)
     monkeypatch.setattr(
         queue,
         "update_parent_fact_report",
@@ -130,11 +96,16 @@ def test_queue_skips_a_single_exact_terminal_candidate(tmp_path, monkeypatch):
     assert next(iter(result["jobs"].values()))["report"] == str(current)
 
 
-def test_queue_accepts_a_direct_eval_done_summary(tmp_path, monkeypatch):
-    _accept_terminal(monkeypatch)
+def test_queue_accepts_a_direct_eval_done_summary(
+    tmp_path,
+    monkeypatch,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
+):
+    accept_rejudge_terminal(monkeypatch)
     plan, parent = _plan(tmp_path)
     current = parent / "task_25_deadbeef_eval_only_queue_current.json"
-    _terminal_report(
+    write_rejudge_terminal_report(
         current,
         index=25,
         patch_sha256="a" * 64,
@@ -153,9 +124,9 @@ def test_queue_accepts_a_direct_eval_done_summary(tmp_path, monkeypatch):
     assert next(iter(result["jobs"].values()))["report"] == str(current)
 
 
-def test_queue_does_not_accept_a_weak_terminal_report(tmp_path):
+def test_queue_does_not_accept_a_weak_terminal_report(tmp_path, write_rejudge_terminal_report):
     plan, parent = _plan(tmp_path)
-    _terminal_report(
+    write_rejudge_terminal_report(
         parent / "task_25_eval_only_weak.json",
         index=25,
         patch_sha256="a" * 64,
@@ -169,10 +140,12 @@ def test_queue_does_not_accept_a_weak_terminal_report(tmp_path):
 def test_queue_recognizes_a_terminal_in_the_original_parent_report(
     tmp_path,
     monkeypatch,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
 ):
-    _accept_terminal(monkeypatch)
+    accept_rejudge_terminal(monkeypatch)
     plan, parent = _plan(tmp_path)
-    _terminal_report(
+    write_rejudge_terminal_report(
         parent / "parallel_summary.json",
         index=25,
         patch_sha256="a" * 64,
@@ -193,16 +166,18 @@ def test_queue_recognizes_a_terminal_in_the_original_parent_report(
 
 
 def test_queue_rejects_ambiguous_identities_without_the_planned_candidate(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
+    write_rejudge_terminal_report,
 ):
     plan, parent = _plan(tmp_path)
-    _terminal_report(
+    write_rejudge_terminal_report(
         parent / "task_25_eval_only_historical_a.json",
         index=25,
         patch_sha256="b" * 64,
         resolved=False,
     )
-    _terminal_report(
+    write_rejudge_terminal_report(
         parent / "task_25_eval_only_historical_b.json",
         index=25,
         patch_sha256="c" * 64,
@@ -219,10 +194,15 @@ def test_queue_rejects_ambiguous_identities_without_the_planned_candidate(
     assert result["counts"] == {"candidate_identity_conflict": 1}
 
 
-def test_queue_runs_eval_only_with_generation_disabled(tmp_path, monkeypatch):
-    _accept_terminal(monkeypatch)
+def test_queue_runs_eval_only_with_generation_disabled(
+    tmp_path,
+    monkeypatch,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
+):
+    accept_rejudge_terminal(monkeypatch)
     plan, parent = _plan(tmp_path)
-    _terminal_report(
+    write_rejudge_terminal_report(
         parent / "task_25_eval_only_seed.json",
         index=25,
         patch_sha256="a" * 64,
@@ -258,7 +238,7 @@ def test_queue_runs_eval_only_with_generation_disabled(tmp_path, monkeypatch):
         del log, timeout
         seen.append(argv)
         json_output = Path(argv[argv.index("--json-output") + 1])
-        _terminal_report(json_output, index=25, patch_sha256="a" * 64, resolved=True)
+        write_rejudge_terminal_report(json_output, index=25, patch_sha256="a" * 64, resolved=True)
         return type("Result", (), {"returncode": 0})()
 
     monkeypatch.setattr(queue, "_run_bounded_child", fake_run)
@@ -322,8 +302,13 @@ def test_queue_skips_a_ten_attempt_candidate_without_starting_a_child(
     assert result["counts"] == {"budget_exhausted": 1}
 
 
-def test_queue_allows_recovery_after_two_prior_attempts(tmp_path, monkeypatch):
-    _accept_terminal(monkeypatch)
+def test_queue_allows_recovery_after_two_prior_attempts(
+    tmp_path,
+    monkeypatch,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
+):
+    accept_rejudge_terminal(monkeypatch)
     plan, parent = _plan(tmp_path)
     (parent / "parallel_summary.json").write_text(
         json.dumps(
@@ -359,7 +344,7 @@ def test_queue_allows_recovery_after_two_prior_attempts(tmp_path, monkeypatch):
         del log, timeout
         calls += 1
         json_output = Path(argv[argv.index("--json-output") + 1])
-        _terminal_report(json_output, index=25, patch_sha256="a" * 64, resolved=True)
+        write_rejudge_terminal_report(json_output, index=25, patch_sha256="a" * 64, resolved=True)
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(queue, "_run_bounded_child", fake_run)
@@ -439,8 +424,10 @@ def test_same_index_in_different_parents_gets_distinct_log_names(tmp_path):
 def test_two_distinct_jobs_run_concurrently_and_persist_both_states(
     tmp_path,
     monkeypatch,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
 ):
-    _accept_terminal(monkeypatch)
+    accept_rejudge_terminal(monkeypatch)
     plan, parent = _plan(tmp_path)
     value = json.loads(plan.read_text(encoding="utf-8"))
     second = {
@@ -484,7 +471,7 @@ def test_two_distinct_jobs_run_concurrently_and_persist_both_states(
         index = int(argv[argv.index("--start-index") + 1])
         digest = "a" * 64 if index == 25 else "b" * 64
         output = Path(argv[argv.index("--json-output") + 1])
-        _terminal_report(output, index=index, patch_sha256=digest, resolved=False)
+        write_rejudge_terminal_report(output, index=index, patch_sha256=digest, resolved=False)
         if index == 27:
             report = json.loads(output.read_text(encoding="utf-8"))
             report["rows"][0]["task"] = "instance_owner__repo-27"
@@ -511,8 +498,10 @@ def test_two_distinct_jobs_run_concurrently_and_persist_both_states(
 def test_queue_retries_a_pre_eval_command_failure_without_model_generation(
     tmp_path,
     monkeypatch,
+    accept_rejudge_terminal,
+    write_rejudge_terminal_report,
 ):
-    _accept_terminal(monkeypatch)
+    accept_rejudge_terminal(monkeypatch)
     plan, parent = _plan(tmp_path)
     (parent / "parallel_summary.json").write_text(
         json.dumps(
@@ -541,7 +530,7 @@ def test_queue_retries_a_pre_eval_command_failure_without_model_generation(
         calls += 1
         if calls == 2:
             output = Path(argv[argv.index("--json-output") + 1])
-            _terminal_report(output, index=25, patch_sha256="a" * 64, resolved=False)
+            write_rejudge_terminal_report(output, index=25, patch_sha256="a" * 64, resolved=False)
         return SimpleNamespace(returncode=1 if calls == 1 else 0)
 
     monkeypatch.setattr(queue, "_run_bounded_child", fake_run)
