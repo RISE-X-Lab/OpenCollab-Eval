@@ -1,5 +1,7 @@
 """Evaluation solver workflows."""
 
+from opencollab.builtin_workflows import duo
+
 from .analyst_solve import analyst_solve, team_pro
 from .base_team import base_team
 from .base_team_single_pass import base_team_single_pass_v1
@@ -9,12 +11,6 @@ from .split_solve import split_solve
 from .swe_committee_v2 import swe_committee_v2
 from .validation_council_dual_coder_contract import (
     validation_council_dual_coder_contract_v1,
-)
-from .validation_council_dual_coder_selection import (
-    validation_council_dual_coder_selection_v2,
-)
-from .validation_council_dual_coder_selection_files import (
-    validation_council_dual_coder_selection_v3,
 )
 from .validation_council_lean_official import (
     validation_council_lean_official_v1,
@@ -26,6 +22,7 @@ from .validation_council_triple_coder_contract import (
 
 __all__ = [
     "analyst_solve",
+    "duo",
     "base_team",
     "base_team_single_pass_v1",
     "scout_solve",
@@ -34,8 +31,6 @@ __all__ = [
     "swe_committee_v2",
     "team_pro",
     "validation_council_dual_coder_contract_v1",
-    "validation_council_dual_coder_selection_v2",
-    "validation_council_dual_coder_selection_v3",
     "validation_council_lean_official_v1",
     "validation_council_triple_coder_contract_v1",
     "validation_council_solve",

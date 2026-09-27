@@ -26,6 +26,20 @@ This command validates a bounded SWE-Batch Pro JSONL file, separates public and
 sealed fields, and prints anonymous public task IDs. Processing stops after
 inspection, before generation and official evaluation.
 
+### `oc-eval duo`
+
+```text
+oc-eval duo --config CONFIG [--indices INDICES] [--workers COUNT]
+            [--run-id ID] [--output-dir DIRECTORY] [--dry-run]
+```
+
+This command runs the single OpenCollab Duo workflow through the official
+evaluator. `workflow` is `duo` and `agent_profile` defaults to `single2`.
+The adjudicator reads complete saved evidence through its read-only tool.
+`--dry-run` prints the effective configuration. `oc-eval g22` is a command
+alias. Model settings, budgets, timeouts and evaluation options use the
+existing parallel runner.
+
 ### `oc-eval run`
 
 ```text

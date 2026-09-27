@@ -36,6 +36,7 @@ import uuid
 from dataclasses import fields
 from pathlib import Path
 
+from opencollab.builtin_workflows import get_builtin_workflows
 from opencollab.environments import attach_container
 
 from opencollab_eval import workflows as bundled_workflows
@@ -90,13 +91,15 @@ _REPO_ROOT = Path(os.environ.get("OPENCOLLAB_EVAL_WORKSPACE", Path.cwd())).resol
 
 
 def _bundled_workflow_registry() -> dict[str, object]:
-    registry: dict[str, object] = {}
+    registry: dict[str, object] = {spec.name: spec.fn for spec in get_builtin_workflows().list_specs()}
     for exported_name in bundled_workflows.__all__:
         workflow_fn = getattr(bundled_workflows, exported_name)
         spec = getattr(workflow_fn, "__workflow_spec__", None)
         public_name = getattr(spec, "name", None)
         if not isinstance(public_name, str) or not public_name:
             raise RuntimeError(f"bundled workflow {exported_name!r} has no public workflow name")
+        if registry.get(public_name) is workflow_fn:
+            continue
         if public_name in registry:
             raise RuntimeError(f"duplicate bundled workflow name {public_name!r}")
         registry[public_name] = workflow_fn

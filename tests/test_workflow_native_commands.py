@@ -4,13 +4,33 @@ from __future__ import annotations
 import importlib
 import inspect
 import pkgutil
+from types import SimpleNamespace
 
 import pytest
 from opencollab.tools import builtin_tools
-from test_native_bash_evidence import COMMAND, TARGET, Environment, runtime
 
 from opencollab_eval import workflows
+from opencollab_eval.engine.environment import ExecResult
 from opencollab_eval.workflows.validation_council_g20_coder_red_green_v2 import _run_mechanical_probe
+
+TARGET = "tests/test_example.py::test_case"
+COMMAND = f"python -m pytest -rA {TARGET}"
+
+
+class Environment:
+    workspace = "/work"
+    process_isolated = True
+
+    def __init__(self):
+        self.calls = []
+
+    async def exec_cmd(self, command, timeout=120):
+        self.calls.append((command, timeout))
+        return ExecResult(0, f"PASSED {TARGET}\n1 passed in 0.01s", "")
+
+
+def runtime(environment):
+    return SimpleNamespace(environment=environment, safety_policy=None, confirm_fn=lambda: None)
 
 
 def test_all_workflow_tool_factories_use_native_bash_schema():

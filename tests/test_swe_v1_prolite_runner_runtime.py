@@ -463,6 +463,8 @@ def test_runtime_archive_imports_generation_entrypoints_from_clean_directory(mon
     assert "src/opencollab" in summary["synced_dirs"]
     assert summary["opencollab"]["public_api_version"] == 1
     assert (extracted / "src" / "opencollab" / "workflows.py").is_file()
+    assert (extracted / "src" / "opencollab" / "builtin_workflows" / "__init__.py").is_file()
+    assert (extracted / "src" / "opencollab" / "patches.py").is_file()
     for name in (
         "gen_prediction_agent.py",
         "gen_prediction_config.py",

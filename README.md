@@ -6,30 +6,35 @@
 
 <p align="center"><strong>English</strong> · <a href="#simplified-chinese">简体中文</a></p>
 
-<p align="center"><a href="#g22-quick-start">G22 quick start</a> · <a href="#supported-environment">Installation</a></p>
+<p align="center"><a href="#duo-quick-start">Duo quick start</a> · <a href="#supported-environment">Installation</a></p>
 
 OpenCollab-Eval owns candidate generation, isolated official evaluation, and
 result evidence for [OpenCollab](https://github.com/RISE-X-Lab/OpenCollab).
-The current source release is **0.7.0** and requires **OpenCollab 0.7.x**.
+The current source version is **0.7.1** and requires **OpenCollab >=0.7.1,<0.8**.
 
-<a id="g22-quick-start"></a>
+<a id="duo-quick-start"></a>
 
-## Run G22 with Single2
+## Run Duo with Single2
 
-G22 runs coder A, coder B, mechanical comparison, contract adjudication, and
-adoption through the existing dual-coder workflow. Its selector checks the
+Duo is an OpenCollab built-in workflow that runs coder A, coder B, mechanical
+comparison, contract adjudication, and adoption. Its selector checks the
 public requirements against concrete changed paths and evidence for each
 candidate. The evaluator then tests the adopted patch in a fresh official
 workspace.
 
-The exact workflow is `validation-council-dual-coder-selection-v2`. Set
+The exact workflow is `duo`. Set
 `agent_profile` to `"single2"` in the JSON configuration. The lower-level
 runners expose the same selection through `--agent-profile single2`, and Eval
 passes `agent_profile="single2"` to the OpenCollab public workflow API. The
 default Single profile selects a different agent configuration. Coding roles use
 `bash`, `file_read`, `file_write`, `apply_patch`, `git_diff`, and `grep`.
-Project tests run through native Bash, and Eval retains their observed command
-and execution result. The adjudicator receives the role's restricted tool set.
+Project tests run through native Bash, and OpenCollab retains their observed
+command and execution result. The adjudicator receives the role's restricted tool set.
+
+Import Duo with `from opencollab.builtin_workflows import duo`. The single
+`duo` workflow uses task-oriented prompts and complete saved candidate evidence
+with the read-only `read_candidate_evidence` tool. `oc-eval g22` remains a
+command alias for the same evaluator.
 
 The tutorial below runs on one Linux worker with Docker. The model is a
 user-selected OpenAI-compatible **Responses** endpoint. Set the model name,
@@ -59,7 +64,7 @@ python -c 'from importlib.metadata import version; print("OC", version("opencoll
 cd OpenCollab-Eval
 ```
 
-The printed package versions should both be 0.7.x. The editable installation
+The printed package versions should both be at least 0.7.1 and remain in 0.7.x. The editable installation
 uses the code in the two clones. `oc-eval --version` reports the installed Eval
 version. [CONTRIBUTING.md](CONTRIBUTING.md) covers development setup.
 
@@ -212,7 +217,7 @@ checkout. Keep the variables from dataset setup available. Write the run configu
 once. Its paths point to evaluator storage outside the source checkouts.
 
 ```bash
-python - "$EVAL_ROOT/g22.json" <<'PY_CONFIG'
+python - "$EVAL_ROOT/duo.json" <<'PY_CONFIG'
 import json
 import os
 import sys
@@ -243,7 +248,7 @@ Path(sys.argv[1]).write_text(json.dumps(config, indent=2) + "\n")
 PY_CONFIG
 ```
 
-`oc-eval g22` selects the G22 workflow, the Single2 role profile, and the
+`oc-eval duo` selects the Duo workflow, the Single2 role profile, and the
 existing official parallel runner. The default configuration removes cumulative
 token and step caps through `OPENCOLLAB_UNBOUNDED_LIMITS=true`. The wrapper
 provides 1000000000000 token and step values as fallback settings. To enforce
@@ -259,12 +264,12 @@ Run the command below to generate a real patch and execute the official
 FAIL_TO_PASS and PASS_TO_PASS targets for the adopted candidate.
 
 ```bash
-oc-eval g22 --config "$EVAL_ROOT/g22.json" \
-  --indices 1 --workers 1 --run-id g22-smoke-001
+oc-eval duo --config "$EVAL_ROOT/duo.json" \
+  --indices 1 --workers 1 --run-id duo-smoke-001
 ```
 
 The runner packages the installed OC and OCE sources, verifies the worker
-runtime, prepares an isolated public source checkout, runs G22, captures the
+runtime, prepares an isolated public source checkout, runs Duo, captures the
 quiet candidate, and applies it to a separate official workspace. The command
 writes the resulting JSON and Markdown reports. `--help` and `--dry-run` can
 check options or plans. A smoke result comes from this actual generation and
@@ -273,7 +278,7 @@ official execution command.
 Read the official outcome and its report path.
 
 ```bash
-python - "$EVAL_ROOT/results/g22-smoke-001/task_1_report.json" <<'PY_RESULT'
+python - "$EVAL_ROOT/results/duo-smoke-001/task_1_report.json" <<'PY_RESULT'
 import json
 import sys
 from pathlib import Path
@@ -300,12 +305,12 @@ parallel runner. Keep the smoke outcome for row 1. This example uses four
 task workers for rows 2 through 50 and starts the coordinator in the background.
 
 ```bash
-nohup oc-eval g22 --config "$EVAL_ROOT/g22.json" \
-  --indices 2-50 --workers 4 --run-id g22-batch-001 \
-  > "$EVAL_ROOT/results/g22-batch-001.log" 2>&1 < /dev/null &
-printf '%s\n' "$!" > "$EVAL_ROOT/results/g22-batch-001.pid"
-cat "$EVAL_ROOT/results/g22-batch-001.pid"
-tail -n 20 "$EVAL_ROOT/results/g22-batch-001.log"
+nohup oc-eval duo --config "$EVAL_ROOT/duo.json" \
+  --indices 2-50 --workers 4 --run-id duo-batch-001 \
+  > "$EVAL_ROOT/results/duo-batch-001.log" 2>&1 < /dev/null &
+printf '%s\n' "$!" > "$EVAL_ROOT/results/duo-batch-001.pid"
+cat "$EVAL_ROOT/results/duo-batch-001.pid"
+tail -n 20 "$EVAL_ROOT/results/duo-batch-001.log"
 ```
 
 The relay and batch coordinator run on the worker after SSH disconnects or the
@@ -350,7 +355,7 @@ published interface needs a registered test-fixture adaptation.
 
 | Entry | Purpose |
 | --- | --- |
-| `oc-eval g22 --config /path/g22.json` | G22 with Single2 and official scoring |
+| `oc-eval duo --config /path/duo.json` | Duo with Single2 and official scoring |
 | `oc-eval inspect` | Inspect and anonymize a trusted dataset |
 | `oc-eval run` | Generic task candidate generation |
 | `oc-eval swe-v1-prolite` | Generation and official scoring for a slice |
@@ -370,7 +375,7 @@ and worker machines with SSH. The [documentation index](docs/README.md),
 <summary>Other bundled Solvers and complete Kimi examples</summary>
 
 The [operations guide](docs/swe-prolite-operations.md) describes these existing
-Solver profiles and the coordinator's transport setup. G22 continues to use
+Solver profiles and the coordinator's transport setup. Duo continues to use
 its own configuration entrypoint shown above.
 
 | Solver | Workflow |
@@ -474,27 +479,31 @@ OpenCollab-Eval is licensed under [MulanPSL-2.0](LICENSE).
 
 <p align="center"><a href="#english">English</a> · <strong>简体中文</strong></p>
 
-<p align="center"><a href="#g22-quick-start-zh-cn">G22 快速开始</a> · <a href="#支持的环境">安装</a></p>
+<p align="center"><a href="#duo-quick-start-zh-cn">Duo 快速开始</a> · <a href="#支持的环境">安装</a></p>
 
 本文对应上方[英文原文](#english)。OpenCollab-Eval 负责
 [OpenCollab](https://github.com/RISE-X-Lab/OpenCollab) 的候选生成、隔离正式评测与结果证据。
-当前源码版本为 **0.7.0**，依赖 **OpenCollab 0.7.x**。
+当前源码版本为 **0.7.1**，依赖 **OpenCollab >=0.7.1,<0.8**。
 
-<a id="g22-quick-start-zh-cn"></a>
+<a id="duo-quick-start-zh-cn"></a>
 
-## 用 Single2 运行 G22
+## 用 Single2 运行 Duo
 
-G22 沿已有双 coder 工作流依次执行 coder A、coder B、机械比较、公开要求裁决与候选采用。
+Duo 是 OpenCollab 的内置工作流，依次执行 coder A、coder B、机械比较、公开要求裁决与候选采用。
 选择者逐项核对公开要求，并引用对应候选的实际修改路径与证据。
 评测器随后在新的正式工作区测试采用补丁。
 
-准确的 workflow 名称为 `validation-council-dual-coder-selection-v2`。
+准确的 workflow 名称为 `duo`。
 请在 JSON 配置中将 `agent_profile` 显式设为 `"single2"`。底层 runner 使用
 `--agent-profile single2` 选择相同配置，Eval 将 `agent_profile="single2"` 传入 OpenCollab 公开 workflow API。
 默认 Single profile 使用另一套 agent 配置。
 coder 可用的原生工具为 `bash`、`file_read`、`file_write`、`apply_patch`、`git_diff` 与 `grep`。
-项目测试通过原生 Bash 执行，Eval 保留观察到的命令与执行结果。
+项目测试通过原生 Bash 执行，OpenCollab 保留观察到的命令与执行结果。
 裁决角色使用该角色受限的工具集合。
+
+通过 `from opencollab.builtin_workflows import duo` 导入 Duo。
+统一的 `duo` 工作流采用通用任务提示、完整候选证据文件和只读
+`read_candidate_evidence` 工具。`oc-eval g22` 保留为同一评测命令的别名。
 
 下方教程在一台有 Docker 的 Linux worker 上运行。
 模型使用用户配置的 OpenAI 兼容 **Responses** 入口。
@@ -524,7 +533,7 @@ python -c 'from importlib.metadata import version; print("OC", version("opencoll
 cd OpenCollab-Eval
 ```
 
-输出的两个包版本均应为 0.7.x。editable 安装使用两个 clone 内的源码。
+输出的两个包版本均应至少为 0.7.1，并保持在 0.7.x 范围内。editable 安装使用两个 clone 内的源码。
 `oc-eval --version` 显示已安装的 Eval 版本。
 开发环境说明见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
@@ -661,7 +670,7 @@ relay 的 `--direct-upstream` 将标准请求转发到配置的入口。
 保留数据准备时设置的变量，并一次写入运行配置。配置中的路径指向源码仓库之外的评测目录。
 
 ```bash
-python - "$EVAL_ROOT/g22.json" <<'PY_CONFIG'
+python - "$EVAL_ROOT/duo.json" <<'PY_CONFIG'
 import json
 import os
 import sys
@@ -692,7 +701,7 @@ Path(sys.argv[1]).write_text(json.dumps(config, indent=2) + "\n")
 PY_CONFIG
 ```
 
-`oc-eval g22` 会选择 G22 workflow、Single2 角色 profile 与已有正式并行 runner。
+`oc-eval duo` 会选择 Duo workflow、Single2 角色 profile 与已有正式并行 runner。
 默认配置通过 `OPENCOLLAB_UNBOUNDED_LIMITS=true` 移除累计 token 与步数上限，
 入口为 token 与步数提供 1000000000000 的回退值。
 需要显式预算上限时，将该 workflow 变量设为 `false`，并在 JSON 中设置 `budget` 与 `max_steps`。
@@ -703,19 +712,19 @@ PY_CONFIG
 以下命令会真实生成补丁，并为采用候选执行正式 FAIL_TO_PASS 与 PASS_TO_PASS 目标。
 
 ```bash
-oc-eval g22 --config "$EVAL_ROOT/g22.json" \
-  --indices 1 --workers 1 --run-id g22-smoke-001
+oc-eval duo --config "$EVAL_ROOT/duo.json" \
+  --indices 1 --workers 1 --run-id duo-smoke-001
 ```
 
 runner 打包已安装的 OC 与 OCE 源码，验证 worker 运行包，准备隔离的公开源码 checkout，
-执行 G22，捕获已停止写入的候选，并将其投影到独立正式工作区。
+执行 Duo，捕获已停止写入的候选，并将其投影到独立正式工作区。
 命令会写出 JSON 与 Markdown 报告。`--help` 与 `--dry-run` 用于查看选项或计划，
 smoke 结果来自上述真实生成与正式执行命令。
 
 读取正式结果与对应报告路径。
 
 ```bash
-python - "$EVAL_ROOT/results/g22-smoke-001/task_1_report.json" <<'PY_RESULT'
+python - "$EVAL_ROOT/results/duo-smoke-001/task_1_report.json" <<'PY_RESULT'
 import json
 import sys
 from pathlib import Path
@@ -739,12 +748,12 @@ PY_RESULT
 示例使用四个任务位执行第 2 至第 50 行，并将协调器放入后台。
 
 ```bash
-nohup oc-eval g22 --config "$EVAL_ROOT/g22.json" \
-  --indices 2-50 --workers 4 --run-id g22-batch-001 \
-  > "$EVAL_ROOT/results/g22-batch-001.log" 2>&1 < /dev/null &
-printf '%s\n' "$!" > "$EVAL_ROOT/results/g22-batch-001.pid"
-cat "$EVAL_ROOT/results/g22-batch-001.pid"
-tail -n 20 "$EVAL_ROOT/results/g22-batch-001.log"
+nohup oc-eval duo --config "$EVAL_ROOT/duo.json" \
+  --indices 2-50 --workers 4 --run-id duo-batch-001 \
+  > "$EVAL_ROOT/results/duo-batch-001.log" 2>&1 < /dev/null &
+printf '%s\n' "$!" > "$EVAL_ROOT/results/duo-batch-001.pid"
+cat "$EVAL_ROOT/results/duo-batch-001.pid"
+tail -n 20 "$EVAL_ROOT/results/duo-batch-001.log"
 ```
 
 SSH 断开或控制电脑关机后，relay 与批次协调器仍在 worker 上执行。
@@ -781,7 +790,7 @@ SSH worker 需要在配置中设置 `runner_transport`、`host` 与对应 worker
 
 | 入口 | 用途 |
 | --- | --- |
-| `oc-eval g22 --config /path/g22.json` | G22 Single2 与正式评分 |
+| `oc-eval duo --config /path/duo.json` | Duo Single2 与正式评分 |
 | `oc-eval inspect` | 检查可信数据并匿名化 |
 | `oc-eval run` | 通用题目的候选生成 |
 | `oc-eval swe-v1-prolite` | 一个 slice 的生成与正式评分 |
@@ -799,7 +808,7 @@ SSH worker 需要在配置中设置 `runner_transport`、`host` 与对应 worker
 <summary>其他内置 Solver 与完整 Kimi 示例</summary>
 
 [运维指南](docs/zh-CN/swe-prolite-operations.md)介绍这些已有 Solver profile 与协调器的传输配置。
-G22 继续使用上方独立配置入口。
+Duo 继续使用上方独立配置入口。
 
 | Solver | Workflow |
 | --- | --- |

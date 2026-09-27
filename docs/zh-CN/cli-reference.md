@@ -22,6 +22,18 @@ oc-eval inspect DATASET --identity-key-file KEY
 
 此命令验证大小受限的 SWE-Batch Pro JSONL 文件，分离公开字段与密封字段，并输出匿名公开任务 ID。处理会在检查完成后结束，生成和官方评测尚未开始。
 
+### `oc-eval duo`
+
+```text
+oc-eval duo --config CONFIG [--indices INDICES] [--workers COUNT]
+            [--run-id ID] [--output-dir DIRECTORY] [--dry-run]
+```
+
+该命令通过正式评测器运行统一的 OpenCollab Duo。`workflow` 为 `duo`，
+`agent_profile` 默认为 `single2`。裁决者通过只读工具读取完整证据文件。
+`--dry-run` 输出有效配置，`oc-eval g22` 保留为命令别名。
+模型参数、预算、超时与评测选项沿用已有并行 runner。
+
 ### `oc-eval run`
 
 ```text
