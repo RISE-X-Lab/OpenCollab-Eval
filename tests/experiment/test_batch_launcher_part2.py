@@ -134,7 +134,7 @@ def test_sync_checks_out_both_repositories_at_the_spec_pins(experiment: dict, ca
     out = capsys.readouterr().out
     assert "RESULT: synced" in out
     checkout = remote.scripts[1]
-    assert experiment["sha"] in checkout and PIN_EVAL in checkout
+    assert experiment["sha"] in checkout and experiment["eval_sha"] in checkout
     # Fetch only when the commit is not already there, so a repeat sync is free.
     assert 'cat-file -e "$sha^{commit}"' in checkout
 
@@ -226,7 +226,7 @@ def test_a_fetch_retry_names_the_proxy_the_host_resolved(experiment: dict, capsy
     """
     remote = SyncRemote(
         _guard(),
-        "EV_PROXY\tnone\nEV_FETCH_RETRY\t1\nEV_MISSING\t" + PIN_EVAL + "\n"
+        f"EV_PROXY\tnone\nEV_FETCH_RETRY\t1\nEV_MISSING\t{experiment['eval_sha']}\n"
         f"OC_PROXY\thttp://127.0.0.1:17890\nOC_AFTER\t{experiment['sha']}\n",
     )
 
