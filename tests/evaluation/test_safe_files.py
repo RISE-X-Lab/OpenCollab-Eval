@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import shutil
 import stat
@@ -20,6 +21,53 @@ from opencollab_eval.safe_files import (
     read_regular_bytes,
     write_regular_bytes_atomic,
 )
+
+
+@pytest.mark.parametrize("operation", [open_directory_no_symlinks, ensure_directory_no_symlinks])
+def test_directory_walk_interruption_after_parent_close_cleans_child(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, operation
+) -> None:
+    """A signal raised after closing the parent must preserve the child cleanup."""
+
+    class DirectoryWalkInterrupted(BaseException):
+        pass
+
+    interruption = DirectoryWalkInterrupted()
+    original_open = os.open
+    original_close = os.close
+    opened: list[int] = []
+    closed: list[int] = []
+    close_calls: list[int] = []
+
+    def track_open(*args, **kwargs) -> int:
+        fd = original_open(*args, **kwargs)
+        opened.append(fd)
+        return fd
+
+    def close_and_interrupt_once(fd: int) -> None:
+        close_calls.append(fd)
+        original_close(fd)
+        closed.append(fd)
+        if len(close_calls) == 1:
+            raise interruption
+
+    monkeypatch.setattr(safe_files.os, "open", track_open)
+    monkeypatch.setattr(safe_files.os, "close", close_and_interrupt_once)
+    try:
+        with pytest.raises(DirectoryWalkInterrupted) as caught:
+            operation(tmp_path)
+        assert caught.value is interruption
+        assert len(opened) == 2
+        assert close_calls == opened
+        assert closed == opened
+        for fd in opened:
+            with pytest.raises(OSError) as close_error:
+                os.fstat(fd)
+            assert close_error.value.errno == errno.EBADF
+    finally:
+        for fd in opened:
+            if fd not in closed:
+                original_close(fd)
 
 
 def test_bounded_read_rejects_symlink_and_oversized_file(tmp_path) -> None:
