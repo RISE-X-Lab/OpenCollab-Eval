@@ -43,7 +43,10 @@ def _fixture(tmp_path):
     (source / ".gitignore").write_text("__pycache__/\n.pytest_cache/\n")
     _git(source, "init", "-q")
     _git(source, "add", ".")
-    _git(source, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "测试初始源码")
+    _git(
+        source, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm",
+        "\u6d4b\u8bd5\u521d\u59cb\u6e90\u7801",
+    )
     _git(tmp_path, "clone", "-q", str(source), str(scoring))
     (scoring / "test_hidden.py").write_text(
         "from widget import parse\n\ndef test_none():\n    assert parse(None) == []\n"
