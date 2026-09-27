@@ -13,6 +13,9 @@ from .validation_council_dual_coder_contract import (
 from .validation_council_dual_coder_selection import (
     validation_council_dual_coder_selection_v2,
 )
+from .validation_council_dual_coder_selection_files import (
+    validation_council_dual_coder_selection_v3,
+)
 from .validation_council_lean_official import (
     validation_council_lean_official_v1,
 )
@@ -32,6 +35,7 @@ __all__ = [
     "team_pro",
     "validation_council_dual_coder_contract_v1",
     "validation_council_dual_coder_selection_v2",
+    "validation_council_dual_coder_selection_v3",
     "validation_council_lean_official_v1",
     "validation_council_triple_coder_contract_v1",
     "validation_council_solve",

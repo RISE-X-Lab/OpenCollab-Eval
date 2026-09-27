@@ -25,6 +25,8 @@
 
 [evaluation-runtime.md](evaluation-runtime.md) 说明已安装命令与运行时层级之间的对应关系，并解释哪些入口会生成候选结果，哪些入口会给出官方判定。[final-report.md](final-report.md) 是 `oc-eval final-report` 的完整输入与证据契约。
 
+[G22 文件证据](g22-file-evidence.md)介绍完整候选证据文件与 v3 裁决角色的只读工具。
+
 机器可读的[完整性覆盖台账](../integrity-coverage.json)将已知完整性要求映射到负责人、实现文件、测试和精确的测试节点 ID。测试套件会验证这份台账。更新实现与回归测试时，也应同步更新相应条目。
 
 ## 设计与验证记录
