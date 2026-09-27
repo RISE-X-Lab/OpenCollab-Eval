@@ -502,7 +502,10 @@ def main() -> int:
                 f"generator for {instance_id} returned exit code {returncode}{detail}",
                 flush=True,
             )
-        if not _prediction_has_patch(output_path, instance_id):
+        # Supervisor failures retain the existing process cleanup requirement.
+        if returncode == TECHNICAL_EXIT_CODE and lifecycle_reason:
+            failures.append(instance_id)
+        elif not _prediction_has_patch(output_path, instance_id):
             print(f"instance produced no non-empty patch: {instance_id}", flush=True)
             failures.append(instance_id)
 

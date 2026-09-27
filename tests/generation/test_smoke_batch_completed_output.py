@@ -14,12 +14,21 @@ from tests.support.swe_eval_status_support import _strict_modern_prediction
 
 
 @pytest.mark.parametrize(
-    ("returncode", "output_state", "expected"),
-    [(124, "completed", 0), (0, "completed", 0), (124, "missing", 1), (0, "missing", 1), (124, "invalid", 1)],
+    ("returncode", "output_state", "cleanup_ok", "expected"),
+    [
+        (124, "completed", True, 0), (0, "completed", True, 0), (125, "completed", True, 0),
+        (124, "missing", True, 1), (0, "missing", True, 1),
+        (124, "invalid", True, 1), (0, "completed", False, 1),
+    ],
 )
 def test_smoke_batch_exit_follows_completed_output(
-    monkeypatch, tmp_path, capsys, returncode, output_state, expected,
+    monkeypatch, tmp_path, capsys, returncode, output_state, cleanup_ok, expected,
 ):
+    if not cleanup_ok:
+        cleanup_results = iter((False, True))
+        monkeypatch.setattr(
+            driver, "_ensure_process_tree_quiesced_after_wait", lambda *a, **kw: next(cleanup_results),
+        )
     instances = tmp_path / "instances"
     instances.mkdir()
     for number in (1, 2):
@@ -37,7 +46,8 @@ def test_smoke_batch_exit_follows_completed_output(
         code = returncode if first else 0
         state = output_state if first else "completed"
         prediction = _strict_modern_prediction(
-            status="done_with_timeout_patch" if code == 124 else "done", returncode=code,
+            status="done_with_timeout_patch" if code == 124 else "done",
+            returncode=124 if code == 124 else 0,
         )
         prediction["instance_id"] = instance_id
         prediction["workflow_metric"]["instance_id"] = instance_id
@@ -64,3 +74,5 @@ def test_smoke_batch_exit_follows_completed_output(
     assert visited == ["task-1", "task-2"]
     if returncode:
         assert f"exit code {returncode}" in capsys.readouterr().out
+    elif not cleanup_ok:
+        assert "process tree did not quiesce" in capsys.readouterr().out
