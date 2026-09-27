@@ -54,7 +54,9 @@ _CONTROLLED_STOP_REASON_PREFIXES = (
 )
 _CONTROLLED_STOP_REASON_NAMES = frozenset({"budget_exceeded", "context_overflow", "step_limit_exceeded", "timeout"})
 def build_task(instance: dict) -> str:
-    return f"# Issue to fix in `{instance['repo']}`\n\n{compose_task_specification(instance)}\n"
+    hints = (instance.get("hints_text") or "").strip()
+    hints_block = f"\n## Hints (from the issue discussion — may help locate the cause)\n{hints}\n" if hints else ""
+    return f"# Issue to fix in `{instance['repo']}`\n\n{compose_task_specification(instance)}\n{hints_block}"
 
 
 def load_instance(path: str | Path) -> dict:
@@ -274,6 +276,7 @@ async def run_agent(
     """Run one agent through the public OpenCollab facade."""
     profile = resolve_profile_name(profile)
     max_steps, budget = resolve_agent_generation_limits(profile, max_steps, budget)
+    artifact_dir = None
     try:
         model_api_key = cfg.get("api_key") or os.environ.get("OPENCOLLAB_API_KEY")
         model_base_url = cfg.get("base_url") or os.environ.get("OPENCOLLAB_BASE_URL")
@@ -323,7 +326,10 @@ async def run_agent(
         )
         print(f"  agent artifacts: {artifact_dir}")
     except Exception as exc:
-        return {**_runtime_failure_metrics(exc, phase="adapter_setup"), "agent_profile": profile}
+        metrics = {**_runtime_failure_metrics(exc, phase="adapter_setup"), "agent_profile": profile}
+        if artifact_dir is not None:
+            metrics["trajectory_path"] = str(artifact_dir / "trajectory.jsonl")
+        return metrics
 
     try:
         operation = client.agent(
@@ -345,6 +351,7 @@ async def run_agent(
         print(f"  agent: runtime failed with {type(exc).__name__}: {exc}")
         metrics = _runtime_failure_metrics(exc)
     metrics["agent_profile"] = profile
+    metrics["trajectory_path"] = str(artifact_dir / "trajectory.jsonl")
     model_configuration = {
         "public_interface": "OpenCollab.agent",
         "client": "profile-owned native LLMClient",

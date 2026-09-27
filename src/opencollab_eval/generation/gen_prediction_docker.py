@@ -69,7 +69,6 @@ def _container_owner_label_state(reference: str, owner_token: str) -> str:
             "--format",
             f'{{{{ index .Config.Labels "{CONTAINER_OWNER_LABEL}" }}}}',
             reference,
-            timeout=30,
         )
     except BaseException:
         return "unknown"
@@ -257,7 +256,7 @@ exit 2
 
 def _container_is_absent(reference: str) -> bool:
     try:
-        result = _docker("inspect", "--type", "container", reference, timeout=30)
+        result = _docker("inspect", "--type", "container", reference)
     except Exception as exc:  # noqa: BLE001 - absence must be positively verified
         print(f"  warning: container absence check failed for {reference}: {exc!r}")
         return False
@@ -297,7 +296,7 @@ def remove_container(
         except Exception as exc:
             print(f"  warning: container termination evidence failed for {reference}: {exc!r}")
     try:
-        result = _docker("rm", "-f", reference, timeout=30)
+        result = _docker("rm", "-f", reference)
     except Exception as exc:  # noqa: BLE001 - retain ownership on unknown teardown
         print(f"  warning: container cleanup failed for {reference}: {exc!r}")
         return False

@@ -27,6 +27,7 @@ MODEL_CONTEXT_WINDOWS: dict[str, int] = {
 }
 
 EXACT_MODEL_CONTEXT_WINDOWS: dict[str, int] = {
+    "gpt-5.6-luna": 1_048_576,
     "deepseek-v4-flash": 1_048_576,
     "k3": 1_048_576,
     "kimi-for-coding": 262_144,
