@@ -57,6 +57,13 @@ candidate construction. Solver changes to `.git`, aliases, hooks, config,
 ignore files, refs, reflogs, replacement refs, or the worktree index cannot
 change this controller-owned baseline.
 
+Candidate dependency hydration preserves the image-provided contents and
+ignored directory layout even when the dependency store and candidate are
+on different filesystems. The copy is staged on the candidate mount and then
+published with a same-filesystem rename. A directory stays a materialized
+directory, which preserves Git's ignored-path classification during candidate
+capture.
+
 ## Workspace classification
 
 Workspace findings are classified by phase, origin, solver visibility, model

@@ -36,6 +36,35 @@ def test_public_preparation_allowance_reaches_dependency_transport(monkeypatch, 
     assert config._workspace_archive_timeout_from_env() == 900.0
 
 
+def test_solver_dependency_stash_stays_on_workspace_filesystem(monkeypatch):
+    captured = []
+    monkeypatch.setattr(runtime, "_install_helpers", lambda _container_id: None)
+    monkeypatch.setattr(runtime.secrets, "token_hex", lambda _size: "fixed-token")
+
+    def run(container_id, action, workspace, argument, payload=""):
+        captured.append((container_id, action, workspace, argument, payload))
+        return '["node_modules"]'
+
+    monkeypatch.setattr(runtime, "_run", run)
+    state = runtime.stash_solver_runtime_dependencies(
+        "owned",
+        "a" * 40,
+        workspace="/app",
+    )
+
+    assert state.store == "/.opencollab-generation-runtime-fixed-token"
+    assert state.roots == ("node_modules",)
+    assert captured == [
+        (
+            "owned",
+            "stash",
+            "/app",
+            "/.opencollab-generation-runtime-fixed-token",
+            "a" * 40 + "\n",
+        )
+    ]
+
+
 @pytest.mark.parametrize("adapter", [candidate, lean_candidate])
 def test_candidate_prepare_uses_same_public_allowance(monkeypatch, adapter):
     monkeypatch.setenv("OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS", "43200")

@@ -197,6 +197,13 @@ artifacts. It receives public task text and the configured model connection.
 Judge targets, reference material, future repository history, and artifacts
 from other runs stay outside that workspace.
 
+Image development dependencies are stashed beside the source workspace so
+large ignored trees can move on the same filesystem during snapshot
+preparation. Prepared candidate dependency copies live under the container's
+`/tmp`. A candidate on another mount receives a staged copy followed by a
+rename on its own filesystem. A failed installation rolls back roots already
+placed in the candidate.
+
 The official-evaluation container receives the bound candidate patch, judge
 test specification, parser-backed test programs, and an allowlisted output
 directory. It creates its own public baseline and validates the applied

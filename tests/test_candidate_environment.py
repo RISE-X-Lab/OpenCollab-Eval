@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import subprocess
 from types import SimpleNamespace
 
@@ -63,6 +64,40 @@ def test_candidate_runtime_hydrates_ignored_dependency_root(tmp_path) -> None:
     assert candidate_runtime.hydrate(store, candidate) is False
 
 
+def test_candidate_runtime_copies_ignored_root_across_mounts(tmp_path, monkeypatch) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    _git(source, "init")
+    (source / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
+    (source / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+    _git(source, "add", ".gitignore", "tracked.txt")
+    _git(source, "-c", "user.name=OpenCollab Test", "-c",
+         "user.email=test@opencollab.invalid", "commit", "-m", "baseline")
+    dependency = source / "node_modules" / "example"
+    dependency.mkdir(parents=True)
+    (dependency / "index.js").write_text("module.exports = 42;\n", encoding="utf-8")
+    store = tmp_path / "candidate-runtime"
+    candidate_runtime.prepare(source, ["node_modules"], store, candidate_count=1)
+    candidate = tmp_path / "candidate"
+    _git(source, "worktree", "add", "--detach", str(candidate), "HEAD")
+
+    original_rename = candidate_runtime.Path.rename
+
+    def cross_mount_rename(path, target):
+        if path.name == "node_modules" and path.parent.parent.name == "claims":
+            raise OSError(errno.EXDEV, "cross-device link")
+        return original_rename(path, target)
+
+    monkeypatch.setattr(candidate_runtime.Path, "rename", cross_mount_rename)
+    assert candidate_runtime.hydrate(store, candidate) is True
+    installed = candidate / "node_modules"
+    assert installed.is_dir() and not installed.is_symlink()
+    assert (installed / "example" / "index.js").read_text(encoding="utf-8") == "module.exports = 42;\n"
+    status = subprocess.run(["git", "-C", str(candidate), "status", "--porcelain"],
+                            check=True, capture_output=True, text=True)
+    assert status.stdout == ""
+
+
 def test_candidate_environment_reuses_prepare_python_for_hydration(monkeypatch) -> None:
     captured: dict[str, object] = {}
     python = "/opt/control-plane/bin/python3"
@@ -89,7 +124,7 @@ def test_candidate_environment_reuses_prepare_python_for_hydration(monkeypatch) 
 
     monkeypatch.setattr(gen_prediction_snapshot, "_docker_with_stdin", prepare)
     runtime = SimpleNamespace(
-        store="/tmp/runtime",
+        store="/.opencollab-generation-runtime-abc",
         workspace="/testbed",
         roots=("node_modules",),
     )
@@ -101,10 +136,12 @@ def test_candidate_environment_reuses_prepare_python_for_hydration(monkeypatch) 
     )
 
     assert captured["prepare_args"][5] == python
+    assert captured["prepare_args"][9] == "/tmp/.opencollab-generation-runtime-abc-candidates"
     assert captured["prepare_kwargs"] == {
         "input_text": '["node_modules"]',
         "timeout": 45,
     }
     wrapped = prefix("node -e 'require(\"example\")'")
     assert f"{python} /tmp/opencollab_candidate_runtime.py hydrate" in wrapped
+    assert "/tmp/.opencollab-generation-runtime-abc-candidates" in wrapped
     assert "activate\nnode -e" in wrapped

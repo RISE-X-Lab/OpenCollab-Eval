@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import secrets
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from .gen_prediction_config import _dependency_preparation_timeout_from_env
 from .gen_prediction_constants import DOCKER_WORKDIR
@@ -57,7 +57,15 @@ def stash_solver_runtime_dependencies(
     workspace: str = DOCKER_WORKDIR,
 ) -> SolverRuntimeDependencies:
     _install_helpers(container_id)
-    store = f"/tmp/opencollab-generation-runtime-{secrets.token_hex(8)}"
+    # Keep the dependency store beside the workspace so a large ignored tree
+    # such as node_modules can move with os.replace instead of crossing from
+    # the container overlay into a separately mounted /tmp.  The latter turns
+    # every stash and restore into a full copy and can saturate the shared disk
+    # when a batch starts many tasks together.
+    store = str(
+        PurePosixPath(workspace).parent
+        / f".opencollab-generation-runtime-{secrets.token_hex(8)}"
+    )
     roots = json.loads(_run(container_id, "stash", workspace, store, expected_base_commit + "\n"))
     return SolverRuntimeDependencies(store, tuple(roots), workspace)
 

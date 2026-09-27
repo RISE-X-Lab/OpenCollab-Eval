@@ -14,7 +14,11 @@ except ImportError:
 
 def image_activation_prefix(container_id, activation=""):
     """Restore the image PATH after the environment's login shell initialization."""
-    from .gen_prediction_docker import _check_docker, _docker, prepare_testbed_environment
+    from .gen_prediction_docker import (
+        _check_docker,
+        _docker,
+        prepare_testbed_environment,
+    )
 
     prepare_testbed_environment(container_id)
     result = _docker("inspect", "--format", "{{json .Config.Env}}", container_id)
@@ -58,7 +62,7 @@ def install_candidate_environment(container_id, solver_runtime, activation=""):
     activation = image_activation_prefix(container_id, activation)
     helper_python = image_helper_python(container_id)
     helper = "/tmp/opencollab_candidate_runtime.py"
-    store = solver_runtime.store + "-candidates"
+    store = str(Path("/tmp") / (Path(solver_runtime.store).name + "-candidates"))
     _install_snapshot_helper(container_id, Path(__file__).with_name("candidate_runtime.py"), helper)
     result = _docker_with_stdin(
         "exec",
