@@ -59,9 +59,13 @@ def test_llm_response_uses_independent_default_values() -> None:
         ("o3-mini", 200_000),
         ("deepseek-chat", 64_000),
         ("deepseek-v4-flash", 1_048_576),
+        ("deepseek-v4.1-flash", 1_000_000),
+        ("vendor/deepseek-v4.1-flash-2026-09-01", 1_000_000),
         ("deepseek-v4-flash-0731", 1_048_576),
         ("vendor/deepseek-v4-flash-2026-07-31", 1_048_576),
         ("qwen2.5-coder", 131_072),
+        ("qwen3.8-flash", 983_616),
+        ("vendor/qwen3.8-flash-2026-09-01", 983_616),
         ("glm-5.2", 400_000),
         ("gemini-2.5-pro", 1_000_000),
         ("k3", 1_048_576),
@@ -93,7 +97,11 @@ def test_model_context_window_rejects_unknown_and_kimi_near_misses(
     assert model_context_window(model) is None
 
 
-@pytest.mark.parametrize("model", ["gpt-5.6-luna", "vendor/gpt-5.6-luna-2026-07-31"])
+@pytest.mark.parametrize("model", [
+    "gpt-5.6-luna", "vendor/gpt-5.6-luna-2026-07-31",
+    "qwen3.8-flash", "vendor/qwen3.8-flash-2026-09-01",
+    "deepseek-v4.1-flash", "vendor/deepseek-v4.1-flash-2026-09-01",
+])
 def test_recorded_context_matches_public_model_client(model, tmp_path):
     async def actual_context():
         client = OpenCollab(tmp_path, model=model, provider="openai", api_key="test-key").create_model_client()

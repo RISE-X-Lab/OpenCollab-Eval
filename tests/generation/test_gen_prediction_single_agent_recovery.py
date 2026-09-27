@@ -257,6 +257,50 @@ def test_single_main_cleanup_failure_stages_candidate_before_publish(
     assert list((tmp_path / ".opencollab" / "container_owners").glob("*.json"))
 
 
+def test_single_main_records_transport_without_remote_environment(monkeypatch, tmp_path):
+    instance_path = tmp_path / "instance.json"
+    instance_path.write_text(json.dumps({
+        "instance_id": "task-1", "base_commit": "c" * 40,
+        "repo": "acme/repo", "problem_statement": "fix it",
+    }), encoding="utf-8")
+    output, metrics_path = tmp_path / "predictions.jsonl", tmp_path / "metrics.jsonl"
+    monkeypatch.setattr(gp, "get_config", lambda root: {
+        "model": "model", "provider": "openai", "api_key": "key",
+        "base_url": "https://model.example.invalid/v1", "base_url_sha256": "7" * 64,
+        "wire_protocol": "responses", "reasoning_effort": "high",
+    })
+    monkeypatch.setenv("OPENCOLLAB_LLM_STREAM_CHAT", "false")
+    monkeypatch.setenv("OPENCOLLAB_LLM_USER_AGENT", "report-test")
+    monkeypatch.setenv("OPENCOLLAB_API_KEY", "private-key")
+    for name in ("OPENCOLLAB_EVAL_WORKFLOW_ENV", "OPENCOLLAB_EVAL_LLM_BASE_URL_SHA256"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(gp, "start_container", lambda *a, **k: "cid")
+
+    async def failed_agent(*args, **kwargs):
+        return {"workflow_status": "error", "agent_status": "failed", "candidate_probe_eligible": False}
+
+    monkeypatch.setattr(gp, "run_agent", failed_agent)
+    monkeypatch.setattr(gp, "run_with_bounded_shutdown", lambda awaitable: asyncio.run(awaitable))
+    monkeypatch.setattr(gp, "remove_container_and_clear_marker", lambda *a, **k: True)
+    monkeypatch.setattr(sys, "argv", [
+        "gen_prediction.py", "--instance-file", str(instance_path),
+        "--output", str(output), "--metrics", str(metrics_path),
+    ])
+
+    with pytest.raises(SystemExit, match="1"):
+        gp.main()
+
+    metric = _jsonl_rows(metrics_path)[0]
+    prediction = _jsonl_rows(output)[0]
+    assert metric["wire_protocol"] == "responses"
+    assert metric["reasoning_effort"] == "high"
+    assert metric["llm_base_url_sha256"] == "7" * 64
+    assert metric["workflow_env"]["OPENCOLLAB_LLM_STREAM_CHAT"] == "false"
+    assert metric["workflow_env"]["OPENCOLLAB_LLM_USER_AGENT"] == "report-test"
+    assert "OPENCOLLAB_API_KEY" not in metric["workflow_env"]
+    assert prediction["workflow_metric"]["workflow_env"] == metric["workflow_env"]
+
+
 def test_single_main_output_symlink_race_cleans_active_container(
     monkeypatch,
     tmp_path,

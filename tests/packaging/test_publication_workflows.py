@@ -190,7 +190,7 @@ def test_push_gates_reject_an_unrelated_but_reachable_before_commit(
 
 def test_ci_uses_verified_action_release_commits() -> None:
     workflow = _workflow("ci.yml")
-    opencollab_ref = "12450a6f3cb8adb2c5dfbe50b0e58c71f05e2276"
+    opencollab_ref = "f2526d5e2b26567c27e9f7b0227a32c35ee934b5"
 
     assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" in workflow
     assert "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97" in workflow
