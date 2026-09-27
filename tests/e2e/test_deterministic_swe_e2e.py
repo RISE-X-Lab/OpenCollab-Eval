@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import urllib.request
+from types import SimpleNamespace
 
 import pytest
 
@@ -135,6 +136,31 @@ def test_provider_credentials_are_removed_from_child_environment(monkeypatch, tm
         assert events[0]["provider_environment_clean"] is True
     finally:
         assert _stop_fake_service(process) is True
+
+
+def test_service_readiness_publishes_a_readable_startup_trace(monkeypatch, tmp_path):
+    from tests.e2e import fake_openai_server as service
+
+    ready = tmp_path / "ready"
+    trace = tmp_path / "trace.jsonl"
+    original_append = service.TraceWriter.append
+
+    def append(writer, event):
+        if event["event"] == "started":
+            assert not ready.exists(), "readiness exposed a startup trace that is not readable yet"
+        original_append(writer, event)
+
+    def serve_forever(**_kwargs):
+        assert ready.is_file()
+        assert json.loads(trace.read_text().splitlines()[0])["event"] == "started"
+
+    monkeypatch.setattr(service.TraceWriter, "append", append)
+    monkeypatch.setattr(
+        service, "ThreadingHTTPServer",
+        lambda *_args: SimpleNamespace(serve_forever=serve_forever, server_close=lambda: None),
+    )
+    monkeypatch.setattr(sys, "argv", ["fake-service", "--port", "1", "--trace", str(trace), "--ready-file", str(ready)])
+    assert service.main() == 0
 
 
 def test_patch_parser_preserves_space_and_literal_b_path():
