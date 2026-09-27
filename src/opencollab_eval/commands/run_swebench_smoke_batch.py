@@ -499,11 +499,10 @@ def main() -> int:
         if returncode != 0:
             detail = f" ({lifecycle_reason})" if lifecycle_reason else ""
             print(
-                f"instance failed with exit code {returncode}: {instance_id}{detail}",
+                f"generator for {instance_id} returned exit code {returncode}{detail}",
                 flush=True,
             )
-            failures.append(instance_id)
-        elif not _prediction_has_patch(output_path, instance_id):
+        if not _prediction_has_patch(output_path, instance_id):
             print(f"instance produced no non-empty patch: {instance_id}", flush=True)
             failures.append(instance_id)
 
