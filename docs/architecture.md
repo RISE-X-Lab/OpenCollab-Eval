@@ -28,7 +28,9 @@ OpenCollab-Eval currently imports the following public OpenCollab surfaces.
 | --- | --- |
 | `opencollab` | `OpenCollab` and `RunResult` |
 | `opencollab.environments` | `Environment`, `attach_container`, `docker_environment`, and `worktree_environment` |
-| `opencollab.tools` | `BuiltinToolName`, `Tool`, and `builtin_tools` |
+| `opencollab.tools` | `BuiltinToolName`, `Tool`, `builtin_tools`, and `evidence_tools` |
+| `opencollab.builtin_workflows` | `duo`, `duo_v3`, `get_builtin_workflows`, and `run_dual_coder` |
+| `opencollab.patches` | Generic Git diff blocks and paths |
 | `opencollab.workflows` | `workflow` |
 
 The retired `opencollab.sdk` package and OpenCollab implementation layers such
@@ -38,7 +40,7 @@ accepted from production code and tests, then checks those public names against
 the installed OpenCollab package.
 
 This boundary gives OpenCollab-Eval a versioned runtime dependency through
-`opencollab>=0.5.0,<0.6`. A change to OpenCollab internals remains invisible here
+`opencollab>=0.7.0,<0.8`. A change to OpenCollab internals remains invisible here
 as long as the documented public API remains compatible.
 
 ## Package map
@@ -88,10 +90,11 @@ generation, execution, and reporting.
 
 ## Execution surfaces
 
-The installed `oc-eval` command provides four user-facing surfaces.
+The installed `oc-eval` command provides the following user-facing surfaces.
 
 | Command | Purpose |
 | --- | --- |
+| `oc-eval duo` | Run OpenCollab Duo with Single2 and official scoring |
 | `oc-eval inspect` | Validate and summarize a SWE-Batch Pro JSONL dataset through the sealed task boundary |
 | `oc-eval run` | Run the local headless evaluation engine over task JSONL |
 | `oc-eval swe-v1-prolite` | Run a bounded remote Pro-Lite slice with synchronized runtime and direct evaluation |
@@ -172,6 +175,9 @@ Target tests start only after these tree identities agree.
 
 ## Solver integration
 
+Duo orchestration lives under OpenCollab's `opencollab.builtin_workflows`. Its
+`duo` and `duo-v3` names select inline and file evidence respectively. The
+legacy `oc-eval g22` command and long workflow names remain compatible.
 Evaluation-owned workflows live under `opencollab_eval.workflows`. They use
 OpenCollab workflow decorators and tool factories while keeping benchmark
 secrets outside workflow arguments.

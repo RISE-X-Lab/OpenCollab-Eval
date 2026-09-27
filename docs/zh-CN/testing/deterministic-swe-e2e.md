@@ -63,6 +63,22 @@ official proof、validation summary 和 cleanup result。成功要求 patch hash
 记录证明假模型已经停止，自有容器和镜像已经删除，临时工作目录已经消失，
 真实服务商变量没有进入测试。
 
+## 本地 Duo 迁移实跑
+
+本地 Duo 测试通过已安装 OpenCollab-Eval 的 `run_eval_task` 入口，
+分别运行 `duo` 和 `duo-v3`。脚本化 HTTP 响应驱动真实文件工具、原生公开
+pytest 命令、隔离候选工作区、裁决采用与评测器补丁捕获。新的 Git 评分工作区
+接收捕获补丁，并加入事先保留在生成环境之外的隐藏回归测试。原源码上的两个
+目标均失败，应用补丁后均通过，结果由评测器已有的精确目标解析器处理。
+测试还会检查隐藏文件名和目标始终位于模型输入之外。
+
+```bash
+pytest -q tests/test_duo_evaluator_smoke.py
+```
+
+上方 Docker E2E 在生产评测环境中验证具有独立权限的 controller 证据、
+正式 harness 执行和容器清理。
+
 ## CI
 
 `deterministic-e2e` GitHub Actions job 构建两个 wheel，安装 SSH 和

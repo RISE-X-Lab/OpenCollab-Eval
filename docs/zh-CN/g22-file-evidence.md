@@ -1,8 +1,10 @@
-# G22 v3 文件证据
+# Duo v3 文件证据
 
 [English](../g22-file-evidence.md) | **简体中文**
 
-`validation-council-dual-coder-selection-v3` 沿用 v2 的解题提示、A/B 执行顺序、机械选择、结构化裁决校验、默认采用 A 的规则和候选采用过程。裁决角色获得完整证据文件的引用，并通过 `read_candidate_evidence` 工具读取差异。v1 与 v2 的工作流注册保持原有行为。
+`duo-v3` 由 OpenCollab 提供，沿用 Duo 的解题提示、A/B 执行顺序、机械选择、结构化裁决校验、默认采用 A 的规则和候选采用过程。裁决角色获得完整证据文件的引用，并通过 `read_candidate_evidence` 工具读取差异。原有 `validation-council-dual-coder-selection-v2` 和
+`validation-council-dual-coder-selection-v3` 名称保持兼容，并保留各自原来的工作流身份。
+从 `opencollab.builtin_workflows` 导入 `duo_v3` 即可使用。
 
 可选工作流参数 `candidate_evidence_dir` 指定证据保存的父目录，建议位于运行的产物目录中。每次裁决都会建立独立子目录。省略该参数时，程序创建并保留系统临时目录，将其位置写入工作流日志。归档时应同时保存这个目录和工作流轨迹。
 

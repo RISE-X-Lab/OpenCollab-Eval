@@ -9,6 +9,8 @@ from opencollab_eval.benchmarks.task_specification import (
 )
 
 BLIND_BY_DEFAULT_WORKFLOWS = {
+    "duo",
+    "duo-v3",
     "candidate-tournament-council-v1",
     "evidence-action-council-v1",
     "validation-council-dual-coder-contract-v1",

@@ -52,7 +52,9 @@ RUNTIME_IMPORT_PROBES = (
 )
 RUNTIME_PUBLIC_MODULES = (
     "__init__.py",
+    "builtin_workflows/__init__.py",
     "environments.py",
+    "patches.py",
     "tools.py",
     "workflows.py",
 )
@@ -549,10 +551,13 @@ def sync_runtime(
             "import opencollab, opencollab_eval; "
             "from opencollab import OpenCollab, RunResult; "
             "from opencollab.environments import attach_container; "
-            "from opencollab.tools import builtin_tools; "
+            "from opencollab.tools import builtin_tools, evidence_tools; "
+            "from opencollab.builtin_workflows import duo, duo_v3; "
+            "from opencollab.patches import patch_paths; "
             "from opencollab.workflows import workflow; "
             f"assert opencollab.__version__=={distribution_version!r}; "
-            "assert OpenCollab and RunResult and attach_container and builtin_tools and workflow"
+            "assert OpenCollab and RunResult and attach_container and builtin_tools and workflow; "
+            "assert evidence_tools and duo and duo_v3 and patch_paths"
         )
     )
     prepare_commands.append(

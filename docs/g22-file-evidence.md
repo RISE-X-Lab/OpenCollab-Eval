@@ -1,12 +1,14 @@
-# G22 v3 file evidence
+# Duo v3 file evidence
 
 **English** | [简体中文](zh-CN/g22-file-evidence.md)
 
-`validation-council-dual-coder-selection-v3` keeps the v2 coder prompts, A/B
+`duo-v3` is owned by OpenCollab and keeps the Duo coder prompts, A/B
 sequence, mechanical choice, structured decision validation, default-A rule,
 and candidate adoption. Its adjudicator receives references to complete
 evidence files and the `read_candidate_evidence` tool instead of inline diffs.
-The v1 and v2 workflow registrations keep their existing behavior.
+The original `validation-council-dual-coder-selection-v2` and
+`validation-council-dual-coder-selection-v3` names remain compatible with their
+existing workflow identities. Import `duo_v3` from `opencollab.builtin_workflows`.
 
 Use the optional workflow argument `candidate_evidence_dir` to place retained
 evidence beneath the run's artifact directory. Each adjudication gets its own

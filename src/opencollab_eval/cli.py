@@ -81,16 +81,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Resume official evaluation for evidence-bound existing candidates",
     )
     subparsers.add_parser("package-runtime", help="Package installed OC and OCE sources for server-local execution")
-    subparsers.add_parser("g22", help="Run G22 with Single2 and official scoring from one JSON configuration")
+    subparsers.add_parser("duo", aliases=["g22"],
+                          help="Run Duo with Single2 and official scoring from one JSON configuration")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
-    if arguments[:1] == ["g22"]:
-        from opencollab_eval.commands.g22 import main as run_g22
+    if arguments[:1] in (["duo"], ["g22"]):
+        from opencollab_eval.commands.duo import main as run_duo
 
-        return run_g22(arguments[1:])
+        return run_duo(arguments[1:], prog="oc-eval " + arguments[0])
     if arguments[:1] == ["swe-v1-prolite"]:
         from opencollab_eval.commands.swe_v1_prolite_runner import main as run_swe_v1_prolite
 

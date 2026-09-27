@@ -1,4 +1,4 @@
-"""Check the public G22 configuration entry against the official runner."""
+"""Check the public Duo configuration entry against the official runner."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from opencollab_eval import cli
-from opencollab_eval.commands import g22
+from opencollab_eval.commands import duo, g22
 from opencollab_eval.engine.native_progress_watch import controller_wall_timeout, generation_wall_timeout
 from opencollab_eval.runtime_config import effective_generation_limits
 
@@ -32,7 +32,7 @@ def write_config(tmp_path, **changes):
 def test_default_config_reaches_single2_and_unbounded_progress_supervision(tmp_path):
     config = g22.resolve_config(write_config(tmp_path), {"run_id": "smoke"})
     env = dict(item.split("=", 1) for item in config.workflow_env)
-    assert config.workflow == "validation-council-dual-coder-selection-v2"
+    assert config.workflow == "duo"
     assert config.agent_profile == "single2"
     assert config.indices == (1,)
     assert config.runner_transport == "local"
@@ -74,7 +74,8 @@ def test_host_limit_toggle_cannot_replace_default_g22_budget(tmp_path, monkeypat
     assert env["OPENCOLLAB_UNBOUNDED_LIMITS"] == "true"
 
 
-def test_cli_dry_run_never_starts_runner_or_reads_provider_credentials(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("command", ["duo", "g22"])
+def test_cli_dry_run_never_starts_runner_or_reads_provider_credentials(tmp_path, monkeypatch, capsys, command):
     path = write_config(tmp_path)
     (tmp_path / "provider.env").write_text("OPENCOLLAB_UPSTREAM_API_KEY=test-only-key\n")
 
@@ -82,7 +83,7 @@ def test_cli_dry_run_never_starts_runner_or_reads_provider_credentials(tmp_path,
         pytest.fail("configuration-only invocation started the evaluator")
 
     monkeypatch.setattr(g22.parallel, "run_parallel", unexpected_run)
-    assert cli.main(["g22", "--config", str(path), "--run-id", "check", "--dry-run"]) == 0
+    assert cli.main([command, "--config", str(path), "--run-id", "check", "--dry-run"]) == 0
     output = capsys.readouterr().out
     result = json.loads(output)
     assert result["status"] == "configuration_validated"
@@ -128,3 +129,17 @@ def test_config_path_variables_are_expanded_without_changing_recorded_run(tmp_pa
     config = g22.resolve_config(write_config(tmp_path, remote_root="${G22_TEST_ROOT}"), {"run_id": "variable"})
     assert config.remote_root == str(tmp_path / "worker with spaces")
     assert Path(config.remote_base) == tmp_path / "worker with spaces/runs/variable"
+
+
+@pytest.mark.parametrize("workflow", sorted(duo.WORKFLOWS))
+def test_config_preserves_selected_duo_or_legacy_identity(tmp_path, workflow):
+    config = duo.resolve_config(write_config(tmp_path, workflow=workflow), {"run_id": "selected"})
+    assert config.workflow == workflow
+    assert config.agent_profile == "single2"
+
+
+def test_legacy_module_and_new_command_share_configuration_resolver():
+    assert g22.resolve_config is duo.resolve_config
+    assert g22.parallel is duo.parallel
+    assert cli.build_parser().parse_args(["duo"]).command == "duo"
+    assert cli.build_parser().parse_args(["g22"]).command == "g22"

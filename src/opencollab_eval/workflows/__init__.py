@@ -1,5 +1,7 @@
 """Evaluation solver workflows."""
 
+from opencollab.builtin_workflows import duo, duo_v3
+
 from .analyst_solve import analyst_solve, team_pro
 from .base_team import base_team
 from .base_team_single_pass import base_team_single_pass_v1
@@ -26,6 +28,8 @@ from .validation_council_triple_coder_contract import (
 
 __all__ = [
     "analyst_solve",
+    "duo",
+    "duo_v3",
     "base_team",
     "base_team_single_pass_v1",
     "scout_solve",

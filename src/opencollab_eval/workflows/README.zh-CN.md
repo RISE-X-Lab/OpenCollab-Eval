@@ -2,13 +2,16 @@
 
 [English](README.md) | **简体中文**
 
-该包提供可重复的多智能体评测工作流。Python 代码定义控制流程，其中包括智能体
+该包提供评测工作流，以及 OpenCollab 内置工作流的兼容导入。Duo 的候选编排与
+选择由 OpenCollab 提供，Eval 负责公开题面、基准隔离工作区、隐藏测试分离与正式评分。
+Python 代码定义控制流程，其中包括智能体
 分支和修复轮次。验证门禁与停止条件也由 Python 代码管理，模型在这套控制流内
 分析并修改仓库。
 
 该包依赖 OpenCollab 0.7.0 或更高 0.7.x 版本中的工作流编写接口。
 
 ```python
+from opencollab.builtin_workflows import duo, duo_v3
 from opencollab.tools import Tool, builtin_tools
 from opencollab.workflows import WorkflowContext, workflow
 ```
@@ -20,6 +23,8 @@ from opencollab.workflows import WorkflowContext, workflow
 
 | 名称 | 结构 |
 | --- | --- |
+| `duo` | OpenCollab 内置双 coder，按公开要求选择候选 |
+| `duo-v3` | 使用完整证据文件和只读证据工具的 OpenCollab Duo |
 | `base-team` | 分析员先给出简报，随后进入有界的编码与测试循环 |
 | `self-collab` | 按阶段执行，并审查计划和各阶段结果 |
 | `split-solve` | 分别完成独立子任务，随后统一验证 |
@@ -89,7 +94,7 @@ async def my_flow(
 Shell 命令运行，差异审查使用 `git_diff`。向 `builtin_tools` 传入
 `allow_file_creation=False` 可以阻止 `file_write` 创建新文件。
 
-模型可见工具均采用当前 OC 原生定义。Eval 观察 Bash 的实际执行，保存命令、退出码
+模型可见工具均采用当前 OC 原生定义。OpenCollab 观察 Bash 的实际执行，保存命令、退出码
 和对应测试输出，供工作流判断使用。命令选择、参数、等待时间、审批、执行及模型
 看到的输出沿用原生 Bash 行为。专用测试工具、自动选择运行器、命令改写和工具
 GREEN／RED 报告已经移除。
@@ -123,3 +128,11 @@ python -m opencollab_eval.generation.gen_prediction_workflow \
 生成器负责选择和执行内置工作流。安装后的使用方从
 `opencollab_eval.workflows` 导入工作流函数，与 OpenCollab 内部的工作流
 发现实现相互独立。
+
+可以直接通过 OpenCollab 调用 Duo。评测调用方也可以继续使用
+`opencollab_eval.workflows.duo`，它引用同一个公开函数。
+`validation-council-dual-coder-selection-v2` 与
+`validation-council-dual-coder-selection-v3` 作为兼容入口，保留原名称与导入路径。
+`oc-eval duo` 默认使用 `duo` 和 `agent_profile="single2"`。
+在 JSON 配置中将 `workflow` 设为 `duo-v3` 即可选择文件证据版本。
+`oc-eval g22` 命令调用同一个评测器。
