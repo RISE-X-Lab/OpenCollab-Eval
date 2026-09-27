@@ -14,6 +14,7 @@ from opencollab.profiles import resolve_profile_name
 from opencollab.tools import Tool
 
 from opencollab_eval.engine.environment import ExecutionEnvironment
+from opencollab_eval.engine.evidence_trace import ORCHESTRATION_FILENAME, TRAJECTORY_FILENAME
 from opencollab_eval.engine.native_failure_attribution import classify_failure
 from opencollab_eval.engine.native_progress_watch import (
     generation_wall_timeout,
@@ -123,6 +124,15 @@ class _EvalRunRecord:
     @property
     def workflow_result(self) -> Any:
         return self.result.output
+
+    @property
+    def tree_snapshots(self) -> Any:
+        """The graded tree at each seat boundary, when the run recorded them.
+
+        Only a team run asks for these (``record_delivery_tree`` below), so the
+        key is absent for every other regime and this answers ``None`` there.
+        """
+        return self.result.metrics.get("tree_snapshots")
 
     @property
     def runtime_status(self) -> str:
@@ -253,7 +263,7 @@ async def _run_single_session(
     """Run one task-bound public OpenCollab agent."""
     artifacts = _reserve_artifacts(save_dir)
     if artifacts is not None:
-        tracer.bind_artifacts(artifacts, workflow=False)
+        tracer.bind_artifacts(artifacts, filename=TRAJECTORY_FILENAME)
     client = _client(
         env=env,
         model=model,
@@ -329,7 +339,7 @@ async def _run_workflow_mode(
         args["injected_test_paths"] = list(injected_paths)
     artifacts = _reserve_artifacts(save_dir)
     if artifacts is not None:
-        tracer.bind_artifacts(artifacts, workflow=True)
+        tracer.bind_artifacts(artifacts, filename=ORCHESTRATION_FILENAME)
     progress_timeout = timeout_seconds()
     if progress_timeout is not None:
         configured_root = os.environ.get("OPENCOLLAB_EVAL_WORKFLOW_LOG_DIR")
@@ -366,6 +376,77 @@ async def _run_workflow_mode(
         trace=True,
     )
     return _EvalRunRecord(result, workflow=True, agent_profile=agent_profile)
+
+
+async def _run_team_mode(
+    *,
+    task: EvalTask,
+    env: ExecutionEnvironment,
+    tracer: EvidenceTrace,
+    team_config: str | os.PathLike[str],
+    model: str,
+    provider: str,
+    api_key: str | None,
+    base_url: str | None,
+    max_steps: int | None,
+    temperature: float = DEFAULT_TEMPERATURE,
+    top_p: float | None = DEFAULT_TOP_P,
+    max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
+    context_window: int | None = None,
+    thinking: bool = DEFAULT_THINKING,
+    thinking_params: dict | None = None,
+    wire_protocol: str = "chat_completions",
+    reasoning_effort: str | None = None,
+    llm_timeout: float = 600.0,
+    llm_connect_timeout: float = 30.0,
+    llm_first_event_timeout: float = 180.0,
+    llm_stream_idle_timeout: float = 180.0,
+    save_dir: str | None = None,
+    **_unused: Any,
+) -> _EvalRunRecord:
+    """Run a prebuilt team with isolated worktrees and serialized turns."""
+    artifacts = _reserve_artifacts(save_dir)
+    result = await _client(
+        env=env,
+        model=model,
+        provider=provider,
+        api_key=api_key,
+        base_url=base_url,
+        temperature=temperature,
+        top_p=top_p,
+        max_output_tokens=max_output_tokens,
+        context_window=context_window,
+        thinking=thinking,
+        thinking_params=thinking_params,
+        wire_protocol=wire_protocol,
+        reasoning_effort=reasoning_effort,
+        llm_timeout=llm_timeout,
+        llm_connect_timeout=llm_connect_timeout,
+        llm_first_event_timeout=llm_first_event_timeout,
+        llm_stream_idle_timeout=llm_stream_idle_timeout,
+    ).team(
+        task.description,
+        config=team_config,
+        budget=task.max_tokens,
+        timeout=generation_wall_timeout(task.timeout),
+        artifacts=artifacts,
+        trace=True,
+        use_worktrees=True,
+        prebuild_team=True,
+        max_steps=max_steps,
+        serialize_turns=True,
+        # Fourth setting fixed rather than exposed, and for the same reason as
+        # the other three: the run records the tree it is graded on at every
+        # seat boundary. Turns are serialized, so two consecutive rows bracket
+        # one seat's working period and a line in the delivered patch can be
+        # attributed to the seat that was working when it arrived. Without it
+        # the arm produces a patch nobody can attribute, which is the one
+        # quantity the comparison against a scripted twin is for.
+        record_delivery_tree=True,
+    )
+    if artifacts is not None:
+        tracer.bind_artifacts(artifacts, filename=TRAJECTORY_FILENAME)
+    return _EvalRunRecord(result, workflow=True)
 
 
 def _aggregate_tokens(sessions: Sequence[Any]) -> int:

@@ -45,6 +45,7 @@ async def run_eval_task_impl(
     *,
     context_window: int | None = None,
     agent_profile: str | None = None,
+    team_config: Any = None,
 ) -> Any:
     facade = sys.modules["opencollab_eval.engine.evaluator"]
     agent_profile = resolve_solver_agent_profile(workflow, agent_profile)
@@ -55,6 +56,7 @@ async def run_eval_task_impl(
         task=task,
         output_dir=output_dir,
         workflow=workflow,
+        team_config=team_config,
         max_steps=max_steps,
         checkpoint_interval_seconds=checkpoint_interval_seconds,
         cancellation_cleanup_timeout=cancellation_cleanup_timeout,
@@ -82,6 +84,7 @@ async def run_eval_task_impl(
         llm_first_event_timeout=llm_first_event_timeout,
         llm_stream_idle_timeout=llm_stream_idle_timeout,
         resume_from_checkpoint=resume_from_checkpoint,
+        team_config=team_config,
     )
     execution = await execute_eval_run(
         facade,

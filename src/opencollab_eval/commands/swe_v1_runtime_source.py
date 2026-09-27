@@ -11,6 +11,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 MIN_OPENCOLLAB_RELEASE = (0, 8, 0)
+MAX_OPENCOLLAB_RELEASE = (0, 9, 0)
 
 
 def declared_opencollab_version(package_root: Path) -> str | None:
@@ -60,7 +61,7 @@ def runtime_directory_sources(
             raise RuntimeError("the OpenCollab distribution metadata is missing") from exc
     release_match = re.match(r"^(\d+)\.(\d+)\.(\d+)", distribution_version)
     release = tuple(map(int, release_match.groups())) if release_match else ()
-    if release < MIN_OPENCOLLAB_RELEASE or release >= (0, 9, 0):
+    if release < MIN_OPENCOLLAB_RELEASE or release >= MAX_OPENCOLLAB_RELEASE:
         raise RuntimeError(
             f"OpenCollab >=0.8,<0.9 is required, found {distribution_version}"
         )
