@@ -7,6 +7,10 @@ from .base_team import base_team
 from .base_team_single_pass import base_team_single_pass_v1
 from .scout_solve import scout_solve
 from .self_collab import self_collab
+from .self_collaboration import (
+    self_collaboration,
+    self_collaboration_reading_analyst,
+)
 from .split_solve import split_solve
 from .swe_committee_v2 import swe_committee_v2
 from .validation_council_dual_coder_contract import (
@@ -27,6 +31,8 @@ __all__ = [
     "base_team_single_pass_v1",
     "scout_solve",
     "self_collab",
+    "self_collaboration",
+    "self_collaboration_reading_analyst",
     "split_solve",
     "swe_committee_v2",
     "team_pro",
