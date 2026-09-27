@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -34,7 +33,7 @@ def test_smoke_batch_exit_follows_completed_output(
     for number in (1, 2):
         (instances / f"task-{number}.json").write_text(json.dumps({"instance_id": f"task-{number}"}))
     output = tmp_path / "output/predictions.jsonl"
-    monkeypatch.setattr(driver, "make_test_spec", lambda *a, **kw: SimpleNamespace(instance_image_key="fixture-image"))
+    monkeypatch.setattr(driver, "instance_image", lambda *a, **kw: "fixture-image")
     original_run = driver._run_generator
     visited = []
 

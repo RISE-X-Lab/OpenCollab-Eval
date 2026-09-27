@@ -19,7 +19,6 @@ follows it when it moves.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import pytest
 
@@ -41,8 +40,9 @@ from opencollab_eval.workflows.self_collaboration import (
     reading_analyst_rules,
     shared_rules,
 )
+from tests.support.package_test_support import module_path
 
-SRC = Path(__file__).resolve().parents[2] / "src" / "opencollab_eval"
+SRC = module_path("opencollab_eval").parent
 HOME = SRC / "benchmarks" / "task_specification.py"
 #: Modules whose strings are read by a model. A directory literal in one of
 #: these is an arm being told about a machine of its own.
