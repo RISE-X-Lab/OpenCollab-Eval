@@ -71,6 +71,24 @@ directories carrying the current run ID. The final record proves that the fake
 model stopped, owned containers and images were removed, temporary work
 disappeared, and real provider variables were absent.
 
+## Local Duo migration smoke
+
+The local Duo smoke exercises the single `duo` workflow through the installed
+OpenCollab-Eval `run_eval_task` entry. Scripted HTTP responses drive actual
+file tools, native public pytest commands, isolated candidate worktrees,
+adjudication, adoption, and evaluator patch capture. A fresh Git scoring
+workspace receives the captured patch and a hidden regression test retained
+outside generation. Both targets fail on the original source and pass after
+patch application, using the evaluator's existing exact-target result parser.
+The test checks that the hidden filename and target stay outside model input.
+
+```bash
+pytest -q tests/test_duo_evaluator_smoke.py
+```
+
+The Docker E2E above covers privileged controller proof, official harness
+execution, and container cleanup in the production evaluation environment.
+
 ## CI
 
 The `deterministic-e2e` GitHub Actions job builds both wheels, installs SSH and

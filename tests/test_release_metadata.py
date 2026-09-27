@@ -19,10 +19,10 @@ def test_release_metadata_keeps_versions_aligned_and_includes_license() -> None:
     license_bytes = (_REPO_ROOT / "LICENSE").read_bytes()
 
     assert opencollab_eval.__version__
-    assert opencollab_eval.__version__ == "0.7.0"
+    assert opencollab_eval.__version__ == "0.7.1"
     assert 'requires = ["hatchling==1.31.0"]' in pyproject
     assert f'version = "{opencollab_eval.__version__}"' in pyproject
-    assert 'dependencies = ["opencollab>=0.7.0,<0.8", "httpx>=0.27"]' in pyproject
+    assert 'dependencies = ["opencollab>=0.7.1,<0.8", "httpx>=0.27"]' in pyproject
     assert 'license = "MulanPSL-2.0"' in pyproject
     assert (
         'license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"]'
@@ -88,7 +88,7 @@ def test_packaged_workflow_guides_match_the_07_runtime_boundary() -> None:
 
     for path in (package_readme, package_readme_zh):
         text = path.read_text(encoding="utf-8")
-        assert "OpenCollab 0.7.0" in text
+        assert "OpenCollab 0.7.1" in text
         assert "OpenCollab 0.4" not in text
 
 

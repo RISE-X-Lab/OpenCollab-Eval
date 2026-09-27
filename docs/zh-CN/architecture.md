@@ -26,7 +26,9 @@ OpenCollab-Eval 使用以下 OpenCollab 公开接口。
 | --- | --- |
 | `opencollab` | `OpenCollab` 和 `RunResult` |
 | `opencollab.environments` | `Environment`、`attach_container`、`docker_environment` 和 `worktree_environment` |
-| `opencollab.tools` | `BuiltinToolName`、`Tool` 和 `builtin_tools` |
+| `opencollab.tools` | `BuiltinToolName`、`Tool`、`builtin_tools` 和 `evidence_tools` |
+| `opencollab.builtin_workflows` | `duo`、`get_builtin_workflows` 和 `run_dual_coder` |
+| `opencollab.patches` | 通用 Git diff 分块与路径解析 |
 | `opencollab.workflows` | `workflow` |
 
 已退役的 `opencollab.sdk` 包以及 OpenCollab 的 `adapters`、`application`、
@@ -34,7 +36,7 @@ OpenCollab-Eval 使用以下 OpenCollab 公开接口。
 `tests/test_boundaries.py` 规定生产代码与测试可以使用哪些导入，并根据已安装的
 OpenCollab 包检查这些公开名称。
 
-OpenCollab-Eval 通过 `opencollab>=0.5.0,<0.6` 声明运行时依赖的版本范围。
+OpenCollab-Eval 通过 `opencollab>=0.7.1,<0.8` 声明运行时依赖的版本范围。
 OpenCollab 的公开 API 保持兼容时，其内部实现变化不会影响这里。
 
 ## 包结构
@@ -79,10 +81,11 @@ dataset row
 
 ## 执行入口
 
-安装后的 `oc-eval` 命令提供四个用户入口。
+安装后的 `oc-eval` 命令提供以下用户入口。
 
 | Command | 用途 |
 | --- | --- |
+| `oc-eval duo` | 使用 Single2 运行 OpenCollab Duo 并进行正式评分 |
 | `oc-eval inspect` | 通过密封任务边界验证并汇总 SWE-Batch Pro JSONL 数据集 |
 | `oc-eval run` | 根据任务 JSONL 运行本地无界面评测引擎 |
 | `oc-eval swe-v1-prolite` | 使用已同步运行时和直接评测运行有界的远程 Pro-Lite 切片 |
@@ -154,6 +157,9 @@ Solver 关闭后，控制器检查进程是否静止，并冻结工作区的最�
 
 ## Solver 集成
 
+Duo 编排位于 OpenCollab 的 `opencollab.builtin_workflows`。
+统一的 `duo` 名称使用通用任务提示和文件证据分页读取。
+`oc-eval g22` 命令调用同一工作流。
 评测工作流位于 `opencollab_eval.workflows`。它们使用 OpenCollab 的工作流
 装饰器与工具工厂，同时把基准秘密留在工作流参数之外。
 

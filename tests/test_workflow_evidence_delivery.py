@@ -216,7 +216,6 @@ def test_candidate_tournament_retains_all_public_metadata_and_patch_safety():
 @pytest.mark.parametrize(
     "name,function",
     [
-        ("validation_council_dual_coder_contract", "_contract_adjudicate"),
         ("validation_council_wired_dual_contract", "_contract_adjudicate"),
         ("validation_council_g20_coder_contract", "_contract_adjudicate"),
     ],

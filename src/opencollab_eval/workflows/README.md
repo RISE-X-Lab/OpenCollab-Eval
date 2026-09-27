@@ -2,15 +2,19 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-This package contains deterministic multi-agent workflows for evaluation.
+This package contains evaluation workflows and compatibility imports for
+OpenCollab built-in workflows. Duo candidate orchestration and selection are
+owned by OpenCollab. Eval supplies public task inputs, isolated benchmark
+workspaces, hidden-test separation, and official scoring.
 Python code defines the control flow, including agent fan-out and repair rounds.
 It also owns the verification gates and stop conditions. Models inspect and
 edit the repository within that control flow.
 
-The package depends on the workflow-authoring surface in OpenCollab 0.7.0 or a
+The package depends on the workflow-authoring surface in OpenCollab 0.7.1 or a
 later 0.7.x release.
 
 ```python
+from opencollab.builtin_workflows import duo
 from opencollab.tools import Tool, builtin_tools
 from opencollab.workflows import WorkflowContext, workflow
 ```
@@ -23,6 +27,7 @@ services, bootstrap internals, domain modules, harness code, and the retired
 
 | Name | Structure |
 | --- | --- |
+| `duo` | OpenCollab built-in dual coder with public requirement selection |
 | `base-team` | Analyst brief followed by a bounded coder and tester loop |
 | `self-collab` | Sequential phases with plan review and per-phase verification |
 | `split-solve` | Independent subtasks followed by combined verification |
@@ -97,7 +102,7 @@ Tool lists should match the role. Read-only roles normally use `file_read` and
 Diff auditors use `git_diff`. Passing `allow_file_creation=False` to
 `builtin_tools` prevents `file_write` from creating new files.
 
-All model-facing tools use the current OC built-in schemas. Eval observes Bash
+All model-facing tools use the current OC built-in schemas. OpenCollab observes Bash
 execution to retain the actual command, exit status and matching test output for
 workflow decisions. Command selection, flags, timeouts, approval, execution and
 model-visible output remain native Bash behavior. There is no dedicated test
@@ -135,3 +140,9 @@ python -m opencollab_eval.generation.gen_prediction_workflow \
 The generator owns selection and execution of bundled workflows. Installed
 consumers import workflow functions from `opencollab_eval.workflows` and remain
 independent of OpenCollab's internal workflow discovery implementation.
+
+Duo can be called through OpenCollab directly. Evaluation callers can use
+`opencollab_eval.workflows.duo`, which references the same public function.
+`oc-eval duo` uses the single `duo` workflow with `agent_profile="single2"`
+by default. It always supplies complete file evidence to the adjudicator.
+The `oc-eval g22` command invokes that same evaluator.

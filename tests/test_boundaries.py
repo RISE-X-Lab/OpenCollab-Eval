@@ -13,13 +13,22 @@ _SOURCE = Path(opencollab_eval.__file__).resolve().parent
 _PUBLIC_MODULES = frozenset(
     {
         "opencollab",
+        "opencollab.builtin_workflows",
         "opencollab.environments",
+        "opencollab.patches",
         "opencollab.tools",
         "opencollab.workflows",
     }
 )
 _PUBLIC_NAMES = {
     "opencollab": frozenset({"OpenCollab", "RunError", "RunResult", "workflow"}),
+    "opencollab.builtin_workflows": frozenset({
+        "CONTRACT_PROMPT", "duo", "get_builtin_workflows", "run_dual_coder",
+    }),
+    "opencollab.patches": frozenset({
+        "decode_git_c_path", "diff_target_path", "git_diff_endpoint", "git_header_tokens",
+        "normalize_patch_path", "patch_block_target_path", "patch_entries", "patch_paths", "split_patch_blocks",
+    }),
     "opencollab.environments": frozenset(
         {
             "Environment",
@@ -30,7 +39,8 @@ _PUBLIC_NAMES = {
         }
     ),
     "opencollab.tools": frozenset(
-        {"BuiltinToolName", "Tool", "VerificationTool", "builtin_tools", "profile_tool_limits"}
+        {"BashEvidence", "BuiltinToolName", "Tool", "VerificationTool", "builtin_tools",
+         "evidence_tools", "has_pass_evidence", "profile_tool_limits"}
     ),
     "opencollab.workflows": frozenset({"WorkflowContext", "CandidateRun", "workflow"}),
 }
@@ -248,13 +258,18 @@ def test_single_agent_prompt_builder_does_not_read_sealed_task_fields() -> None:
 def test_public_import_boundary_accepts_documented_import_forms() -> None:
     allowed = ast.parse(
         "import opencollab\n"
+        "import opencollab.builtin_workflows\n"
         "import opencollab.environments\n"
+        "import opencollab.patches\n"
         "import opencollab.tools\n"
         "import opencollab.workflows\n"
         "from opencollab import OpenCollab, RunError, RunResult, workflow\n"
         "from opencollab.environments import Environment, attach_container\n"
         "from opencollab.tools import Tool, VerificationTool, builtin_tools\n"
         "from opencollab.workflows import WorkflowContext\n"
+        "from opencollab.builtin_workflows import duo, get_builtin_workflows, run_dual_coder\n"
+        "from opencollab.patches import patch_paths\n"
+        "from opencollab.tools import BashEvidence, evidence_tools, has_pass_evidence\n"
     )
 
     assert _forbidden_opencollab_imports(allowed) == []
