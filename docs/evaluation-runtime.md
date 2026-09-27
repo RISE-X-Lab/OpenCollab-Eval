@@ -33,7 +33,8 @@ file, excludes that file from the diff, and transfers complete byte chunks.
 The existing result-record size limit still applies. A failed or incomplete
 transfer cannot produce a submission.
 
-Single uses current OC built-ins and Bash for project-native tests. Research
+Standalone Base currently selects Single2 and uses its OC built-ins and Bash
+for project-native tests. Research
 workflows with exact-target requirements use the Eval-owned verification tool
 and preserve its executable-evidence checks. See the
 [workflow tool documentation](../src/opencollab_eval/workflows/README.md).

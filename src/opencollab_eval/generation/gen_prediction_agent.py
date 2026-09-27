@@ -9,6 +9,7 @@ from typing import Any
 
 from opencollab import OpenCollab, RunError, RunResult
 from opencollab.environments import attach_container
+from opencollab.profiles import resolve_profile_name
 
 from opencollab_eval.benchmarks.task_specification import (
     compose_task_specification,
@@ -33,7 +34,6 @@ from opencollab_eval.runtime_config import (
 from opencollab_eval.usage import DEFAULT_MAX_OUTPUT_TOKENS
 
 from .candidate_environment import image_activation_prefix
-from .configured_model import ConfiguredModel
 from .gen_prediction_config import validate_instance_id
 from .gen_prediction_constants import (
     _ACTIVATE,
@@ -269,11 +269,11 @@ async def run_agent(
     *,
     artifact_root: str | Path,
     runtime: Any | None = None,
-    profile: str = "single",
+    profile: str | None = "base",
 ) -> dict[str, Any]:
     """Run one agent through the public OpenCollab facade."""
+    profile = resolve_profile_name(profile)
     max_steps, budget = resolve_agent_generation_limits(profile, max_steps, budget)
-    owned_model = None
     try:
         model_api_key = cfg.get("api_key") or os.environ.get("OPENCOLLAB_API_KEY")
         model_base_url = cfg.get("base_url") or os.environ.get("OPENCOLLAB_BASE_URL")
@@ -321,38 +321,21 @@ async def run_agent(
             },
             environment=environment,
         )
-        create_model = getattr(client, "create_model_client", None)
-        if profile == "single" and runtime is None and callable(create_model):
-            native_model = create_model()
-            owned_model = ConfiguredModel(
-                native_model,
-                reasoning_effort=cfg.get("reasoning_effort"),
-                observations=artifact_dir / "model-observations.jsonl",
-            )
         print(f"  agent artifacts: {artifact_dir}")
     except Exception as exc:
-        return _runtime_failure_metrics(exc, phase="adapter_setup")
+        return {**_runtime_failure_metrics(exc, phase="adapter_setup"), "agent_profile": profile}
 
-    model_close_error = None
     try:
-        common = {
-            "budget": budget,
-            "max_steps": max_steps,
-            "timeout": generation_wall_timeout(timeout),
-            "cleanup_timeout": AGENT_CANCELLATION_GRACE_SECONDS,
-            "artifacts": artifact_dir,
-            "trace": True,
-        }
-        if profile == "single2":
-            operation = client.agent2(task, **common)
-        else:
-            operation = client.agent(
-                task,
-                name="swe_agent",
-                tools="coding",
-                **common,
-                **({"llm": owned_model} if owned_model is not None else {}),
-            )
+        operation = client.agent(
+            task,
+            profile=profile,
+            budget=budget,
+            max_steps=max_steps,
+            timeout=generation_wall_timeout(timeout),
+            cleanup_timeout=AGENT_CANCELLATION_GRACE_SECONDS,
+            artifacts=artifact_dir,
+            trace=True,
+        )
         if timeout_seconds() is not None:
             result = await guarded_agent(operation, artifact_root, artifact_dir)
         else:
@@ -361,41 +344,19 @@ async def run_agent(
     except Exception as exc:
         print(f"  agent: runtime failed with {type(exc).__name__}: {exc}")
         metrics = _runtime_failure_metrics(exc)
-    finally:
-        if owned_model is not None:
-            try:
-                await owned_model.close()
-            except Exception as exc:
-                model_close_error = {"type": type(exc).__name__, "message": str(exc)}
-
-    if owned_model is not None:
-        metrics["model_observations"] = str(owned_model.observations)
-        metrics["model_observation_errors"] = list(owned_model.observation_errors)
-    if model_close_error is not None:
-        metrics["model_transport_cleanup_error"] = model_close_error
+    metrics["agent_profile"] = profile
     model_configuration = {
-        "public_interface": (
-            "OpenCollab.agent2"
-            if profile == "single2"
-            else "OpenCollab.create_model_client + OpenCollab.agent(llm=...)"
-        ),
-        "client": (
-            "profile-owned native LLMClient"
-            if profile == "single2"
-            else "native LLMClient with configured reasoning default"
-        ),
+        "public_interface": "OpenCollab.agent",
+        "client": "profile-owned native LLMClient",
+        "profile": profile,
+        "effective_budget": budget,
+        "effective_max_steps": max_steps,
         "model": cfg["model"],
         "wire_protocol": cfg.get("wire_protocol"),
         "reasoning_effort": cfg.get("reasoning_effort"),
         "context_window": cfg.get("context_window"),
         "max_output_tokens": cfg.get("max_output_tokens", DEFAULT_MAX_OUTPUT_TOKENS),
     }
-    if profile == "single2":
-        model_configuration.update(
-            profile=profile,
-            effective_budget=budget,
-            effective_max_steps=max_steps,
-        )
     metrics["evaluation_model_configuration"] = model_configuration
     metrics.update(generation_timing(artifact_root))
     print(f"  agent: steps={metrics['step_count']} tokens={metrics['used_tokens']}")

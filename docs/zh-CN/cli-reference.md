@@ -30,7 +30,7 @@ oc-eval duo --config CONFIG [--indices INDICES] [--workers COUNT]
 ```
 
 该命令通过正式评测器运行统一的 OpenCollab Duo。`workflow` 为 `duo`，
-`agent_profile` 默认为 `single2`。裁决者通过只读工具读取完整证据文件。
+`agent_profile` 默认为 `base`，解析后为 `single2`。裁决者通过只读工具读取完整证据文件。
 `--dry-run` 输出有效配置，`oc-eval g22` 保留为命令别名。
 模型参数、预算、超时与评测选项沿用已有并行 runner。
 
@@ -40,7 +40,7 @@ oc-eval duo --config CONFIG [--indices INDICES] [--workers COUNT]
 oc-eval run TASKS_FILE --model MODEL --provider PROVIDER
             [--api-key KEY] [--base-url URL] [--output DIRECTORY]
             [--concurrency COUNT] [--max-tokens COUNT] [--timeout SECONDS]
-            [--temperature VALUE] [--top-p VALUE] [--agent-profile {single,single2}]
+            [--temperature VALUE] [--top-p VALUE] [--agent-profile PROFILE]
             [--no-progress-timeout SECONDS] [--generation-wall-timeout SECONDS]
 ```
 
@@ -81,7 +81,7 @@ runtime 打包方式与回执字段。
 
 构建自动化前，请先运行已安装命令的帮助。
 
-`--agent-profile single2` 为所选 OpenCollab 工作流的每个 Agent 角色启用 Single2 运行时。工作流分别选择，G21 使用 `--workflow validation-council-dual-coder-contract-v1`。工作流生成器与并行运行器都接受这两个参数。省略 profile 时沿用现有 driver，`single` 可以显式选择默认值。
+`--agent-profile single2` 为所选 OpenCollab 工作流的每个 Agent 角色启用 Single2 运行时。工作流分别选择，G21 使用 `--workflow validation-council-dual-coder-contract-v1`。工作流生成器与并行运行器都接受这两个参数。工作流省略 profile 时沿用原角色配置。显式的 `base`、`default` 和 `single` 都选择 Base，当前解析为 `single2`。单 Agent 生成器默认使用 Base，调用 `OpenCollab.agent(profile="single2")`。配置、metrics 与候选复用身份记录解析后的名称。历史记录中缺失的 profile 与新 Base 运行分别识别。
 
 ```bash
 oc-eval swe-v1-prolite --help

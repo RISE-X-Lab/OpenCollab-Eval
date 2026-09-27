@@ -33,7 +33,7 @@ from opencollab_eval.engine.swe_v1_remote_state import (
     DEFAULT_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
     MAX_EVAL_CONTAINER_BIND_TIMEOUT_SECONDS,
 )
-from opencollab_eval.runtime_config import resolve_workflow_agent_profile
+from opencollab_eval.runtime_config import resolve_solver_agent_profile
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_REMOTE_ROOT = os.environ.get("OPENCOLLAB_SWE_REMOTE_ROOT", "").strip()
@@ -279,9 +279,10 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
     llm_model = str(getattr(args, "llm_model", "") or "").strip()
     llm_provider = str(getattr(args, "llm_provider", "") or "").strip().lower()
     workflow = str(args.workflow or "").strip()
+    agent_profile = resolve_solver_agent_profile(workflow, getattr(args, "agent_profile", None))
     workflow_env = normalize_workflow_env(getattr(args, "workflow_env", ()))
     workflow_env_values = dict(item.split("=", 1) for item in workflow_env)
-    if workflow == "single2":
+    if workflow in {"single-agent", "single2"} and agent_profile == "single2":
         workflow_env_values.setdefault(
             "OPENCOLLAB_TRUST_STREAMED_OUTPUT_ON_TERMINAL_MISMATCH",
             "1",
@@ -386,7 +387,7 @@ def resolve_config(args: argparse.Namespace) -> ParallelConfig:
         remote_root=remote_root,
         image_repository=image_repository,
         workflow=workflow,
-        agent_profile=resolve_workflow_agent_profile(getattr(args, "agent_profile", None)),
+        agent_profile=agent_profile,
         workflow_env=workflow_env,
         openhands_command=openhands_command,
         openhands_empty_patch_rejections=max(0, getattr(args, "openhands_empty_patch_rejections", 2)),

@@ -2,6 +2,16 @@
 
 All notable changes to OpenCollab-Eval are recorded in this file.
 
+## [0.8.0] - Unreleased
+
+Standalone generation selects Base through OpenCollab's named profile API,
+currently resolving to Single2. CLI aliases and the single-agent evaluation
+entry use the same implementation and store its concrete profile name.
+Existing records retain their original profile attribution during reuse checks.
+The previous Single-specific model wrapper has been removed.
+
+OpenCollab-Eval now requires OpenCollab 0.8.x for public profile resolution.
+
 ## [0.7.1] - Unreleased
 
 Duo uses a single OpenCollab built-in workflow with task-oriented role prompts

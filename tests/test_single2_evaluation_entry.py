@@ -28,7 +28,7 @@ from opencollab_eval.generation import gen_prediction as gp
 
 
 class RecordingSingle2Runtime(RecordingRuntime):
-    async def agent2(self, prompt, **kwargs):
+    async def agent(self, prompt, **kwargs):
         request = SimpleNamespace(prompt=prompt, **kwargs)
         self.requests.append(request)
         assert request.artifacts is not None
@@ -93,8 +93,8 @@ class Single2Client(OpenCollab):
         super().__init__(*args, **kwargs)
         self._test_llm = llm
 
-    async def agent2(self, prompt: str, **kwargs):
-        return await super().agent2(prompt, llm=self._test_llm, **kwargs)
+    async def agent(self, prompt: str, **kwargs):
+        return await super().agent(prompt, llm=self._test_llm, **kwargs)
 
 
 def test_single2_profile_is_available_on_the_single_agent_cli() -> None:
@@ -105,7 +105,7 @@ def test_single2_profile_is_available_on_the_single_agent_cli() -> None:
         check=True,
     )
 
-    assert "--agent-profile {single,single2}" in result.stdout
+    assert "--agent-profile PROFILE" in result.stdout
 
 
 def test_single2_uses_profile_owned_prompt_tools_and_authorized_limits(
@@ -139,11 +139,11 @@ def test_single2_uses_profile_owned_prompt_tools_and_authorized_limits(
     for profile_owned in ("name", "tools", "system_prompt", "llm"):
         assert not hasattr(request, profile_owned)
     assert metrics["evaluation_model_configuration"]["public_interface"] == (
-        "OpenCollab.agent2"
+        "OpenCollab.agent"
     )
 
 
-def test_unbounded_parsing_is_restored_only_for_single2(monkeypatch) -> None:
+def test_unbounded_parsing_is_restored_for_base_and_single2(monkeypatch) -> None:
     monkeypatch.setenv("OPENCOLLAB_UNBOUNDED_LIMITS", "true")
     max_steps, budget, timeout = gp.validate_generation_limits(
         max_steps=17,
@@ -153,8 +153,8 @@ def test_unbounded_parsing_is_restored_only_for_single2(monkeypatch) -> None:
 
     assert (max_steps, budget, timeout) == (None, None, 5.0)
     assert gp.resolve_agent_generation_limits("single", max_steps, budget) == (
-        None,
-        None,
+        gp.SINGLE2_AUTHORIZED_MAX_STEPS,
+        gp.SINGLE2_AUTHORIZED_BUDGET,
     )
     assert gp.resolve_agent_generation_limits("single2", max_steps, budget) == (
         gp.SINGLE2_AUTHORIZED_MAX_STEPS,
@@ -216,7 +216,7 @@ def test_single2_workflow_selects_the_native_agent_profile() -> None:
     assert '${agent_profile_args[@]+"${agent_profile_args[@]}"}' in shell_text
 
 
-def test_single2_enables_only_its_terminal_stream_compatibility() -> None:
+def test_standalone_base_and_single2_share_terminal_stream_compatibility() -> None:
     module = _load_module()
 
     single2 = module.resolve_config(_args(workflow="single2"))
@@ -226,10 +226,7 @@ def test_single2_enables_only_its_terminal_stream_compatibility() -> None:
         "OPENCOLLAB_TRUST_STREAMED_OUTPUT_ON_TERMINAL_MISMATCH=1"
         in single2.workflow_env
     )
-    assert all(
-        not item.startswith("OPENCOLLAB_TRUST_STREAMED_OUTPUT_ON_TERMINAL_MISMATCH=")
-        for item in default.workflow_env
-    )
+    assert "OPENCOLLAB_TRUST_STREAMED_OUTPUT_ON_TERMINAL_MISMATCH=1" in default.workflow_env
 
 
 def test_remote_runner_accepts_single2_terminal_stream_compatibility() -> None:
@@ -279,8 +276,8 @@ def test_single2_remote_identity_accepts_the_effective_generated_limits(
         budget=authorized,
         max_steps=authorized,
     )
-    assert default_namespace["generation_runtime_identity"]()["budget"] is None
-    assert default_namespace["generation_runtime_identity"]()["max_steps"] is None
+    assert default_namespace["generation_runtime_identity"]()["budget"] == authorized
+    assert default_namespace["generation_runtime_identity"]()["max_steps"] == authorized
 
     namespace = _remote_namespace(
         tmp_path / "single2",

@@ -15,6 +15,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from opencollab.profiles import resolve_profile_name
+
 from opencollab_eval.commands import _swe_g11_config as _config
 from opencollab_eval.commands import _swe_g11_reports as _reports
 from opencollab_eval.commands import swe_g11_capacity_control as _capacity_control
@@ -720,7 +722,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=_config.DEFAULT_IMAGE_REPOSITORY,
     )
     parser.add_argument("--workflow", default="validation-council-solve")
-    parser.add_argument("--agent-profile", choices=("single", "single2"), help="Agent profile for workflow roles")
+    parser.add_argument(
+        "--agent-profile", type=resolve_profile_name, metavar="PROFILE", help="Agent profile for workflow roles",
+    )
     parser.add_argument("--workflow-env", action="append", default=[])
     parser.add_argument("--openhands-command", default="")
     parser.add_argument("--openhands-empty-patch-rejections", type=int, default=2)

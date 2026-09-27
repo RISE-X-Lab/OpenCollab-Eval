@@ -10,6 +10,8 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from opencollab.profiles import resolve_profile_name
+
 from opencollab_eval import __version__
 from opencollab_eval.benchmarks.swe_batch_pro import load_identity_key, load_jsonl_dataset, tasks_from_rows
 from opencollab_eval.commands.eval_batch import _eval, _result_counts
@@ -65,7 +67,9 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--timeout", type=float, default=600.0, help="Default task timeout in seconds")
     run_parser.add_argument("--temperature", type=float, default=0.2, help="Model sampling temperature")
     run_parser.add_argument("--top-p", type=float, help="Optional nucleus-sampling value")
-    run_parser.add_argument("--agent-profile", choices=("single", "single2"), help="OpenCollab agent profile")
+    run_parser.add_argument(
+        "--agent-profile", type=resolve_profile_name, metavar="PROFILE", help="OpenCollab agent profile",
+    )
     add_progress_arguments(run_parser)
     final_parser = subparsers.add_parser(
         "final-report",

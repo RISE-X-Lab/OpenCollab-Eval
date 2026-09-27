@@ -636,7 +636,8 @@ def main() -> None:
     ap.add_argument("--context-window", type=int)
     ap.add_argument(
         "--agent-profile",
-        choices=("single", "single2"),
+        type=resolve_workflow_agent_profile,
+        metavar="PROFILE",
         default=None,
         help="Agent profile used by every role of the selected workflow",
     )

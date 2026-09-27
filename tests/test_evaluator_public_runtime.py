@@ -122,7 +122,8 @@ def test_agent_delegates_to_public_runtime_with_bound_configuration(
     assert prompt == "repair"
     assert call["budget"] == 4321
     assert call["max_steps"] == 9
-    assert call["tools"] == [sentinel_tool]
+    assert call["profile"] == "single2"
+    assert {"tools", "system_prompt", "name"}.isdisjoint(call)
     assert 0 < call["timeout"] <= 600
     assert call["trace"] is True
     assert Path(call["artifacts"]).parent == tmp_path / "trajectories" / "public-agent"

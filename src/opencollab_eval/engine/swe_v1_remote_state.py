@@ -288,9 +288,9 @@ def configure(config: dict[str, Any]) -> None:
         sys.path.insert(0, str(package_root))
     dataset_path = remote_root / "datasets" / "swe-batch-pro-lite" / "instances.jsonl"
     workflow = str(cfg["workflow"])
-    from opencollab_eval.runtime_config import resolve_workflow_agent_profile
+    from opencollab_eval.runtime_config import resolve_solver_agent_profile
 
-    agent_profile = resolve_workflow_agent_profile(cfg.get("agent_profile"))
+    agent_profile = resolve_solver_agent_profile(workflow, cfg.get("agent_profile"))
     workflow_env = {str(key): str(value) for key, value in (cfg.get("workflow_env") or {}).items()}
     allowed_workflow_env = {
         "OPENCOLLAB_G11_ROLE_BUDGET",
