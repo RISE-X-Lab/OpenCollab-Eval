@@ -7,6 +7,11 @@ import re
 from opencollab_eval.candidate_bytes import CANDIDATE_BYTE_BUDGET, MAX_CANDIDATE_FILE_BYTES
 
 DOCKER_WORKDIR = "/testbed"
+# Profile resolution supplies the effective standalone limits after parsing.
+# Both generators start from the workflow's optional caps and wall timeout.
+DEFAULT_BUDGET = None
+DEFAULT_MAX_STEPS = None
+DEFAULT_TIMEOUT = 1800.0
 # Conda-backed task images require the prepared testbed environment. Images
 # without a Conda marker keep their native language toolchain unchanged.
 _ACTIVATE = (

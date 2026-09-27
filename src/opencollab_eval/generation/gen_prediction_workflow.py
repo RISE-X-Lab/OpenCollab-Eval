@@ -69,6 +69,7 @@ from .candidate_retention import (
     retain_failed_candidate,
 )
 from .container_quiescence import require_container_quiescence  # noqa: E402
+from .gen_prediction_constants import DEFAULT_BUDGET, DEFAULT_MAX_STEPS, DEFAULT_TIMEOUT
 from .gen_prediction_patch import extract_patch_guarded  # noqa: E402
 from .gen_prediction_workflow_inputs import (  # noqa: E402
     _blind_validation_default as _blind_validation_default,
@@ -150,11 +151,6 @@ def validate_workflow_limits(
 
 from opencollab_eval.engine.workflows import generate_review_fix  # noqa: E402
 
-# Team-baseline parity: use the current default per-instance cap for comparable
-# OpenCollab SWE-bench runs.
-DEFAULT_BUDGET = 1_000_000
-DEFAULT_MAX_STEPS = 60  # per workflow session; 60 proved enough to act, 40 did not
-DEFAULT_TIMEOUT = 1800.0  # the workflow runs up to 3 sequential sessions
 DEFAULT_CHECKPOINT_INTERVAL_SECONDS = 0.0
 
 
@@ -661,8 +657,10 @@ def main() -> None:
         help="Inject official test_patch and FAIL_TO_PASS ids",
     )
     ap.set_defaults(blind_validation=True)
-    ap.add_argument("--max-steps", type=int, default=None, help="Optional step cap per workflow session")
-    ap.add_argument("--budget", type=int, default=None, help="Optional shared token budget across workflow sessions")
+    ap.add_argument("--max-steps", type=int, default=DEFAULT_MAX_STEPS, help="Optional step cap per workflow session")
+    ap.add_argument(
+        "--budget", type=int, default=DEFAULT_BUDGET, help="Optional shared token budget across workflow sessions",
+    )
     ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
     ap.add_argument(
         "--checkpoint-interval-seconds",
