@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
+from opencollab import OpenCollab
 
 from opencollab_eval.usage import (
     DEFAULT_MAX_OUTPUT_TOKENS,
@@ -89,6 +91,18 @@ def test_model_context_window_rejects_unknown_and_kimi_near_misses(
     model: str | None,
 ) -> None:
     assert model_context_window(model) is None
+
+
+@pytest.mark.parametrize("model", ["gpt-5.6-luna", "vendor/gpt-5.6-luna-2026-07-31"])
+def test_recorded_context_matches_public_model_client(model, tmp_path):
+    async def actual_context():
+        client = OpenCollab(tmp_path, model=model, provider="openai", api_key="test-key").create_model_client()
+        try:
+            return client.context_window()
+        finally:
+            await client.close()
+
+    assert model_context_window(model) == asyncio.run(actual_context())
 
 
 def test_glm_pricing_uses_existing_defaults(monkeypatch: pytest.MonkeyPatch) -> None:

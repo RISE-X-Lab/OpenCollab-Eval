@@ -126,9 +126,13 @@ def workflow_stop_metrics(result) -> dict:
     else:
         origin = "none"
     usage_complete = native.get("usage_complete", False)
+    observed_status, observed_reason = status, reason
+    if status == "completed" and output_status == "error":
+        observed_status = "stopped"
+        observed_reason = reason or str(output.get("error") or "workflow error")
     return {
-        "agent_status": status,
-        "agent_reason": reason,
+        "agent_status": observed_status,
+        "agent_reason": observed_reason,
         "failure_exception_chain": native.get("error_chain", []),
         "failure_attribution": native.get("failure_attribution", {}),
         "used_tokens": result.tokens_used,

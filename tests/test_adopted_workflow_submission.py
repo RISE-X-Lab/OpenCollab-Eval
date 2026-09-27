@@ -72,6 +72,27 @@ def test_delivered_candidate_keeps_internal_verdict_and_needs_official_score():
     assert _workflow_status_for_result(result, "") == "incomplete"
 
 
+@pytest.mark.parametrize("runtime_reason", [None, "budget exceeded: 123 tokens used"])
+def test_returned_workflow_error_records_a_stop_without_changing_runtime_result(runtime_reason):
+    result = EvalResult(
+        task_id="solver-task", patch="", patch_produced=False,
+        tokens_used=123, steps=2, duration=1.0, runtime_status="completed",
+        runtime_reason=runtime_reason, workflow_result={"status": "error", "error": "no structured brief"},
+        runtime_state={"usage_complete": True},
+    )
+
+    metrics = {**_result_metrics(result), **workflow_stop_metrics(result)}
+
+    assert metrics["agent_status"] == "stopped"
+    assert metrics["agent_reason"] == (runtime_reason or "no structured brief")
+    assert metrics["runtime_status"] == "completed"
+    assert metrics["runtime_reason"] == runtime_reason
+    assert metrics["workflow_result"] == result.workflow_result
+    assert metrics["used_tokens"] == 123
+    assert metrics["failure_origin"] == "oc"
+    assert _workflow_status_for_result(result, "") == "error"
+
+
 def test_workflow_status_preserves_structured_advisory_gap():
     result = EvalResult(
         task_id="task-1", patch=PATCH, patch_produced=True, tokens_used=1,
