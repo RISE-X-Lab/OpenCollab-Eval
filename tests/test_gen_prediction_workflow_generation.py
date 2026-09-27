@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 from gen_prediction_workflow_support import (
     FIXTURE,
+    fixture_workflow,
     gpw,
 )
 from gen_prediction_workflow_support import (
@@ -82,7 +83,7 @@ def test_generate_defers_container_patch_extraction(monkeypatch, tmp_path, adopt
     )
 
     patch, metrics = asyncio.run(
-        gpw.generate(FIXTURE, "image", cfg, args, gpw.generate_review_fix, "generate_review_fix")
+        gpw.generate(FIXTURE, "image", cfg, args, fixture_workflow, "fixture-workflow")
     )
 
     assert patch.strip()
@@ -180,8 +181,8 @@ def test_generate_container_quiescence_failure_prevents_extraction(
                 "image",
                 cfg,
                 args,
-                gpw.generate_review_fix,
-                "generate_review_fix",
+                fixture_workflow,
+                "fixture-workflow",
             )
         )
 
@@ -280,8 +281,8 @@ def test_generate_skips_outer_extraction_for_ineligible_eval_result(
             "image",
             cfg,
             args,
-            gpw.generate_review_fix,
-            "generate_review_fix",
+            fixture_workflow,
+            "fixture-workflow",
         )
     )
 
@@ -323,7 +324,7 @@ def test_generate_records_provider_rejection_without_extracting_patch(
         tmp_path,
         token="",
         remote_api_env_file=str(remote_api_env),
-        workflow="generate_review_fix",
+        workflow="fixture-workflow",
         model_name="model",
         llm_model="kimi-for-coding",
         llm_provider="openai",
@@ -398,8 +399,8 @@ def test_generate_records_provider_rejection_without_extracting_patch(
             "image",
             cfg,
             args,
-            gpw.generate_review_fix,
-            "generate_review_fix",
+            fixture_workflow,
+            "fixture-workflow",
         )
     )
 
@@ -506,7 +507,7 @@ def test_generate_persists_completed_patch_only_after_container_cleanup(monkeypa
     }
 
     _patch, metrics = asyncio.run(
-        gpw.generate(FIXTURE, "image", cfg, args, gpw.generate_review_fix, "generate_review_fix")
+        gpw.generate(FIXTURE, "image", cfg, args, fixture_workflow, "fixture-workflow")
     )
 
     assert metrics["workflow_status"] == "done"
@@ -582,8 +583,8 @@ def test_generate_output_symlink_race_cleans_active_container(monkeypatch, tmp_p
                 "image",
                 cfg,
                 args,
-                gpw.generate_review_fix,
-                "generate_review_fix",
+                fixture_workflow,
+                "fixture-workflow",
             )
         )
 
@@ -651,8 +652,8 @@ def test_generate_cleanup_failure_does_not_publish_done(monkeypatch, tmp_path):
                 "image",
                 cfg,
                 args,
-                gpw.generate_review_fix,
-                "generate_review_fix",
+                fixture_workflow,
+                "fixture-workflow",
             )
         )
 
@@ -751,7 +752,7 @@ def test_blind_workflow_extracts_without_a_path_allowlist(monkeypatch):
             "image",
             cfg,
             args,
-            gpw.generate_review_fix,
+            fixture_workflow,
             "validation-council-solve",
         )
     )

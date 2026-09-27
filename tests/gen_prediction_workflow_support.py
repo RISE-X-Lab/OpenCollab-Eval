@@ -10,6 +10,11 @@ import pytest
 gpw = pytest.importorskip("opencollab_eval.generation.gen_prediction_workflow")
 
 
+async def fixture_workflow(_context, _args):
+    """A caller-owned workflow used by mocked generation tests."""
+    return {"status": "done"}
+
+
 FIXTURE = {
     "instance_id": "acme__widget-42",
     "base_commit": "a" * 40,

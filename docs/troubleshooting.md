@@ -113,7 +113,7 @@ run's identity and limits when the protocol authorizes continuation.
 
 ## Final report publication fails
 
-`oc-eval final-report` validates the complete task census and every referenced
+`oc-exp final-report` validates the complete task census and every referenced
 artifact before replacing a publication. Inspect the failed publication
 manifest for the first validation or rendering error.
 

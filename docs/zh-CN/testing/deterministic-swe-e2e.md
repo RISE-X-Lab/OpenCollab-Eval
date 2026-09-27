@@ -38,11 +38,14 @@ thinking history。
 
 ## 本地运行
 
-宿主机需要 Docker、`sshd`、`ssh`、`ssh-keygen` 和 `rsync`。当 OpenCollab
-源码根目录不是相邻的 `../OpenCollab` checkout 时，需要显式提供它。
+在 [OpenCollabExp checkout](https://github.com/KaiEureka/OpenCollabExp/blob/main/scripts/run_deterministic_swe_e2e.sh)
+中执行集成脚本。宿主机需要 Docker、`sshd`、`ssh`、`ssh-keygen` 和 `rsync`。
+当 OpenCollab 源码根目录不是相邻的 `../OpenCollab` checkout 时，需要显式提供它，并指定配套 OCE 的源码 checkout。
 
 ```bash
 export OPENCOLLAB_SOURCE_ROOT=/path/to/OpenCollab
+export OPENCOLLAB_EVAL_SOURCE_ROOT=/path/to/OpenCollab-Eval
+cd /path/to/OpenCollabExp
 scripts/run_deterministic_swe_e2e.sh \
   --output /tmp/opencollab-eval-e2e \
   --runs 1

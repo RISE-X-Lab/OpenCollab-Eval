@@ -24,7 +24,6 @@ from opencollab.environments import local_environment as LocalEnvironment
 from opencollab_eval.engine import evaluator
 from opencollab_eval.engine import swe_checkpoint as checkpoint_mod
 from opencollab_eval.engine.swe_checkpoint import WorktreeCheckpoint
-from opencollab_eval.engine.workflows import generate_review_fix
 
 __all__ = [
     "Any",
@@ -39,7 +38,6 @@ __all__ = [
     "asyncio",
     "checkpoint_mod",
     "evaluator",
-    "generate_review_fix",
     "hashlib",
     "is_worktree_diff_cmd",
     "json",

@@ -205,7 +205,7 @@ def test_ci_uses_verified_action_release_commits() -> None:
     ) == 3
     assert workflow.count(
         "OPENCOLLAB_EVAL_SOURCE_ROOT: ${{ github.workspace }}/eval"
-    ) == 2
+    ) == 3
 
 
 def test_wheel_contract_excludes_only_source_repository_governance_tests() -> None:

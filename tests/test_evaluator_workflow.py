@@ -9,8 +9,6 @@ Three concerns:
   stay unchanged.
 * ``workflow=None`` is the unchanged single-session path (reuses the existing
   evaluator fakes).
-* ``generate_review_fix`` skips its apply stage when the review verdict says no
-  changes are needed.
 """
 
 from __future__ import annotations

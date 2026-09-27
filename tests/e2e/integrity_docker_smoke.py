@@ -10,7 +10,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-from e2e.deterministic_swe_driver import (
+from e2e.integrity_evidence import require_sanitized_snapshot
+from e2e.synthetic_repository import (
     OWNER_LABEL,
     SOURCE_PATH,
     _build_image,
@@ -18,7 +19,6 @@ from e2e.deterministic_swe_driver import (
     _run,
     _synthetic_sources,
 )
-from e2e.integrity_evidence import require_sanitized_snapshot
 from opencollab_eval.engine.workspace_integrity import WorkspaceIntegrityError
 from opencollab_eval.generation.gen_prediction_patch import (
     extract_patch_trusted,

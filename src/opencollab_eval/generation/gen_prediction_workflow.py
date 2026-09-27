@@ -1,28 +1,8 @@
-"""Generate a SWE-bench prediction via the harness workflow mode (A/B driver).
+"""Generate a SWE prediction with a caller-selected OpenCollab workflow.
 
-Same container plumbing as ``gen_prediction.py`` (official ``sweb.eval`` image,
-repo at /testbed, ``testbed`` conda env), but instead of one bespoke agent
-session it drives ``run_eval_task(task, workflow=generate_review_fix)`` —
-implement -> structured review verdict -> conditional fix — so the prediction
-exercises the mini workflow engine end-to-end.
-
-The current generator always uses blind validation and withholds official test
-patches and FAIL_TO_PASS ids. Before Solver execution it captures an anonymous
-Git baseline. After execution it copies a bounded workspace archive and uses a
-clean host Git directory to extract the candidate against that fixed baseline.
-
-Generate (OpenCollab venv, absolute paths in background shells)::
-
-    python -m opencollab_eval.generation.gen_prediction_workflow \
-        --instance-file /path/to/swebench-eval/instance_sympy-20590.json \
-        --output /path/to/swebench-eval/predictions-review-fix.jsonl
-
-Grade with the official harness (separate venv)::
-
-    cd /path/to/swebench-eval && HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 \
-    .venv/bin/python -m swebench.harness.run_evaluation \
-        -p predictions-review-fix.jsonl -i sympy__sympy-20590 \
-        -id review-fix-1 --cache_level env --report_dir reports
+The generator withholds official judge data, prepares an anonymous source
+workspace, and constructs the final candidate from a host-owned Git baseline.
+Select an installed workflow using --workflow module:function.
 """
 
 from __future__ import annotations
@@ -38,7 +18,6 @@ from pathlib import Path
 
 from opencollab.environments import attach_container
 
-from opencollab_eval import workflows as bundled_workflows
 from opencollab_eval.engine.evaluator import EvalTask, run_eval_task  # noqa: E402
 from opencollab_eval.engine.native_progress_watch import add_arguments as add_progress_arguments
 from opencollab_eval.engine.native_progress_watch import configure_arguments as configure_progress_arguments
@@ -56,6 +35,7 @@ from opencollab_eval.patch_diff import (
 from opencollab_eval.runtime_config import resolve_runtime_config as get_config
 from opencollab_eval.runtime_config import resolve_workflow_agent_profile
 from opencollab_eval.usage import DEFAULT_MAX_OUTPUT_TOKENS, model_context_window
+from opencollab_eval.workflow_loader import load_workflow
 
 from . import gen_prediction as gp  # noqa: E402 — shared container plumbing
 from .candidate_environment import image_activation_prefix, install_candidate_environment
@@ -89,21 +69,6 @@ from .gen_prediction_workflow_state import workflow_candidate_delivered, workflo
 _REPO_ROOT = Path(os.environ.get("OPENCOLLAB_EVAL_WORKSPACE", Path.cwd())).resolve()
 
 
-def _bundled_workflow_registry() -> dict[str, object]:
-    registry: dict[str, object] = {}
-    for exported_name in bundled_workflows.__all__:
-        workflow_fn = getattr(bundled_workflows, exported_name)
-        spec = getattr(workflow_fn, "__workflow_spec__", None)
-        public_name = getattr(spec, "name", None)
-        if not isinstance(public_name, str) or not public_name:
-            raise RuntimeError(f"bundled workflow {exported_name!r} has no public workflow name")
-        if public_name in registry:
-            raise RuntimeError(f"duplicate bundled workflow name {public_name!r}")
-        registry[public_name] = workflow_fn
-    return registry
-
-
-_BUNDLED_WORKFLOWS = _bundled_workflow_registry()
 _CONTROLLED_STOP_REASON_NAMES = frozenset({"budget_exceeded", "context_overflow", "step_limit_exceeded", "timeout"})
 _CONTROLLED_STOP_REASON_PREFIXES = (
     "budget exceeded:",
@@ -145,13 +110,7 @@ def validate_workflow_limits(
     )
 
 
-from opencollab_eval.engine.workflows import generate_review_fix  # noqa: E402
-
-# Team-baseline parity: use the current default per-instance cap for comparable
-# OpenCollab SWE-bench runs.
-DEFAULT_BUDGET = 1_000_000
-DEFAULT_MAX_STEPS = 60  # per workflow session; 60 proved enough to act, 40 did not
-DEFAULT_TIMEOUT = 1800.0  # the workflow runs up to 3 sequential sessions
+DEFAULT_TIMEOUT = 1800.0
 DEFAULT_CHECKPOINT_INTERVAL_SECONDS = 0.0
 
 
@@ -294,21 +253,23 @@ async def generate(
         trusted_baseline = gp.prepare_trusted_patch_baseline(cid, snapshot)
         arm_candidate_retention(gp, run_dir=run_dir, cid=cid, name=name)
         gp.restore_solver_runtime_dependencies(cid, solver_runtime)
-        workflow_name = _workflow_name(workflow_fn, workflow_label)
-        if workflow_name == "validation-council-solve":
+        candidate_environment = getattr(args, "candidate_environment", "isolated")
+        if candidate_environment == "shared":
             candidate_prefix = image_activation_prefix(cid, gp._ACTIVATE)
-        elif workflow_name == "validation-council-lean-official-v1":
+        elif candidate_environment == "lean":
             candidate_prefix = install_lean_candidate_environment(
                 cid,
                 solver_runtime,
                 activation=gp._ACTIVATE,
             )
-        else:
+        elif candidate_environment == "isolated":
             candidate_prefix = install_candidate_environment(
                 cid,
                 solver_runtime,
                 activation=gp._ACTIVATE,
             )
+        else:
+            raise ValueError("candidate_environment must be shared, isolated, or lean")
         # Attach mode: run_eval_task's internal env.cleanup() no-ops on attached
         # containers, so the container survives for baseline-style extraction.
         env = attach_container(
@@ -617,7 +578,7 @@ async def generate(
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Generate one SWE-bench prediction with the review-fix workflow")
+    ap = argparse.ArgumentParser(description="Generate one SWE prediction with an installed workflow")
     ap.add_argument("--instance-file", required=True, help="JSON file with one instance")
     ap.add_argument("--output", required=True, help="Predictions JSONL to append to")
     ap.add_argument(
@@ -640,8 +601,15 @@ def main() -> None:
     ap.add_argument("--model-name", default=None, help="model_name_or_path in predictions")
     ap.add_argument(
         "--workflow",
-        default=None,
-        help="Bundled workflow name (e.g. analyst-solve); default: the built-in generate_review_fix",
+        required=True,
+        help="Installed workflow entry in module:function form",
+    )
+    ap.add_argument("--workflow-label", help="Optional workflow name recorded in predictions")
+    ap.add_argument(
+        "--candidate-environment",
+        choices=("shared", "isolated", "lean"),
+        default="isolated",
+        help="Public dependency preparation for candidate workspaces",
     )
     blind_group = ap.add_mutually_exclusive_group()
     blind_group.add_argument(
@@ -695,16 +663,12 @@ def main() -> None:
     iid = instance["instance_id"]
     image = args.image or f"sweb.eval.{args.arch}.{iid}:latest"
 
-    # Resolve a named bundled workflow or use the built-in fallback.
-    if args.workflow:
-        try:
-            workflow_fn = _BUNDLED_WORKFLOWS[args.workflow]
-        except KeyError:
-            names = ", ".join(sorted(_BUNDLED_WORKFLOWS)) or "(none)"
-            ap.error(f"unknown --workflow {args.workflow!r}; available: {names}")
-        wf_label = args.workflow
-    else:
-        workflow_fn, wf_label = generate_review_fix, "generate_review_fix"
+    try:
+        workflow_fn = load_workflow(args.workflow)
+    except ValueError as exc:
+        ap.error(str(exc))
+    wf_label = args.workflow_label or _workflow_name(workflow_fn)
+
     args.blind_validation = _resolve_blind_validation(workflow_fn, args.blind_validation, wf_label)
 
     cfg = get_config(str(_REPO_ROOT))

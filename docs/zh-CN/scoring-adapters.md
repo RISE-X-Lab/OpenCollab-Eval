@@ -8,7 +8,7 @@ Pro-Lite 运行器支持由外部登记文件配置的评测适配。通过
 并行运行器。补评队列可通过 `runner_args` 提供该选项。
 
 ```bash
-oc-eval swe-v1-prolite \
+oc-exp swe-run \
   --runner-transport local \
   --scoring-adapter-registry "$WORKER_SCORING_REGISTRY" \
   ...

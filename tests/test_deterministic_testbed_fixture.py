@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from e2e.deterministic_swe_driver import _synthetic_sources
+from e2e.synthetic_repository import _synthetic_sources
 
 
 def test_e2e_fixture_activates_the_actual_named_python_environment(tmp_path):

@@ -1,54 +1,22 @@
-# OpenCollab-Eval documentation
+# Evaluation documentation
 
 **English** | [简体中文](zh-CN/README.md)
 
-This index points operators to command guides and contracts. Architecture,
-design, and test records document the implementation behind those guides.
-
-## Start here
+This index covers the evaluation core's installation, task interfaces,
+candidate construction, execution evidence and scoring.
 
 | Reader goal | Document |
 | --- | --- |
-| Reproduce the server-local evaluation setup | [Evaluation suite](evaluation-suite.md) |
-| Install the package and run the first local command | [Getting started](getting-started.md) |
-| Prepare dataset or generic task JSONL | [Task formats](task-formats.md) |
-| Run a real remote SWE Pro-Lite task | [SWE Pro-Lite operations](swe-prolite-operations.md) |
-| Choose the correct command | [CLI reference](cli-reference.md) |
-| Understand components and dependencies | [Architecture](architecture.md) |
-| Understand trusted results and failure states | [Evaluation integrity](evaluation-integrity.md) |
-| Configure external official-scoring adapters | [Scoring adapters](scoring-adapters.md) |
-| Diagnose a failed run | [Troubleshooting](troubleshooting.md) |
-| Publish a validated 100-task comparison | [Final report contract](final-report.md) |
+| Install the evaluator and inspect its first task | [Getting started](getting-started.md) |
+| Understand components and dependency ownership | [Architecture](architecture.md) |
+| Choose an installed core command | [CLI reference](cli-reference.md) |
+| Prepare benchmark or generic task inputs | [Task formats](task-formats.md) |
+| Interpret trusted results and failure states | [Evaluation integrity](evaluation-integrity.md) |
+| Follow candidate isolation and construction | [Trusted candidate construction](design/trusted-candidate-construction.md) |
+| Locate candidate and official execution entry points | [Evaluation runtime map](evaluation-runtime.md) |
+| Configure independent scoring adaptations | [Scoring adapters](scoring-adapters.md) |
+| Understand the synthetic integration fixture | [Deterministic SWE end-to-end test](testing/deterministic-swe-e2e.md) |
+| Diagnose execution and evidence failures | [Troubleshooting](troubleshooting.md) |
 
-The repository-level [README](../README.md) gives the shortest complete
-overview. [MIGRATION.md](../MIGRATION.md) defines ownership between OpenCollab
-and OpenCollab-Eval. [CONTRIBUTING.md](../CONTRIBUTING.md) describes development
-and review requirements. [SECURITY.md](../SECURITY.md) contains the private
-reporting process.
-
-## Operator and contract documents
-
-[evaluation-runtime.md](evaluation-runtime.md) maps installed commands to
-runtime layers and explains which entrypoints produce candidates or official
-verdicts. [final-report.md](final-report.md) is the complete input and evidence
-contract for `oc-eval final-report`.
-
-[G22 file evidence](g22-file-evidence.md) describes complete candidate evidence
-files and the read-only v3 selector.
-
-The machine-readable [integrity coverage ledger](integrity-coverage.json) maps
-known integrity requirements to owners, implementation files, tests, and exact
-test node IDs. It is verified by the test suite and should be updated with the
-corresponding implementation and regression test.
-
-## Design and verification records
-
-[Trusted candidate construction](design/trusted-candidate-construction.md)
-describes the implemented controller-owned Git projection. [Deterministic SWE
-E2E](testing/deterministic-swe-e2e.md) describes the installed-wheel test that
-uses ephemeral SSH, a fake model service, Docker, candidate extraction, and
-official target execution.
-
-Design records explain implementation decisions, while testing records describe
-executable verification. Runnable commands are in the getting-started,
-Pro-Lite, CLI, and troubleshooting guides.
+Experiment methods, campaigns and deployment are described in
+[OpenCollabExp](https://github.com/KaiEureka/OpenCollabExp).

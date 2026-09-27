@@ -29,11 +29,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from opencollab_eval.candidate_bytes import CANDIDATE_BYTE_BUDGET, MAX_CANDIDATE_FILE_BYTES
-from opencollab_eval.engine.solver_backend import (
-    KIMI_CODING_BASE_URL,
-    is_kimi_direct_model,
-    normalize_llm_user_agent,
-)
+from opencollab_eval.engine.solver_backend import normalize_llm_user_agent
 from opencollab_eval.engine.swe_eval_records import (
     SUBMISSION_INTEGRITY_INELIGIBLE,
     embedded_workflow_metric,
@@ -57,6 +53,10 @@ base_run_dir = pathlib.Path(".")
 package_root = pathlib.Path(".")
 dataset_path = pathlib.Path(".")
 workflow = ""
+workflow_reference = ""
+workflow_label = ""
+candidate_environment = "isolated"
+generation_launcher = ""
 agent_profile: str | None = None
 workflow_env: dict[str, str] = {}
 openhands_command = ""
@@ -224,6 +224,7 @@ def configure(config: dict[str, Any]) -> None:
     """Validate and install one remote-run configuration."""
     global cfg, token, owner_nonce, remote_root, remote_repo, base_run_dir
     global package_root, dataset_path, workflow, workflow_env, agent_profile
+    global workflow_reference, workflow_label, candidate_environment, generation_launcher
     global openhands_command, openhands_command_sha256
     global openhands_empty_patch_rejections, max_empty_patch_retries
     global model_name, llm_model, llm_provider, llm_transport, remote_api_network_env
@@ -288,14 +289,19 @@ def configure(config: dict[str, Any]) -> None:
         sys.path.insert(0, str(package_root))
     dataset_path = remote_root / "datasets" / "swe-batch-pro-lite" / "instances.jsonl"
     workflow = str(cfg["workflow"])
+    workflow_reference = str(cfg.get("workflow_reference") or (workflow if ":" in workflow else ""))
+    workflow_label = str(cfg.get("workflow_label") or workflow)
+    candidate_environment = str(cfg.get("candidate_environment") or "isolated")
+    if candidate_environment not in {"shared", "isolated", "lean"}:
+        raise ValueError("candidate_environment must be shared, isolated, or lean")
+    generation_launcher = str(cfg.get("generation_launcher") or "")
+    if generation_launcher and not pathlib.Path(generation_launcher).is_absolute():
+        raise ValueError("generation_launcher must be an absolute path")
     from opencollab_eval.runtime_config import resolve_workflow_agent_profile
 
     agent_profile = resolve_workflow_agent_profile(cfg.get("agent_profile"))
     workflow_env = {str(key): str(value) for key, value in (cfg.get("workflow_env") or {}).items()}
     allowed_workflow_env = {
-        "OPENCOLLAB_G11_ROLE_BUDGET",
-        "OPENCOLLAB_VALIDATION_COUNCIL_ROLE_BUDGET",
-        "OPENCOLLAB_VALIDATION_COUNCIL_MAX_CODER_ROUNDS",
         "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES",
         "OPENCOLLAB_EVAL_WORKFLOW_CONCURRENCY",
         "OPENCOLLAB_EVAL_NO_PROGRESS_TIMEOUT",
@@ -321,11 +327,17 @@ def configure(config: dict[str, Any]) -> None:
         "OPENCOLLAB_LLM_USER_AGENT",
         "OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT",
         "OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS",
-        "OPENCOLLAB_CLAUDE_EXPECTED_MODEL",
-        "OPENCOLLAB_CLAUDE_EXPECTED_VERSION",
-        "OPENCOLLAB_CLAUDE_RUNTIME_IMAGE",
-        "OPENCOLLAB_CLAUDE_RUNTIME_IMAGE_ID",
     }
+    configured_workflow_env_keys = cfg.get("workflow_env_keys") or []
+    if not isinstance(configured_workflow_env_keys, (list, tuple)) or any(
+        not isinstance(key, str) or not re.fullmatch(r"OPENCOLLAB_[A-Z0-9_]+", key)
+        for key in configured_workflow_env_keys
+    ):
+        raise ValueError("workflow_env_keys must contain OPENCOLLAB environment variable names")
+    credential_keys = REMOTE_API_TOKEN_KEYS | {"OPENCOLLAB_PROXY_CLIENT_TOKEN"}
+    if credential_keys.intersection(configured_workflow_env_keys):
+        raise ValueError("workflow environment extensions must not contain credential keys")
+    allowed_workflow_env.update(configured_workflow_env_keys)
     unsupported_workflow_env = sorted(set(workflow_env) - allowed_workflow_env)
     if unsupported_workflow_env:
         raise ValueError("unsupported workflow env: " + ", ".join(unsupported_workflow_env))
@@ -344,10 +356,12 @@ def configure(config: dict[str, Any]) -> None:
     llm_transport = requested_transport
     if llm_transport not in {"direct", "reverse_proxy"}:
         raise ValueError("llm_transport must be direct or reverse_proxy")
-    if llm_transport == "direct" and (llm_provider != "openai" or not is_kimi_direct_model(llm_model)):
-        raise ValueError("direct transport is supported only for OpenAI-compatible Kimi models")
-    if llm_transport == "direct" and remote_proxy_base_url != KIMI_CODING_BASE_URL:
-        raise ValueError("Kimi direct transport requires the official coding API base URL")
+    if llm_transport == "direct":
+        if llm_provider != "openai" or not llm_model:
+            raise ValueError("direct transport requires an explicit OpenAI-compatible model")
+        endpoint = urllib.parse.urlsplit(remote_proxy_base_url)
+        if endpoint.scheme not in {"http", "https"} or not endpoint.hostname:
+            raise ValueError("direct transport requires an HTTP(S) API base URL")
     context_window = cfg.get("context_window")
     temperature = cfg.get("temperature")
     top_p = cfg.get("top_p")

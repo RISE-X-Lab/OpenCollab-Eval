@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 from gen_prediction_workflow_support import (
     FIXTURE,
+    fixture_workflow,
     gpw,
     isolated_solver_snapshot,  # noqa: F401
 )
@@ -76,8 +77,8 @@ def test_generate_preserves_generation_error_when_baseline_cleanup_fails(
                 "image",
                 cfg,
                 args,
-                gpw.generate_review_fix,
-                "generate_review_fix",
+                fixture_workflow,
+                "fixture-workflow",
             )
         )
 

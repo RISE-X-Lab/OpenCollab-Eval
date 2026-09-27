@@ -82,14 +82,6 @@ def test_wheel_contract_discovers_a_sibling_opencollab_checkout() -> None:
     assert '$candidate/opencollab/pyproject.toml' not in script
 
 
-def test_packaged_workflow_guides_match_the_07_runtime_boundary() -> None:
-    package_readme = _PACKAGE_ROOT / "workflows" / "README.md"
-    package_readme_zh = _PACKAGE_ROOT / "workflows" / "README.zh-CN.md"
-
-    for path in (package_readme, package_readme_zh):
-        text = path.read_text(encoding="utf-8")
-        assert "OpenCollab 0.7.0" in text
-        assert "OpenCollab 0.4" not in text
 
 
 def test_wheel_probe_uses_installed_dependency_metadata():

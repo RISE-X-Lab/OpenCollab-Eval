@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import re
 import subprocess
-import sys
 from collections import Counter
 from pathlib import Path
 from urllib.parse import unquote
@@ -11,7 +10,6 @@ from urllib.parse import unquote
 import pytest
 
 from opencollab_eval import cli
-from opencollab_eval.engine.solver_backend import DEFAULT_WORKFLOW_SOLVERS
 
 ROOT = Path(
     os.environ.get("OPENCOLLAB_EVAL_SOURCE_ROOT", Path(__file__).resolve().parents[1])
@@ -31,7 +29,6 @@ ROOT_README = ROOT / "README.md"
 ROOT_README_CHINESE_MARKER = '<a id="simplified-chinese"></a>'
 SOURCE_DOCUMENTS = (
     ROOT / "src" / "opencollab_eval" / "engine" / "eval_adapter" / "README.md",
-    ROOT / "src" / "opencollab_eval" / "workflows" / "README.md",
 )
 
 
@@ -204,55 +201,16 @@ def test_chinese_internal_links_prefer_available_chinese_documents(
     }
 
 
-def test_readme_names_installed_commands_and_solver_profiles() -> None:
+def test_readme_names_installed_evaluation_commands() -> None:
     readme = ROOT_README.read_text(encoding="utf-8")
-    for command in ("inspect", "run", "swe-v1-prolite", "final-report"):
+    for command in ("inspect", "run", "score"):
         assert f"`oc-eval {command}`" in readme
-    for solver in DEFAULT_WORKFLOW_SOLVERS:
-        assert f"`{solver}`" in readme
 
 
-def test_documented_kimi_slice_has_complete_identity() -> None:
-    required = (
-        "--context-window 262144",
-        "--temperature 1",
-        "--top-p 0.95",
-        "--max-output-tokens 32768",
-        "--workflow-env OPENCOLLAB_THINKING=true",
-        '"thinking":{"type":"enabled","keep":"all"}',
-    )
-    for relative in (
-        "README.md",
-        "docs/swe-prolite-operations.md",
-        "docs/zh-CN/swe-prolite-operations.md",
-    ):
-        text = (ROOT / relative).read_text(encoding="utf-8")
-        assert all(value in text for value in required)
 
 
-def test_coordinator_example_uses_only_forwarded_options() -> None:
-    operations = (DOCS / "swe-prolite-operations.md").read_text(encoding="utf-8")
-    section = operations.split("## Run through the Solver coordinator", 1)[1]
-    example = section.split("```bash", 1)[1].split("```", 1)[0]
-    assert "--remote-python /srv/opencollab-eval/venv/bin/python" in example
 
 
-def test_documented_k3_coordinator_has_complete_identity() -> None:
-    required = (
-        "--llm-model k3",
-        "--context-window 1048576",
-        "--temperature 1",
-        "--top-p 0.95",
-        "--max-output-tokens 32768",
-        "reasoning_effort=high",
-    )
-    for relative in (
-        "README.md",
-        "docs/swe-prolite-operations.md",
-        "docs/zh-CN/swe-prolite-operations.md",
-    ):
-        text = (ROOT / relative).read_text(encoding="utf-8")
-        assert all(value in text for value in required)
 
 
 def test_removed_documentation_claims_do_not_return() -> None:
@@ -272,29 +230,11 @@ def test_top_level_help_describes_candidate_eligibility() -> None:
     assert "migrated JSONL" not in help_text
 
 
-def test_prolite_help_documents_operator_options() -> None:
-    result = subprocess.run(
-        [sys.executable, "-m", "opencollab_eval", "swe-v1-prolite", "--help"],
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0
-    for value in (
-        "SSH destination for the Linux worker",
-        "--remote-python",
-        "--remote-api-env-file",
-        "--expected-runtime-tree-sha256",
-        "--dry-run",
-    ):
-        assert value in result.stdout
 
 
 @pytest.mark.parametrize(
     ("script", "usage"),
     (
-        ("run_deterministic_swe_e2e.sh", "--output DIRECTORY"),
         ("verify_wheel_contract.sh", "PATH_TO_OPENCOLLAB_WHEEL"),
     ),
 )

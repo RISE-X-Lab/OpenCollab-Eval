@@ -9,7 +9,7 @@ each task process. `swe_eval_run` forwards this option to the parallel runner.
 An eval-only queue can supply it in `runner_args`.
 
 ```bash
-oc-eval swe-v1-prolite \
+oc-exp swe-run \
   --runner-transport local \
   --scoring-adapter-registry "$WORKER_SCORING_REGISTRY" \
   ...

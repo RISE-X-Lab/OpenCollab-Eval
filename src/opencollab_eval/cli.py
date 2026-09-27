@@ -13,10 +13,9 @@ from pathlib import Path
 from opencollab_eval import __version__
 from opencollab_eval.benchmarks.swe_batch_pro import load_identity_key, load_jsonl_dataset, tasks_from_rows
 from opencollab_eval.commands.eval_batch import _eval, _result_counts
-from opencollab_eval.commands.swe_final_report import add_arguments as add_final_report_arguments
-from opencollab_eval.commands.swe_final_report import run_from_args as run_final_report
 from opencollab_eval.engine.native_progress_watch import add_arguments as add_progress_arguments
 from opencollab_eval.engine.native_progress_watch import configure_arguments as configure_progress_arguments
+from opencollab_eval.workflow_loader import load_workflow
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -24,7 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="oc-eval",
         description=(
             "Inspect benchmark inputs, generate evidence-bound candidates, "
-            "run bounded official SWE evaluation, and publish validated reports."
+            "run official SWE-bench scoring."
         ),
     )
     parser.add_argument("--version", action="version", version=__version__)
@@ -66,43 +65,18 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--temperature", type=float, default=0.2, help="Model sampling temperature")
     run_parser.add_argument("--top-p", type=float, help="Optional nucleus-sampling value")
     run_parser.add_argument("--agent-profile", choices=("single", "single2"), help="OpenCollab agent profile")
+    run_parser.add_argument("--workflow", help="Installed workflow entry in module:function form")
     add_progress_arguments(run_parser)
-    final_parser = subparsers.add_parser(
-        "final-report",
-        help="Build a final comparison report from two terminal SWE fact reports",
-    )
-    add_final_report_arguments(final_parser)
-    subparsers.add_parser(
-        "swe-v1-prolite",
-        help="Run one bounded SWE Pro-Lite slice through the remote production runner",
-    )
-    subparsers.add_parser(
-        "rejudge-queue",
-        help="Resume official evaluation for evidence-bound existing candidates",
-    )
-    subparsers.add_parser("package-runtime", help="Package installed OC and OCE sources for server-local execution")
-    subparsers.add_parser("g22", help="Run G22 with Single2 and official scoring from one JSON configuration")
+    subparsers.add_parser("score", help="Run the official SWE-bench harness on existing predictions")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
-    if arguments[:1] == ["g22"]:
-        from opencollab_eval.commands.g22 import main as run_g22
+    if arguments[:1] == ["score"]:
+        from opencollab_eval.commands.run_swebench_eval_per_instance import main as run_score
 
-        return run_g22(arguments[1:])
-    if arguments[:1] == ["swe-v1-prolite"]:
-        from opencollab_eval.commands.swe_v1_prolite_runner import main as run_swe_v1_prolite
-
-        return run_swe_v1_prolite(prog="oc-eval swe-v1-prolite", argv=arguments[1:])
-    if arguments[:1] == ["rejudge-queue"]:
-        from opencollab_eval.commands.swe_rejudge_queue import main as run_rejudge_queue
-
-        return run_rejudge_queue(arguments[1:])
-    if arguments[:1] == ["package-runtime"]:
-        from opencollab_eval.commands.package_runtime import main as run_package_runtime
-
-        return run_package_runtime(arguments[1:])
+        return run_score(arguments[1:])
     args = build_parser().parse_args(arguments)
     if args.command == "inspect":
         identity_key = load_identity_key(args.identity_key_file)
@@ -124,6 +98,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "run":
         try:
             configure_progress_arguments(args)
+            workflow = load_workflow(args.workflow) if args.workflow else None
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
         if not args.model or not args.provider:
@@ -142,18 +117,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 temperature=args.temperature,
                 top_p=args.top_p,
                 agent_profile=args.agent_profile,
+                workflow=workflow,
             )
         )
         eligible, ineligible = _result_counts(results)
         print(json.dumps({"tasks": len(results), "eligible_patches": eligible, "ineligible": ineligible}))
-        return 0
-    if args.command == "final-report":
-        try:
-            result = run_final_report(args)
-        except (OSError, ValueError) as exc:
-            print(str(exc), file=sys.stderr)
-            return 2
-        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     raise AssertionError(f"unhandled command: {args.command}")
 

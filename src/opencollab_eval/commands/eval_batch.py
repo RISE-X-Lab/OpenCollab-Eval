@@ -88,6 +88,7 @@ async def _eval(
     thinking: bool = False,
     thinking_params: dict[str, Any] | None = None,
     agent_profile: str | None = None,
+    workflow: Any | None = None,
 ) -> list[Any]:
     tasks: list[EvalTask] = []
     for line_number, data in _read_task_payloads(tasks_file):
@@ -127,6 +128,7 @@ async def _eval(
         thinking=thinking,
         thinking_params=thinking_params,
         agent_profile=agent_profile,
+        workflow=workflow,
     )
     evaluator.save_results(results, os.path.join(output_dir, "results.jsonl"))
     return results

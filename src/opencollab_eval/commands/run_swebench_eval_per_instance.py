@@ -607,8 +607,10 @@ def run_one(
     return iid, returncode
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Run SWE-bench official evaluation one instance at a time")
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="oc-eval score", description="Run SWE-bench official evaluation one instance at a time"
+    )
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--predictions", required=True)
     parser.add_argument("--work-dir", required=True)
@@ -625,7 +627,7 @@ def main() -> int:
         default=0,
         help="Wall-clock timeout per subprocess in seconds. Defaults to --timeout + 900.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     try:
         args.run_id = validate_path_identity(args.run_id, name="run_id")

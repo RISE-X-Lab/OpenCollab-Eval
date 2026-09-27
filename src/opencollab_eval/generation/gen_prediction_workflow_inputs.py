@@ -8,30 +8,6 @@ from opencollab_eval.benchmarks.task_specification import (
     compose_task_specification,
 )
 
-BLIND_BY_DEFAULT_WORKFLOWS = {
-    "candidate-tournament-council-v1",
-    "evidence-action-council-v1",
-    "validation-council-dual-coder-contract-v1",
-    "validation-council-dual-coder-selection-v2",
-    "validation-council-dual-coder-selection-v3",
-    "validation-council-g20-coder-contract-v1",
-    "validation-council-g20-coder-red-green-v1",
-    "validation-council-lean-official-v1",
-    "validation-council-g20-coder-red-green-v2",
-    "validation-council-wired-coder-heavy-v1",
-    "validation-council-wired-conditional-repair-v1",
-    "validation-council-wired-diagnose-repair-v1",
-    "validation-council-wired-dual-contract-v1",
-    "validation-council-wired-dual-g20-v1",
-    "validation-council-wired-plus-v1",
-    "validation-council-wired-resilient-v1",
-    "validation-council-wired-red-rescue-v1",
-    "validation-council-wired-tournament-v1",
-    "validation-council-wired-v1",
-    "validation-council-solve",
-    "swe-committee-v2",
-}
-
 
 def _fail_to_pass_ids(instance: dict) -> list[str]:
     """Parse the FAIL_TO_PASS node ids from their JSON or list form."""
@@ -82,7 +58,7 @@ def _blind_validation_default(
 ) -> bool:
     if explicit is not None:
         return explicit
-    return workflow_name in BLIND_BY_DEFAULT_WORKFLOWS
+    return True
 
 
 def _workflow_name(workflow_fn, workflow_label: str | None = None) -> str:

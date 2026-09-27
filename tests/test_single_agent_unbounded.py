@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 from opencollab import OpenCollab
+from single_agent_test_support import TwoStepLLM
 from test_gen_prediction_single_agent import _agent_config
-from test_single2_evaluation_entry import TwoStepLLM
 
 from opencollab_eval.generation import gen_prediction_agent
 from opencollab_eval.generation.gen_prediction_config import validate_generation_limits

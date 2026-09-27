@@ -14,6 +14,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,8 +24,8 @@ from generation_proof_test_support import eval_snapshot_proof_fields, trusted_pa
 
 import opencollab_eval
 
-runner = importlib.import_module("opencollab_eval.commands.swe_v1_prolite_runner")
 remote_runner = importlib.import_module("opencollab_eval.engine.swe_v1_remote_runner")
+runner = remote_runner
 remote_commands = importlib.import_module("opencollab_eval.engine.swe_v1_remote_commands")
 remote_eval_script = importlib.import_module(
     "opencollab_eval.engine.swe_v1_remote_eval_script"
@@ -144,6 +145,10 @@ def _complete_remote_config(config: dict) -> dict:
     completed.setdefault("owner_nonce", "d" * 32)
     completed.setdefault("invocation_id", "e" * 32)
     completed.setdefault("workflow_env", {})
+    completed.setdefault("workflow_reference", "fixture_workflow:solve")
+    completed.setdefault("workflow_label", completed.get("workflow", "fixture-workflow"))
+    completed.setdefault("candidate_environment", "isolated")
+    completed.setdefault("generation_launcher", "/fixture/generate.sh")
     completed.setdefault("openhands_command", "")
     completed.setdefault("openhands_empty_patch_rejections", 2)
     completed.setdefault("max_empty_patch_retries", 1)
@@ -177,6 +182,9 @@ def _remote_config(tmp_path, **overrides):
             target_is_directory=True,
         )
     base_run_dir = tmp_path / "run"
+    launcher = tmp_path / "fixture-generator.sh"
+    launcher.write_text('#!/bin/sh\nIFS= read -r token < "$3"\nexit 1\n', encoding="utf-8")
+    launcher.chmod(0o755)
     cfg = {
         "token": "tok",
         "owner_nonce": "a" * 32,
@@ -186,6 +194,10 @@ def _remote_config(tmp_path, **overrides):
         "base_run_dir": str(base_run_dir),
         "workflow": "validation-council-solve",
         "workflow_env": {},
+        "workflow_reference": "fixture_workflow:solve",
+        "workflow_label": "fixture-workflow",
+        "candidate_environment": "isolated",
+        "generation_launcher": str(launcher),
         "openhands_command": "",
         "openhands_empty_patch_rejections": 2,
         "max_empty_patch_retries": 1,
@@ -362,11 +374,11 @@ def _spawn_term_ignoring_descendant(tmp_path):
         text=True,
         start_new_session=True,
     )
-    deadline = runner.time.monotonic() + 2
-    while not ready.exists() and runner.time.monotonic() < deadline:
-        runner.time.sleep(0.01)
+    deadline = time.monotonic() + 2
+    while not ready.exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
     if not ready.exists():
-        runner.os.killpg(process.pid, runner.signal.SIGKILL)
+        os.killpg(process.pid, signal.SIGKILL)
         process.wait(timeout=1)
         raise AssertionError("descendant did not become ready")
     return process

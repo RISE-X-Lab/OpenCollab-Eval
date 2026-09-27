@@ -119,12 +119,10 @@ def test_build_extras_omits_hidden_data_for_blind_validation():
     assert "fail_to_pass" not in extras
 
 
-def test_validation_council_defaults_to_blind_validation():
-    assert gpw._blind_validation_default("validation-council-solve", None) is True
-    assert gpw._blind_validation_default("validation-council-lean-official-v1", None) is True
-    assert gpw._blind_validation_default("generate_review_fix", None) is False
-    assert gpw._blind_validation_default("validation-council-solve", False) is False
-    assert gpw._blind_validation_default("generate_review_fix", True) is True
+def test_workflows_default_to_blind_validation():
+    assert gpw._blind_validation_default("caller-workflow", None) is True
+    assert gpw._blind_validation_default("caller-workflow", False) is False
+    assert gpw._blind_validation_default("caller-workflow", True) is True
 
 
 def test_lean_validation_council_uses_private_environment_adapter():
@@ -133,20 +131,9 @@ def test_lean_validation_council_uses_private_environment_adapter():
     )
 
 
-def test_bundled_workflows_use_public_hyphenated_names():
-    registry = gpw._BUNDLED_WORKFLOWS
-
-    assert registry["validation-council-solve"].__workflow_spec__.name == (
-        "validation-council-solve"
-    )
-    assert registry["base-team"].__workflow_spec__.name == "base-team"
-    assert registry["team-pro"].__workflow_spec__.name == "team-pro"
-    assert "validation_council_solve" not in registry
-
-
-def test_generate_path_resolves_validation_council_blind_default_from_spec():
+def test_generate_path_resolves_blind_default_from_any_workflow():
     class Spec:
-        name = "validation-council-solve"
+        name = "caller-workflow"
 
     def workflow_fn():
         return None

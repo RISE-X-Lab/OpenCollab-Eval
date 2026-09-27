@@ -44,11 +44,16 @@ service exit fail the run.
 
 ## Run locally
 
+Run the integration script from the
+[OpenCollabExp checkout](https://github.com/KaiEureka/OpenCollabExp/blob/main/scripts/run_deterministic_swe_e2e.sh).
 The host needs Docker, `sshd`, `ssh`, `ssh-keygen`, and `rsync`. Provide the
-OpenCollab source root when it is not the sibling `../OpenCollab` checkout.
+OpenCollab source root when it is not the sibling `../OpenCollab` checkout, and
+select the paired OCE source checkout explicitly.
 
 ```bash
 export OPENCOLLAB_SOURCE_ROOT=/path/to/OpenCollab
+export OPENCOLLAB_EVAL_SOURCE_ROOT=/path/to/OpenCollab-Eval
+cd /path/to/OpenCollabExp
 scripts/run_deterministic_swe_e2e.sh \
   --output /tmp/opencollab-eval-e2e \
   --runs 1

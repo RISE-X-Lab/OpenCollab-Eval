@@ -86,8 +86,8 @@ jobs:
           OPENCOLLAB_EVAL_SOURCE_ROOT: ${{ github.workspace }}/eval
         run: scripts/verify_wheel_contract.sh "${{ steps.wheels.outputs.opencollab }}" "${{ steps.wheels.outputs.eval }}"
 
-  deterministic-e2e:
-    name: Deterministic SWE end-to-end
+  integrity-docker:
+    name: Core workspace integrity Docker smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -123,12 +123,6 @@ jobs:
             eval/pyproject.toml
             opencollab-source/pyproject.toml
 
-      - name: Install SSH and rsync
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes openssh-server rsync
-          sudo mkdir -p /run/sshd
-
       - name: Build both distributions
         id: wheels
         run: |
@@ -143,18 +137,20 @@ jobs:
           echo "opencollab=${oc_wheels[0]}" >> "$GITHUB_OUTPUT"
           echo "eval=${eval_wheels[0]}" >> "$GITHUB_OUTPUT"
 
-      - name: Run deterministic SWE evaluation
+      - name: Run core workspace integrity smoke
         env:
           OPENCOLLAB_SOURCE_ROOT: ${{ github.workspace }}/opencollab-source
-          OPENCOLLAB_E2E_OPENCOLLAB_WHEEL: ${{ steps.wheels.outputs.opencollab }}
-          OPENCOLLAB_E2E_EVAL_WHEEL: ${{ steps.wheels.outputs.eval }}
-        run: scripts/run_deterministic_swe_e2e.sh --output "$RUNNER_TEMP/deterministic-e2e" --runs 1
+          OPENCOLLAB_EVAL_SOURCE_ROOT: ${{ github.workspace }}/eval
+        run: |
+          python -m pip install "${{ steps.wheels.outputs.opencollab }}" "${{ steps.wheels.outputs.eval }}[swebench]"
+          cd tests
+          python -m e2e.integrity_docker_smoke --output "$RUNNER_TEMP/integrity-docker-smoke.json"
 
-      - name: Upload deterministic evidence
+      - name: Upload integrity evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: deterministic-swe-e2e
-          path: ${{ runner.temp }}/deterministic-e2e
+          name: workspace-integrity-docker-smoke
+          path: ${{ runner.temp }}/integrity-docker-smoke.json
           if-no-files-found: error
           retention-days: 14

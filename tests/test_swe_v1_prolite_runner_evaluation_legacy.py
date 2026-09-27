@@ -452,13 +452,3 @@ def test_remote_runner_rebuilds_the_workspace_from_the_dataset_base_commit():
     assert REMOTE_IMPLEMENTATION_SOURCE.index("eval_candidate_projection.py") < initial_snapshot
     assert '"public_preparation_runner.py"' in REMOTE_IMPLEMENTATION_SOURCE
     assert 'if [ "$actual_after_before" = "$baseline_head" ]' in REMOTE_IMPLEMENTATION_SOURCE
-
-
-def test_local_eval_only_skips_generation_dependencies():
-    main_source = inspect.getsource(runner.main)
-    payload_source = inspect.getsource(runner._controller._remote_payload)
-    assert "if args.eval_only:" in main_source
-    assert (
-        '"token": "" if eval_only or remote_api_env_file else get_proxy_token(args.proxy_env_file)'
-        in payload_source
-    )

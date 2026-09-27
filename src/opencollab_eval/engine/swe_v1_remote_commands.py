@@ -292,3 +292,12 @@ exit 42
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]
+
+
+def generation_launcher_for_task():
+    """Resolve the explicit deployment command before allocating a task FIFO."""
+    if not generation_launcher:
+        raise ValueError("generation requires a configured generation_launcher")
+    if workflow not in {"single-agent", "single2", "openhands-external"} and not workflow_reference:
+        raise ValueError("workflow generation requires a module:function workflow_reference")
+    return generation_launcher

@@ -309,6 +309,7 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
                 "workdir_status": workdir_status,
             }
         return {"status": "would_generate", "task": task, "image": image, "workdir_status": workdir_status}
+    launcher = generation_launcher_for_task()
     unsafe_failure_record = clear_generation_failure_record(run_dir, task)
     if unsafe_failure_record is not None:
         return unsafe_failure_record
@@ -320,17 +321,16 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
     log_path = run_dir / "generation_logs" / f"{task}.outer.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
-    generator = (
-        "openhands"
-        if workflow == "openhands-external"
-        else "single-agent"
-        if workflow in {"single-agent", "single2"}
-        else "workflow"
-    )
+    env.update(effective_workflow_env())
+    generator = {
+        "openhands-external": "openhands", "single-agent": "single-agent", "single2": "single-agent",
+    }.get(workflow, "workflow")
     env.update(
         {
             "OPENCOLLAB_SWE_GENERATOR": generator,
-            "OPENCOLLAB_SWE_WORKFLOW": workflow,
+            "OPENCOLLAB_SWE_WORKFLOW": workflow_label,
+            "OPENCOLLAB_SWE_WORKFLOW_ENTRYPOINT": workflow_reference,
+            "OPENCOLLAB_SWE_CANDIDATE_ENVIRONMENT": candidate_environment,
             "OPENCOLLAB_SWE_AGENT_PROFILE": agent_profile or "",
             "OPENCOLLAB_MODEL": model_name,
             "OPENCOLLAB_SWE_MODEL_NAME": model_name,
@@ -352,7 +352,6 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
             "OPENCOLLAB_EVAL_WORKFLOW_ENV": json.dumps(effective_workflow_env(), sort_keys=True),
         }
     )
-    env.update(effective_workflow_env())
     if env.get("OPENCOLLAB_EVAL_MODEL_PROGRESS_PATH") and generator in {"single-agent", "workflow"}:
         from opencollab_eval.engine.solver_backend import default_openai_user_agent, normalize_llm_user_agent
 
@@ -365,7 +364,7 @@ def generation_for_task_once(row, *, reuse_existing_empty_patch=True):
     if openhands_command:
         env["OPENCOLLAB_OPENHANDS_COMMAND"] = openhands_command
     cmd = [
-        str(remote_repo / "src" / "opencollab_eval" / "resources" / "run_swe_v2_one_from_fifo.sh"),
+        launcher,
         task,
         image,
         str(fifo),

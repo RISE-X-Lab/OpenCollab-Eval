@@ -2,12 +2,9 @@ from __future__ import annotations
 
 from evaluator_workflow_test_support import (
     EvalTask,
-    ExecResult,
     FakeEnv,
-    ScriptedCtx,
     asyncio,
     evaluator,
-    generate_review_fix,
     patch_evaluator_llm,
     run,
     run_eval_task,
@@ -90,70 +87,3 @@ def test_workflow_none_path_unchanged(monkeypatch, tmp_path):
     assert result.patch_produced is True
     assert result.patch == env.diff
     assert result.error is None
-
-
-def test_generate_review_fix_skips_apply_when_ok(tmp_path):
-    env = FakeEnv()
-    # Stage 1 implement -> text; stage 2 review verdict -> needs_changes False.
-    ctx = ScriptedCtx(
-        env,
-        replies=[
-            "implemented the fix",
-            {"needs_changes": False, "feedback": "looks good"},
-        ],
-    )
-
-    result = run(generate_review_fix(ctx, {"description": "fix the bug"}))
-
-    # Only two agent calls — the apply stage was skipped.
-    assert len(ctx.agent_calls) == 2
-    # The review call used a schema (structured verdict).
-    assert ctx.agent_calls[1]["schema"] is not None
-    assert result["needs_changes"] is False
-
-
-def test_generate_review_fix_runs_apply_when_changes_requested(tmp_path):
-    env = FakeEnv()
-    ctx = ScriptedCtx(
-        env,
-        replies=[
-            "implemented the fix",
-            {"needs_changes": True, "feedback": "rename foo to bar"},
-            "applied the feedback",
-        ],
-    )
-
-    result = run(generate_review_fix(ctx, {"description": "fix the bug"}))
-
-    # Three agent calls — implement, review, apply.
-    assert len(ctx.agent_calls) == 3
-    assert result["needs_changes"] is True
-    # The apply-stage prompt carried the review feedback.
-    assert "rename foo to bar" in ctx.agent_calls[2]["prompt"]
-
-
-def test_generate_review_fix_marks_truncated_diff_unavailable(tmp_path):
-    class TruncatedReviewEnv(FakeEnv):
-        async def exec_cmd(self, cmd: str, timeout: float = 120.0) -> ExecResult:
-            return ExecResult(
-                returncode=0,
-                stdout="diff --git a/x b/x\n+partial secret tail\n",
-                stderr="",
-                stdout_truncated=True,
-                stdout_dropped_bytes=7000,
-            )
-
-    ctx = ScriptedCtx(
-        TruncatedReviewEnv(),
-        replies=[
-            "implemented the fix",
-            {"needs_changes": False, "feedback": "unavailable"},
-        ],
-    )
-
-    run(generate_review_fix(ctx, {"description": "fix the bug"}))
-
-    review_prompt = ctx.agent_calls[1]["prompt"]
-    assert "diff unavailable" in review_prompt
-    assert "stdout dropped 7000 bytes" in review_prompt
-    assert "partial secret tail" not in review_prompt

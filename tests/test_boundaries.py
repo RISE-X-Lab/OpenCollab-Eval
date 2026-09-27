@@ -380,15 +380,6 @@ def test_subprocess_entry_detector_rejects_source_file_execution() -> None:
     assert _python_subprocess_file_entry_lines(installed_module) == []
 
 
-def test_evaluation_strategy_is_owned_by_eval_package() -> None:
-    fact_sheet = (_SOURCE / "workflows" / "_fact_sheet.py").read_text(encoding="utf-8")
-    analyst_runtime = (_SOURCE / "workflows" / "_analyst_solve_runtime.py").read_text(
-        encoding="utf-8"
-    )
-
-    assert "opencollab" not in fact_sheet
-    assert "from ._fact_sheet import" in analyst_runtime
-    assert "from ._public_api import format_findings_report" in analyst_runtime
 
 
 def test_single_agent_generation_delegates_lifecycle_to_public_facade() -> None:
@@ -439,16 +430,15 @@ def test_single_agent_generation_delegates_lifecycle_to_public_facade() -> None:
                for node in ast.walk(tree))
 
 
-def test_workflow_documentation_uses_packaged_layout() -> None:
-    readme = (_SOURCE / "workflows" / "README.md").read_text(encoding="utf-8")
-    stale_layout_fragments = (
-        "swebench/gen_prediction_workflow.py",
-        "OPENCOLLAB_WORKFLOWS_DIR",
-        "`opencollab workflow",
-        "opencollab/.venv",
-        "`application/workflow.py`",
-        "`opencollab/adapters/tools/`",
-        "`workflows/` relative to the working directory",
-    )
 
-    assert [fragment for fragment in stale_layout_fragments if fragment in readme] == []
+def test_core_workflow_loading_keeps_strategy_dependencies_external() -> None:
+    assert not list((_SOURCE / "workflows").rglob("*.py"))
+    assert not (_SOURCE / "engine" / "workflows.py").exists()
+    references = []
+    for path in _SOURCE.rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                references.extend(alias.name for alias in node.names if alias.name.startswith("opencollab_exp"))
+            elif isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("opencollab_exp"):
+                references.append(node.module)
+    assert references == []

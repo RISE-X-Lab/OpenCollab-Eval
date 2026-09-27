@@ -4,7 +4,6 @@ import hashlib
 import os
 from importlib.metadata import files as distribution_files
 from importlib.metadata import version as distribution_version
-from importlib.resources import files
 from pathlib import Path
 
 import opencollab
@@ -14,7 +13,7 @@ import opencollab.workflows
 from packaging.version import Version
 
 import opencollab_eval
-from opencollab_eval.commands.swe_v1_prolite_config import verify_runtime_import_contract
+from opencollab_eval.workflow_loader import load_workflow
 
 
 def test_opencollab_sdk_can_come_from_the_built_wheel() -> None:
@@ -29,13 +28,7 @@ def test_opencollab_sdk_can_come_from_the_built_wheel() -> None:
     assert callable(opencollab.tools.builtin_tools)
     assert callable(opencollab.workflows.workflow)
     assert callable(opencollab.environments.attach_container)
-    configs = files("opencollab_eval.configs")
-    for filename in ("team.swebench.yaml", "team.self.collab.yaml"):
-        assert "roles:" in configs.joinpath(filename).read_text(encoding="utf-8")
-
-
-def test_installed_wheels_satisfy_the_runtime_import_contract() -> None:
-    verify_runtime_import_contract()
+    assert callable(load_workflow)
 
 
 def test_eval_wheel_contains_the_published_license_files() -> None:

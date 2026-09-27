@@ -20,7 +20,7 @@ Evaluation records can contain source patches, model transcripts, task
 identities, runtime paths, and provider metadata. Store them outside the source
 checkout and review them before publication.
 
-The [SWE Pro-Lite operations guide](docs/swe-prolite-operations.md) describes
+The [SWE Pro-Lite operations guide](https://github.com/KaiEureka/OpenCollabExp/blob/main/docs/swe-prolite-operations.md) describes
 run-scoped credentials, workers, storage, and outputs. The
 [evaluation integrity guide](docs/evaluation-integrity.md) describes the trust
 boundary between benchmark data, Solver workspaces, candidate construction,

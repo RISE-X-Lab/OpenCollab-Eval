@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 from gen_prediction_workflow_support import (
     FIXTURE,
+    fixture_workflow,
     gpw,
 )
 from gen_prediction_workflow_support import (
@@ -77,7 +78,7 @@ def _assert_generate_defers_container_patch_extraction(monkeypatch, tmp_path, ag
     cfg["agent_profile"] = cfg_profile
 
     patch, metrics = asyncio.run(
-        gpw.generate(FIXTURE, "image", cfg, args, gpw.generate_review_fix, "generate_review_fix")
+        gpw.generate(FIXTURE, "image", cfg, args, fixture_workflow, "fixture-workflow")
     )
 
     assert patch.strip()

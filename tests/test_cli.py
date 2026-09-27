@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from opencollab_eval import cli
 from opencollab_eval.cli import main
-from opencollab_eval.commands import swe_v1_prolite_runner
+from opencollab_eval.commands import run_swebench_eval_per_instance
 
 
 def test_inspect_reports_only_public_task_ids(tmp_path, capsys) -> None:
@@ -110,51 +110,33 @@ def test_run_delegates_to_migrated_evaluator(monkeypatch, tmp_path, capsys) -> N
     }
 
 
-def test_final_report_delegates_to_fail_closed_publisher(monkeypatch, tmp_path, capsys) -> None:
+def test_score_delegates_to_official_harness_wrapper(monkeypatch) -> None:
     captured = {}
 
-    def fake_final_report(args):
-        captured["args"] = args
-        return {"status": "final", "manifest_path": str(tmp_path / "manifest.json")}
-
-    monkeypatch.setattr(cli, "run_final_report", fake_final_report)
-
-    assert main(
-        [
-            "final-report",
-            "--method-a-report",
-            str(tmp_path / "a.json"),
-            "--method-a-audit-manifest",
-            str(tmp_path / "a-audit.json"),
-            "--method-b-report",
-            str(tmp_path / "b.json"),
-                "--method-b-audit-manifest",
-                str(tmp_path / "b-audit.json"),
-                "--dataset-file",
-                str(tmp_path / "dataset.jsonl"),
-            "--meeting-date",
-            "2026-07-15",
-            "--author",
-            "Reviewer",
-            "--output-dir",
-            str(tmp_path / "output"),
-        ]
-    ) == 0
-    assert captured["args"].command == "final-report"
-    assert json.loads(capsys.readouterr().out)["status"] == "final"
-
-
-def test_swe_v1_prolite_delegates_to_installed_production_runner(monkeypatch) -> None:
-    captured = {}
-
-    def fake_runner(*, prog, argv):
-        captured.update(prog=prog, argv=list(argv))
+    def fake_runner(argv):
+        captured["argv"] = list(argv)
         return 17
 
-    monkeypatch.setattr(swe_v1_prolite_runner, "main", fake_runner)
+    monkeypatch.setattr(run_swebench_eval_per_instance, "main", fake_runner)
 
-    assert main(["swe-v1-prolite", "--host", "worker"]) == 17
-    assert captured == {
-        "prog": "oc-eval swe-v1-prolite",
-        "argv": ["--host", "worker"],
-    }
+    assert main(["score", "--dataset", "dataset.jsonl"]) == 17
+    assert captured == {"argv": ["--dataset", "dataset.jsonl"]}
+
+
+def test_run_loads_caller_workflow(monkeypatch, tmp_path) -> None:
+    module = tmp_path / "caller_workflow.py"
+    module.write_text("async def solve(context, args):\n    return args\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    captured = {}
+
+    async def fake_eval(**kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(cli, "_eval", fake_eval)
+    assert main([
+        "run", str(tmp_path / "tasks.jsonl"), "--model", "model", "--provider", "openai",
+        "--workflow", "caller_workflow:solve",
+    ]) == 0
+    assert captured["workflow"].__module__ == "caller_workflow"
+    assert captured["workflow"].__name__ == "solve"

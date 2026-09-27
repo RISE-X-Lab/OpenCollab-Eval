@@ -12,7 +12,7 @@ OpenCollab-Eval 可以执行模型生成的命令、连接 Docker、连接远程
 
 评测记录可能包含源码补丁、模型记录、任务身份、运行时路径和提供方元数据。请将其存放在源码检出目录之外，并在发布前进行审查。
 
-[SWE Pro-Lite 运维指南](docs/zh-CN/swe-prolite-operations.md) 介绍按运行划分的凭据、工作节点、存储和输出。[评测完整性指南](docs/zh-CN/evaluation-integrity.md) 介绍基准数据、Solver 工作区、候选构建、官方执行和报告之间的信任边界。
+[SWE Pro-Lite 运维指南](https://github.com/KaiEureka/OpenCollabExp/blob/main/docs/zh-CN/swe-prolite-operations.md) 介绍按运行划分的凭据、工作节点、存储和输出。[评测完整性指南](docs/zh-CN/evaluation-integrity.md) 介绍基准数据、Solver 工作区、候选构建、官方执行和报告之间的信任边界。
 
 ## 支持的版本
 
