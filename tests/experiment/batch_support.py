@@ -78,8 +78,20 @@ def oc_repo(tmp_path: Path) -> tuple[Path, str]:
 
 
 @pytest.fixture
-def experiment(tmp_path: Path, oc_repo: tuple[Path, str]) -> dict[str, Path | str]:
+def experiment(
+    tmp_path: Path, oc_repo: tuple[Path, str], monkeypatch: pytest.MonkeyPatch
+) -> dict[str, Path | str]:
+    """Create both pinned commits inside repositories owned by this fixture."""
     repo, sha = oc_repo
+    eval_repo = tmp_path / "OpenCollab-Eval"
+    eval_repo.mkdir()
+    (eval_repo / "README.md").write_text("Synthetic evaluation checkout for batch tests.\n", encoding="utf-8")
+    _git(eval_repo, "init", "-q")
+    _git(eval_repo, "add", "README.md")
+    _git(eval_repo, "commit", "-q", "-m", "\u521b\u5efa\u8bc4\u6d4b\u6d4b\u8bd5\u6837\u672c")
+    eval_sha = _git(eval_repo, "rev-parse", "HEAD")
+    # Run the production revision checks against the fixture's real Git objects.
+    monkeypatch.setattr(batch_cli, "REPO_ROOT", eval_repo)
     exp = tmp_path / "experiment"
     (exp / "suite").mkdir(parents=True)
     (exp / "hosts").mkdir()
@@ -144,12 +156,20 @@ def experiment(tmp_path: Path, oc_repo: tuple[Path, str]) -> dict[str, Path | st
               OPENCOLLAB_WRITE_NUDGE_MODE: "off"
             pins:
               opencollab: {sha}
-              opencollab_eval: {PIN_EVAL}
+              opencollab_eval: {eval_sha}
             """
         ),
         encoding="utf-8",
     )
-    return {"dir": exp, "spec": spec, "repo": repo, "sha": sha, "frame": frame}
+    return {
+        "dir": exp,
+        "spec": spec,
+        "repo": repo,
+        "sha": sha,
+        "eval_repo": eval_repo,
+        "eval_sha": eval_sha,
+        "frame": frame,
+    }
 
 
 def _spec_text(experiment: dict, old: str, new: str) -> str:
@@ -349,7 +369,7 @@ def fake_host(tmp_path: Path, oc_repo: tuple[Path, str]) -> dict:
 
 def _spec_for_fake_host(experiment: dict, fake_host: dict):
     path = experiment["dir"] / "batches" / "fake.yaml"
-    path.write_text(_spec_text(experiment, PIN_EVAL, fake_host["eval_sha"]), encoding="utf-8")
+    path.write_text(_spec_text(experiment, experiment["eval_sha"], fake_host["eval_sha"]), encoding="utf-8")
     return load_spec(path)
 
 
@@ -404,7 +424,7 @@ def _guard(*, running: str = "", dirty: str = "0", decoy: str = "1") -> str:
 
 
 def _synced(experiment: dict) -> str:
-    return f"OC_AFTER\t{experiment['sha']}\nEV_AFTER\t{PIN_EVAL}\n"
+    return f"OC_AFTER\t{experiment['sha']}\nEV_AFTER\t{experiment['eval_sha']}\n"
 
 
 def _guard_facts_with_a_driver(tmp_path: Path, driver_pythonpath: str | None, host_file: str) -> list:

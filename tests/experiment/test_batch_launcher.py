@@ -137,7 +137,7 @@ def test_spec_requires_all_three_switches(experiment: dict) -> None:
 
 def test_spec_requires_full_sha(experiment: dict) -> None:
     path = experiment["dir"] / "batches" / "bad.yaml"
-    path.write_text(_spec_text(experiment, PIN_EVAL, PIN_EVAL[:7]), encoding="utf-8")
+    path.write_text(_spec_text(experiment, experiment["eval_sha"], experiment["eval_sha"][:7]), encoding="utf-8")
     with pytest.raises(SpecError, match="40-character"):
         load_spec(path)
 
@@ -743,7 +743,7 @@ def test_checked_in_specs_name_rung_and_cell_consistently() -> None:
 
 def test_plan_refuses_a_pin_that_is_not_a_local_commit(experiment: dict, capsys) -> None:
     path = experiment["dir"] / "batches" / "p.yaml"
-    path.write_text(_spec_text(experiment, PIN_EVAL, "abcdef0123" * 4), encoding="utf-8")
+    path.write_text(_spec_text(experiment, experiment["eval_sha"], "abcdef0123" * 4), encoding="utf-8")
     rc = batch_cli.main(["--experiment-dir", str(experiment["dir"]), "plan", str(path)], remote_factory=lambda h: None)
     assert rc == 2
     assert "not a commit" in capsys.readouterr().err
