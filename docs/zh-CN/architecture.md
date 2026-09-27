@@ -16,6 +16,10 @@ OCE负责任务数据、资源生命周期、求解调用、候选构造、独�
 方法注册、角色提示、方法预算和友好名称由调用方持有。候选环境分别选择
 `shared`、`isolated`或`lean`，原有隐藏测试隔离与候选有效性行为继续由OCE维护。
 
+OpenCollab 0.8 持有 canonical `duo` 工作流，通过 `opencollab.builtin_workflows:duo` 选择。
+其角色 profile `base` 解析到 `single2`。评测器使用公开 workflow API，采集采纳后的补丁并执行独立评分。
+历史研究方法和对应提示继续保存在 OpenCollabExp。
+
 ## 入口
 
 `inspect` 归一化基准输入，`run` 管理任务并返回候选提交资格，`score` 调用已有 SWE-bench 原评分包装。

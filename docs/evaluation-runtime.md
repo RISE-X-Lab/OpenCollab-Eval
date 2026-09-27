@@ -9,6 +9,7 @@ intended entrypoint.
 | --- | --- | --- | --- |
 | `oc-eval inspect` | SWE-Batch Pro dataset and identity key | Anonymous census | No |
 | `oc-eval run` | Generic evaluator task JSONL | Candidate eligibility records | No |
+| `oc-exp duo` | Canonical OC Duo and experiment configuration | Adopted candidate and official reports | Yes |
 | `oc-exp swe-run` | One bounded remote Pro-Lite slice | Generation and official reports | Yes |
 | `opencollab_exp.commands.swe_eval_run` | Solver name and task indices | Coordinated Pro-Lite batch | Yes |
 | `oc-exp final-report` | Two terminal fact reports and audit manifests | Validated publication set | Consumes verdicts |
@@ -33,9 +34,9 @@ file, excludes that file from the diff, and transfers complete byte chunks.
 The existing result-record size limit still applies. A failed or incomplete
 transfer cannot produce a submission.
 
-Single uses current OC built-ins and Bash for project-native tests. Research
-workflows with exact-target requirements use the Eval-owned verification tool
-and preserve its executable-evidence checks. See the
+Standalone Base currently selects Single2 and uses its OC built-ins and Bash
+for project-native tests. Research methods keep their selected evidence tools.
+The evaluator records and checks actual target execution for official scoring. See the
 [workflow tool documentation](https://github.com/KaiEureka/OpenCollabExp/blob/main/src/opencollab_exp/workflows/README.md).
 
 Single-instance generator modules remain available for operators and tests.
@@ -46,7 +47,7 @@ python -m opencollab_eval.generation.gen_prediction_workflow --help
 python -m opencollab_eval.generation.gen_prediction_openhands --help
 ```
 
-The packaged `run_team_batch.sh` and `start_team_run.sh` resources are legacy
+OpenCollabExp's packaged `run_team_batch.sh` and `start_team_run.sh` resources are legacy
 gates. They return technical status 125 before Solver launch because their
 historical mount design cannot provide the current isolation and trusted
 candidate evidence. Use `oc-exp swe-run` or the Solver coordinator.

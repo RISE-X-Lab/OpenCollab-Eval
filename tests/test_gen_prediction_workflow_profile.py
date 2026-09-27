@@ -17,13 +17,16 @@ from gen_prediction_workflow_support import (
 from gen_prediction_workflow_support import (
     trusted_proof as _trusted_proof,
 )
+from opencollab.builtin_workflows import duo
 
 from opencollab_eval.engine.evaluator import EvalResult
 from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid
-from opencollab_eval.runtime_config import resolve_runtime_config
+from opencollab_eval.runtime_config import resolve_runtime_config, resolve_workflow_agent_profile
 
 
-def _assert_generate_defers_container_patch_extraction(monkeypatch, tmp_path, agent_profile, cfg_profile=None):
+def _assert_generate_defers_container_patch_extraction(
+    monkeypatch, tmp_path, agent_profile, cfg_profile, workflow, workflow_name,
+):
     captured = {}
     async def fake_run_eval_task(task, **kwargs):
         captured["task"] = task
@@ -78,7 +81,7 @@ def _assert_generate_defers_container_patch_extraction(monkeypatch, tmp_path, ag
     cfg["agent_profile"] = cfg_profile
 
     patch, metrics = asyncio.run(
-        gpw.generate(FIXTURE, "image", cfg, args, fixture_workflow, "fixture-workflow")
+        gpw.generate(FIXTURE, "image", cfg, args, workflow, workflow_name)
     )
 
     assert patch.strip()
@@ -89,8 +92,9 @@ def _assert_generate_defers_container_patch_extraction(monkeypatch, tmp_path, ag
     assert captured["kwargs"]["checkpoint_interval_seconds"] is None
     assert captured["kwargs"]["resume_from_checkpoint"] is False
     assert captured["kwargs"]["defer_patch_extraction"] is True
-    expected_profile = agent_profile if agent_profile is not None else cfg_profile
+    expected_profile = resolve_workflow_agent_profile(agent_profile if agent_profile is not None else cfg_profile)
     assert captured["kwargs"]["agent_profile"] == expected_profile
+    assert captured["kwargs"]["workflow"] is workflow
     if expected_profile is not None:
         assert metrics["agent_profile"] == expected_profile
     else:
@@ -116,9 +120,12 @@ def _assert_generate_defers_container_patch_extraction(monkeypatch, tmp_path, ag
 
 @pytest.mark.parametrize(
     ("selected_profile", "configured_profile"),
-    [(None, None), ("single2", None), (None, "single2")],
+    [(None, None), ("single2", None), (None, "single2"), ("base", None), ("single", None), (None, "default")],
 )
+@pytest.mark.parametrize(("workflow", "workflow_name"), [(fixture_workflow, "fixture-workflow"), (duo, "duo")])
 def test_workflow_generation_resolves_and_records_agent_profile(
-    monkeypatch, tmp_path, selected_profile, configured_profile,
+    monkeypatch, tmp_path, selected_profile, configured_profile, workflow, workflow_name,
 ):
-    _assert_generate_defers_container_patch_extraction(monkeypatch, tmp_path, selected_profile, configured_profile)
+    _assert_generate_defers_container_patch_extraction(
+        monkeypatch, tmp_path, selected_profile, configured_profile, workflow, workflow_name,
+    )

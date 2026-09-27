@@ -2,7 +2,24 @@
 
 All notable changes to OpenCollab-Eval are recorded in this file.
 
-## [Unreleased]
+## [0.8.0] - Unreleased
+
+Standalone generation selects Base through OpenCollab's named profile API,
+currently resolving to Single2. CLI aliases and the single-agent evaluation
+entry use the same implementation and store its concrete profile name.
+Existing records retain their original profile attribution during reuse checks.
+The previous Single-specific model wrapper has been removed.
+
+OpenCollab-Eval now requires OpenCollab 0.8.x for public profile resolution.
+
+## [0.7.1] - Unreleased
+
+Duo uses a single OpenCollab built-in workflow with task-oriented role prompts
+and complete file evidence. The G22 command remains an alias for Duo.
+
+OpenCollab-Eval requires OpenCollab 0.7.1 or a later 0.7.x version, which
+provides the public workflow, command-evidence, and patch-parsing APIs used
+by the evaluator.
 
 ## [0.7.0] - 2026-09-14
 
@@ -73,7 +90,7 @@ truncated, or mismatched execution output.
 - Prevented stale checkpoints, malformed streaming responses, duplicate model starts, cleanup races, and parser-specific evidence gaps from producing untrusted terminal results.
 - Raised the deterministic SWE test budget so OpenCollab 0.5.0 can preserve the configured output allowance after conservative input reservation.
 
-[Unreleased]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.7.0...HEAD
+[0.7.1]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.7.0...HEAD
 [0.5.1]: https://github.com/RISE-X-Lab/OpenCollab-Eval/releases/tag/v0.5.1
 [0.5.0]: https://github.com/RISE-X-Lab/OpenCollab-Eval/releases/tag/v0.5.0
 

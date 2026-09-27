@@ -9,5 +9,11 @@ candidates and reports submission eligibility, accepting optional
 SWE-bench scoring wrapper. Use `oc-eval score --help` for prediction and report
 options.
 
+For OpenCollab 0.8 canonical Duo, select
+`--workflow opencollab.builtin_workflows:duo`. `--agent-profile base` uses the
+Base mapping to `single2`; explicit `--agent-profile single2` selects the same
+profile. The compatibility profile names `single` and `default` also resolve
+through Base. The supplied profile is resolved and recorded by the evaluator.
+
 Campaigns, G22 presets, rejudging queues, provider proxies, runtime packaging,
 and comparison report presentation use `oc-exp` from OpenCollabExp.

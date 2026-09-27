@@ -9,13 +9,6 @@
   ],
   "platforms": {},
   "coverage": {
-    "H-02": [
-      "OpenCollab-Eval",
-      "fixed",
-      "src/opencollab_eval/verification/bash_evidence.py",
-      "tests/test_native_bash_evidence.py",
-      "tests/test_native_bash_evidence.py::test_shell_output_forgery_cannot_create_test_evidence[noop]"
-    ],
     "H-03": [
       "OpenCollab-Eval",
       "fixed",
@@ -93,13 +86,6 @@
       "tests/test_gen_prediction_single_agent_recovery.py",
       "tests/test_gen_prediction_single_agent_recovery.py::test_pending_publish_retains_candidate_when_output_path_is_replaced"
     ],
-    "H-44": [
-      "OpenCollab-Eval",
-      "fixed",
-      "src/opencollab_eval/verification/bash_evidence.py",
-      "tests/test_native_bash_evidence.py",
-      "tests/test_native_bash_evidence.py::test_directory_evidence_requires_a_descendant_pass"
-    ],
     "H-45": [
       "OpenCollab-Eval",
       "fixed",
@@ -169,13 +155,6 @@
       "tests/test_repository_hygiene.py",
       "tests/test_repository_hygiene.py",
       "tests/test_repository_hygiene.py::test_repository_python_files_stay_within_line_limit"
-    ],
-    "H-71": [
-      "OpenCollab-Eval",
-      "fixed",
-      "src/opencollab_eval/verification/bash_evidence.py",
-      "tests/test_native_bash_evidence.py",
-      "tests/test_native_bash_evidence.py::test_go_duplicate_selector_cannot_create_ambiguous_evidence"
     ],
     "H-72": [
       "OpenCollab-Eval",

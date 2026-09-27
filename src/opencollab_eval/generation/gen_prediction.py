@@ -48,6 +48,8 @@ import unicodedata
 import uuid
 from pathlib import Path, PureWindowsPath
 
+from opencollab.profiles import resolve_profile_name
+
 from opencollab_eval.engine.async_runtime import run_with_bounded_shutdown
 from opencollab_eval.engine.native_progress_watch import add_arguments as add_progress_arguments
 from opencollab_eval.engine.native_progress_watch import configure_arguments as configure_progress_arguments
@@ -339,9 +341,10 @@ def main() -> None:
     ap.add_argument("--context-window", type=int)
     ap.add_argument(
         "--agent-profile",
-        choices=("single", "single2"),
-        default="single",
-        help="Standalone OpenCollab profile selected by the single-agent generator",
+        type=resolve_profile_name,
+        default="base",
+        metavar="PROFILE",
+        help="Standalone OpenCollab profile, default base (base/default/single currently select Single2)",
     )
     ap.add_argument("--model-name", default=None, help="model_name_or_path in predictions")
     ap.add_argument("--max-steps", type=int, default=40)
@@ -445,8 +448,7 @@ def main() -> None:
                 "max_steps": args.max_steps,
             }
         )
-        if args.agent_profile == "single2":
-            metrics["agent_profile"] = args.agent_profile
+        metrics["agent_profile"] = args.agent_profile
         bind_llm_transport(metrics)
         metrics["generation_image_id"] = generation_image_id
         metrics["solver_git_snapshot"] = snapshot.as_dict()
@@ -484,7 +486,7 @@ def main() -> None:
             workflow_name=(
                 os.environ["OPENCOLLAB_SWE_WORKFLOW"]
                 if os.environ.get("OPENCOLLAB_SWE_WORKFLOW") in {"single-agent", "single2"}
-                else "single2" if args.agent_profile == "single2" else "single-agent"
+                else "single-agent"
             ),
         )
         pending_required = bool(patch.strip())

@@ -297,9 +297,9 @@ def configure(config: dict[str, Any]) -> None:
     generation_launcher = str(cfg.get("generation_launcher") or "")
     if generation_launcher and not pathlib.Path(generation_launcher).is_absolute():
         raise ValueError("generation_launcher must be an absolute path")
-    from opencollab_eval.runtime_config import resolve_workflow_agent_profile
+    from opencollab_eval.runtime_config import resolve_solver_agent_profile
 
-    agent_profile = resolve_workflow_agent_profile(cfg.get("agent_profile"))
+    agent_profile = resolve_solver_agent_profile(workflow, cfg.get("agent_profile"))
     workflow_env = {str(key): str(value) for key, value in (cfg.get("workflow_env") or {}).items()}
     allowed_workflow_env = {
         "OPENCOLLAB_EVAL_REPOSITORY_MAP_BYTES",

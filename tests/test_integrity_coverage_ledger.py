@@ -90,9 +90,6 @@ def test_integrity_coverage_ledger_is_complete_and_truthful() -> None:
         nodeid_path = record["nodeid"].partition("::")[0]
         assert nodeid_path == record["test"], control_id
     assert coverage["H-69"]["status"] == "partial"
-    assert coverage["H-71"]["nodeid"].endswith(
-        "test_go_duplicate_selector_cannot_create_ambiguous_evidence"
-    )
 
 
 def test_integrity_coverage_nodeids_execute_successfully() -> None:

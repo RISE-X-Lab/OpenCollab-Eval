@@ -22,6 +22,12 @@ friendly names belong to the caller. Candidate preparation is separately
 selected as `shared`, `isolated`, or `lean`. The existing hidden-test isolation
 and candidate integrity behavior stays in the evaluator.
 
+OpenCollab 0.8 owns the canonical `duo` workflow, selected through
+`opencollab.builtin_workflows:duo`. Its `base` role profile resolves to `single2`.
+The evaluator uses the public workflow API, captures the adopted patch and
+applies the independent scoring path. Legacy research methods and their prompts
+remain in OpenCollabExp.
+
 ## Entry points
 
 `inspect` normalizes benchmark input. `run` invokes the task lifecycle and

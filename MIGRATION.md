@@ -34,7 +34,7 @@ tree identity, and then imports from that synchronized package root.
 
 ## OpenCollab version boundary
 
-OpenCollab-Eval 0.7.0 requires OpenCollab 0.7.x. The historical 0.5.1 release
+OpenCollab-Eval 0.8.0 requires OpenCollab 0.8.0 or a later 0.8.x release. The historical 0.5.1 release
 paired with OpenCollab 0.5.0, as recorded in the changelog. The current public API provides
 the Responses transport, runtime identity checks, and public test contracts
 used by the current evaluator. The package root provides `OpenCollab`,

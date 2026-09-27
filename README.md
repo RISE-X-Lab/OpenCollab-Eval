@@ -18,7 +18,7 @@ separate evaluator selected by the outer experiment layer.
 
 ## Supported environment
 
-Use Python 3.10 or later with OpenCollab 0.7.x. Keep the virtual environment and
+Use Python 3.10 or later with OpenCollab-Eval 0.8.0 and OpenCollab 0.8.x. Keep the virtual environment and
 runtime output outside source checkouts. This branch contains the proposed
 experiment-layer interface changes; the main branch is unchanged.
 
@@ -36,12 +36,19 @@ oc-eval --help
 scoring wrapper. Candidate submission eligibility and official task success
 are distinct result fields.
 
+OpenCollab 0.8 supplies the canonical `duo` workflow through
+`opencollab.builtin_workflows:duo`. It runs two coders, mechanical comparison,
+contract adjudication and adoption. The default `base` role profile resolves
+to `single2`; the compatibility profile names `single` and `default` use the
+same Base mapping. Coding roles use native Bash and public file and patch tools.
+The evaluator collects the adopted candidate and scores it independently.
+
 ```bash
 oc-eval run /path/to/tasks.jsonl \
   --model MODEL --provider PROVIDER --output /path/to/results
 oc-eval run /path/to/tasks.jsonl \
   --model MODEL --provider PROVIDER --output /path/to/results \
-  --workflow my_solver.workflow:solve
+  --workflow opencollab.builtin_workflows:duo --agent-profile base
 oc-eval score --help
 ```
 
@@ -73,7 +80,7 @@ OCE独立于实验包，Pier由外层实验部署选择，继续作为独立评�
 
 ## 支持的环境
 
-使用Python3.10及以上和OpenCollab0.7.x。虚拟环境、缓存与运行产物放在源码目录外。
+使用 Python 3.10 及以上，配套 OpenCollab-Eval 0.8.0 和 OpenCollab 0.8.x。虚拟环境、缓存与运行产物放在源码目录外。
 这个分支保存实验层解耦所需接口，主分支保持原状。
 
 ```bash
@@ -87,12 +94,17 @@ oc-eval --help
 `oc-eval inspect`读取基准数据与公开任务身份。`oc-eval run`生成候选并返回提交资格。
 `oc-eval score`通过已有包装调用SWE-bench评分。候选可提交与正式测试通过分别记录。
 
+OpenCollab 0.8 通过 `opencollab.builtin_workflows:duo` 提供 canonical `duo` 工作流。
+该流程依次运行两个 coder、机械比较、契约判定与候选采纳。默认角色 profile `base` 解析到
+`single2`，兼容 profile 名称 `single` 和 `default` 使用同一 Base 映射。
+编码角色使用原生 Bash 和公开文件、补丁工具，评测器采集采纳后的候选并独立评分。
+
 ```bash
 oc-eval run /path/to/tasks.jsonl \
   --model MODEL --provider PROVIDER --output /path/to/results
 oc-eval run /path/to/tasks.jsonl \
   --model MODEL --provider PROVIDER --output /path/to/results \
-  --workflow my_solver.workflow:solve
+  --workflow opencollab.builtin_workflows:duo --agent-profile base
 oc-eval score --help
 ```
 

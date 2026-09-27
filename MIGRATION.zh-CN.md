@@ -26,7 +26,7 @@ OpenCollab-Eval 负责基准规范化、评测执行、候选构造与评分证�
 
 ## OpenCollab 版本边界
 
-OpenCollab-Eval 0.7.0 要求使用 OpenCollab 0.7.x。历史 0.5.1 版本配套 OpenCollab 0.5.0，记录保留在更新日志中。当前公开 API 提供 Responses 传输、运行时身份检查与公开测试契约。软件包根目录提供 `OpenCollab`、`RunResult`、`RunError` 和 `workflow`。可选的公开契约与组合辅助工具位于 `opencollab.environments`、`opencollab.tools` 和 `opencollab.workflows`。
+OpenCollab-Eval 0.8.0 要求使用 OpenCollab 0.8.0 或更高的 0.8.x 版本。历史 0.5.1 版本配套 OpenCollab 0.5.0，记录保留在更新日志中。当前公开 API 提供 Responses 传输、运行时身份检查与公开测试契约。软件包根目录提供 `OpenCollab`、`RunResult`、`RunError` 和 `workflow`。可选的公开契约与组合辅助工具位于 `opencollab.environments`、`opencollab.tools` 和 `opencollab.workflows`。
 
 生产代码和测试禁止导入已弃用的 `opencollab.sdk` 命名空间，以及内部的 `opencollab.adapters`、`opencollab.application`、`opencollab.bootstrap`、`opencollab.domain` 和 `opencollab.harness` 命名空间。边界测试会对源码和已安装的 wheel 强制执行这项规则。
 
