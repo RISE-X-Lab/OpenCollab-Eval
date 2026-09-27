@@ -1,0 +1,37 @@
+# Retry of s2dual-judge-luna-pro36 (G1, gpt-5.6-luna, judge card, N2 pin) row 12: flipt-b2393f07.
+#
+# Attempt 1 is not counted although its row reads valid. It ran in the 18-way resume (20:45-21:08
+# UTC, 09-23): the Adopter ended on a loop block (`stopped`), but both Coders' sessions had ended
+# on `APIError: Concurrency limit exceeded for user` -- the gateway refusing our own concurrency
+# setting, the cause that failed rows 5-7, 10, 13-14, 16 and 20 outright. A Coder killed that way
+# cannot reply, so the row's every and alpha are the gateway's, not the Adopter's. Found by
+# health.py's seat-error check (a dead seat inside a valid row), which runtime_status cannot show.
+#
+# At most three counted attempts per row; never retried until success. If this attempt fails,
+# the report's merge would fall back to attempt 1, which must then be excluded by hand.
+# Launched after G1's main driver exits. Same fields and pins as G1; merged by `retry_of`.
+# ---------------------------------------------------------------------------
+name: s2dual-judge-luna-pro36-retry-r12
+host: lthpc
+arm: team
+cell: s2dual-judge
+suite: pro-mini36-clean
+rows: {start: 12, stop: 12}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 7200
+concurrency: 1
+model_env: configs/.env.gw2-luna
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+retry_of: s2dual-judge-luna-pro36
+pins:
+  opencollab: 4b231b0e128696768e168521eddb634fd8951927
+  opencollab_eval: 3ff64deb72b1879449a3f1d11d52fde329088d04
+note: "retry of s2dual-judge-luna-pro36 row 12 (flipt-b2393f07): both Coders killed by the gateway at concurrency 18"

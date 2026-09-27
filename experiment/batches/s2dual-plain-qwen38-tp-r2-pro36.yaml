@@ -1,0 +1,49 @@
+# s2dual-plain, re-run at the stop-notice pin (09-22 evening). Everything the
+# family comment in s2dual-plain-pro36.yaml says about the roster, the cards,
+# the Single2 seats, the step cap and the concurrency holds here unchanged.
+#
+# WHY A RE-RUN. At the pin the five cells ran on (OC e5963c09), a Coder that was
+# stopped before replying -- its 2M seat budget spent, or its environment
+# revoked -- sent the Adopter nothing: message_agent delegation leaves no
+# pending row, and the run ended while the Adopter, as the tool told it to,
+# waited for an answer. In s2dual-plain-qwen38-pro36 that happened in 16 of 34
+# valid runs (5 of them read as "one Coder used", all 5 unresolved), and in
+# 32%-57% of the runs of every cell of the family. OC 35c2eccc tells the waiting
+# Adopter that the seat stopped and will not answer (a <team-notice>, traced as
+# `stop_notice`), and nothing else. Between the two OC pins the only other commit
+# is 6df000c8, the deepseek-v4.1-flash context-window row, inert for qwen3.8-flash.
+#
+# WHAT CAN BE COMPARED WITH THE OLD CELL. Only alpha: a first delegation always
+# precedes any stop, so the notice cannot change it. every_delegate and resolve
+# are compared only with cells run at this pin or later.
+#
+# ENDPOINT. Back on token-plan, key `ca8430b2` (configs/.env.tp3-qwen38; 200 on
+# 09-22 17:3x UTC), off-peak window. The metered `ws` key the five cells used is
+# not used again. The owner ruled on 09-22 that the endpoint difference is not
+# to be controlled for; the comparison that crosses it is alpha with the old cell.
+#
+# EVAL PIN UNCHANGED (4eeb7a29): no code has changed in OpenCollab-Eval since.
+# ---------------------------------------------------------------------------
+name: s2dual-plain-qwen38-tp-r2-pro36
+host: lthpc
+arm: team
+cell: s2dual-plain
+suite: pro-mini36-clean
+rows: {start: 1, stop: 36}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 5400
+concurrency: 36
+model_env: configs/.env.tp3-qwen38
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+pins:
+  opencollab: 35c2ecccceeddac1c0393ddf71560f9fb5aa19cd
+  opencollab_eval: 4eeb7a297e449b1212bef65ac972cf714bb46709
+note: "stop-notice re-run (OC 35c2eccc) of s2dual-plain on token-plan; the two-candidate roster seated as Single2 on SWE-bench Pro mini-36; scoring is the official Pro evaluator, not `batch score`; read adherence from `summary.every_delegate_rate`, never from `summary.alpha`, which this roster satisfies with one candidate"

@@ -42,6 +42,15 @@ def _merged_preds_module():
     return module
 
 
+def test_merged_prediction_selects_the_observed_record_within_one_batch() -> None:
+    module = _merged_preds_module()
+    row = cell_report.RunRow("task", "completed", "", 1, 1, record_id="valid")
+    assert (
+        module._selected_prediction(
+            row, [({"record_id": "valid"}, "valid-json"), ({"record_id": "new-invalid"}, "invalid-json")]
+        )
+        == "valid-json"
+    )
 
 
 def test_batch_input_write_preserves_a_symlink_target(tmp_path: Path) -> None:

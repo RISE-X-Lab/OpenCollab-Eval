@@ -1,0 +1,44 @@
+# Smoke test of the second machine (lthpc), Team arm at the ladder's `primary`
+# rung, model deepseek-v4-flash.
+#
+# Not a ladder cell and not a number the paper reports: two runs cannot
+# estimate anything. It answers four questions about the machine and the
+# model file, and nothing else:
+#   1. does a run on this host reach the endpoint, record its trajectory and
+#      come back through `report`;
+#   2. does the deepseek half reproduce gpu3's instrument (alpha still 0, the
+#      same order of wall clock per step) -- that half is the positive
+#      control, and a difference there means the machine changed the
+#      instrument;
+#   3. what the per-step wall clock is on this host;
+#   4. whether anything hits the 5,400 s wall clock or the 2M seat cap.
+#
+# subset-50 rows 2-3 (sympy-24213, xarray-4075). Both completed in
+# cmdprimary40-r2 on gpu3 -- 235k and 208k tokens, 188 s and 339 s -- so the
+# same two rows under the other model cost about as little as this experiment
+# can spend and still exercise the whole path. The same two rows run under
+# both model files, so the two halves are paired on the task.
+#
+# Every paid field except `model_env`, `host`, `rows` and `concurrency` is
+# byte-identical to cmdprimary40-r2: same arm, card, seat budget, steps,
+# timeout and the same three switches.
+name: lthpc-smoke-deepseek-primary
+host: lthpc
+arm: team
+rung: primary
+cell: facts-v2
+suite: subset-50
+rows: {start: 2, stop: 3}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 2
+model_env: configs/.env.deepseek
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 9175297ed56be6a0377b38d6f5949e07d34d7073
+  opencollab_eval: 898d5807305edbac17917ad18a2dafc85dae7487
+note: "lthpc smoke, not a ladder cell: 2 runs of Team primary (facts-v2) on subset-50 rows 2-3 under deepseek-v4-flash; checks end-to-end recording on the new host, and for deepseek reproduces gpu3's instrument (alpha 0, per-step wall clock)"

@@ -1,0 +1,47 @@
+# Positive control for the delegation recorder on lthpc.
+#
+# The four lthpc smoke runs all reported message_agent 0, which is what gpu3
+# reports at the primary rung too. That agreement is worthless until the
+# check has been shown to fire: if the recording channel were broken on this
+# machine, alpha would be silently 0 everywhere, and alpha is the paper's
+# outcome variable. So this batch runs the rung where gpu3 measured alpha
+# 0.90 (36 of 40 runs delegated) and asks for a non-zero count.
+#
+# Pass criterion, fixed before launch: at least one of the two runs records
+# message_agent > 0. Two runs both at zero is about a 1% event under gpu3's
+# rate, so two zeros would not be read as "the machine is fine" -- it would
+# be reported as a possible instrument fault, not resolved here.
+#
+# subset-30 rows 8-9 (psf/requests-6028, matplotlib-25287). Both delegated on
+# gpu3 in cmdplain30-r2 (message_agent 6 and 7, edges 4/6 each), both
+# completed there rather than stopping at a cap, and together they are among
+# the cheaper adjacent pairs of that batch. Rows 2-3 are deliberately avoided:
+# the lthpc smoke already ran them.
+#
+# Every field that defines the rung is copied from cmdplain30-r2 verbatim --
+# same arm, card (cmd-plain), seat budget, steps, timeout, the same three
+# switches and the same two pins. What differs is only what has to: the host,
+# the two rows, the concurrency, and the name of the model file. That file is
+# byte-identical to gpu3's configs/.env (same sha256), so the endpoint, model
+# and key are the same; only its filename on this host differs, because a
+# second model file lives beside it here.
+name: lthpc-msgctl-plain-deepseek
+host: lthpc
+arm: team
+rung: plain
+cell: cmd-plain
+suite: subset-30
+rows: {start: 8, stop: 9}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 2
+model_env: configs/.env.deepseek
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 9175297ed56be6a0377b38d6f5949e07d34d7073
+  opencollab_eval: 898d5807305edbac17917ad18a2dafc85dae7487
+note: "positive control for the message_agent recorder on lthpc, not a ladder cell: 2 runs of the plain rung (cmd-plain, alpha 0.90 on gpu3) on subset-30 rows 8-9 under deepseek-v4-flash; passes only if at least one run records message_agent > 0"

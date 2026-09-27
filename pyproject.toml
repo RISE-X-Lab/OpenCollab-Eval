@@ -47,7 +47,7 @@ packages = ["src/opencollab_eval"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 pythonpath = ["."]
-testpaths = ["tests"]
+testpaths = ["tests", "experiment/analysis/tests"]
 
 [tool.ruff]
 line-length = 120

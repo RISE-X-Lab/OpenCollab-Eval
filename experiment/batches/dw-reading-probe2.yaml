@@ -1,0 +1,43 @@
+# 2026-09-07 probe, two runs. The reading-analyst variant has never been run.
+#
+# Why now: in dw-subset50-r2, 49 of 50 runs recorded
+# `analyst_wrote_source: true` -- the analyst changed the source during the
+# analyze phase, before the script had called the coder. The arm reads as a
+# three-role workflow and ran as one agent fixing the task with two more
+# reviewing it. The reading variant takes `apply_patch` and `file_write` away
+# for that phase; until 2d4d590 its prompt still described the full bundle, so
+# it had never been run against a prompt that matched its tool list.
+#
+# What this probe answers, in order:
+#   1. does the analyst still change the tree (via `bash`, which it keeps)?
+#      `analyst_wrote_source` is the tree probe and answers this either way.
+#   2. does the brief carry enough for the coder to work from text alone?
+#   3. what does the analyst's seat spend look like when it cannot finish the
+#      task itself -- the 7 non-delivering runs all burned ~1.95M of 2M in the
+#      analyst seat.
+#
+# Rows 1-2 of the same suite the DW batch ran, same model file, same three
+# switches and the same seat budget, so the only differences from
+# dw-subset50-r2 are the arm and the two pins.
+name: dw-reading-probe2
+host: lthpc
+arm: self-collaboration-reading-analyst
+suite: subset-50
+rows: {start: 1, stop: 2}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 2
+# lthpc has no plain `configs/.env` -- that path was gpu3's. `.env.deepseek`
+# names `deepseek-v4-flash`, the model the fifty dw-subset50-r2 runs were made
+# with (their scoring reports are keyed on that name), so this is the same
+# model reached by its name on this host.
+model_env: configs/.env.deepseek
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 25d5a2e5b942792ea59334bf67e273dc3d1408e2
+  opencollab_eval: 2d4d5903de989d9c4fbed3f7267c1da7a210180d
+note: "Behaviour probe of the reading-analyst arm at the prompt/tool-list fix; not confirmatory data"

@@ -77,6 +77,10 @@ def test_the_model_the_ladder_switched_to_passes_on_head() -> None:
     assert code == 0, output
 
 
+def test_the_shipped_declaration_matches_the_code_it_declares() -> None:
+    declaration = Path("experiment/model-forks/qwen3.8-flash.yaml")
+    code, output = audit("qwen3.8-flash", "--declare", str(declaration))
+    assert code == 0, output
 
 
 # --- failure 1: a silent fallback ----------------------------------------

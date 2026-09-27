@@ -27,6 +27,7 @@ from opencollab_eval.commands import batch as batch_cli
 from opencollab_eval.experiment import cell_report
 from opencollab_eval.experiment.batch_spec import SpecError, load_spec, spec_digest, spec_identity
 from tests.experiment import batch_support as launcher
+from tests.experiment.test_batch_retry import CMDPLAIN30_DIGEST
 
 EXPERIMENT = launcher.EXPERIMENT
 _spec_text = launcher._spec_text
@@ -105,6 +106,22 @@ def _run(instance: str, status: str = "completed", tokens: int = 10, reason: str
 # --- the spec field ---------------------------------------------------------------
 
 
+def test_replaces_changes_the_identity_only_for_the_specs_that_use_it(experiment: dict) -> None:
+    """The same rule ``retry_of`` had to obey: a new key must not move an old digest.
+
+    ``spec_digest`` is how the pre-flight decides whether an out-dir holds this
+    batch. A key written into the identity unconditionally would change the
+    digest of every spec already launched, and every finished batch would read
+    as a different batch on resume.
+    """
+    assert spec_digest(load_spec(EXPERIMENT / "batches" / "cmdplain30.yaml")) == CMDPLAIN30_DIGEST
+    base = load_spec(experiment["spec"])
+    assert "replaces" not in spec_identity(base)
+    path = _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2")
+    spec = load_spec(path)
+    assert spec.replaces == {"batch": "t1", "instance": "b__b-2"}
+    assert spec_identity(spec)["replaces"] == {"batch": "t1", "instance": "b__b-2"}
+    assert spec_digest(spec) != spec_digest(base)
 
 
 def test_replaces_must_name_a_batch_and_an_instance(experiment: dict) -> None:
@@ -393,3 +410,36 @@ def test_a_cell_with_no_withdrawal_carries_an_empty_withdrawal_ledger(experiment
     summary = json.loads(out.read_text(encoding="utf-8"))["summary"]
     assert summary["replacements_withdrawn"] == [] and summary["replacements_withdrawn_count"] == 0
     assert summary["replacements_withdrawn_by"] == []
+
+
+@pytest.mark.parametrize("withdraw", [False, True])
+def test_prediction_merge_uses_the_reports_active_replacement_policy(
+    experiment: dict,
+    tmp_path: Path,
+    withdraw: bool,
+) -> None:
+    import importlib.util
+
+    assert _plan(experiment, Path(experiment["spec"])) == 0
+    replacement = _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2")
+    assert _plan(experiment, replacement) == 0
+    root = tmp_path / "batches"
+    _metrics(root / "t1", [_run("a__a-1"), _run("b__b-2")])
+    _metrics(root / "t1x", [_run("c__c-3")])
+    for name, ids in [("t1", ["a__a-1", "b__b-2"]), ("t1x", ["c__c-3"])]:
+        (root / name / "preds-team.jsonl").write_text(
+            "".join(json.dumps({"instance_id": instance, "model_patch": "patch"}) + "\n" for instance in ids)
+        )
+    spec_path = Path(experiment["spec"])
+    if withdraw:
+        spec_path.write_text(spec_path.read_text() + "\nwithdraw_replacements: {b__b-2: corrected environment}\n")
+    module_spec = importlib.util.spec_from_file_location(
+        "merged_predictions_regression", EXPERIMENT / "analysis/merged_preds.py"
+    )
+    assert module_spec and module_spec.loader
+    module = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(module)
+    lines, _table = module.build(spec_path, Path(experiment["dir"]))
+    assert [json.loads(line)["instance_id"] for line in lines] == (
+        ["a__a-1", "b__b-2"] if withdraw else ["a__a-1", "c__c-3"]
+    )
