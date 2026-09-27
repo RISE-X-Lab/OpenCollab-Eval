@@ -205,9 +205,11 @@ remote source-tree SHA-256 values must match before generation.
 runtime and rejects any mismatch. It should be used only when the operator has
 already synchronized and verified that exact tree.
 
-Image dependency stashing uses a store beside the source workspace, allowing
-same-filesystem moves for large ignored package directories. Candidate copies
-are prepared beneath the container's `/tmp`. Hydration onto another mount
+Image dependency stashing selects its location under the container user's
+permissions. A writable parent on the resolved workspace's filesystem provides
+a sibling store for large ignored package directories. When the parent is
+read-only or the workspace is a separate mount, the helper selects an
+independent store under `/tmp`. Candidate copies are prepared beneath the container's `/tmp`. Hydration onto another mount
 stages a materialized copy on the candidate filesystem before renaming it into
 place. Dependency preparation transport uses the existing
 `OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS` allowance when configured and

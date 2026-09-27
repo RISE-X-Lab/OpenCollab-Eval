@@ -20,7 +20,7 @@ from opencollab_eval.generation import gen_prediction_snapshot as snapshot
 from opencollab_eval.generation import gen_prediction_workflow as workflow
 
 
-@pytest.mark.parametrize("action", ["stash", "restore", "remove"])
+@pytest.mark.parametrize("action", ["select-store", "stash", "restore", "remove"])
 def test_public_preparation_allowance_reaches_dependency_transport(monkeypatch, action):
     monkeypatch.setenv("OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT", "900")
     monkeypatch.setenv("OPENCOLLAB_DOCKER_TIMEOUT", "300")
@@ -36,13 +36,15 @@ def test_public_preparation_allowance_reaches_dependency_transport(monkeypatch, 
     assert config._workspace_archive_timeout_from_env() == 900.0
 
 
-def test_solver_dependency_stash_stays_on_workspace_filesystem(monkeypatch):
+def test_solver_dependency_stash_uses_store_selected_by_container_user(monkeypatch):
     captured = []
     monkeypatch.setattr(runtime, "_install_helpers", lambda _container_id: None)
     monkeypatch.setattr(runtime.secrets, "token_hex", lambda _size: "fixed-token")
 
     def run(container_id, action, workspace, argument, payload=""):
         captured.append((container_id, action, workspace, argument, payload))
+        if action == "select-store":
+            return '"/tmp/.opencollab-generation-runtime-fixed-token"'
         return '["node_modules"]'
 
     monkeypatch.setattr(runtime, "_run", run)
@@ -52,14 +54,15 @@ def test_solver_dependency_stash_stays_on_workspace_filesystem(monkeypatch):
         workspace="/app",
     )
 
-    assert state.store == "/.opencollab-generation-runtime-fixed-token"
+    assert state.store == "/tmp/.opencollab-generation-runtime-fixed-token"
     assert state.roots == ("node_modules",)
     assert captured == [
+        ("owned", "select-store", "/app", "fixed-token", ""),
         (
             "owned",
             "stash",
             "/app",
-            "/.opencollab-generation-runtime-fixed-token",
+            "/tmp/.opencollab-generation-runtime-fixed-token",
             "a" * 40 + "\n",
         )
     ]

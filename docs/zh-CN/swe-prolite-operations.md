@@ -144,7 +144,7 @@ OpenHands 需要 Python 3.12 与打包的 `run_openhands_cli.sh` 资源。Claude
 
 `--no-sync-runtime` 仅能与 `--expected-runtime-tree-sha256` 一同使用。此组合会固定一个已经安装的运行时，并拒绝任何不匹配。只有操作人员已经同步并验证过这棵精确代码树时，才能使用该组合。
 
-镜像依赖暂存使用源工作区旁的目录，使大型忽略包目录能够在同一文件系统上移动。候选副本在容器的 `/tmp` 下准备。恢复到其他挂载点时，程序先在候选所在文件系统创建实际副本，再重命名到依赖路径。依赖准备传输沿用已配置的 `OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS` 时间预算，省略该设置时使用 `OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT`。
+镜像依赖按容器当前用户的权限选择暂存位置。实际工作区的父目录可写且位于同一文件系统时，大型忽略包目录使用工作区旁的暂存目录。父目录只读或工作区位于独立挂载点时，使用 `/tmp` 下的独立暂存目录。候选副本在容器的 `/tmp` 下准备。恢复到其他挂载点时，程序先在候选所在文件系统创建实际副本，再重命名到依赖路径。依赖准备传输沿用已配置的 `OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS` 时间预算，省略该设置时使用 `OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT`。
 
 ## 输出布局
 

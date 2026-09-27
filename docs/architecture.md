@@ -197,9 +197,11 @@ artifacts. It receives public task text and the configured model connection.
 Judge targets, reference material, future repository history, and artifacts
 from other runs stay outside that workspace.
 
-Image development dependencies are stashed beside the source workspace so
-large ignored trees can move on the same filesystem during snapshot
-preparation. Prepared candidate dependency copies live under the container's
+The container user selects a dependency store beside the resolved source
+workspace when its parent is writable and shares the workspace filesystem.
+Other layouts use an independent store under `/tmp`. Snapshot preparation
+retains the existing move-or-copy behavior for the selected filesystem.
+Prepared candidate dependency copies live under the container's
 `/tmp`. A candidate on another mount receives a staged copy followed by a
 rename on its own filesystem. A failed installation rolls back roots already
 placed in the candidate.
