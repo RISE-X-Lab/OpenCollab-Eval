@@ -280,7 +280,7 @@ def test_single_agent_builds_stable_runtime_request(monkeypatch, tmp_path):
 
     request = runtime.requests[0]
     assert request.prompt == "task"
-    assert request.name == "swe_agent"
+    assert request.profile == "single2"
     assert getattr(request, "system_prompt", None) is None
     assert request.trace is True
     assert request.artifacts == artifact_dir
@@ -288,7 +288,9 @@ def test_single_agent_builds_stable_runtime_request(monkeypatch, tmp_path):
     assert request.budget == 100
     assert request.timeout == 12.5
     assert request.cleanup_timeout == gp.AGENT_CANCELLATION_GRACE_SECONDS
-    assert request.tools == "coding"
+    assert not hasattr(request, "tools")
+    assert not hasattr(request, "name")
+    assert metrics["agent_profile"] == "single2"
     assert metrics["workflow_status"] == "done"
 
 

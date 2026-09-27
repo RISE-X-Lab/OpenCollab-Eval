@@ -31,6 +31,7 @@ OpenCollab-Eval currently imports the following public OpenCollab surfaces.
 | `opencollab.tools` | `BuiltinToolName`, `Tool`, `builtin_tools`, and `evidence_tools` |
 | `opencollab.builtin_workflows` | `duo`, `get_builtin_workflows`, and `run_dual_coder` |
 | `opencollab.patches` | Generic Git diff blocks and paths |
+| `opencollab.profiles` | `BASE_PROFILE` and `resolve_profile_name` |
 | `opencollab.workflows` | `workflow` |
 
 The retired `opencollab.sdk` package and OpenCollab implementation layers such
@@ -40,7 +41,7 @@ accepted from production code and tests, then checks those public names against
 the installed OpenCollab package.
 
 This boundary gives OpenCollab-Eval a versioned runtime dependency through
-`opencollab>=0.7.1,<0.8`. A change to OpenCollab internals remains invisible here
+`opencollab>=0.8,<0.9`. A change to OpenCollab internals remains invisible here
 as long as the documented public API remains compatible.
 
 ## Package map

@@ -10,8 +10,8 @@ Python code defines the control flow, including agent fan-out and repair rounds.
 It also owns the verification gates and stop conditions. Models inspect and
 edit the repository within that control flow.
 
-The package depends on the workflow-authoring surface in OpenCollab 0.7.1 or a
-later 0.7.x release.
+The package depends on the workflow-authoring surface in OpenCollab 0.8.0 or a
+later 0.8.x release.
 
 ```python
 from opencollab.builtin_workflows import duo
@@ -143,6 +143,6 @@ independent of OpenCollab's internal workflow discovery implementation.
 
 Duo can be called through OpenCollab directly. Evaluation callers can use
 `opencollab_eval.workflows.duo`, which references the same public function.
-`oc-eval duo` uses the single `duo` workflow with `agent_profile="single2"`
-by default. It always supplies complete file evidence to the adjudicator.
+`oc-eval duo` uses the single `duo` workflow with `agent_profile="base"`
+by default, resolves it to `single2`, and records the resolved name. It always supplies complete file evidence to the adjudicator.
 The `oc-eval g22` command invokes that same evaluator.

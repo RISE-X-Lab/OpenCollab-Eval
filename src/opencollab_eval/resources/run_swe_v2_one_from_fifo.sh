@@ -243,6 +243,8 @@ if [[ "$WORKFLOW" == "single2" ]]; then
   agent_profile_args+=(--agent-profile single2)
 elif [[ -n "${OPENCOLLAB_SWE_AGENT_PROFILE:-}" ]]; then
   agent_profile_args+=(--agent-profile "$OPENCOLLAB_SWE_AGENT_PROFILE")
+elif [[ "$SWE_GENERATOR" == "single-agent" ]]; then
+  agent_profile_args+=(--agent-profile base)
 fi
 
 if [[ "$SWE_GENERATOR" == "single-agent" ]]; then

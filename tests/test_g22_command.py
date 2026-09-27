@@ -59,7 +59,7 @@ def test_explicit_limits_and_profiles_are_passed_to_existing_resolver(tmp_path, 
     path = write_config(tmp_path, agent_profile="single", budget=500, max_steps=3, workflow_env=environment)
     config = g22.resolve_config(path, {"indices": "2-4,7", "max_workers": 2, "run_id": "batch"})
     env = dict(item.split("=", 1) for item in config.workflow_env)
-    assert config.agent_profile is None
+    assert config.agent_profile == "single2"
     assert config.indices == (2, 3, 4, 7)
     assert config.max_workers == 2
     assert env["OPENCOLLAB_REASONING_EFFORT"] == "high"

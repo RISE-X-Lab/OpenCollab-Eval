@@ -48,7 +48,7 @@ def resolve_config(path: Path, overrides: dict[str, Any] | None = None) -> paral
     settings = {
         "runner_transport": "local",
         "workflow": workflow_name,
-        "agent_profile": "single2",
+        "agent_profile": "base",
         "llm_provider": "openai",
         "max_workers": 1,
         "max_task_starts": 1,

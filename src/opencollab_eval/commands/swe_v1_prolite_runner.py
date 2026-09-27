@@ -17,6 +17,8 @@ import types
 from collections.abc import Sequence
 from pathlib import Path
 
+from opencollab.profiles import resolve_profile_name
+
 from opencollab_eval.commands import swe_ssh_transport as _ssh_transport
 from opencollab_eval.commands import swe_v1_prolite_common as _common
 from opencollab_eval.commands import swe_v1_prolite_config as _config
@@ -83,7 +85,9 @@ def main(*, prog: str | None = None, argv: Sequence[str] | None = None) -> int:
         default=[],
         help="Allowed workflow KEY=VALUE setting, repeatable for multiple values",
     )
-    parser.add_argument("--agent-profile", choices=("single", "single2"), help="Agent profile for workflow roles")
+    parser.add_argument(
+        "--agent-profile", type=resolve_profile_name, metavar="PROFILE", help="Agent profile for workflow roles",
+    )
     parser.add_argument("--openhands-command", default="", help="External Solver command template")
     parser.add_argument(
         "--openhands-empty-patch-rejections",

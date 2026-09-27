@@ -25,7 +25,9 @@ def test_fifo_launcher_passes_explicit_context_to_generator(tmp_path, generator)
     python.write_text(
         f'#!/bin/sh\nif [ "$1" = "-" ]; then exec {shlex.quote(sys.executable)} "$@"; fi\n'
         'while [ "$#" -gt 0 ]; do\n  if [ "$1" = "--context-window" ]; then\n'
-        '    printf "context=%s\\n" "$2"\n  fi\n  shift\ndone\n'
+        '    printf "context=%s\\n" "$2"\n  fi\n'
+        '  if [ "$1" = "--agent-profile" ]; then printf "profile=%s\\n" "$2"; fi\n'
+        '  shift\ndone\n'
     )
     python.chmod(0o755)
     instance = tmp_path / "instance.json"
@@ -35,11 +37,13 @@ def test_fifo_launcher_passes_explicit_context_to_generator(tmp_path, generator)
     script = Path(opencollab_eval.__file__).parent / "resources/run_swe_v2_one_from_fifo.sh"
     environment = dict(os.environ)
     environment.pop("OPENCOLLAB_CONTEXT_WINDOW", None)
+    environment.pop("OPENCOLLAB_SWE_AGENT_PROFILE", None)
     environment.update(
         PATH=f"{binaries}:{environment['PATH']}",
         OPENCOLLAB_REMOTE_ROOT=str(tmp_path), OPENCOLLAB_REMOTE_REPO=str(tmp_path),
         OPENCOLLAB_REMOTE_PROXY_BASE_URL="http://127.0.0.1:1",
         OPENCOLLAB_MODEL="unknown-model", OPENCOLLAB_SWE_GENERATOR=generator,
+        OPENCOLLAB_SWE_WORKFLOW="single-agent" if generator == "single-agent" else "duo",
         OPENCOLLAB_INSTANCE_FILE=str(instance),
     )
     completed = subprocess.run(
@@ -48,6 +52,7 @@ def test_fifo_launcher_passes_explicit_context_to_generator(tmp_path, generator)
         env=environment, capture_output=True, text=True, check=True,
     )
     assert "context=1048576" in completed.stdout
+    assert ("profile=base" in completed.stdout) == (generator == "single-agent")
 
 
 def test_single_agent_metrics_keep_explicit_context(monkeypatch, tmp_path):

@@ -37,9 +37,9 @@ python -m opencollab_eval.commands.llm_api_proxy   --env-file "$PROVIDER_ENV" --
 python -m opencollab_eval.commands.swe_g11_parallel_runner   --runner-transport local --host localhost   --indices "$TASK_INDICES" --max-workers 8 --min-workers 8   --workflow base-team-single-pass-v1   --run-id "$RUN_ID" --session-prefix "$RUN_ID"   --output-dir "$EVAL_ROOT/$RUN_ID/controller"   --remote-base "$EVAL_ROOT/$RUN_ID/tasks"   --remote-runtime-repo "$EVAL_ROOT/runtime"   --remote-python "$(command -v python)" --remote-root "$BENCHMARK_ROOT"   --image-repository "$IMAGE_REPOSITORY"   --remote-proxy-base-url "$PROVIDER_BASE_URL"   --local-proxy-base-url "$PROVIDER_BASE_URL" --proxy-env-file "$PROVIDER_ENV"   --model-name "$MODEL" --llm-model "$MODEL" --llm-provider openai   --context-window "$CONTEXT_WINDOW" --max-output-tokens 65536   --temperature 1 --budget 1000000000000 --max-steps 1000000000000   --swe-timeout 1000000000000 --task-wall-timeout 1000000000300   --total-timeout 1000001000000 --llm-timeout 46800   --eval-container-bind-timeout 120 --max-task-starts 1   --workflow-env OPENCOLLAB_UNBOUNDED_LIMITS=true   --workflow-env OPENCOLLAB_EXTERNAL_PROVIDER_ISOLATION=1   --workflow-env OPENCOLLAB_THINKING=true   --workflow-env OPENCOLLAB_REASONING_EFFORT=max   --workflow-env OPENCOLLAB_WIRE_PROTOCOL=responses   --workflow-env OPENCOLLAB_EVAL_NO_PROGRESS_TIMEOUT=43200
 ```
 
-显式无限开关会把工作流与原生 Single 的整题及角色 token、步骤上限解析为 `None`。Single2 会把解析后的 `None` 还原为其授权的数字预算和步骤上限。较大的命令行数值用于兼容数字参数入口。单次输出和上下文大小仍是模型参数。无进展时间观察完整模型回复和工具动作，触及运维时间边界的等待会保留原始原因，外部原因或归因未明时进入评测中断复核。
+显式无限开关会把工作流的整题及角色 token、步骤上限解析为 `None`。单 Agent 默认的 Base 选择 Single2，会把解析后的 `None` 还原为其授权的数字预算和步骤上限。较大的命令行数值用于兼容数字参数入口。单次输出和上下文大小仍是模型参数。无进展时间观察完整模型回复和工具动作，触及运维时间边界的等待会保留原始原因，外部原因或归因未明时进入评测中断复核。
 
-Single 使用 OC 正常的 `coding` 配置及系统提示，公开题面包含问题、要求和接口说明。合作设置可以通过 `--workflow` 选择。
+独立的 `single-agent` 入口默认选择 Base，当前解析为 Single2，通过公共 `OpenCollab.agent(profile="single2")` 接口使用 profile 提供的系统提示与工具。兼容名称 `single` 和 `default` 也解析为 Base。公开题面包含问题、要求和接口说明。合作设置可以通过 `--workflow` 选择。
 
 | Setting | Workflow entry |
 | --- | --- |
@@ -63,7 +63,7 @@ python -m opencollab_eval.generation.gen_prediction_workflow \
   --agent-profile single2 --model "$MODEL" --provider openai
 ```
 
-并行运行器与 `oc-eval swe-v1-prolite` 也接受 `--agent-profile`。任务配置、生成 metrics 和工作流 manifest 都记录所选 profile。省略该参数时沿用现有工作流 driver，`--agent-profile single` 可以显式选择默认值。独立的 `--workflow single2` 入口继续调用原生单 Agent 生成器。
+并行运行器与 `oc-eval swe-v1-prolite` 也接受 `--agent-profile`。任务配置、生成 metrics 和工作流 manifest 都记录所选 profile。省略该参数时沿用原工作流角色配置。显式的 `--agent-profile base`、`single` 和 `default` 都解析为 `single2`。独立的 `--workflow single-agent` 默认选择 Base，`--workflow single2` 通过同一个生成器显式选择 Single2。新的单 Agent 记录始终保存解析后的 profile，候选复用时会与历史缺失 profile 的记录分别识别。
 
 `claude-code` 使用已有外部 CLI 适配器及相同候选和正式评分设施。mini-swe-agent 和 Native Harbor 在导入候选前也需要获得相同公开题面与已清理的源码视图，其版本与外部启动配置纳入运行来源记录。
 

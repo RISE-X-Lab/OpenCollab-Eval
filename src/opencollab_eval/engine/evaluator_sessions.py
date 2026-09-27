@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from opencollab import OpenCollab, RunResult
+from opencollab.profiles import resolve_profile_name
 from opencollab.tools import Tool
 
 from opencollab_eval.engine.environment import ExecutionEnvironment
@@ -272,11 +273,10 @@ async def _run_single_session(
         llm_first_event_timeout=llm_first_event_timeout,
         llm_stream_idle_timeout=llm_stream_idle_timeout,
     )
-    run_options = {} if agent_profile == "single2" else {"name": "eval_agent", "system_prompt": prompt, "tools": tools}
-    run_agent = client.agent2 if agent_profile == "single2" else client.agent
-    operation = run_agent(
+    agent_profile = resolve_profile_name(agent_profile)
+    operation = client.agent(
         task.description,
-        **run_options,
+        profile=agent_profile,
         budget=task.max_tokens,
         max_steps=max_steps,
         timeout=generation_wall_timeout(task.timeout),

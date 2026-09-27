@@ -34,7 +34,7 @@ oc-eval duo --config CONFIG [--indices INDICES] [--workers COUNT]
 ```
 
 This command runs the single OpenCollab Duo workflow through the official
-evaluator. `workflow` is `duo` and `agent_profile` defaults to `single2`.
+evaluator. `workflow` is `duo` and `agent_profile` defaults to `base`, which resolves to `single2`.
 The adjudicator reads complete saved evidence through its read-only tool.
 `--dry-run` prints the effective configuration. `oc-eval g22` is a command
 alias. Model settings, budgets, timeouts and evaluation options use the
@@ -46,7 +46,7 @@ existing parallel runner.
 oc-eval run TASKS_FILE --model MODEL --provider PROVIDER
             [--api-key KEY] [--base-url URL] [--output DIRECTORY]
             [--concurrency COUNT] [--max-tokens COUNT] [--timeout SECONDS]
-            [--temperature VALUE] [--top-p VALUE] [--agent-profile {single,single2}]
+            [--temperature VALUE] [--top-p VALUE] [--agent-profile PROFILE]
             [--no-progress-timeout SECONDS] [--generation-wall-timeout SECONDS]
 ```
 
@@ -117,7 +117,7 @@ reused.
 
 Run the installed help before constructing automation.
 
-`--agent-profile single2` selects the Single2 runtime for every agent role of the chosen OpenCollab workflow. Workflow selection remains independent. G21 uses `--workflow validation-council-dual-coder-contract-v1`. The workflow generator and parallel runner accept the same pair of options. Omitting the profile preserves the existing driver, and `single` explicitly selects that default.
+`--agent-profile single2` selects the Single2 runtime for every agent role of the chosen OpenCollab workflow. Workflow selection remains independent. G21 uses `--workflow validation-council-dual-coder-contract-v1`. The workflow generator and parallel runner accept the same pair of options. Omitting the profile preserves workflow role configuration. Explicit `base`, `default`, and `single` select Base, currently `single2`. Standalone single-agent generation defaults to Base and uses `OpenCollab.agent(profile="single2")`. Configuration, metrics, and candidate reuse identity record the resolved name. Historical rows with no profile remain distinct from new Base runs.
 
 ```bash
 oc-eval swe-v1-prolite --help

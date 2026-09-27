@@ -29,11 +29,11 @@ def test_workflow_generator_cli_exposes_independent_profile_selection():
         check=True,
     )
     assert "--workflow WORKFLOW" in result.stdout
-    assert "--agent-profile {single,single2}" in result.stdout
+    assert "--agent-profile PROFILE" in result.stdout
     assert gpw._BUNDLED_WORKFLOWS[WORKFLOW] is duo
 
 
-@pytest.mark.parametrize("profile", [None, "single", "single2"])
+@pytest.mark.parametrize("profile", [None, "base", "default", "single", "single2"])
 def test_evaluator_selects_profile_without_replacing_workflow(monkeypatch, tmp_path, profile):
     calls = []
 
@@ -65,7 +65,7 @@ def test_evaluator_selects_profile_without_replacing_workflow(monkeypatch, tmp_p
     assert workflow is duo
     assert inputs["description"] == "repair public behavior"
     manifest = json.loads((tmp_path / "trajectories/profile-combination/workflow.json").read_text())
-    if profile == "single2":
+    if profile is not None:
         assert options["agent_profile"] == "single2"
         assert "system_prompt" not in options
         assert manifest["agent_profile"] == "single2"
@@ -85,8 +85,8 @@ def test_parallel_and_remote_configuration_carry_the_profile(tmp_path):
     assert command[command.index("--workflow") + 1] == WORKFLOW
     assert command[command.index("--agent-profile") + 1] == "single2"
     default = runner.resolve_config(_args(workflow=WORKFLOW, agent_profile="single"))
-    assert default.agent_profile is None
-    assert "--agent-profile" not in task_command(default, default.indices[0])
+    assert default.agent_profile == "single2"
+    assert task_command(default, default.indices[0]).count("single2") == 1
     namespace = _remote_namespace(tmp_path, workflow=WORKFLOW, agent_profile="single2")
     assert namespace["workflow"] == WORKFLOW
     assert namespace["agent_profile"] == "single2"
@@ -97,7 +97,7 @@ def test_evaluator_single_session_uses_native_single2_arguments(monkeypatch, tmp
     calls = []
 
     class Client:
-        async def agent2(self, prompt, **kwargs):
+        async def agent(self, prompt, **kwargs):
             calls.append((prompt, kwargs))
             return RunResult(output="finished", status="completed", metrics={"execution_quiesced": True})
 
@@ -113,6 +113,7 @@ def test_evaluator_single_session_uses_native_single2_arguments(monkeypatch, tmp
     ))
     prompt, kwargs = calls[0]
     assert prompt == "repair public behavior"
+    assert kwargs["profile"] == "single2"
     assert {"system_prompt", "tools", "name"}.isdisjoint(kwargs)
     assert kwargs["budget"] == 1_000_000
     assert result.error is None
@@ -132,7 +133,7 @@ def test_existing_candidate_reuse_distinguishes_the_selected_agent_profile(tmp_p
 
 
 def test_standalone_alias_and_independent_profile_keep_native_effective_limits(tmp_path):
-    for workflow, profile in (("single2", None), ("single-agent", "single2")):
+    for workflow, profile in (("single2", None), ("single-agent", None), ("single-agent", "single2")):
         namespace = _remote_namespace(
             tmp_path / workflow, workflow=workflow, agent_profile=profile,
             workflow_env={"OPENCOLLAB_UNBOUNDED_LIMITS": "true"},
