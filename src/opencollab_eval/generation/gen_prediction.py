@@ -86,6 +86,7 @@ from .gen_prediction_config import (
     _workspace_archive_timeout_from_env,
     bind_llm_transport,
     default_container_image,
+    llm_transport_metrics,
     unique_container_name,
     validate_generation_limits,
     validate_instance_id,
@@ -443,6 +444,7 @@ def main() -> None:
             {
                 "llm_model": cfg["model"],
                 "llm_provider": cfg["provider"],
+                **llm_transport_metrics(cfg),
                 "context_window": cfg.get("context_window") or model_context_window(cfg["model"]),
                 "temperature": cfg.get("temperature"),
                 "top_p": cfg.get("top_p"),
