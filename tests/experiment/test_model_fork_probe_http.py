@@ -296,6 +296,7 @@ def test_invalid_http_200_does_not_count_as_a_tool_or_token_result(monkeypatch: 
         ([{**VALID_CALL, "function": {"name": "echo_probe", "arguments": "[]"}}], False),
         ([{**VALID_CALL, "function": {"name": "echo_probe", "arguments": '{"value":null}'}}], False),
         ([VALID_CALL, None], False),
+        ([VALID_CALL, dict(VALID_CALL)], False),
         ([], True),
         (None, True),
         ([VALID_CALL, {**VALID_CALL, "id": "call_2"}], True),
@@ -315,6 +316,7 @@ def test_http_and_custom_senders_agree_on_tool_call_evidence(monkeypatch: pytest
     cases = {
         "null-element": [None],
         "mixed": [VALID_CALL, None],
+        "duplicate-id": [VALID_CALL, dict(VALID_CALL)],
         "refusal": [],
         "multiple": [VALID_CALL, {**VALID_CALL, "id": "call_2"}],
     }
@@ -345,7 +347,9 @@ def test_http_and_custom_senders_agree_on_tool_call_evidence(monkeypatch: pytest
             assert http_result["http_status"] == direct_result["http_status"] == 200
             assert http_result["tool_calls"] == direct_result["tool_calls"]
             assert http_result.get("inconclusive", False) == direct_result.get("inconclusive", False)
-            assert ("Invalid chat completion" in http_result["endpoint_said"]) is (case in {"null-element", "mixed"})
+            assert ("Invalid chat completion" in http_result["endpoint_said"]) is (
+                case in {"null-element", "mixed", "duplicate-id"}
+            )
 
 
 @pytest.mark.parametrize("case", ["non-json", "invalid-shape"])

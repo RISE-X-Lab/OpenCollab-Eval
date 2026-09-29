@@ -179,11 +179,14 @@ def _valid_probe_tool_calls(value: Any) -> bool:
         return True
     if not isinstance(value, list):
         return False
+    seen_ids: set[str] = set()
     for call in value:
         if not isinstance(call, dict) or call.get("type") != "function":
             return False
-        if not isinstance(call.get("id"), str) or not call["id"].strip():
+        call_id = call.get("id")
+        if not isinstance(call_id, str) or not call_id.strip() or call_id in seen_ids:
             return False
+        seen_ids.add(call_id)
         function = call.get("function")
         if not isinstance(function, dict) or function.get("name") != "echo_probe":
             return False
