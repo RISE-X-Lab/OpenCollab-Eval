@@ -18,8 +18,9 @@ from opencollab_eval.experiment.task_sampling import (
     draw_ordered_list,
     order_frame,
 )
+from tests.support.paths import SOURCE_ROOT
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = SOURCE_ROOT
 MODULE = "opencollab_eval.commands.draw_task_suite"
 SUITE = ROOT / "experiment" / "suite"
 FRAME = SUITE / "frame-verified-500.csv"

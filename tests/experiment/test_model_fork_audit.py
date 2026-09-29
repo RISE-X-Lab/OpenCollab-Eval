@@ -15,6 +15,7 @@ import pytest
 
 from opencollab_eval.experiment import model_fork_audit, model_fork_probe, model_forks
 from opencollab_eval.experiment.model_forks import ForkResolutionError, OpenCollabSource
+from tests.support.paths import SOURCE_ROOT
 
 #: Has a row in every table on both sides. The positive control.
 FULLY_LISTED = "deepseek-v4-flash"
@@ -78,7 +79,7 @@ def test_the_model_the_ladder_switched_to_passes_on_head() -> None:
 
 
 def test_the_shipped_declaration_matches_the_code_it_declares() -> None:
-    declaration = Path("experiment/model-forks/qwen3.8-flash.yaml")
+    declaration = SOURCE_ROOT / "experiment/model-forks/qwen3.8-flash.yaml"
     code, output = audit("qwen3.8-flash", "--declare", str(declaration))
     assert code == 0, output
 

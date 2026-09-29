@@ -9,8 +9,9 @@ import sys
 from pathlib import Path
 
 from opencollab_eval.experiment import cell_report
+from tests.support.paths import SOURCE_ROOT
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = SOURCE_ROOT
 
 
 def test_data_module_import_does_not_require_runtime_observers() -> None:
