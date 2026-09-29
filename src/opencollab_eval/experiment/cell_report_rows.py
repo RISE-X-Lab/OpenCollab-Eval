@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from opencollab_eval.experiment.cell_report_metric_order import report_metric_records
+
 WRITE_TOOLS = frozenset({"apply_patch", "file_write"})
 #: The delegate seats of the handoff roster, used only when a run recorded no
 #: ``assigned.topology_nodes`` row to derive them from. Every team run since
@@ -577,132 +579,128 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
     if not metrics.exists():
         raise FileNotFoundError(f"{metrics} not found; pull the batch first")
     rows: list[RunRow] = []
-    with metrics.open(encoding="utf-8") as handle:
-        for line in handle:
-            if not line.strip():
-                continue
-            record = json.loads(line)
-            summary = record.get("run_summary") or {}
-            # A workflow arm records its seat boundaries, its seat ledger and
-            # its own stop verdict inside its own result rather than at the top
-            # level (see ``_result_metrics``), so a DW run read only at the top
-            # level shows zero snapshots -- the same reading an arm that records
-            # none produces.
-            workflow_result = record.get("workflow_result")
-            seat_paths = _seat_files(cell, arm, record)
-            terminals, topology, nodes = _event_log_facts(seat_paths)
-            seats: dict[str, Seat] = {}
-            for path in seat_paths:
-                aid, seat = _read_seat(path)
-                seat.cap = _int_or_none((terminals.get(str(aid)) or {}).get("max_budget_tokens"))
-                seats[str(aid)] = seat
-            snapshots = record.get("tree_snapshots")
-            if not snapshots and isinstance(workflow_result, dict):
-                snapshots = workflow_result.get("tree_snapshots")
-            role_tokens: dict[str, int] = {}
-            role_seats: dict[str, int] = {}
-            for seat in seats.values():
-                role_tokens[seat.role] = role_tokens.get(seat.role, 0) + seat.tokens
-                role_seats[seat.role] = role_seats.get(seat.role, 0) + 1
-            recorded_spend = None
-            seat_cap = None
-            budget_exhausted = False
-            edges_walked: int | None = None
-            edges_declared: int | None = None
-            analyst_wrote_source: bool | None = None
-            if isinstance(workflow_result, dict):
-                raw_spend = workflow_result.get("seat_spend")
-                if isinstance(raw_spend, dict):
-                    recorded_spend = {str(k): int(v or 0) for k, v in raw_spend.items()}
-                # The scripted workflow sets its own seat allowance and records
-                # it; ``exhausted()`` (self_collaboration.py:466-467) is what
-                # writes the verdict below when a round stops for want of one.
-                seat_cap = _int_or_none(workflow_result.get("seat_cap"))
-                probed = workflow_result.get("analyst_wrote_source")
-                analyst_wrote_source = probed if isinstance(probed, bool) else None
-                budget_exhausted = workflow_result.get("status") == "budget_exhausted"
-                declared = workflow_result.get("edges_declared")
-                if isinstance(declared, list):
-                    edges_declared = len(declared)
-                    walked = workflow_result.get("edges_walked")
-                    edges_walked = len(walked) if isinstance(walked, list) else 0
-            if edges_declared is None:
-                # The team arm declares its topology in the run's own event
-                # log rather than in a workflow result. Read the same way and
-                # reported in the same two columns, so the two arms' edge
-                # counts mean the same thing.
-                assigned = declared_edges(topology)
-                if assigned is not None:
-                    edges_declared = len(assigned)
-                    edges_walked = len(walked_edges(seats, assigned))
-            if seat_cap is None:
-                # Otherwise the allowance is the largest ceiling any of this
-                # run's sessions was handed: a session that resumes a partly
-                # spent seat is given what the seat had left, not the seat.
-                caps = [s.cap for s in seats.values() if s.cap]
-                seat_cap = max(caps) if caps else None
-            # Derived, not recorded: nothing writes down what a seat had left
-            # when it stopped, so this is the recorded allowance minus the
-            # role's summed spend. Empty when the allowance is unknown --
-            # printing zero there would make every unread run look fully spent.
-            role_headroom = (
-                {role: seat_cap - spent for role, spent in role_tokens.items()} if seat_cap is not None else {}
-            )
-            row = RunRow(
-                instance_id=record["instance_id"],
-                status=str(summary.get("status") or record.get("runtime_status") or ""),
-                reason=str(summary.get("reason") or ""),
-                tokens=int(summary.get("tokens") or record.get("tokens_used") or 0),
-                steps=int(summary.get("steps") or 0),
-                record_id=str(record.get("record_id") or ""),
-                patch_sha256=str(record.get("patch_sha256") or ""),
-                seats=seats,
-                role_tokens=role_tokens,
-                role_seats=role_seats,
-                seat_spend_recorded=recorded_spend,
-                seat_spend_agrees=(
-                    None
-                    if recorded_spend is None
-                    else {k: v for k, v in role_tokens.items() if v or k in recorded_spend}
-                    == {k: v for k, v in recorded_spend.items() if v or k in role_tokens}
-                ),
-                delivered=any(
-                    s.role in (delegate_roles(nodes) or DELEGATE_ROLES) and s.tokens > 0 and s.assistant > 0
-                    for s in seats.values()
-                ),
-                every_delegate=_every_delegate_worked(seats, nodes),
-                tree_snapshots=len(snapshots or []),
-                cap_hit=[aid for aid, s in seats.items() if "budget" in s.terminal.lower()],
-                cap_hit_precheck=[
-                    aid
-                    for aid, s in seats.items()
-                    if CAP_PRECHECK_MARKER in s.terminal or s.terminal.startswith(CAP_PRECHECK_SPENT_PREFIX)
-                ],
-                cap_hit_postcall=[aid for aid, s in seats.items() if CAP_POSTCALL_MARKER in s.terminal],
-                cap_hit_aggregate=[aid for aid, s in seats.items() if s.terminal.startswith(CAP_AGGREGATE_PREFIX)],
-                seat_cap=seat_cap,
-                role_headroom=role_headroom,
-                seat_headroom_min=min(role_headroom.values()) if role_headroom else None,
-                budget_exhausted=budget_exhausted,
-                edges_walked=edges_walked,
-                edges_declared=edges_declared,
-                analyst_wrote_source=analyst_wrote_source,
-                duration_s=(
-                    float(summary["duration_s"]) if isinstance(summary.get("duration_s"), int | float) else None
-                ),
-                # ``gen_prediction_agent.py:102`` verbatim. The workflow and
-                # team paths write the same pair into ``run_summary`` from
-                # ``runtime_status``/``runtime_reason``
-                # (gen_prediction_workflow.py:184-203), so this one rule reads
-                # all three arms off the block they share.
-                timeout_censored=(
-                    str(summary.get("status") or "") == "stopped" and str(summary.get("reason") or "") == "timeout"
-                ),
-                timeout_recorded=(bool(record["wall_clock_timeout"]) if "wall_clock_timeout" in record else None),
-                patch_chars=record.get("submitted_patch_chars"),
-                card=(record.get("role_prompt_sha256") or {}).get("analyst"),
-                team_config=record.get("team_config_path"),
-                seat_snapshot_found=bool(seats),
-            )
-            rows.append(row)
+    for record in report_metric_records(cell, metrics, arm):
+        summary = record.get("run_summary") or {}
+        # A workflow arm records its seat boundaries, its seat ledger and
+        # its own stop verdict inside its own result rather than at the top
+        # level (see ``_result_metrics``), so a DW run read only at the top
+        # level shows zero snapshots -- the same reading an arm that records
+        # none produces.
+        workflow_result = record.get("workflow_result")
+        seat_paths = _seat_files(cell, arm, record)
+        terminals, topology, nodes = _event_log_facts(seat_paths)
+        seats: dict[str, Seat] = {}
+        for path in seat_paths:
+            aid, seat = _read_seat(path)
+            seat.cap = _int_or_none((terminals.get(str(aid)) or {}).get("max_budget_tokens"))
+            seats[str(aid)] = seat
+        snapshots = record.get("tree_snapshots")
+        if not snapshots and isinstance(workflow_result, dict):
+            snapshots = workflow_result.get("tree_snapshots")
+        role_tokens: dict[str, int] = {}
+        role_seats: dict[str, int] = {}
+        for seat in seats.values():
+            role_tokens[seat.role] = role_tokens.get(seat.role, 0) + seat.tokens
+            role_seats[seat.role] = role_seats.get(seat.role, 0) + 1
+        recorded_spend = None
+        seat_cap = None
+        budget_exhausted = False
+        edges_walked: int | None = None
+        edges_declared: int | None = None
+        analyst_wrote_source: bool | None = None
+        if isinstance(workflow_result, dict):
+            raw_spend = workflow_result.get("seat_spend")
+            if isinstance(raw_spend, dict):
+                recorded_spend = {str(k): int(v or 0) for k, v in raw_spend.items()}
+            # The scripted workflow sets its own seat allowance and records
+            # it; ``exhausted()`` (self_collaboration.py:466-467) is what
+            # writes the verdict below when a round stops for want of one.
+            seat_cap = _int_or_none(workflow_result.get("seat_cap"))
+            probed = workflow_result.get("analyst_wrote_source")
+            analyst_wrote_source = probed if isinstance(probed, bool) else None
+            budget_exhausted = workflow_result.get("status") == "budget_exhausted"
+            declared = workflow_result.get("edges_declared")
+            if isinstance(declared, list):
+                edges_declared = len(declared)
+                walked = workflow_result.get("edges_walked")
+                edges_walked = len(walked) if isinstance(walked, list) else 0
+        if edges_declared is None:
+            # The team arm declares its topology in the run's own event
+            # log rather than in a workflow result. Read the same way and
+            # reported in the same two columns, so the two arms' edge
+            # counts mean the same thing.
+            assigned = declared_edges(topology)
+            if assigned is not None:
+                edges_declared = len(assigned)
+                edges_walked = len(walked_edges(seats, assigned))
+        if seat_cap is None:
+            # Otherwise the allowance is the largest ceiling any of this
+            # run's sessions was handed: a session that resumes a partly
+            # spent seat is given what the seat had left, not the seat.
+            caps = [s.cap for s in seats.values() if s.cap]
+            seat_cap = max(caps) if caps else None
+        # Derived, not recorded: nothing writes down what a seat had left
+        # when it stopped, so this is the recorded allowance minus the
+        # role's summed spend. Empty when the allowance is unknown --
+        # printing zero there would make every unread run look fully spent.
+        role_headroom = (
+            {role: seat_cap - spent for role, spent in role_tokens.items()} if seat_cap is not None else {}
+        )
+        row = RunRow(
+            instance_id=record["instance_id"],
+            status=str(summary.get("status") or record.get("runtime_status") or ""),
+            reason=str(summary.get("reason") or ""),
+            tokens=int(summary.get("tokens") or record.get("tokens_used") or 0),
+            steps=int(summary.get("steps") or 0),
+            record_id=str(record.get("record_id") or ""),
+            patch_sha256=str(record.get("patch_sha256") or ""),
+            seats=seats,
+            role_tokens=role_tokens,
+            role_seats=role_seats,
+            seat_spend_recorded=recorded_spend,
+            seat_spend_agrees=(
+                None
+                if recorded_spend is None
+                else {k: v for k, v in role_tokens.items() if v or k in recorded_spend}
+                == {k: v for k, v in recorded_spend.items() if v or k in role_tokens}
+            ),
+            delivered=any(
+                s.role in (delegate_roles(nodes) or DELEGATE_ROLES) and s.tokens > 0 and s.assistant > 0
+                for s in seats.values()
+            ),
+            every_delegate=_every_delegate_worked(seats, nodes),
+            tree_snapshots=len(snapshots or []),
+            cap_hit=[aid for aid, s in seats.items() if "budget" in s.terminal.lower()],
+            cap_hit_precheck=[
+                aid
+                for aid, s in seats.items()
+                if CAP_PRECHECK_MARKER in s.terminal or s.terminal.startswith(CAP_PRECHECK_SPENT_PREFIX)
+            ],
+            cap_hit_postcall=[aid for aid, s in seats.items() if CAP_POSTCALL_MARKER in s.terminal],
+            cap_hit_aggregate=[aid for aid, s in seats.items() if s.terminal.startswith(CAP_AGGREGATE_PREFIX)],
+            seat_cap=seat_cap,
+            role_headroom=role_headroom,
+            seat_headroom_min=min(role_headroom.values()) if role_headroom else None,
+            budget_exhausted=budget_exhausted,
+            edges_walked=edges_walked,
+            edges_declared=edges_declared,
+            analyst_wrote_source=analyst_wrote_source,
+            duration_s=(
+                float(summary["duration_s"]) if isinstance(summary.get("duration_s"), int | float) else None
+            ),
+            # ``gen_prediction_agent.py:102`` verbatim. The workflow and
+            # team paths write the same pair into ``run_summary`` from
+            # ``runtime_status``/``runtime_reason``
+            # (gen_prediction_workflow.py:184-203), so this one rule reads
+            # all three arms off the block they share.
+            timeout_censored=(
+                str(summary.get("status") or "") == "stopped" and str(summary.get("reason") or "") == "timeout"
+            ),
+            timeout_recorded=(bool(record["wall_clock_timeout"]) if "wall_clock_timeout" in record else None),
+            patch_chars=record.get("submitted_patch_chars"),
+            card=(record.get("role_prompt_sha256") or {}).get("analyst"),
+            team_config=record.get("team_config_path"),
+            seat_snapshot_found=bool(seats),
+        )
+        rows.append(row)
     return rows
