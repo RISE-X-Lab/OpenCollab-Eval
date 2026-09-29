@@ -21,7 +21,7 @@ Three properties are therefore built in rather than left to the caller.
   is a prefix.** Two different pressures need this. A container image that will
   not start is not a random event, so its replacement cannot be chosen after the
   fact: the suite draw is an ordered 110 and the suite is the first 100 that
-  pass pre-flight, each skip recorded with its reason. And a grid that is
+  pass image and repository-cap checks, each skip recorded with its reason. And a grid that is
   extended later must extend the frozen list rather than redraw it: the
   replication subset is an ordered 50 whose first 30 are the ones run first, so
   growing the subset appends and never rewrites.
