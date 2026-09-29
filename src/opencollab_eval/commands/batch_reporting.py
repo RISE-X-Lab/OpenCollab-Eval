@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 from opencollab_eval.commands import batch_state
 from opencollab_eval.engine.swe_eval_records import MAX_JSON_DOCUMENT_BYTES
 from opencollab_eval.experiment import cell_report
-from opencollab_eval.experiment.batch_spec import SpecError, suite_rows
+from opencollab_eval.experiment.batch_spec import SpecError, spec_identity, suite_rows
 from opencollab_eval.generation.gen_prediction_batch import DELIVERY_READABLE_ARMS
 from opencollab_eval.safe_files import read_regular_text, write_regular_bytes_atomic
 
@@ -118,30 +118,29 @@ def replacement_batches(batch: Batch) -> list[tuple[str, Path, str, str]]:
     return found
 
 
-def _check_recorded_retry_models(root: Path, names: list[str]) -> None:
-    """Reject a historical retry family with conflicting recorded paid models."""
+def _check_recorded_cell_models(batch: Batch) -> None:
+    """Reject conflicting recorded paid models across the whole cell."""
+    root = Path(batch.host.local_batches_dir)
+    names, records = batch_state.cell_model_family(root, batch.spec.name, spec_identity(batch.spec))
     first: tuple[str, dict[str, str]] | None = None
     for name in names:
-        path = root / f"{name}.launch" / "batch.json"
-        if not path.exists():
-            continue
-        try:
-            record = json.loads(read_regular_text(path, max_bytes=MAX_JSON_DOCUMENT_BYTES))
-        except (OSError, ValueError):
-            continue
-        if not isinstance(record, dict):
+        record = records.get(name)
+        if record is None:
             continue
         for launch in record.get("launches") or []:
-            if not isinstance(launch, dict) or not isinstance(launch.get("model_identity"), dict):
+            if not isinstance(launch, dict):
                 continue
-            identity = batch_state.model_identity(launch["model_identity"])
+            source = launch.get("model_identity") or record.get("host")
+            if not isinstance(source, dict):
+                continue
+            identity = batch_state.model_identity(source)
             if not all(identity.values()):
                 continue
             if first is None:
                 first = name, identity
             elif identity != first[1]:
                 raise SpecError(
-                    f"retry family {names[0]!r}: recorded paid model identity in {name!r} differs from {first[0]!r}"
+                    f"cell {batch.spec.name!r}: recorded paid model identity in {name!r} differs from {first[0]!r}"
                 )
 
 
@@ -151,7 +150,6 @@ def _cell_rows(
     """One row per instance of one out-dir, with that out-dir's retries folded in."""
     root = Path(batch.host.local_batches_dir)
     retries = retry_batches(root, name)
-    _check_recorded_retry_models(root, [name, *(retry_name for retry_name, _ in retries)])
     if allow_missing_parent and not (data_dir / "metrics.jsonl").exists():
         print(f"  replacement {name}: parent metrics missing; reading its retries")
         attempts = []
@@ -177,6 +175,7 @@ class CellSelection:
 
 
 def select_cell_rows(batch: Batch) -> CellSelection:
+    _check_recorded_cell_models(batch)
     rows = _cell_rows(batch, batch.spec.name, batch.data_dir)
 
     # A replaced instance leaves the cell only once something has taken its
