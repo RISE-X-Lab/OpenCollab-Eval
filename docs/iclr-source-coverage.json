@@ -3167,7 +3167,8 @@
       "source_path": "src/opencollab_eval/commands/batch.py",
       "disposition": "adapted",
       "target_paths": [
-        "src/opencollab_eval/commands/batch.py"
+        "src/opencollab_eval/commands/batch.py",
+        "src/opencollab_eval/commands/batch_state.py"
       ]
     },
     {
@@ -3445,7 +3446,7 @@
     {
       "source_change": "M",
       "source_path": "src/opencollab_eval/generation/gen_prediction_docker.py",
-      "disposition": "current_main_retained",
+      "disposition": "adapted",
       "target_paths": [
         "src/opencollab_eval/generation/gen_prediction_docker.py"
       ]
