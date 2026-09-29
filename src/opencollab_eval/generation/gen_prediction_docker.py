@@ -631,6 +631,17 @@ def mark_container_kept(run_dir: Path, cid: str) -> None:
     raise RuntimeError(f"container ownership marker missing for kept container {cid}")
 
 
+def mark_container_preservation_required(run_dir: Path, cid: str) -> None:
+    """Retain one owned source until its candidate has been durably saved."""
+    for path in _owner_directory(run_dir).glob("*.json"):
+        record = _read_owner(path)
+        if record is None or record.get("container_id") != cid:
+            continue
+        _replace_owner(path, record, {**record, "state": "preservation_required"})
+        return
+    raise RuntimeError(f"container ownership marker missing for candidate {cid}")
+
+
 def remove_container_and_clear_marker(run_dir: Path, cid: str) -> bool:
     record = None
     for path in _owner_directory(run_dir).glob("*.json"):

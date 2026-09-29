@@ -532,6 +532,65 @@ def require_container_quiescence(container_id: str) -> None:
     )
 
 
+def isolate_container_for_preservation(container_id: str) -> str:
+    """Pause or stop a retained source if process quiescence is unproven."""
+    def state() -> str:
+        inspected = subprocess.run(
+            [
+                "docker", "inspect", "--type", "container", "--format",
+                "{{.State.Running}} {{.State.Paused}}", container_id,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=container_control_timeout(),
+            check=False,
+        )
+        if inspected.returncode != 0:
+            detail = (inspected.stderr or inspected.stdout).strip()
+            raise RuntimeError(f"retained container state probe failed: {detail}")
+        return inspected.stdout.strip()
+
+    try:
+        current = state()
+    except RuntimeError:
+        current = "unknown"
+    if current.startswith("false "):
+        return "stopped"
+    if current == "true true":
+        return "paused"
+    if current not in {"true false", "unknown"}:
+        raise RuntimeError(f"retained container has unknown state: {current!r}")
+    pause_detail = ""
+    if current == "true false":
+        paused = subprocess.run(
+            ["docker", "pause", container_id],
+            capture_output=True,
+            text=True,
+            timeout=container_control_timeout(),
+            check=False,
+        )
+        pause_detail = (paused.stderr or paused.stdout).strip()
+        try:
+            after_pause = state()
+        except RuntimeError:
+            after_pause = "unknown"
+        if after_pause == "true true":
+            return "paused"
+        if after_pause.startswith("false "):
+            return "stopped"
+    stopped = subprocess.run(
+        ["docker", "stop", "--time", "10", container_id],
+        capture_output=True,
+        text=True,
+        timeout=container_control_timeout(),
+        check=False,
+    )
+    if state().startswith("false "):
+        return "stopped"
+    detail = (stopped.stderr or stopped.stdout or pause_detail).strip()
+    raise RuntimeError(f"retained container pause and stop were not proven: {detail}")
+
+
 @contextmanager
 def frozen_container(container_id: str):
     """Pause one quiescent task container while the controller copies its workspace."""
