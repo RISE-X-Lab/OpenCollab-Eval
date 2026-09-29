@@ -14,7 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from opencollab.bootstrap.config import build_config
+from opencollab import OpenCollab
 
 from opencollab_eval.commands import batch as batch_cli
 from opencollab_eval.experiment import batch_remote
@@ -66,6 +66,10 @@ def _probe(experiment: dict, overrides: dict[str, str], *, endpoint: bool = Fals
     )
 
 
+def _public_config(experiment: dict):
+    return OpenCollab(Path(experiment["repo"]).parent).configuration
+
+
 class _LaunchRemote(FakeRemote):
     def run(self, script: str, timeout: float = 0) -> str:
         if "DECOY_HIT" in script:
@@ -99,16 +103,19 @@ def test_spec_overrides_match_runtime_config_probe_and_launch_record(experiment:
     for key, value in overrides.items():
         monkeypatch.setenv(key, value)
     monkeypatch.setenv("OPENCOLLAB_CONFIG_FILE", str(envfile))
-    actual = build_config()
+    actual = _public_config(experiment)
     facts = _probe(experiment, overrides)
-    assert (actual.model, actual.provider, actual.base_url) == (
+    expected_url_sha = hashlib.sha256(b"https://provider.example/v1").hexdigest()
+    assert (actual["model"], actual["provider"], actual["base_url_sha256"]) == (
         "override-model",
         "anthropic",
-        "https://provider.example/v1",
+        expected_url_sha,
     )
-    assert facts["model"] == actual.model
-    assert facts["provider"] == actual.provider
-    assert facts["base_url_sha256"] == hashlib.sha256(actual.base_url.encode()).hexdigest()
+    assert (facts["model"], facts["provider"], facts["base_url_sha256"]) == (
+        actual["model"],
+        actual["provider"],
+        actual["base_url_sha256"],
+    )
 
     original = _facts(experiment)
     for key, value in (
@@ -128,9 +135,9 @@ def test_spec_overrides_match_runtime_config_probe_and_launch_record(experiment:
     )
     record = json.loads((Path(experiment["dir"]).parent / "batches" / "t1.launch" / "batch.json").read_text())
     assert record["launches"][0]["model_identity"] == {
-        "model": actual.model,
-        "provider": actual.provider,
-        "base_url_sha256": hashlib.sha256(actual.base_url.encode()).hexdigest(),
+        "model": actual["model"],
+        "provider": actual["provider"],
+        "base_url_sha256": actual["base_url_sha256"],
     }
     assert any("OPENCOLLAB_MODEL=" in script and "override-model" in script for script in remote.scripts)
 
@@ -250,15 +257,19 @@ def test_config_file_override_and_endpoint_probe_use_effective_values(
         }
         for key, value in overrides.items():
             monkeypatch.setenv(key, value)
-        actual = build_config()
-        assert (actual.model, actual.base_url, actual.api_key) == (
+        actual = _public_config(experiment)
+        assert (actual["model"], actual["provider"], actual["wire_protocol"], actual["base_url_sha256"]) == (
             "request-model",
-            overrides["OPENCOLLAB_BASE_URL"],
-            "request-key",
+            provider,
+            protocol,
+            hashlib.sha256(overrides["OPENCOLLAB_BASE_URL"].encode()).hexdigest(),
         )
         facts = _probe(experiment, overrides)
-        assert facts["model"] == actual.model
-        assert facts["base_url_sha256"] == hashlib.sha256(actual.base_url.encode()).hexdigest()
+        assert (facts["model"], facts["provider"], facts["base_url_sha256"]) == (
+            actual["model"],
+            actual["provider"],
+            actual["base_url_sha256"],
+        )
         endpoint = _probe(experiment, overrides, endpoint=True)
         assert endpoint["ENDPOINT"] == "200", endpoint
         assert len(received) == 1
@@ -284,12 +295,17 @@ def test_inherited_environment_matches_runtime_config(experiment: dict, monkeypa
     monkeypatch.setenv("OPENCOLLAB_PROVIDER", "anthropic")
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://inherited.example/v1")
     monkeypatch.setenv("OPENCOLLAB_CONFIG_FILE", str(envfile))
-    actual = build_config()
+    actual = _public_config(experiment)
     facts = _probe(experiment, {})
+    assert (actual["model"], actual["provider"], actual["base_url_sha256"]) == (
+        "inherited-model",
+        "anthropic",
+        hashlib.sha256(b"https://inherited.example/v1").hexdigest(),
+    )
     assert (facts["model"], facts["provider"], facts["base_url_sha256"]) == (
-        actual.model,
-        actual.provider,
-        hashlib.sha256(actual.base_url.encode()).hexdigest(),
+        actual["model"],
+        actual["provider"],
+        actual["base_url_sha256"],
     )
 
 
@@ -301,13 +317,17 @@ def test_quoted_model_file_matches_normalized_runtime_config(experiment: dict, m
         'OPENCOLLAB_BASE_URL="  https://quoted.example/v1  "\n'
     )
     monkeypatch.setenv("OPENCOLLAB_CONFIG_FILE", str(envfile))
-    actual = build_config()
+    actual = _public_config(experiment)
     facts = _probe(experiment, {})
-    assert (actual.model, actual.provider, actual.base_url) == ("file-model", "openai", "https://quoted.example/v1")
+    assert (actual["model"], actual["provider"], actual["base_url_sha256"]) == (
+        "file-model",
+        "openai",
+        hashlib.sha256(b"https://quoted.example/v1").hexdigest(),
+    )
     assert (facts["model"], facts["provider"], facts["base_url_sha256"]) == (
-        actual.model,
-        actual.provider,
-        hashlib.sha256(actual.base_url.encode()).hexdigest(),
+        actual["model"],
+        actual["provider"],
+        actual["base_url_sha256"],
     )
 
 
