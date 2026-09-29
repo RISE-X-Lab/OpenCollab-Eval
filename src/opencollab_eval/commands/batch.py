@@ -485,9 +485,9 @@ def run_preflight(batch: Batch, remote: Ssh) -> tuple[bool, dict[str, Any]]:
     expected = batch.expected_cards()
     script = batch_remote.preflight_script(batch.spec, batch.host, list(expected), batch.images)
     facts = batch_remote.parse_facts(remote.run(script, timeout=600))
-    # A second script, because the first one is forbidden to read the API key
-    # and that ban is load-bearing: its output is parsed into batch.json.
-    probe = batch_remote.endpoint_probe_script(batch.host, batch.spec.model_env)
+    # A second script makes the authenticated request. Only non-secret
+    # configuration fields from the first script enter batch.json.
+    probe = batch_remote.endpoint_probe_script(batch.host, batch.spec.model_env, batch.spec.env)
     facts += batch_remote.parse_facts(remote.run(probe, timeout=180))
     checks = batch_remote.evaluate_preflight(batch.spec, batch.host, facts, expected, batch.instances_sha)
     print(f"pre-flight for {batch.spec.name} on {batch.host.ssh}:")
@@ -579,7 +579,7 @@ def cmd_go(batch: Batch, remote: Ssh, limit: int | None) -> int:
 def cmd_preflight(batch: Batch, remote: Ssh) -> int:
     with batch_state.launch_transaction(batch):
         ok, host_facts = run_preflight(batch, remote)
-        with batch_state.record_transaction(batch):
+        with batch_state.record_transaction(batch, host_facts):
             batch.save_record(batch.record(host_facts))
     print("RESULT: " + ("launchable" if ok else "NOT launchable; fix the failed checks"))
     return 0 if ok else 1
@@ -603,7 +603,7 @@ def _launch_locked(batch: Batch, remote: Ssh, limit: int | None) -> int:
     if not ok:
         print("RESULT: not launched")
         return 1
-    with batch_state.record_transaction(batch):
+    with batch_state.record_transaction(batch, host_facts):
         record = batch.record(host_facts)
         old = batch.previous_record(record)
         instances = batch.write_inputs()

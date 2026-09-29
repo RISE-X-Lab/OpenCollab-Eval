@@ -78,9 +78,7 @@ def oc_repo(tmp_path: Path) -> tuple[Path, str]:
 
 
 @pytest.fixture
-def experiment(
-    tmp_path: Path, oc_repo: tuple[Path, str], monkeypatch: pytest.MonkeyPatch
-) -> dict[str, Path | str]:
+def experiment(tmp_path: Path, oc_repo: tuple[Path, str], monkeypatch: pytest.MonkeyPatch) -> dict[str, Path | str]:
     """Create both pinned commits inside repositories owned by this fixture."""
     repo, sha = oc_repo
     eval_repo = tmp_path / "OpenCollab-Eval"
@@ -332,7 +330,9 @@ def fake_host(tmp_path: Path, oc_repo: tuple[Path, str]) -> dict:
         # against the live host on 2026-09-20 and reported 200 for a good env,
         # 401 for a wrong key, 404 for a wrong model name and no-env for a
         # missing file, so all four of its branches have been seen.
-        '  *urllib.request*) printf "ENDPOINT\\t200\\n";;\n'
+        '  *create_model_client*) printf "ENDPOINT\\t200\\n";;\n'
+        '  *base_url_sha256*) printf "MODEL_ENV\\tpresent\\nMODEL\\tfake-model\\nPROVIDER\\topenai\\n"; '
+        'printf "BASE_URL_SHA\\t48e30cac3d7ccbe4e5605434876277bf6fd96ac3d748454bd19fb8105255f917\\n";;\n'
         '  *) exec python3 "$@";;\n'
         "esac\n",
         encoding="utf-8",
