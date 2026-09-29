@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from opencollab import RunResult
 
 from opencollab_eval.generation import (
     candidate_retention,
@@ -17,6 +18,7 @@ from opencollab_eval.generation import (
 )
 from opencollab_eval.generation import gen_prediction as gp
 from opencollab_eval.generation import gen_prediction_best_of_n as bon
+from opencollab_eval.generation.gen_prediction_agent import _result_metrics
 from tests.generation.test_best_of_n_arm import _SNAPSHOT, _run_main
 
 
@@ -83,6 +85,182 @@ def _recovery(run_dir: Path) -> dict:
     paths = list((run_dir / "candidate-recovery").glob("*/recovery.json"))
     assert len(paths) == 1
     return json.loads(paths[0].read_text(encoding="utf-8"))
+
+
+def _solve_candidate(tmp_path: Path):
+    run_dir = _candidate_dir(tmp_path)
+    candidate = bon.solve_candidate(
+        instance={
+            "instance_id": "task-1",
+            "base_commit": "c" * 40,
+            "repo": "acme/repo",
+            "problem_statement": "fix it",
+        },
+        image="fake-image",
+        cfg={"model": "model", "provider": "provider"},
+        index=0,
+        candidates=3,
+        max_steps=100,
+        budget=3000,
+        timeout=90.0,
+        run_dir=run_dir,
+        keep_container=False,
+    )
+    return candidate, run_dir
+
+
+@pytest.mark.parametrize(
+    ("result_metrics", "expected_quiesced"),
+    [
+        ({"phase": "failed", "steps": 2, "session_quiesced": False}, False),
+        ({"phase": "tool_active", "steps": 2, "execution_quiesced": False}, False),
+        ({"phase": "failed", "steps": 2}, False),
+    ],
+    ids=["nonquiescent-session", "active-tool", "missing-quiescence-flag"],
+)
+def test_returned_run_result_retains_unextracted_candidate(
+    monkeypatch, tmp_path, owned_candidate, result_metrics, expected_quiesced
+):
+    baselines, retired, workspace = owned_candidate
+
+    async def failed_agent(*_args, **_kwargs):
+        workspace.write_text("diff --git a/a b/a\n+in-progress\n", encoding="utf-8")
+        return _result_metrics(
+            RunResult(
+                output=None,
+                status="failed",
+                reason="cleanup failed",
+                tokens=100,
+                error=RuntimeError("agent failed after editing"),
+                metrics=result_metrics,
+            )
+        )
+
+    monkeypatch.setattr(bon, "run_agent", failed_agent)
+    candidate, run_dir = _solve_candidate(tmp_path)
+    receipt = _recovery(run_dir)
+    saved = json.loads((run_dir / "candidate.json").read_text(encoding="utf-8"))
+
+    assert candidate.patch == saved["patch"] == ""
+    assert candidate.metrics["candidate_probe_eligible"] is False
+    assert candidate.metrics["session_quiesced"] is expected_quiesced
+    assert candidate.metrics["workflow_status"] == "error"
+    assert candidate.metrics["patch_extraction_succeeded"] is False
+    assert candidate.metrics["submission_eligible"] is False
+    assert workspace.exists()
+    assert retired == []
+    assert _owner_record(run_dir)["state"] == "kept"
+    assert receipt["reason"] == "trusted_patch_extraction_incomplete"
+    assert receipt["generation_error_type"] is None
+    assert (Path(receipt["baseline"]["git_dir"]).parent / "trusted-before-solver").read_text() == "baseline"
+    assert not baselines[0].exists()
+
+    if "session_quiesced" not in result_metrics:
+        return
+
+    def recover(_cid, baseline):
+        assert baseline.git_dir == Path(receipt["baseline"]["git_dir"])
+        return "diff --git a/a b/a\n+recovered\n", [], {"candidate_tree": "a" * 40}
+
+    monkeypatch.setattr(gp, "_owner_is_live", lambda _record: False)
+    monkeypatch.setattr(gen_prediction_patch, "extract_patch_guarded", recover)
+    result = candidate_retention.recover_candidate(
+        Path(receipt["recovery_environment"]["PYTHONPATH"]),
+        run_dir / "candidate-recovery" / receipt["container_name"] / "recovery.json",
+    )
+    assert Path(result["patch_path"]).read_text() == "diff --git a/a b/a\n+recovered\n"
+    assert result["model_calls"] == 0
+
+
+@pytest.mark.parametrize("probe_eligible", [False, None], ids=["explicitly-ineligible", "missing-probe-flag"])
+def test_returned_ineligible_metrics_retain_unextracted_candidate(
+    monkeypatch, tmp_path, owned_candidate, probe_eligible
+):
+    baselines, retired, workspace = owned_candidate
+
+    async def ineligible_agent(*_args, **_kwargs):
+        workspace.write_text("diff --git a/a b/a\n+in-progress\n", encoding="utf-8")
+        metrics = {
+            "workflow_status": "error",
+            "session_quiesced": True,
+            "error_type": "CandidateNotExtractable",
+            "error": "candidate source remained active",
+        }
+        if probe_eligible is not None:
+            metrics["candidate_probe_eligible"] = probe_eligible
+        return metrics
+
+    monkeypatch.setattr(bon, "run_agent", ineligible_agent)
+    candidate, run_dir = _solve_candidate(tmp_path)
+
+    assert candidate.patch == ""
+    assert candidate.metrics["workflow_status"] == "error"
+    assert candidate.metrics["patch_extraction_succeeded"] is False
+    assert workspace.exists()
+    assert retired == []
+    assert _owner_record(run_dir)["state"] == "kept"
+    assert _recovery(run_dir)["reason"] == "trusted_patch_extraction_incomplete"
+    assert not baselines[0].exists()
+
+
+def test_unproved_extraction_retains_candidate_source(monkeypatch, tmp_path, owned_candidate):
+    baselines, retired, workspace = owned_candidate
+    patch = "diff --git a/a b/a\n+in-progress\n"
+
+    async def completed_agent(*_args, **_kwargs):
+        workspace.write_text(patch, encoding="utf-8")
+        return {"workflow_status": "done", "session_quiesced": True, "candidate_probe_eligible": True}
+
+    monkeypatch.setattr(bon, "run_agent", completed_agent)
+    monkeypatch.setattr(
+        bon,
+        "extract_patch_guarded",
+        lambda _cid, _baseline: (patch, [], {"candidate_tree": "a" * 40}),
+    )
+    candidate, run_dir = _solve_candidate(tmp_path)
+
+    assert candidate.patch == patch
+    assert candidate.metrics["patch_extraction_succeeded"] is False
+    assert candidate.metrics["submission_eligible"] is False
+    assert workspace.exists()
+    assert retired == []
+    assert _owner_record(run_dir)["state"] == "kept"
+    assert _recovery(run_dir)["reason"] == "trusted_patch_extraction_incomplete"
+    assert not baselines[0].exists()
+
+
+def test_returned_failure_and_candidate_write_error_keep_one_recovery_source(monkeypatch, tmp_path, owned_candidate):
+    baselines, retired, workspace = owned_candidate
+
+    async def failed_agent(*_args, **_kwargs):
+        workspace.write_text("in-progress", encoding="utf-8")
+        return _result_metrics(
+            RunResult(
+                output=None,
+                status="failed",
+                reason="cleanup failed",
+                tokens=100,
+                error=RuntimeError("agent failed after editing"),
+                metrics={"phase": "failed", "session_quiesced": False},
+            )
+        )
+
+    monkeypatch.setattr(bon, "run_agent", failed_agent)
+    monkeypatch.setattr(
+        bon,
+        "write_regular_bytes_atomic",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("candidate disk full")),
+    )
+
+    with pytest.raises(OSError, match="candidate disk full"):
+        _solve_candidate(tmp_path)
+
+    run_dir = _candidate_dir(tmp_path)
+    assert workspace.exists()
+    assert retired == []
+    assert _owner_record(run_dir)["state"] == "kept"
+    assert _recovery(run_dir)["reason"] == "trusted_patch_extraction_incomplete"
+    assert not baselines[0].exists()
 
 
 def test_first_candidate_write_failure_retains_trusted_baseline(monkeypatch, tmp_path, owned_candidate):
@@ -261,6 +439,25 @@ def test_normal_candidate_retires_source_and_cleans_temporary_baseline(monkeypat
     assert all(not path.exists() for path in baselines)
     assert len(baselines) == 3
     assert json.loads((_candidate_dir(tmp_path) / "candidate.json").read_text())["patch"] == patch
+
+
+def test_normal_empty_patch_retires_source_after_trusted_extraction(monkeypatch, tmp_path, owned_candidate):
+    baselines, retired, _workspace = owned_candidate
+
+    with pytest.raises(SystemExit) as stopped:
+        _run_main(monkeypatch, tmp_path, {"cid-0": "", "cid-1": "", "cid-2": ""})
+    assert stopped.value.code == 1
+
+    run_dir = _candidate_dir(tmp_path)
+    saved = json.loads((run_dir / "candidate.json").read_text(encoding="utf-8"))
+    assert saved["patch"] == ""
+    assert saved["metrics"]["patch_extraction_succeeded"] is True
+    assert saved["metrics"]["submission_eligible"] is False
+    assert saved["metrics"]["workflow_status"] == "empty_patch_after_done"
+    assert retired == ["cid-0"] * 3
+    assert all(not path.exists() for path in baselines)
+    assert not (run_dir / "candidate-recovery").exists()
+    assert list((run_dir / ".opencollab" / "container_owners").glob("*.json")) == []
 
 
 def test_second_candidate_write_failure_keeps_first_record(monkeypatch, tmp_path, owned_candidate):

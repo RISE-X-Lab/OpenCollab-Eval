@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from opencollab_eval.engine.swe_eval_records import MAX_JSON_DOCUMENT_BYTES, MAX_JSONL_SCAN_BYTES
-from opencollab_eval.experiment.batch_spec import SpecError, spec_digest
+from opencollab_eval.experiment.batch_spec import SpecError, spec_digest, spec_identity
 from opencollab_eval.safe_files import (
     open_regular_text_append,
     read_regular_bytes,
@@ -68,12 +68,11 @@ def model_identity(facts: dict[str, Any]) -> dict[str, str]:
     return identity
 
 
-def check_cell_model_identity(batch: Batch, host_facts: dict[str, Any]) -> None:
-    """Compare a launch with every paid attempt in its retry family."""
-    current = model_identity(host_facts)
-    root = Path(batch.host.local_batches_dir)
+def cell_model_family(
+    root: Path, name: str, current_spec: dict[str, Any] | None = None
+) -> tuple[list[str], dict[str, dict[str, Any]]]:
+    """Find the cell connected by retries and replacements in one record scan."""
     records: dict[str, dict[str, Any]] = {}
-    children: dict[str, list[str]] = {}
     for path in sorted(root.glob("*.launch/batch.json")):
         try:
             record = json.loads(read_regular_text(path, max_bytes=MAX_JSON_DOCUMENT_BYTES))
@@ -81,38 +80,82 @@ def check_cell_model_identity(batch: Batch, host_facts: dict[str, Any]) -> None:
             continue
         if not isinstance(record, dict):
             continue
-        name = path.parent.name.removesuffix(".launch")
-        records[name] = record
-        spec = record.get("spec")
-        parent = spec.get("retry_of") if isinstance(spec, dict) else None
-        if parent:
-            children.setdefault(str(parent), []).append(name)
+        records[path.parent.name.removesuffix(".launch")] = record
 
-    family = [batch.spec.name]
-    name = batch.spec.retry_of
-    seen: set[str] = set()
-    while name is not None:
-        if name in seen:
-            raise SpecError(f"retry_of cycle reaches {name!r}")
-        seen.add(name)
-        family.append(name)
-        record = records.get(name)
-        if record is None:
-            raise SpecError(f"retry_of {name!r}: its batch record is missing or unreadable")
-        spec = record.get("spec")
+    specs = {member: record.get("spec") for member, record in records.items()}
+    if current_spec is not None:
+        specs[name] = current_spec
+
+    def parent_of(member: str, spec: Any) -> str | None:
         if not isinstance(spec, dict):
-            raise SpecError(f"retry_of {name!r}: its batch record has no readable spec")
-        parent = spec.get("retry_of")
-        name = str(parent) if parent else None
+            raise SpecError(f"batch {member!r}: its batch record has no readable spec")
+        retry = spec.get("retry_of")
+        replaces = spec.get("replaces")
+        if retry is not None and replaces is not None:
+            raise SpecError(f"batch {member!r}: retry_of and replaces cannot both be set")
+        if replaces is not None:
+            if (
+                not isinstance(replaces, dict)
+                or not isinstance(replaces.get("batch"), str)
+                or not replaces["batch"]
+            ):
+                raise SpecError(f"batch {member!r}: invalid replaces relation")
+            parent = replaces["batch"]
+        elif retry is not None:
+            if not isinstance(retry, str) or not retry:
+                raise SpecError(f"batch {member!r}: invalid retry_of relation")
+            parent = retry
+        else:
+            return None
+        if parent == member:
+            raise SpecError(f"batch {member!r}: relation points to itself")
+        return parent
 
-    ready = list(family)
+    children: dict[str, list[str]] = {}
+    for member, spec in specs.items():
+        if not isinstance(spec, dict):
+            continue
+        replacement = spec.get("replaces")
+        for relation in (spec.get("retry_of"), replacement.get("batch") if isinstance(replacement, dict) else None):
+            if isinstance(relation, str) and relation:
+                children.setdefault(relation, []).append(member)
+
+    family: list[str] = []
+    seen: set[str] = set()
+    ready = [name]
     while ready:
-        parent = ready.pop()
-        for child in children.get(parent, []):
-            if child in family:
-                continue
-            family.append(child)
-            ready.append(child)
+        member = ready.pop()
+        if member in seen:
+            continue
+        seen.add(member)
+        family.append(member)
+        spec = specs.get(member)
+        if spec is None:
+            raise SpecError(f"batch {member!r}: its batch record is missing or unreadable")
+        parent = parent_of(member, spec)
+        if parent is not None:
+            ready.append(parent)
+        ready.extend(children.get(member, []))
+
+    done: set[str] = set()
+    for member in family:
+        chain: set[str] = set()
+        cursor: str | None = member
+        while cursor is not None and cursor not in done:
+            if cursor in chain:
+                raise SpecError(f"batch relation cycle reaches {cursor!r}")
+            chain.add(cursor)
+            cursor = parent_of(cursor, specs[cursor])
+        done.update(chain)
+    return family, records
+
+
+def check_cell_model_identity(batch: Batch, host_facts: dict[str, Any]) -> None:
+    """Compare a launch with every paid attempt in its cell."""
+    current = model_identity(host_facts)
+    family, records = cell_model_family(
+        Path(batch.host.local_batches_dir), batch.spec.name, spec_identity(batch.spec)
+    )
 
     for name in family:
         record = records.get(name)
@@ -120,15 +163,15 @@ def check_cell_model_identity(batch: Batch, host_facts: dict[str, Any]) -> None:
             continue
         launches = record.get("launches") or []
         if not isinstance(launches, list):
-            raise SpecError(f"retry family member {name!r}: launches must be a list")
+            raise SpecError(f"cell member {name!r}: launches must be a list")
         for launch in launches:
             if not isinstance(launch, dict):
-                raise SpecError(f"retry family member {name!r}: launch must be an object")
+                raise SpecError(f"cell member {name!r}: launch must be an object")
             source = launch.get("model_identity") or record.get("host") or {}
             paid = model_identity(source if isinstance(source, dict) else {})
             if not all(paid.values()) or paid != current:
                 raise SpecError(
-                    f"batch {batch.spec.name!r}: paid model identity in retry family member {name!r} "
+                    f"batch {batch.spec.name!r}: paid model identity in cell member {name!r} "
                     f"{paid} differs from the effective model identity {current}"
                 )
 
