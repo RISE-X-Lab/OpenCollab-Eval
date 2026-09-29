@@ -331,7 +331,11 @@ def solve_candidate(
         metrics["submitted_patch_chars"] = len(patch)
         metrics["candidate_index"] = index
         metrics["candidate_tree"] = tree
-        if generation_error is not None and cid is not None:
+        retention_required = cid is not None and (
+            generation_error is not None
+            or trusted_baseline is not None and metrics.get("patch_extraction_succeeded") is not True
+        )
+        if retention_required:
             retain_best_of_n_source(
                 run_dir=run_dir,
                 instance=instance,
@@ -343,7 +347,9 @@ def solve_candidate(
                 generation_image_id=generation_image_id,
                 metrics=metrics,
                 error=generation_error,
-                reason="candidate_record_unwritten" if extraction_succeeded else "trusted_patch_extraction_incomplete",
+                reason="candidate_record_unwritten"
+                if generation_error is not None and extraction_succeeded
+                else "trusted_patch_extraction_incomplete",
                 mark_kept=mark_container_kept,
                 quiesce=require_container_quiescence,
                 isolate=isolate_container_for_preservation,
@@ -352,17 +358,20 @@ def solve_candidate(
         try:
             _write_candidate_record(run_dir, index=index, patch=patch, metrics=metrics)
         except BaseException as write_error:
-            if generation_error is not None:
-                add_exception_note(
-                    generation_error,
-                    f"candidate record could not be written: {type(write_error).__name__}: {write_error}",
-                )
+            if retention_required:
+                if generation_error is not None:
+                    add_exception_note(
+                        generation_error,
+                        f"candidate record could not be written: {type(write_error).__name__}: {write_error}",
+                    )
                 _record_candidate_failure(
                     run_dir,
                     instance_id=iid,
                     phase=f"{WORKFLOW_NAME}_candidate_{index}_persistence",
                     error=write_error,
                 )
+                if generation_error is None:
+                    raise
             else:
                 retain_best_of_n_source(
                     run_dir=run_dir,
@@ -382,7 +391,7 @@ def solve_candidate(
                     persist_failure=persist_generation_failure,
                 )
                 raise
-        if generation_error is None:
+        if not retention_required:
             try:
                 try:
                     if trusted_baseline is not None:
