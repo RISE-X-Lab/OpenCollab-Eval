@@ -23,6 +23,7 @@ import shlex
 from dataclasses import dataclass
 from typing import Any
 
+from opencollab_eval.experiment.batch_model_probe import probe_script
 from opencollab_eval.experiment.batch_spec import (
     BATCH_PROCESS_PATTERN,
     BatchSpec,
@@ -144,52 +145,13 @@ def _disk_line(host: HostConfig) -> str:
     )
 
 
-def endpoint_probe_script(host: HostConfig, model_env: str) -> str:
+def endpoint_probe_script(host: HostConfig, model_env: str, overrides: dict[str, str] | None = None) -> str:
     """Ask the model endpoint for one token and print only the HTTP status.
 
-    Its own script rather than a line in ``preflight_script`` for two reasons.
-    The key: that script is forbidden to read it, and the ban is load-bearing --
-    its output is parsed into ``batch.json``, so a key kept out by construction
-    cannot be filtered out by mistake. And the process table: this machine is
-    shared by seventeen accounts, so an ``Authorization: Bearer`` header passed
-    on a command line is readable by all of them. Python reads the file and
-    builds the request in memory; nothing carrying the key reaches ``argv``, and
-    nothing but a status code is printed.
-
-    A completion rather than ``/models``: a gateway can list a model and still
-    refuse every completion for it. gpt-5.6-luna answered 200 to the listing and
-    502 to the completion all of 2026-09-20.
+    The status probe makes the authenticated request; its output contains only
+    status and exception type. Both probes resolve the driver's environment.
     """
-    snippet = (
-        "import json,sys,urllib.request,urllib.error;"
-        "e=dict();"
-        "f=open(sys.argv[1],encoding='utf-8');"
-        "[e.__setitem__(*l.rstrip('\\n').split('=',1)) for l in f"
-        " if '=' in l and not l.lstrip().startswith('#')];"
-        "b=json.dumps({'model':e['OPENCOLLAB_MODEL'],"
-        "'messages':[{'role':'user','content':'ok'}],'max_tokens':1}).encode();"
-        "r=urllib.request.Request(e['OPENCOLLAB_BASE_URL'].rstrip('/')+'/chat/completions',data=b,"
-        "headers={'Authorization':'Bearer '+e['OPENCOLLAB_API_KEY'],'Content-Type':'application/json'});"
-        "\n"
-        "try:\n"
-        "    print('ENDPOINT\\t%d' % urllib.request.urlopen(r,timeout=90).getcode())\n"
-        "except urllib.error.HTTPError as x:\n"
-        "    print('ENDPOINT\\t%d' % x.code);"
-        "    print('ENDPOINT_BODY\\t%s' % x.read(160).decode('utf-8','replace').replace(chr(9),' ')"
-        ".replace(chr(10),' '))\n"
-        "except Exception as x:\n"
-        "    print('ENDPOINT\\t000');"
-        "    print('ENDPOINT_BODY\\t%s' % type(x).__name__)\n"
-    )
-    me = f"{host.workdir}/{host.opencollab_dir}/{model_env}"
-    return "\n".join(
-        [
-            "set -u",
-            f"if [ -f {_q(me)} ]; then {_q(host.python)} -c {_q(snippet)} {_q(me)}; "
-            'else printf "ENDPOINT\\tno-env\\n"; fi',
-            "",
-        ]
-    )
+    return probe_script(host, model_env, overrides, endpoint=True) + "\n"
 
 
 def preflight_script(
@@ -203,7 +165,6 @@ def preflight_script(
     oc = f"{workdir}/{host.opencollab_dir}"
     ev = f"{workdir}/{host.eval_dir}"
     team_yaml = f"{oc}/{cell_team_file(spec.cell)}" if spec.cell else ""
-    model_env = f"{oc}/{spec.model_env}"
     lines = [
         "set -u",
         f"W={_q(workdir)}; OC={_q(oc)}; EV={_q(ev)}; PY={_q(host.python)}; PP={_q(host.pythonpath)}",
@@ -231,17 +192,7 @@ def preflight_script(
         )
         lines.append(f'printf "DIGESTS\\t%s\\n" "$(cd "$W" && PYTHONPATH="$PP" "$PY" -c {_q(snippet)} 2>&1 | tail -1)"')
     lines += [
-        f"ME={_q(model_env)}",
-        # A symlink first: `[ -f ]` follows it, and OpenCollab's loader refuses
-        # a symlinked env file (`config env path is not a regular file`), so a
-        # run started on one dies in its first second.
-        'if [ -L "$ME" ]; then printf "MODEL_ENV\\tsymlink\\n"; '
-        'elif [ -f "$ME" ]; then printf "MODEL_ENV\\tpresent\\n"; '
-        'printf "MODEL\\t%s\\n" "$(grep -E "^OPENCOLLAB_MODEL=" "$ME" | tail -1 | cut -d= -f2-)"; '
-        'printf "PROVIDER\\t%s\\n" "$(grep -E "^OPENCOLLAB_PROVIDER=" "$ME" | tail -1 | cut -d= -f2-)"; '
-        'printf "BASE_URL_SHA\\t%s\\n" "$(grep -E "^OPENCOLLAB_BASE_URL=" "$ME" | tail -1 | cut -d= -f2- '
-        '| tr -d "\\n" | sha256sum | cut -d" " -f1)"; '
-        'else printf "MODEL_ENV\\tabsent\\n"; fi',
+        probe_script(host, spec.model_env, spec.env, endpoint=False),
         _disk_line(host),
         'IMG="$(mktemp)"; docker images --format "{{.Repository}}:{{.Tag}}" > "$IMG" 2>/dev/null || true',
     ]
@@ -420,7 +371,7 @@ def evaluate_preflight(
         )
 
     env_state = fact(facts, "MODEL_ENV")
-    env_detail = f"{host.opencollab_dir}/{spec.model_env}"
+    env_detail = fact(facts, "MODEL_ENV_PATH") or f"{host.opencollab_dir}/{spec.model_env}"
     if env_state == "symlink":
         env_detail += " is a symlink, which OpenCollab refuses; link it hard instead (ln, not ln -s)"
     checks.append(Check("model env file present", env_state == "present", env_detail))

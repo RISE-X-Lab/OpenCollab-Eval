@@ -39,7 +39,7 @@ def _file_lock(path: Path) -> Iterator[None]:
 
 
 @contextmanager
-def record_transaction(batch: Batch) -> Iterator[None]:
+def record_transaction(batch: Batch, host_facts: dict[str, Any] | None = None) -> Iterator[None]:
     """Serialize claims, identity checks, inputs, and batch.json writes."""
     with _file_lock(Path(batch.host.local_batches_dir) / ".batch-records.lock"):
         # Batch construction can precede another process's plan. Re-read both
@@ -47,6 +47,8 @@ def record_transaction(batch: Batch) -> Iterator[None]:
         # use, then keep it until the record has been committed.
         batch.check_retry()
         batch.check_replaces()
+        if host_facts is not None:
+            check_cell_model_identity(batch, host_facts)
         yield
 
 
@@ -64,6 +66,71 @@ def model_identity(facts: dict[str, Any]) -> dict[str, str]:
     # to openai. The host probe records the raw env line, which can be empty.
     identity["provider"] = (identity["provider"] or "openai").strip().lower() or "openai"
     return identity
+
+
+def check_cell_model_identity(batch: Batch, host_facts: dict[str, Any]) -> None:
+    """Compare a launch with every paid attempt in its retry family."""
+    current = model_identity(host_facts)
+    root = Path(batch.host.local_batches_dir)
+    records: dict[str, dict[str, Any]] = {}
+    children: dict[str, list[str]] = {}
+    for path in sorted(root.glob("*.launch/batch.json")):
+        try:
+            record = json.loads(read_regular_text(path, max_bytes=MAX_JSON_DOCUMENT_BYTES))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(record, dict):
+            continue
+        name = path.parent.name.removesuffix(".launch")
+        records[name] = record
+        spec = record.get("spec")
+        parent = spec.get("retry_of") if isinstance(spec, dict) else None
+        if parent:
+            children.setdefault(str(parent), []).append(name)
+
+    family = [batch.spec.name]
+    name = batch.spec.retry_of
+    seen: set[str] = set()
+    while name is not None:
+        if name in seen:
+            raise SpecError(f"retry_of cycle reaches {name!r}")
+        seen.add(name)
+        family.append(name)
+        record = records.get(name)
+        if record is None:
+            raise SpecError(f"retry_of {name!r}: its batch record is missing or unreadable")
+        spec = record.get("spec")
+        if not isinstance(spec, dict):
+            raise SpecError(f"retry_of {name!r}: its batch record has no readable spec")
+        parent = spec.get("retry_of")
+        name = str(parent) if parent else None
+
+    ready = list(family)
+    while ready:
+        parent = ready.pop()
+        for child in children.get(parent, []):
+            if child in family:
+                continue
+            family.append(child)
+            ready.append(child)
+
+    for name in family:
+        record = records.get(name)
+        if record is None:
+            continue
+        launches = record.get("launches") or []
+        if not isinstance(launches, list):
+            raise SpecError(f"retry family member {name!r}: launches must be a list")
+        for launch in launches:
+            if not isinstance(launch, dict):
+                raise SpecError(f"retry family member {name!r}: launch must be an object")
+            source = launch.get("model_identity") or record.get("host") or {}
+            paid = model_identity(source if isinstance(source, dict) else {})
+            if not all(paid.values()) or paid != current:
+                raise SpecError(
+                    f"batch {batch.spec.name!r}: paid model identity in retry family member {name!r} "
+                    f"{paid} differs from the effective model identity {current}"
+                )
 
 
 def previous_record(batch: Batch, record: dict[str, Any] | None = None) -> dict[str, Any] | None:
