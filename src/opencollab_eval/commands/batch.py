@@ -603,31 +603,50 @@ def _launch_locked(batch: Batch, remote: Ssh, limit: int | None) -> int:
     if not ok:
         print("RESULT: not launched")
         return 1
+    script = launch_script(batch.spec, batch.host, limit)
     with batch_state.record_transaction(batch, host_facts):
         record = batch.record(host_facts)
         old = batch.previous_record(record)
         instances = batch.write_inputs()
         record["launches"] = list((old or {}).get("launches", []))
         launched_at = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+        launch_index = len(record["launches"])
         record["launches"].append(
             {
                 "at": launched_at,
                 "limit": limit,
                 "argv": driver_argv(batch.spec, batch.host, limit),
                 "model_identity": batch_state.model_identity(host_facts),
+                "state": batch_state.PREPARING,
             }
         )
         record_path = batch.save_record(record)
 
-    remote.copy_to([instances], batch.host.workdir)
-    remote.run(f"mkdir -p {shlex.quote(batch.host.workdir + '/' + batch.spec.name)}")
-    remote.copy_to([record_path], f"{batch.host.workdir}/{batch.spec.name}")
-    out = remote.run(launch_script(batch.spec, batch.host, limit), timeout=120)
+    try:
+        remote.copy_to([instances], batch.host.workdir)
+        remote.run(f"mkdir -p {shlex.quote(batch.host.workdir + '/' + batch.spec.name)}")
+        # Write uncertainty before the last upload and dispatch, so an
+        # interrupted caller leaves a conservative model claim.
+        batch_state.set_launch_state(batch, launch_index, batch_state.START_UNKNOWN)
+        remote.copy_to([record_path], f"{batch.host.workdir}/{batch.spec.name}")
+    except BaseException as exc:
+        try:
+            batch_state.set_launch_state(batch, launch_index, batch_state.NOT_STARTED)
+        except BaseException as state_exc:
+            exc.add_note(f"could not record confirmed non-start for {batch.spec.name}: {state_exc}")
+        raise
+
+    out = remote.run(script, timeout=120)
     seen = out.strip()
     if not seen:
         print("RESULT: driver process not seen 5 s after launch; read the log:")
         print(f"  ssh {batch.host.ssh} tail -20 {batch.host.workdir}/{batch.spec.log_file}")
         return 1
+    batch_state.set_launch_state(batch, launch_index, batch_state.STARTED)
+    try:
+        remote.copy_to([record_path], f"{batch.host.workdir}/{batch.spec.name}")
+    except Exception as exc:
+        print(f"warning: launched driver, but remote batch record update failed: {exc}", file=sys.stderr)
     print(f"launched {batch.spec.name}" + (f" (limit {limit})" if limit else "") + f" at {launched_at}")
     print(f"  process: {seen}")
     print(f"  log: {batch.host.workdir}/{batch.spec.log_file}")
@@ -752,6 +771,8 @@ def main(argv: Sequence[str] | None = None, remote_factory: Callable[[HostConfig
             return cmd_report(batch, None, args.scanner, Path(args.json_out) if args.json_out else None)
     except (SpecError, RemoteError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
+        for note in getattr(exc, "__notes__", ()):
+            print(f"  {note}", file=sys.stderr)
         return 2
     return 2
 
