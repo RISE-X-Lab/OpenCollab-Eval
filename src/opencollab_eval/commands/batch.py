@@ -33,6 +33,7 @@ from typing import Any
 
 import yaml
 
+from opencollab_eval.commands import batch_state
 from opencollab_eval.commands.batch_reporting import (
     _cell_rows as _cell_rows,
 )
@@ -340,8 +341,18 @@ class Batch:
         for _, other_name, other_spec in batch_records(Path(self.host.local_batches_dir)):
             if other_name == self.spec.name:
                 continue
-            if (other_spec.get("replaces") or {}) == self.spec.replaces:
+            other_replaces = other_spec.get("replaces") or {}
+            if other_replaces.get("batch") != name:
+                continue
+            if other_replaces.get("instance") == instance:
                 raise SpecError(f"replaces {name!r}: {instance} is already replaced by planned batch {other_name!r}")
+            other_rows = suite_rows(original_slice(self.spec, other_spec), self.suite_dir)
+            if len(other_rows) != 1:
+                raise SpecError(f"replaces {name!r}: planned batch {other_name!r} has no single replacement instance")
+            if other_rows[0]["instance_id"] == mine_instance:
+                raise SpecError(
+                    f"replaces {name!r}: {mine_instance} is already used as a replacement by {other_name!r}"
+                )
 
     @property
     def frame_content(self) -> str:
@@ -430,64 +441,10 @@ class Batch:
         return self.local_dir / "batch.json"
 
     def previous_record(self, record: dict[str, Any] | None = None) -> dict[str, Any] | None:
-        path = self.record_path()
-        if not path.exists():
-            return None
-        try:
-            old = json.loads(read_regular_text(path, max_bytes=MAX_JSON_DOCUMENT_BYTES))
-        except ValueError as exc:
-            raise SpecError(f"batch {self.spec.name!r}: existing {path} is not readable JSON ({exc})") from exc
-        if not isinstance(old, dict):
-            raise SpecError(f"batch {self.spec.name!r}: existing {path} is not a batch record")
-        changed = ["spec_digest"] if old.get("spec_digest") != spec_digest(self.spec) else []
-        if record is not None:
-            old_spec = old.get("spec") or {}
-            current_spec = record["spec"]
-            if not isinstance(old_spec, dict) or {
-                key: value for key, value in old_spec.items() if key != "concurrency"
-            } != {key: value for key, value in current_spec.items() if key != "concurrency"}:
-                changed.append("spec")
-            for key in (
-                "suite_sha256",
-                "frame_content_sha256",
-                "instances",
-                "expected_card_sha256",
-                "declared_role_profiles",
-            ):
-                if old.get(key) != record.get(key):
-                    changed.append(key)
-            if not changed:
-                inputs = self.local_dir / record["instances"]["file"]
-                if (
-                    inputs.exists()
-                    and hashlib.sha256(read_regular_bytes(inputs, max_bytes=MAX_JSONL_SCAN_BYTES)).hexdigest()
-                    != record["instances"]["sha256"]
-                ):
-                    changed.append("instance file")
-        if changed:
-            raise SpecError(
-                f"batch {self.spec.name!r}: existing {path} has different {', '.join(changed)}; "
-                "choose a new batch name to preserve its record and inputs"
-            )
-        return old
+        return batch_state.previous_record(self, record)
 
     def save_record(self, record: dict[str, Any]) -> Path:
-        """Write batch.json, carrying forward what this write does not know.
-
-        `plan` runs without the host and must not erase the pre-flight's host
-        facts; nothing but `launch` adds a launch, and none of them removes one.
-        """
-        old = self.previous_record(record)
-        if old is not None:
-            if "host" not in record and "host" in old:
-                record["host"] = old["host"]
-            if "launches" not in record and "launches" in old:
-                record["launches"] = old["launches"]
-        path = self.record_path()
-        write_regular_bytes_atomic(
-            path, (json.dumps(record, indent=2, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
-        )
-        return path
+        return batch_state.save_record(self, record)
 
 
 # --- subcommands ---------------------------------------------------------------
@@ -503,10 +460,11 @@ def _print_checks(checks: list[batch_remote.Check]) -> bool:
 
 
 def cmd_plan(batch: Batch, _remote: Ssh | None) -> int:
-    record = batch.record()
-    batch.previous_record(record)
-    path = batch.write_inputs()
-    batch.save_record(record)
+    with batch_state.record_transaction(batch):
+        record = batch.record()
+        batch.previous_record(record)
+        path = batch.write_inputs()
+        batch.save_record(record)
     spec = batch.spec
     print(
         f"batch {spec.name}: arm={spec.arm} cell={spec.cell} suite={spec.suite} rows={spec.row_start}..{spec.row_stop}"
@@ -619,13 +577,20 @@ def cmd_go(batch: Batch, remote: Ssh, limit: int | None) -> int:
 
 
 def cmd_preflight(batch: Batch, remote: Ssh) -> int:
-    ok, host_facts = run_preflight(batch, remote)
-    batch.save_record(batch.record(host_facts))
+    with batch_state.launch_transaction(batch):
+        ok, host_facts = run_preflight(batch, remote)
+        with batch_state.record_transaction(batch):
+            batch.save_record(batch.record(host_facts))
     print("RESULT: " + ("launchable" if ok else "NOT launchable; fix the failed checks"))
     return 0 if ok else 1
 
 
 def cmd_launch(batch: Batch, remote: Ssh, limit: int | None) -> int:
+    with batch_state.launch_transaction(batch):
+        return _launch_locked(batch, remote, limit)
+
+
+def _launch_locked(batch: Batch, remote: Ssh, limit: int | None) -> int:
     if batch.spec.derived:
         # The out-dir a derived spec names holds predictions assembled from a
         # finished batch, not runs. Everything downstream -- score, report --
@@ -638,13 +603,21 @@ def cmd_launch(batch: Batch, remote: Ssh, limit: int | None) -> int:
     if not ok:
         print("RESULT: not launched")
         return 1
-    record = batch.record(host_facts)
-    old = batch.previous_record(record)
-    instances = batch.write_inputs()
-    record["launches"] = list((old or {}).get("launches", []))
-    launched_at = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
-    record["launches"].append({"at": launched_at, "limit": limit, "argv": driver_argv(batch.spec, batch.host, limit)})
-    record_path = batch.save_record(record)
+    with batch_state.record_transaction(batch):
+        record = batch.record(host_facts)
+        old = batch.previous_record(record)
+        instances = batch.write_inputs()
+        record["launches"] = list((old or {}).get("launches", []))
+        launched_at = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+        record["launches"].append(
+            {
+                "at": launched_at,
+                "limit": limit,
+                "argv": driver_argv(batch.spec, batch.host, limit),
+                "model_identity": batch_state.model_identity(host_facts),
+            }
+        )
+        record_path = batch.save_record(record)
 
     remote.copy_to([instances], batch.host.workdir)
     remote.run(f"mkdir -p {shlex.quote(batch.host.workdir + '/' + batch.spec.name)}")
