@@ -410,7 +410,10 @@ def test_the_tool_choice_probe_keeps_the_endpoints_own_wording() -> None:
         if payload["tool_choice"] == "auto":
             return model_fork_probe.Response(
                 status=200,
-                body={"choices": [{"message": {"tool_calls": [{"id": "1"}]}, "finish_reason": "tool_calls"}]},
+                body={"choices": [{"message": {"tool_calls": [{
+                    "id": "1", "type": "function",
+                    "function": {"name": "echo_probe", "arguments": '{"value":"ping"}'},
+                }]}, "finish_reason": "tool_calls"}]},
             )
         return model_fork_probe.Response(
             status=400,

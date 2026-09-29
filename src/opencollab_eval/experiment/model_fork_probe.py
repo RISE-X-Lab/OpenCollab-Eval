@@ -95,9 +95,11 @@ class Response:
     def tool_calls(self) -> int | None:
         if self.invalid_response:
             return None
-        choices = self.body.get("choices") or [{}]
-        message = choices[0].get("message") or {}
-        return len(message.get("tool_calls") or [])
+        if self.status != 200 and not self.body:
+            return 0
+        if not _valid_chat_completion(self.body):
+            return None
+        return len(self.body["choices"][0]["message"].get("tool_calls") or [])
 
 
 class ProbeUnavailable(RuntimeError):
@@ -172,6 +174,31 @@ class _NoProbeRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def _valid_probe_tool_calls(value: Any) -> bool:
+    if value is None:
+        return True
+    if not isinstance(value, list):
+        return False
+    for call in value:
+        if not isinstance(call, dict) or call.get("type") != "function":
+            return False
+        if not isinstance(call.get("id"), str) or not call["id"].strip():
+            return False
+        function = call.get("function")
+        if not isinstance(function, dict) or function.get("name") != "echo_probe":
+            return False
+        arguments = function.get("arguments")
+        if not isinstance(arguments, str):
+            return False
+        try:
+            parsed = json.loads(arguments)
+        except ValueError:
+            return False
+        if not isinstance(parsed, dict) or not isinstance(parsed.get("value"), str):
+            return False
+    return True
+
+
 def _valid_chat_completion(body: Any) -> bool:
     if not isinstance(body, dict):
         return False
@@ -183,7 +210,7 @@ def _valid_chat_completion(body: Any) -> bool:
         return False
     if not isinstance(message.get("content"), (str, type(None))):
         return False
-    if not isinstance(message.get("tool_calls"), (list, type(None))):
+    if not _valid_probe_tool_calls(message.get("tool_calls")):
         return False
     usage = body.get("usage")
     return usage is None or isinstance(usage, dict)
@@ -371,12 +398,13 @@ def probe_tool_choice(model: str, send: Sender, *, budget: int) -> dict[str, Any
             }
         )
         budget -= 1
+        tool_calls = response.tool_calls
         results[label] = {
             "http_status": response.status,
-            "tool_calls": response.tool_calls,
+            "tool_calls": tool_calls,
             "endpoint_said": response.text if response.status != 200 or response.error_text else "",
         }
-        if response.invalid_response:
+        if response.invalid_response or (response.status == 200 and tool_calls is None):
             results[label]["inconclusive"] = True
     return results
 
