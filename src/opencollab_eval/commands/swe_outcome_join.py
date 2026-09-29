@@ -7,16 +7,17 @@ Nothing joined the two, so no artifact carried the paper's outcome variable
 run that earned it.
 
 This walks the harness log tree, computes `y` with
-`engine.swe_fail_to_pass_fraction`, and writes one JSONL row per graded run. It
-reads only files the harness and this repository already wrote, so a batch that
-finished weeks ago is back-filled without re-running anything. The one place
-this repository deletes a `report.json` is immediately before a re-run
-(`run_swebench_eval_per_instance`), so a finished batch still has all of them.
+`engine.swe_fail_to_pass_fraction`, and writes one JSONL row per evaluation
+attempt. An attempt sidecar without a report contributes an ungraded zero;
+prediction rows without an attempt sidecar or report are not evaluation runs.
+It reads only files the harness and this repository already wrote, so a batch
+that finished weeks ago is back-filled without re-running anything.
 
 Identity comes from the `opencollab-attempt.json` sidecar this repository writes
-beside each report, which carries `record_id` and `patch_sha256`; the standard
-SWE-bench report schema carries no patch identity of its own. When the sidecar
-is absent the row falls back to matching on `instance_id` alone, which cannot
+in each attempt directory, which carries `record_id` and `patch_sha256`; the
+standard SWE-bench report schema carries no patch identity of its own. When the
+sidecar is absent beside an existing report, the row falls back to matching on
+`instance_id` alone, which cannot
 tell repetitions of the same task apart. That fallback is labelled in every row
 (`identity_source`, `identity_trusted`) and counted in the summary, so the two
 provenances can never be pooled by accident.
@@ -140,6 +141,16 @@ def discover_report_dirs(
     Mirrors the layout the harness writes. Empty filters mean "everything found",
     which is what a back-fill over a finished batch wants.
     """
+    return _discover_outcome_dirs(work_dir, run_ids, models, include_unreported=False)
+
+
+def _discover_outcome_dirs(
+    work_dir: Path,
+    run_ids: Sequence[str],
+    models: Sequence[str],
+    *,
+    include_unreported: bool,
+) -> list[tuple[str, str, str, Path]]:
     root = work_dir / "logs" / "run_evaluation"
     wanted_runs = set(run_ids)
     wanted_models = {model.replace("/", "__") for model in models}
@@ -154,7 +165,9 @@ def discover_report_dirs(
                 continue
             for instance_dir in sorted(model_dir.iterdir()):
                 report = instance_dir / "report.json"
-                if instance_dir.is_dir() and report.is_file():
+                if not instance_dir.is_dir():
+                    continue
+                if report.is_file() or (include_unreported and report.with_name("opencollab-attempt.json").is_file()):
                     found.append((run_dir.name, model_dir.name, instance_dir.name, report))
     return found
 
@@ -237,11 +250,14 @@ def collect_outcomes(
     gold_fail_to_pass: dict[str, list[str]] | None = None,
     carry_fields: Sequence[str] = (),
 ) -> list[dict[str, Any]]:
-    """Build one outcome row per graded instance found under `work_dir`."""
+    """Build one outcome row per reported or recorded evaluation attempt."""
     rows: list[dict[str, Any]] = []
-    for run_id, model_dir_name, instance_id, report_path in discover_report_dirs(work_dir, run_ids, models):
+    for run_id, model_dir_name, instance_id, report_path in _discover_outcome_dirs(
+        work_dir, run_ids, models, include_unreported=True
+    ):
         outcome = fail_to_pass_outcome(load_instance_report(report_path, instance_id))
         identity = _sidecar_identity(report_path)
+        unreadable_attempt = not report_path.is_file() and not identity.get("attempt_status")
         from_sidecar = bool(identity.get("record_id") or identity.get("patch_sha256"))
         row: dict[str, Any] = {
             "schema": OUTCOME_SCHEMA,
@@ -259,7 +275,11 @@ def collect_outcomes(
             "report_path": report_path.as_posix(),
         }
         row.update(outcome.as_dict())
-        join, matched = _join_to_predictions(index, identity, instance_id)
+        if unreadable_attempt:
+            row["attempt_sidecar_error"] = "unreadable_or_missing_status"
+            join, matched = {"join_key": "attempt_sidecar", "join_status": JOIN_MISMATCH, "join_candidates": 0}, None
+        else:
+            join, matched = _join_to_predictions(index, identity, instance_id)
         row.update(join)
         if join["join_status"] == JOIN_MISMATCH:
             row["identity_trusted"] = False
