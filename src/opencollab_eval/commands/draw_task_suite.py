@@ -27,6 +27,7 @@ import argparse
 import csv
 import hashlib
 import json
+import math
 from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
@@ -98,6 +99,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     suite: list[str] = []
     skipped: list[dict[str, str]] = []
+    repository_counts: Counter[str] = Counter()
+    repository_limit = math.floor(arguments.cap * arguments.suite_size + 1e-12)
     for instance_id in draw.ordered:
         if len(suite) >= arguments.suite_size:
             break
@@ -105,9 +108,17 @@ def main(argv: list[str] | None = None) -> int:
         if reference not in available:
             skipped.append({"instance_id": instance_id, "image": reference, "reason": "image absent on run host"})
             continue
+        repo = by_id[instance_id].repo
+        if repository_counts[repo] >= repository_limit:
+            skipped.append({"instance_id": instance_id, "image": reference, "reason": "repository cap reached"})
+            continue
         suite.append(instance_id)
+        repository_counts[repo] += 1
     if len(suite) < arguments.suite_size:
-        raise SystemExit(f"only {len(suite)} of {arguments.suite_size} instances passed pre-flight")
+        raise SystemExit(
+            f"only {len(suite)} of {arguments.suite_size} instances passed pre-flight "
+            f"within repository cap {arguments.cap}; increase the draw size or supply more images"
+        )
 
     subset = draw_ordered_list(
         [by_id[instance_id] for instance_id in suite],

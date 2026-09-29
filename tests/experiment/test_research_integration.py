@@ -9,8 +9,9 @@ import sys
 from pathlib import Path
 
 from opencollab_eval.experiment import cell_report
+from tests.support.paths import SOURCE_ROOT
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = SOURCE_ROOT
 
 
 def test_data_module_import_does_not_require_runtime_observers() -> None:
@@ -84,7 +85,7 @@ def test_batch_record_publication_preserves_a_symlink_target(tmp_path: Path) -> 
     target.write_text("preserved")
     path = tmp_path / "batch.json"
     path.symlink_to(target)
-    batch = SimpleNamespace(previous_record=lambda: None, record_path=lambda: path)
+    batch = SimpleNamespace(previous_record=lambda _record: None, record_path=lambda: path)
     with pytest.raises(OSError):
         Batch.save_record(batch, {"spec": {"name": "new"}})
     assert target.read_text() == "preserved"
