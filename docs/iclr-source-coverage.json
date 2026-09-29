@@ -3173,7 +3173,7 @@
     {
       "source_change": "A",
       "source_path": "src/opencollab_eval/commands/draw_task_suite.py",
-      "disposition": "source_identical",
+      "disposition": "adapted",
       "target_paths": [
         "src/opencollab_eval/commands/draw_task_suite.py"
       ]
