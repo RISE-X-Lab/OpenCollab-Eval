@@ -12,6 +12,7 @@ import io
 import json
 import urllib.error
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -570,25 +571,29 @@ def test_http_error_echo_is_redacted_before_report_without_losing_diagnostics(
     key = "-".join(("planted", "endpoint", "key"))
     other = "-".join(("other", "secret", "value"))
     seen_authorizations: list[str | None] = []
+    bodies: list[io.BytesIO] = []
 
     def fake_urlopen(request, *, timeout):
         seen_authorizations.append(request.get_header("Authorization"))
+        body = io.BytesIO(f"invalid model; Authorization: Bearer {key}; alternate Bearer {other}".encode())
+        bodies.append(body)
         raise urllib.error.HTTPError(
             request.full_url,
             401,
             "Unauthorized",
             {},
-            io.BytesIO(
-                f"invalid model; Authorization: Bearer {key}; alternate Bearer {other}".encode()
-            ),
+            body,
         )
 
-    monkeypatch.setattr(model_fork_probe.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(
+        model_fork_probe.urllib.request, "build_opener", lambda *_: SimpleNamespace(open=fake_urlopen)
+    )
     monkeypatch.setenv("OPENCOLLAB_BASE_URL", "https://gateway.example/v1")
     monkeypatch.setenv("OPENCOLLAB_API_KEY", key)
     report = model_fork_probe.run_probes("m", requested="max_tokens", max_requests=2)
     rendered = json.dumps(report)
     assert seen_authorizations == [f"Bearer {key}"] * 2
+    assert all(body.closed for body in bodies)
     assert "invalid model" in rendered
     assert "Unauthorized" not in rendered
     assert key not in rendered
