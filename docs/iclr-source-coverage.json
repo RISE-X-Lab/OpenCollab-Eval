@@ -3677,7 +3677,7 @@
     {
       "source_change": "A",
       "source_path": "tests/test_cell_report_attempt_seats.py",
-      "disposition": "relocated",
+      "disposition": "adapted",
       "target_paths": [
         "tests/experiment/test_cell_report_attempt_seats.py"
       ]
