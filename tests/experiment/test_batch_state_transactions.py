@@ -18,6 +18,7 @@ from tests.experiment.batch_support import FakeRemote, _facts
 from tests.experiment.batch_support import experiment as experiment
 from tests.experiment.batch_support import oc_repo as oc_repo
 from tests.experiment.test_batch_replacement import _metrics, _plan, _replacement_spec, _run
+from tests.support.paths import SOURCE_ROOT
 
 
 def _root(experiment: dict) -> Path:
@@ -151,7 +152,7 @@ def test_existing_launch_record_without_per_launch_identity_can_resume(experimen
 
 
 def _use_real_eval_pin(experiment: dict, monkeypatch: pytest.MonkeyPatch) -> Path:
-    repo = Path(batch_cli.__file__).resolve().parents[3]
+    repo = SOURCE_ROOT
     pin = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
     spec = Path(experiment["spec"])
     spec.write_text(spec.read_text().replace(str(experiment["eval_sha"]), pin))
@@ -166,8 +167,11 @@ def _two_process_actions(
     code = (
         "import sys,time\n"
         "from pathlib import Path\n"
-        "from opencollab_eval.commands.batch import main\n"
+        "from opencollab_eval.commands import batch as batch_cli\n"
         "from tests.experiment.batch_support import FakeRemote\n"
+        "if Path(batch_cli.__file__).resolve()!=Path(sys.argv[8]).resolve():\n"
+        "    raise SystemExit('subprocess imported a different package')\n"
+        "batch_cli.REPO_ROOT=Path(sys.argv[7])\n"
         "Path(sys.argv[1]).write_text('ready')\n"
         "gate=Path(sys.argv[2])\n"
         "until=time.monotonic()+20\n"
@@ -177,10 +181,13 @@ def _two_process_actions(
         "command=sys.argv[4]\n"
         "facts=Path(sys.argv[6]).read_text()\n"
         "factory=(lambda h:None) if command=='plan' else (lambda h:FakeRemote(facts))\n"
-        "raise SystemExit(main(['--experiment-dir',sys.argv[3],command,sys.argv[5]],remote_factory=factory))\n"
+        "argv=['--experiment-dir',sys.argv[3],command,sys.argv[5]]\n"
+        "raise SystemExit(batch_cli.main(argv,remote_factory=factory))\n"
     )
     env = os.environ.copy()
-    env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(repo / "src"), str(repo), env.get("PYTHONPATH")]))
+    # The repository root makes the test helper importable. It does not hold
+    # opencollab_eval itself, which remains the package imported by the parent.
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(SOURCE_ROOT), env.get("PYTHONPATH")]))
     processes = []
     for index, (command, spec, facts) in enumerate(actions):
         ready = tmp_path / f"ready-{index}"
@@ -198,6 +205,8 @@ def _two_process_actions(
                     command,
                     str(spec),
                     str(facts_file),
+                    str(repo),
+                    str(Path(batch_cli.__file__).resolve()),
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
