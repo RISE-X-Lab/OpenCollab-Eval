@@ -41,12 +41,40 @@ def batch_records(root: Path) -> list[tuple[str, str, dict[str, Any]]]:
 
 
 def retry_batches(root: Path, name: str) -> list[tuple[str, Path]]:
-    """The out-dirs that name ``name`` as the batch they retry, oldest first.
+    """All recorded descendants of ``name``, in launch and dependency order.
 
-    Ordered by the first launch each one recorded, so "the last attempt" means
-    the last one started.
+    A child is an attempt after its parent. Among available children, first
+    launch time determines which was started next.
     """
-    return [(n, root / n) for _, n, spec in batch_records(root) if spec.get("retry_of") == name]
+    children: dict[str, list[tuple[str, str]]] = {}
+    for at, child, spec in batch_records(root):
+        parent = spec.get("retry_of")
+        if parent:
+            children.setdefault(str(parent), []).append((at, child))
+
+    active: set[str] = set()
+    visited: set[str] = set()
+
+    def check_cycle(parent: str) -> None:
+        if parent in active:
+            raise SpecError(f"retry_of cycle reaches {parent!r} from {name!r}")
+        if parent in visited:
+            return
+        active.add(parent)
+        for _, child in children.get(parent, []):
+            check_cycle(child)
+        active.remove(parent)
+        visited.add(parent)
+
+    check_cycle(name)
+    ready = list(children.get(name, []))
+    ordered: list[tuple[str, Path]] = []
+    while ready:
+        ready.sort()
+        _, child = ready.pop(0)
+        ordered.append((child, root / child))
+        ready.extend(children.get(child, []))
+    return ordered
 
 
 def replacement_batches(batch: Batch) -> list[tuple[str, Path, str, str]]:
@@ -59,10 +87,15 @@ def replacement_batches(batch: Batch) -> list[tuple[str, Path, str, str]]:
     """
     root = Path(batch.host.local_batches_dir)
     found: list[tuple[str, Path, str, str]] = []
+    claimed: dict[str, str] = {}
     for _, name, spec in batch_records(root):
         replaces = spec.get("replaces") or {}
         if replaces.get("batch") != batch.spec.name:
             continue
+        gone = str(replaces.get("instance") or "")
+        if previous := claimed.get(gone):
+            raise SpecError(f"replaces {batch.spec.name!r}: {gone} is claimed by both {previous!r} and {name!r}")
+        claimed[gone] = name
         try:
             from opencollab_eval.commands.batch import original_slice
 
@@ -73,7 +106,7 @@ def replacement_batches(batch: Batch) -> list[tuple[str, Path, str, str]]:
         if len(rows) != 1:
             print(f"  replacement {name}: its slice is {len(rows)} instances, not one; not merged")
             continue
-        found.append((name, root / name, str(replaces.get("instance") or ""), rows[0]["instance_id"]))
+        found.append((name, root / name, gone, rows[0]["instance_id"]))
     return found
 
 
