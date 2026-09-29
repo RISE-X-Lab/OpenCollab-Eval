@@ -148,10 +148,12 @@ def cmd_score_report(batch: Batch, remote: Ssh) -> int:
         print(f"no reports under {sdir}/{batch_score.REPORT_DIR} yet")
         return 1
     gold_ok = None
+    gold_prefix = f"gold.{spec.name}-gold-"
     for name in sorted(names):
         text = remote.run(f"cat {shlex.quote(sdir + '/' + batch_score.REPORT_DIR + '/' + name)}")
         report = batch_score.read_report(text)
-        if "gold" in name:
+        gold_date = name[len(gold_prefix) : -len(".json")]
+        if name.startswith(gold_prefix) and len(gold_date) == 8 and gold_date.isascii() and gold_date.isdigit():
             gold_ok, detail = batch_score.gold_verdict(report)
             print(f"  [{'ok  ' if gold_ok else 'FAIL'}] {name}: {detail}")
             continue
