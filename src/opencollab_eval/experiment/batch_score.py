@@ -240,7 +240,74 @@ def read_report(text: str) -> dict[str, Any]:
         "unresolved_ids": list(data.get("unresolved_ids", [])),
         "error_ids": list(data.get("error_ids", [])),
         "empty_patch_ids": list(data.get("empty_patch_ids", [])),
+        "submitted_ids": list(data["submitted_ids"]) if "submitted_ids" in data else None,
+        "completed_ids": list(data["completed_ids"]) if "completed_ids" in data else None,
+        "incomplete_ids": list(data["incomplete_ids"]) if "incomplete_ids" in data else None,
     }
+
+
+def report_scope(report: dict[str, Any], instance_ids: list[str], *, gold: bool) -> tuple[bool, str]:
+    """Check that a harness report actually describes the current batch."""
+    expected = set(instance_ids)
+    if len(expected) != len(instance_ids):
+        return False, "current batch has duplicate instance IDs"
+    if report["total"] != len(expected) or report["submitted"] != len(expected):
+        return False, (
+            f"report totals {report['total']} dataset / {report['submitted']} submitted"
+            f" do not match {len(expected)} batch instances"
+        )
+
+    for field in (
+        "submitted_ids",
+        "completed_ids",
+        "incomplete_ids",
+        "resolved_ids",
+        "unresolved_ids",
+        "error_ids",
+        "empty_patch_ids",
+    ):
+        ids = report.get(field)
+        if ids is None:
+            continue
+        if len(ids) != len(set(ids)):
+            return False, f"{field} contains duplicate instance IDs"
+        extra = set(ids) - expected
+        if extra:
+            return False, f"{field} contains instances outside the batch: {sorted(extra)[:5]}"
+
+    submitted_ids = report.get("submitted_ids")
+    if submitted_ids is not None:
+        if len(submitted_ids) != report["submitted"]:
+            return False, "submitted_ids disagrees with submitted_instances"
+        missing = expected - set(submitted_ids)
+        if missing:
+            return False, f"submitted_ids misses batch instances: {sorted(missing)[:5]}"
+    if not gold:
+        # Every submitted task must have an outcome. This also establishes
+        # the instance set for older reports that lack submitted_ids.
+        observed = set().union(
+            report["resolved_ids"],
+            report["unresolved_ids"],
+            report["error_ids"],
+            report["empty_patch_ids"],
+        )
+        if observed != expected:
+            return False, f"report outcomes miss batch instances: {sorted(expected - observed)[:5]}"
+
+    completed_ids = report.get("completed_ids")
+    if completed_ids is not None and len(completed_ids) != report["completed"]:
+        return False, "completed_ids disagrees with completed_instances"
+    if report.get("incomplete_ids"):
+        return False, f"report has incomplete batch instances: {report['incomplete_ids'][:5]}"
+    if gold:
+        missing = expected - set(report["resolved_ids"])
+        if missing:
+            return False, f"gold did not resolve batch instances: {sorted(missing)[:5]}"
+        if report["unresolved_ids"] or report["error_ids"] or report["empty_patch_ids"]:
+            return False, "gold reports failures for resolved batch instances"
+        if report["completed"] != len(expected):
+            return False, "gold completed_instances does not match the batch"
+    return True, f"covers all {len(expected)} batch instances"
 
 
 def gold_verdict(report: dict[str, Any]) -> tuple[bool, str]:

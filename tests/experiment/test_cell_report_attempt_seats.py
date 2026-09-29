@@ -17,10 +17,13 @@ use the instance directory only when it contains one task.
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
 
+from opencollab_eval.candidate_bytes import encode_candidate_jsonl
+from opencollab_eval.engine.swe_eval_records import RecordInputFormatError
 from opencollab_eval.experiment import cell_report
 
 IID = "instance_flipt-io__flipt-aa11"
@@ -62,6 +65,133 @@ def _attempt(cell: Path, solver: str, runtime: str, arm: str = "team") -> Path:
 def _host_path(cell: Path, solver: str, runtime: str, arm: str = "team") -> str:
     # Written on the machine that ran the batch: a different prefix, the same tail.
     return f"/home/someone/{cell.name}/logs-{arm}/{IID}/trajectories/{solver}/{runtime}/trajectory.jsonl"
+
+
+def _identified_attempt(
+    record_id: str, tokens: int, *, instance_id: str = IID, status: str = "completed"
+) -> tuple[dict, dict]:
+    patch = f"patch for {record_id}"
+    identity = {
+        "instance_id": instance_id,
+        "record_id": record_id,
+        "patch_sha256": sha256(patch.encode()).hexdigest(),
+    }
+    metric = {**identity, "run_summary": {"status": status, "tokens": tokens}}
+    prediction = {**identity, "model_patch": patch, "workflow_metric": metric}
+    return prediction, metric
+
+
+def _write_rows(path: Path, records: list[dict]) -> None:
+    path.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+
+
+@pytest.mark.parametrize("arm", ["team", "self-collaboration", "single"])
+def test_recovered_metrics_follow_prediction_attempt_order(tmp_path: Path, arm: str) -> None:
+    cell = tmp_path / arm
+    cell.mkdir()
+    old_prediction, old_metric = _identified_attempt("old", 10)
+    new_prediction, new_metric = _identified_attempt("new", 99)
+    other_prediction, other_metric = _identified_attempt("other", 27, instance_id="another-instance")
+    legacy_metric = {"instance_id": IID, "run_summary": {"status": "failed", "tokens": 5}}
+    _write_rows(cell / f"preds-{arm}.jsonl", [old_prediction, other_prediction, new_prediction])
+    _write_rows(cell / "predictions.jsonl", [new_prediction, old_prediction])
+    _write_rows(cell / "metrics.jsonl", [legacy_metric, new_metric, other_metric])
+
+    # The missing old sidecar comes from its persisted prediction, before a later
+    # recovery appends that sidecar at the end of the physical metrics file.
+    initial = cell_report.run_rows(cell, arm)
+    assert [(row.record_id, row.tokens) for row in initial] == [
+        ("", 5), ("old", 10), ("other", 27), ("new", 99)
+    ]
+    _write_rows(cell / "metrics.jsonl", [legacy_metric, new_metric, other_metric, old_metric])
+    for _ in range(2):
+        rows = cell_report.run_rows(cell, arm)
+        assert [(row.record_id, row.tokens) for row in rows] == [
+            ("", 5), ("old", 10), ("other", 27), ("new", 99)
+        ]
+        selected = {row.instance_id: row for row in cell_report.merge_attempts([(arm, rows)])}
+        assert (selected[IID].record_id, selected[IID].attempt, selected[IID].attempts) == ("new", 3, 3)
+        assert selected[IID].attempt_tokens_total == 114
+        assert selected["another-instance"].tokens == 27
+
+
+def test_recovery_does_not_pair_conflicting_or_unrelated_metrics(tmp_path: Path) -> None:
+    cell = tmp_path / "conflicts"
+    cell.mkdir()
+    old_prediction, old_metric = _identified_attempt("old", 10)
+    new_prediction, new_metric = _identified_attempt("new", 99)
+    unrelated = {**old_metric, "instance_id": "another-instance", "run_summary": {"status": "completed", "tokens": 700}}
+    wrong_patch = {
+        **old_metric,
+        "patch_sha256": new_metric["patch_sha256"],
+        "run_summary": {"status": "completed", "tokens": 800},
+    }
+    _write_rows(cell / "predictions.jsonl", [old_prediction, new_prediction])
+    _write_rows(cell / "metrics.jsonl", [unrelated, wrong_patch, new_metric])
+
+    rows = cell_report.run_rows(cell)
+    # The conflicting sidecar remains visible as metrics-only history. It does
+    # not displace the correctly identified later attempt or its token count.
+    assert [(row.instance_id, row.record_id, row.tokens) for row in rows] == [
+        ("another-instance", "old", 700),
+        (IID, "old", 800),
+        (IID, "new", 99),
+    ]
+    selected = {row.instance_id: row for row in cell_report.merge_attempts([("batch", rows)])}
+    assert selected[IID].record_id == "new"
+
+
+def test_torn_metric_line_recovers_embedded_attempt_and_reports_damage(tmp_path: Path) -> None:
+    cell = tmp_path / "torn"
+    cell.mkdir()
+    old_prediction, old_metric = _identified_attempt("old", 10)
+    new_prediction, new_metric = _identified_attempt("new", 99)
+    _write_rows(cell / "preds-team.jsonl", [old_prediction, new_prediction])
+    metrics = cell / "metrics.jsonl"
+    torn_prefix = encode_candidate_jsonl(old_metric)[:28]
+    metrics.write_bytes(encode_candidate_jsonl(new_metric) + torn_prefix + b"\n" + encode_candidate_jsonl(old_metric))
+
+    with pytest.warns(RuntimeWarning, match="damaged JSONL lines \\[2\\]"):
+        rows = cell_report.run_rows(cell)
+    assert [(row.record_id, row.tokens) for row in rows] == [("old", 10), ("new", 99)]
+    assert cell_report.merge_attempts([("batch", rows)])[0].tokens == 99
+    assert torn_prefix + b"\n" in metrics.read_bytes()
+
+
+def test_torn_metric_line_without_recovery_source_is_an_error(tmp_path: Path) -> None:
+    cell = tmp_path / "unrecoverable"
+    cell.mkdir()
+    (cell / "metrics.jsonl").write_text('{"instance_id":\n', encoding="utf-8")
+    with pytest.raises(RecordInputFormatError, match="without prediction recovery source"):
+        cell_report.run_rows(cell)
+
+
+def test_unrelated_damaged_metric_line_is_not_skipped(tmp_path: Path) -> None:
+    cell = tmp_path / "unrelated-damage"
+    cell.mkdir()
+    prediction, metric = _identified_attempt("new", 99)
+    _write_rows(cell / "preds-team.jsonl", [prediction])
+    (cell / "metrics.jsonl").write_bytes(b'{"instance_id": "unrelated"\n' + encode_candidate_jsonl(metric))
+
+    with pytest.raises(RecordInputFormatError, match="no matching prediction prefix"):
+        cell_report.run_rows(cell)
+
+
+def test_recovered_order_keeps_each_attempts_own_trajectory(tmp_path: Path) -> None:
+    cell = tmp_path / "trajectory-recovery"
+    cell.mkdir()
+    old_prediction, old_metric = _identified_attempt("old", 10)
+    new_prediction, new_metric = _identified_attempt("new", 99)
+    for name, metric, tokens in (("aa", old_metric, 10), ("zz", new_metric, 99)):
+        directory = _attempt(cell, f"solver-{name}", f"runtime-{name}")
+        _seat(directory, f"agent_0_adopter-{name}.json", aid=0, role="adopter", tokens=tokens, assistant=1)
+        metric["trajectory_path"] = _host_path(cell, f"solver-{name}", f"runtime-{name}")
+    _write_rows(cell / "preds-team.jsonl", [old_prediction, new_prediction])
+    _write_rows(cell / "metrics.jsonl", [new_metric, old_metric])
+
+    rows = cell_report.run_rows(cell)
+    assert [(row.record_id, row.seats["0"].tokens) for row in rows] == [("old", 10), ("new", 99)]
+    assert cell_report.merge_attempts([("batch", rows)])[0].seats["0"].tokens == 99
 
 
 def _two_attempt_cell(tmp_path: Path) -> Path:

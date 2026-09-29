@@ -59,12 +59,15 @@ from typing import Any
 
 from opencollab.teams import declared_role_names
 
+from opencollab_eval.engine.swe_eval_records import embedded_workflow_metric
+
 from .gen_prediction_constants import (
     DEFAULT_BUDGET,
     DEFAULT_MAX_STEPS,
     DEFAULT_TIMEOUT,
     MAX_INSTANCE_BYTES,
 )
+from .gen_prediction_safe_output import _append_jsonl_durable, default_metrics_path, output_paths
 
 #: Which module runs an arm, and whether it needs a team configuration.
 ARM_MODULES: dict[str, str] = {
@@ -247,15 +250,10 @@ def _read_instance(path: Path) -> dict[str, Any]:
     return payload
 
 
-def completed_instance_ids(predictions: Path) -> set[str]:
-    """The instance ids a predictions file already holds.
-
-    A malformed line is not a reason to refuse to continue -- it is a reason
-    not to claim its instance was done -- so unreadable lines are skipped.
-    """
+def _prediction_records(predictions: Path) -> Iterable[dict[str, Any]]:
+    """Read durable prediction rows while tolerating interrupted JSONL lines."""
     if not predictions.is_file():
-        return set()
-    done: set[str] = set()
+        return
     with predictions.open("r", encoding="utf-8") as handle:
         for line in handle:
             line = line.strip()
@@ -265,10 +263,43 @@ def completed_instance_ids(predictions: Path) -> set[str]:
                 record = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            iid = record.get("instance_id")
-            if isinstance(iid, str):
-                done.add(iid)
+            if isinstance(record, dict):
+                yield record
+
+
+def completed_instance_ids(predictions: Path) -> set[str]:
+    """The instance ids a predictions file already holds."""
+    done: set[str] = set()
+    for record in _prediction_records(predictions):
+        iid = record.get("instance_id")
+        if isinstance(iid, str):
+            done.add(iid)
     return done
+
+
+def recover_metric_projections(predictions: Path) -> None:
+    """Complete missing metric appends from committed prediction records.
+
+    Every attempt keeps its own metric. The durable append handles an already
+    present projection and refuses a conflicting row under the metrics lock.
+    """
+    predictions, metrics = output_paths(predictions, default_metrics_path(predictions))
+    for prediction in _prediction_records(predictions):
+        metric = embedded_workflow_metric(prediction)
+        if metric is None:
+            continue
+        instance_id = prediction.get("instance_id")
+        record_id = prediction.get("record_id")
+        if (
+            not isinstance(instance_id, str)
+            or not instance_id
+            or not isinstance(record_id, str)
+            or not record_id
+            or metric.get("instance_id") != instance_id
+            or metric.get("record_id") != record_id
+        ):
+            continue
+        _append_jsonl_durable(metrics, metric)
 
 
 def workflow_seats(workflow_name: str) -> int:
@@ -472,6 +503,9 @@ def run_batch(args: argparse.Namespace) -> int:
         instances = instances[: args.limit]
 
     predictions = {arm: out_dir / f"preds-{arm}.jsonl" for arm in args.arm}
+    if not args.dry_run:
+        for path in predictions.values():
+            recover_metric_projections(path)
     done = {arm: completed_instance_ids(path) for arm, path in predictions.items()}
     work = plan_batch(instances, args.arm, done)
 
@@ -549,6 +583,9 @@ def run_batch(args: argparse.Namespace) -> int:
                 index, iid, arm, log_dir, command = futures[future]
                 returncode, elapsed = future.result()
                 record(index, iid, arm, log_dir, command, returncode, elapsed)
+
+    for path in predictions.values():
+        recover_metric_projections(path)
 
     missing = [
         (instance["instance_id"], arm)
