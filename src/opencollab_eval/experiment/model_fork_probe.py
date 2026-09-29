@@ -32,6 +32,7 @@ unrelated endpoint is never used, and keys are never placed in argv or reports.
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import re
@@ -64,14 +65,20 @@ class Response:
     status: int
     body: dict[str, Any] = field(default_factory=dict)
     error_text: str = ""
+    invalid_response: bool = False
+
+    @property
+    def full_text(self) -> str:
+        if self.error_text:
+            return self.error_text
+        choices = self.body.get("choices") or [{}]
+        message = choices[0].get("message") or {}
+        return str(message.get("content") or "")
 
     @property
     def text(self) -> str:
-        if self.error_text:
-            return self.error_text[:600]
-        choices = self.body.get("choices") or [{}]
-        message = choices[0].get("message") or {}
-        return str(message.get("content") or "")[:600]
+        """Bound displayed endpoint text without changing probe classification."""
+        return self.full_text[:600]
 
     @property
     def finish_reason(self) -> str | None:
@@ -85,7 +92,9 @@ class Response:
         return int(value) if isinstance(value, int) else None
 
     @property
-    def tool_calls(self) -> int:
+    def tool_calls(self) -> int | None:
+        if self.invalid_response:
+            return None
         choices = self.body.get("choices") or [{}]
         message = choices[0].get("message") or {}
         return len(message.get("tool_calls") or [])
@@ -163,6 +172,23 @@ class _NoProbeRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def _valid_chat_completion(body: Any) -> bool:
+    if not isinstance(body, dict):
+        return False
+    choices = body.get("choices")
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        return False
+    message = choices[0].get("message")
+    if not isinstance(message, dict):
+        return False
+    if not isinstance(message.get("content"), (str, type(None))):
+        return False
+    if not isinstance(message.get("tool_calls"), (list, type(None))):
+        return False
+    usage = body.get("usage")
+    return usage is None or isinstance(usage, dict)
+
+
 def http_sender(base_url: str, api_key: str, *, timeout: float = 600.0) -> Sender:
     """A sender that posts to ``/chat/completions``; the key stays in a header."""
 
@@ -177,16 +203,43 @@ def http_sender(base_url: str, api_key: str, *, timeout: float = 600.0) -> Sende
         )
         try:
             with opener.open(request, timeout=timeout) as response:
-                return Response(status=response.status, body=json.loads(response.read().decode("utf-8")))
+                try:
+                    raw_body = response.read()
+                except (OSError, http.client.HTTPException) as error:
+                    detail = f"{type(error).__name__} while reading HTTP {response.status} response: {error}"
+                    return Response(
+                        status=response.status, error_text=_redact_probe_error(detail, api_key), invalid_response=True
+                    )
+                try:
+                    body_text = raw_body.decode("utf-8")
+                    body = json.loads(body_text)
+                except (UnicodeError, ValueError) as error:
+                    excerpt = _redact_probe_error(raw_body.decode("utf-8", "replace"), api_key)[:600]
+                    detail = f"Invalid JSON in HTTP {response.status} response ({type(error).__name__}): {excerpt}"
+                    return Response(status=response.status, error_text=detail, invalid_response=True)
+                if not _valid_chat_completion(body):
+                    excerpt = _redact_probe_error(body_text, api_key)[:600]
+                    detail = f"Invalid chat completion in HTTP {response.status} response: {excerpt}"
+                    return Response(status=response.status, error_text=detail, invalid_response=True)
+                return Response(status=response.status, body=body)
         except urllib.error.HTTPError as error:
             with error:
-                error_text = _redact_probe_error(error.read().decode("utf-8", "replace"), api_key)
+                try:
+                    error_text = _redact_probe_error(error.read().decode("utf-8", "replace"), api_key)
+                    invalid_response = False
+                except (OSError, http.client.HTTPException) as read_error:
+                    detail = f"{type(read_error).__name__} while reading HTTP {error.code} response: {read_error}"
+                    error_text = _redact_probe_error(detail, api_key)
+                    invalid_response = True
             if 300 <= error.code < 400:
                 error_text = f"HTTP {error.code} redirect not followed. Probe result inconclusive. {error_text}".strip()
-            return Response(status=error.code, error_text=error_text)
+            return Response(status=error.code, error_text=error_text, invalid_response=invalid_response)
         except urllib.error.URLError as error:
             error_text = _redact_probe_error(f"{type(error).__name__}: {error.reason}", api_key)
-            return Response(status=0, error_text=error_text)
+            return Response(status=0, error_text=error_text, invalid_response=True)
+        except (OSError, http.client.HTTPException) as error:
+            error_text = _redact_probe_error(f"{type(error).__name__} while requesting endpoint: {error}", api_key)
+            return Response(status=0, error_text=error_text, invalid_response=True)
 
     return send
 
@@ -211,13 +264,15 @@ _CONTEXT_LIMIT_WORDING = re.compile(
 
 
 def _classify_context(response: Response, head: str, tail: str) -> str:
+    if response.invalid_response or (response.error_text and response.status == 200):
+        return "inconclusive"
     if response.status != 200:
-        if response.status in {400, 413} and _CONTEXT_LIMIT_WORDING.search(response.text):
+        if response.status in {400, 413} and _CONTEXT_LIMIT_WORDING.search(response.full_text):
             return "refused"
         return "inconclusive"
     if response.finish_reason == "length":
         return "output-truncated"
-    text = response.text
+    text = response.full_text
     if head in text and tail in text:
         return "both-sentinels"
     if tail in text and head not in text:
@@ -253,7 +308,7 @@ def probe_context(model: str, send: Sender, *, budget: int, ceiling_tokens: int)
                 "http_status": response.status,
                 "verdict": verdict,
                 "finish_reason": response.finish_reason,
-                "endpoint_said": response.text if response.status != 200 else "",
+                "endpoint_said": response.text if response.status != 200 or response.error_text else "",
             }
         )
         if verdict == "both-sentinels":
@@ -319,8 +374,10 @@ def probe_tool_choice(model: str, send: Sender, *, budget: int) -> dict[str, Any
         results[label] = {
             "http_status": response.status,
             "tool_calls": response.tool_calls,
-            "endpoint_said": response.text if response.status != 200 else "",
+            "endpoint_said": response.text if response.status != 200 or response.error_text else "",
         }
+        if response.invalid_response:
+            results[label]["inconclusive"] = True
     return results
 
 
@@ -342,8 +399,10 @@ def probe_max_tokens(model: str, send: Sender, *, budget: int) -> dict[str, Any]
             "http_status": response.status,
             "completion_tokens": response.completion_tokens,
             "finish_reason": response.finish_reason,
-            "endpoint_said": response.text if response.status != 200 else "",
+            "endpoint_said": response.text if response.status != 200 or response.error_text else "",
         }
+        if response.invalid_response:
+            results[field_name]["inconclusive"] = True
     return results
 
 
