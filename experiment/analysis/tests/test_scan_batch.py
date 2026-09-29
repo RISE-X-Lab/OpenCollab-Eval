@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -618,6 +619,12 @@ def test_cli_scans_several_cells_and_writes_stable_json(tmp_path):
     assert len(doc["runs"]) == 9
     for run in doc["runs"]:
         assert set(scan_batch.CSV_FIELDS) <= set(run)
+
+
+def test_document_timestamp_is_utc_on_supported_python_versions():
+    document = scan_batch.build_document([])
+    generated = datetime.fromisoformat(document["generated_utc"])
+    assert generated.utcoffset() == timedelta(0)
 
 
 def test_strict_flag_is_reachable_from_the_command_line(tmp_path):
