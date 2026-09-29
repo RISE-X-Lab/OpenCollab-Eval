@@ -237,6 +237,33 @@ def test_missing_named_runtime_with_existing_task_has_no_snapshot(tmp_path: Path
     assert row.seat_snapshot_found is False
 
 
+@pytest.mark.parametrize("arm", ["self-collaboration", "self-collaboration-reading-analyst"])
+@pytest.mark.parametrize("path_kind", ["task", "legacy", "runtime"])
+def test_multiple_runtime_snapshots_need_a_runtime_path(tmp_path: Path, arm: str, path_kind: str) -> None:
+    cell = tmp_path / arm
+    task = cell / f"logs-{arm}" / IID / "trajectories" / "solver-aa"
+    first = task / "runtime-aa"
+    second = task / "runtime-zz"
+    _seat(first, "000_analyst.json", aid=0, role="workflow_agent", tokens=10, assistant=1)
+    _seat(first, "001_coder.json", aid=1, role="workflow_agent", tokens=20, assistant=1)
+    _seat(second, "000_analyst.json", aid=0, role="workflow_agent", tokens=99, assistant=1)
+    record = {"instance_id": IID, "run_summary": {"status": "completed", "tokens": 30}}
+    if path_kind == "task":
+        record["trajectory_path"] = "/remote/trajectories/solver-aa/orchestration.jsonl"
+    elif path_kind == "runtime":
+        record["trajectory_path"] = "/remote/trajectories/solver-aa/runtime-aa/orchestration.jsonl"
+    (cell / "metrics.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    row = cell_report.run_rows(cell, arm)[0]
+    assert row.tokens == 30
+    if path_kind == "runtime":
+        assert {aid: seat.tokens for aid, seat in row.seats.items()} == {"0": 10, "1": 20}
+        assert row.seat_snapshot_found is True
+    else:
+        assert row.seats == {}
+        assert row.seat_snapshot_found is False
+
+
 def test_legacy_record_with_multiple_attempts_has_ambiguous_seats(tmp_path: Path) -> None:
     cell = tmp_path / "legacy-ambiguous"
     for solver, tokens in (("solver-aa", 10), ("solver-zz", 99)):

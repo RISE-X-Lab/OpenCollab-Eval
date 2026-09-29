@@ -321,6 +321,10 @@ def _agent_files(cell: Path, arm: str, instance_id: str, record: dict[str, Any] 
         for pattern in _SEAT_FILE_PATTERNS:
             found.update(attempt.glob(pattern.rsplit("/", 1)[-1]))
             found.update(attempt.glob(pattern.partition("/")[2]))
+        # A task-level trace or pathless legacy record may span several runtime
+        # snapshots. Only one seat directory can be assigned to this row.
+        if len({path.parent for path in found}) != 1:
+            return []
         return sorted(found)
     for pattern in _SEAT_FILE_PATTERNS:
         found.update(root.glob(pattern))
