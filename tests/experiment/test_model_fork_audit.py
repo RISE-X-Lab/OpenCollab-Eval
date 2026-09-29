@@ -8,7 +8,9 @@ must make the same command exit non-zero.
 
 from __future__ import annotations
 
+import io
 import json
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -381,6 +383,30 @@ def test_an_output_cut_is_not_reported_as_an_input_limit() -> None:
     result = model_fork_probe.probe_context("m", sender, budget=1, ceiling_tokens=8_000)
     assert result["attempts"][0]["verdict"] == "output-truncated"
     assert result["attempts"][0]["finish_reason"] == "length"
+    assert result["smallest_input_that_failed"] is None
+    assert result["inconclusive_input_sizes"] == [result["attempts"][0]["approx_input_tokens"]]
+    assert "output token limit" in result["inconclusive_reason"]
+
+
+@pytest.mark.parametrize("echo", ["head", "tail", "both"])
+def test_truncated_sentinel_echo_does_not_shrink_the_input_window(echo: str) -> None:
+    calls = 0
+
+    def sender(payload: dict) -> model_fork_probe.Response:
+        nonlocal calls
+        calls += 1
+        content = payload["messages"][0]["content"]
+        head = content.split("HEAD-CODE ")[1].split("\n")[0]
+        tail = content.split("TAIL-CODE ")[1].split("\n")[0]
+        parts = {"head": head, "tail": tail, "both": f"{head} {tail}"}
+        return _reply(parts[echo], finish="length")
+
+    result = model_fork_probe.probe_context("m", sender, budget=3, ceiling_tokens=8_000)
+    assert calls == 1
+    assert result["attempts"][0]["verdict"] == "output-truncated"
+    assert result["smallest_input_that_failed"] is None
+    assert result["largest_input_answered_with_both_sentinels"] is None
+    assert result["inconclusive_input_sizes"] == [4_500]
 
 
 def test_the_tool_choice_probe_keeps_the_endpoints_own_wording() -> None:
@@ -461,6 +487,118 @@ def test_a_missing_credential_stops_the_probe_rather_than_guessing(
         monkeypatch.delenv(name, raising=False)
     with pytest.raises(model_fork_probe.ProbeUnavailable):
         model_fork_probe.credentials()
+
+
+_OPENAI_TEST_KEY = "-".join(("openai", "specific"))
+_DASHSCOPE_TEST_KEY = "-".join(("dashscope", "specific"))
+_ENDPOINT_TEST_KEY = "-".join(("endpoint", "generic"))
+
+
+@pytest.mark.parametrize(
+    ("base_url", "expected_key"),
+    [
+        ("https://api.openai.com/v1", _OPENAI_TEST_KEY),
+        ("https://dashscope.aliyuncs.com/compatible-mode/v1", _DASHSCOPE_TEST_KEY),
+        ("https://dashscope-intl.aliyuncs.com/compatible-mode/v1", _DASHSCOPE_TEST_KEY),
+        ("https://gateway.example/v1", _ENDPOINT_TEST_KEY),
+        ("https://api.openai.com.gateway.example/v1", _ENDPOINT_TEST_KEY),
+        ("https://dashscope.aliyuncs.com.gateway.example/v1", _ENDPOINT_TEST_KEY),
+    ],
+)
+def test_probe_credentials_select_only_keys_for_the_endpoint(
+    monkeypatch: pytest.MonkeyPatch, base_url: str, expected_key: str
+) -> None:
+    monkeypatch.setenv("OPENCOLLAB_BASE_URL", base_url)
+    monkeypatch.setenv("OPENAI_API_KEY", _OPENAI_TEST_KEY)
+    monkeypatch.setenv("DASHSCOPE_API_KEY", _DASHSCOPE_TEST_KEY)
+    monkeypatch.setenv("OPENCOLLAB_API_KEY", _ENDPOINT_TEST_KEY)
+    monkeypatch.delenv("OPENCOLLAB_ENV_FILE", raising=False)
+    assert model_fork_probe.credentials() == (base_url, expected_key)
+
+
+def test_unknown_endpoint_requires_its_own_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENCOLLAB_BASE_URL", "https://gateway.example/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "-".join(("unrelated", "openai", "key")))
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "-".join(("unrelated", "dashscope", "key")))
+    monkeypatch.delenv("OPENCOLLAB_API_KEY", raising=False)
+    monkeypatch.delenv("OPENCOLLAB_ENV_FILE", raising=False)
+    with pytest.raises(model_fork_probe.ProbeUnavailable, match="OPENCOLLAB_API_KEY"):
+        model_fork_probe.credentials()
+
+
+@pytest.mark.parametrize(
+    ("base_url", "specific_name", "specific_key"),
+    [
+        ("https://api.openai.com/v1", "OPENAI_API_KEY", _OPENAI_TEST_KEY),
+        ("https://dashscope.aliyuncs.com/compatible-mode/v1", "DASHSCOPE_API_KEY", _DASHSCOPE_TEST_KEY),
+    ],
+)
+def test_known_endpoint_uses_its_specific_key_without_a_generic_key(
+    monkeypatch: pytest.MonkeyPatch, base_url: str, specific_name: str, specific_key: str
+) -> None:
+    monkeypatch.setenv("OPENCOLLAB_BASE_URL", base_url)
+    monkeypatch.setenv(specific_name, specific_key)
+    monkeypatch.delenv("OPENCOLLAB_API_KEY", raising=False)
+    monkeypatch.delenv("OPENCOLLAB_ENV_FILE", raising=False)
+    assert model_fork_probe.credentials() == (base_url, specific_key)
+
+
+def test_endpoint_key_from_file_precedes_generic_environment_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    env_file = tmp_path / "probe.env"
+    file_key = "-".join(("file", "dashscope", "key"))
+    env_file.write_text(f"DASHSCOPE_API_KEY={file_key}\n", encoding="utf-8")
+    monkeypatch.setenv("OPENCOLLAB_ENV_FILE", str(env_file))
+    monkeypatch.setenv("OPENCOLLAB_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+    monkeypatch.setenv("OPENCOLLAB_API_KEY", "-".join(("generic", "env", "key")))
+    monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+    assert model_fork_probe.credentials()[1] == file_key
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    ["https://user:pass@gateway.example/v1", "https://gateway.example/v1?api_key=" + "-".join(("fake", "secret"))],
+)
+def test_probe_rejects_credentials_embedded_in_base_url(
+    monkeypatch: pytest.MonkeyPatch, base_url: str
+) -> None:
+    monkeypatch.setenv("OPENCOLLAB_BASE_URL", base_url)
+    monkeypatch.setenv("OPENCOLLAB_API_KEY", "-".join(("endpoint", "key")))
+    with pytest.raises(model_fork_probe.ProbeUnavailable, match="without URL credentials"):
+        model_fork_probe.credentials()
+
+
+def test_http_error_echo_is_redacted_before_report_without_losing_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = "-".join(("planted", "endpoint", "key"))
+    other = "-".join(("other", "secret", "value"))
+    seen_authorizations: list[str | None] = []
+
+    def fake_urlopen(request, *, timeout):
+        seen_authorizations.append(request.get_header("Authorization"))
+        raise urllib.error.HTTPError(
+            request.full_url,
+            401,
+            "Unauthorized",
+            {},
+            io.BytesIO(
+                f"invalid model; Authorization: Bearer {key}; alternate Bearer {other}".encode()
+            ),
+        )
+
+    monkeypatch.setattr(model_fork_probe.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setenv("OPENCOLLAB_BASE_URL", "https://gateway.example/v1")
+    monkeypatch.setenv("OPENCOLLAB_API_KEY", key)
+    report = model_fork_probe.run_probes("m", requested="max_tokens", max_requests=2)
+    rendered = json.dumps(report)
+    assert seen_authorizations == [f"Bearer {key}"] * 2
+    assert "invalid model" in rendered
+    assert "Unauthorized" not in rendered
+    assert key not in rendered
+    assert other not in rendered
+    assert "Bearer [REDACTED]" in rendered
 
 
 # --- the tool is read-only -----------------------------------------------

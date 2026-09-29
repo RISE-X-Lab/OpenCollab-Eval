@@ -24,8 +24,8 @@ are the endpoint's own answer:
     decided by a regex on the model name; this says whether the endpoint honours
     the field it was sent, ignores it, or rejects it.
 
-Credentials come from the environment (``OPENCOLLAB_API_KEY``, or a file named
-by ``OPENCOLLAB_ENV_FILE``) and are never placed in argv, printed, or returned.
+Credentials come from the environment or ``OPENCOLLAB_ENV_FILE``. A key for an
+unrelated endpoint is never used, and keys are never placed in argv or reports.
 """
 
 from __future__ import annotations
@@ -34,12 +34,14 @@ import json
 import os
 import secrets
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from opencollab_eval.engine.evidence_recovery import redact_error_text
 from opencollab_eval.usage import pricing_for_model
 
 PROBE_NAMES = ("context", "tool_choice", "max_tokens")
@@ -111,14 +113,42 @@ def _read_env_file(name: str) -> str | None:
 
 def credentials() -> tuple[str, str]:
     base_url = os.environ.get("OPENCOLLAB_BASE_URL") or _read_env_file("OPENCOLLAB_BASE_URL")
-    api_key = (
-        os.environ.get("OPENCOLLAB_API_KEY") or os.environ.get("OPENAI_API_KEY") or _read_env_file("OPENCOLLAB_API_KEY")
-    )
     if not base_url:
         raise ProbeUnavailable("no OPENCOLLAB_BASE_URL in the environment; nothing to probe")
+    base_url = base_url.strip().rstrip("/")
+    parsed = urllib.parse.urlsplit(base_url)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ProbeUnavailable("OPENCOLLAB_BASE_URL must be an HTTP endpoint without URL credentials or query data")
+    hostname = parsed.hostname.lower()
+    if hostname == "api.openai.com":
+        key_names = ("OPENAI_API_KEY", "OPENCOLLAB_API_KEY")
+    elif hostname in {"dashscope.aliyuncs.com", "dashscope-intl.aliyuncs.com"}:
+        key_names = ("DASHSCOPE_API_KEY", "OPENCOLLAB_API_KEY")
+    else:
+        key_names = ("OPENCOLLAB_API_KEY",)
+    api_key = next(
+        (
+            value.strip()
+            for name in key_names
+            for value in (os.environ.get(name), _read_env_file(name))
+            if value and value.strip()
+        ),
+        None,
+    )
     if not api_key:
-        raise ProbeUnavailable("no OPENCOLLAB_API_KEY in the environment or OPENCOLLAB_ENV_FILE")
-    return base_url.rstrip("/"), api_key
+        raise ProbeUnavailable(f"no endpoint credential found; set {' or '.join(key_names)}")
+    return base_url, api_key
+
+
+def _redact_probe_error(text: str, api_key: str) -> str:
+    return redact_error_text(text.replace(api_key, "[REDACTED]"))
 
 
 def http_sender(base_url: str, api_key: str, *, timeout: float = 600.0) -> Sender:
@@ -135,9 +165,11 @@ def http_sender(base_url: str, api_key: str, *, timeout: float = 600.0) -> Sende
             with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed https endpoint
                 return Response(status=response.status, body=json.loads(response.read().decode("utf-8")))
         except urllib.error.HTTPError as error:
-            return Response(status=error.code, error_text=error.read().decode("utf-8", "replace"))
+            error_text = _redact_probe_error(error.read().decode("utf-8", "replace"), api_key)
+            return Response(status=error.code, error_text=error_text)
         except urllib.error.URLError as error:
-            return Response(status=0, error_text=f"{type(error).__name__}: {error.reason}")
+            error_text = _redact_probe_error(f"{type(error).__name__}: {error.reason}", api_key)
+            return Response(status=0, error_text=error_text)
 
     return send
 
@@ -157,6 +189,8 @@ def _filler(words: int, head: str, tail: str) -> str:
 def _classify_context(response: Response, head: str, tail: str) -> str:
     if response.status != 200:
         return "refused"
+    if response.finish_reason == "length":
+        return "output-truncated"
     text = response.text
     if head in text and tail in text:
         return "both-sentinels"
@@ -164,8 +198,6 @@ def _classify_context(response: Response, head: str, tail: str) -> str:
         return "head-dropped"
     if head in text and tail not in text:
         return "tail-dropped"
-    if response.finish_reason == "length":
-        return "output-truncated"
     return "no-sentinel"
 
 
@@ -175,6 +207,7 @@ def probe_context(model: str, send: Sender, *, budget: int, ceiling_tokens: int)
     low, high = 1_000, max(2_000, ceiling_tokens)
     largest_ok: int | None = None
     smallest_bad: int | None = None
+    inconclusive: list[int] = []
     while budget > 0 and low <= high:
         size = (low + high) // 2
         head, tail = secrets.token_hex(4), secrets.token_hex(4)
@@ -199,15 +232,22 @@ def probe_context(model: str, send: Sender, *, budget: int, ceiling_tokens: int)
         if verdict == "both-sentinels":
             largest_ok = size
             low = size + 1
+        elif verdict == "output-truncated":
+            inconclusive.append(size)
+            break
         else:
             smallest_bad = size
             high = size - 1
     return {
         "largest_input_answered_with_both_sentinels": largest_ok,
         "smallest_input_that_failed": smallest_bad,
+        "inconclusive_input_sizes": inconclusive,
         "requests_spent": len(attempts),
         "attempts": attempts,
         "note": "sizes are approximate: one whitespace word is counted as one token",
+        "inconclusive_reason": (
+            "output token limit reached; input boundary cannot be inferred" if inconclusive else None
+        ),
     }
 
 

@@ -337,6 +337,11 @@ class Batch:
                 f"replaces {name!r}: {mine_instance} is already in that batch's slice. A second run of an "
                 "instance the cell has is a retry (retry_of), not a replacement."
             )
+        for _, other_name, other_spec in batch_records(Path(self.host.local_batches_dir)):
+            if other_name == self.spec.name:
+                continue
+            if (other_spec.get("replaces") or {}) == self.spec.replaces:
+                raise SpecError(f"replaces {name!r}: {instance} is already replaced by planned batch {other_name!r}")
 
     @property
     def frame_content(self) -> str:
@@ -424,15 +429,47 @@ class Batch:
     def record_path(self) -> Path:
         return self.local_dir / "batch.json"
 
-    def previous_record(self) -> dict[str, Any] | None:
+    def previous_record(self, record: dict[str, Any] | None = None) -> dict[str, Any] | None:
         path = self.record_path()
         if not path.exists():
             return None
         try:
             old = json.loads(read_regular_text(path, max_bytes=MAX_JSON_DOCUMENT_BYTES))
-        except ValueError:
-            return None
-        return old if old.get("spec_digest") == spec_digest(self.spec) else None
+        except ValueError as exc:
+            raise SpecError(f"batch {self.spec.name!r}: existing {path} is not readable JSON ({exc})") from exc
+        if not isinstance(old, dict):
+            raise SpecError(f"batch {self.spec.name!r}: existing {path} is not a batch record")
+        changed = ["spec_digest"] if old.get("spec_digest") != spec_digest(self.spec) else []
+        if record is not None:
+            old_spec = old.get("spec") or {}
+            current_spec = record["spec"]
+            if not isinstance(old_spec, dict) or {
+                key: value for key, value in old_spec.items() if key != "concurrency"
+            } != {key: value for key, value in current_spec.items() if key != "concurrency"}:
+                changed.append("spec")
+            for key in (
+                "suite_sha256",
+                "frame_content_sha256",
+                "instances",
+                "expected_card_sha256",
+                "declared_role_profiles",
+            ):
+                if old.get(key) != record.get(key):
+                    changed.append(key)
+            if not changed:
+                inputs = self.local_dir / record["instances"]["file"]
+                if (
+                    inputs.exists()
+                    and hashlib.sha256(read_regular_bytes(inputs, max_bytes=MAX_JSONL_SCAN_BYTES)).hexdigest()
+                    != record["instances"]["sha256"]
+                ):
+                    changed.append("instance file")
+        if changed:
+            raise SpecError(
+                f"batch {self.spec.name!r}: existing {path} has different {', '.join(changed)}; "
+                "choose a new batch name to preserve its record and inputs"
+            )
+        return old
 
     def save_record(self, record: dict[str, Any]) -> Path:
         """Write batch.json, carrying forward what this write does not know.
@@ -440,7 +477,7 @@ class Batch:
         `plan` runs without the host and must not erase the pre-flight's host
         facts; nothing but `launch` adds a launch, and none of them removes one.
         """
-        old = self.previous_record()
+        old = self.previous_record(record)
         if old is not None:
             if "host" not in record and "host" in old:
                 record["host"] = old["host"]
@@ -466,8 +503,9 @@ def _print_checks(checks: list[batch_remote.Check]) -> bool:
 
 
 def cmd_plan(batch: Batch, _remote: Ssh | None) -> int:
-    path = batch.write_inputs()
     record = batch.record()
+    batch.previous_record(record)
+    path = batch.write_inputs()
     batch.save_record(record)
     spec = batch.spec
     print(
@@ -600,9 +638,9 @@ def cmd_launch(batch: Batch, remote: Ssh, limit: int | None) -> int:
     if not ok:
         print("RESULT: not launched")
         return 1
-    instances = batch.write_inputs()
     record = batch.record(host_facts)
-    old = batch.previous_record()
+    old = batch.previous_record(record)
+    instances = batch.write_inputs()
     record["launches"] = list((old or {}).get("launches", []))
     launched_at = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     record["launches"].append({"at": launched_at, "limit": limit, "argv": driver_argv(batch.spec, batch.host, limit)})
