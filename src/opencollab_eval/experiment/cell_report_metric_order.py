@@ -109,6 +109,9 @@ def _read_metrics_with_damaged_lines(path: Path) -> tuple[list[dict[str, Any]], 
                 raise RecordInputLimitError(f"JSONL line exceeds {MAX_JSONL_LINE_BYTES} bytes: {path}")
             if not line.strip():
                 continue
+            retained_bytes += len(line)
+            if len(rows) + len(malformed) + 1 > MAX_JSONL_RETAINED_ROWS or retained_bytes > MAX_JSONL_RETAINED_BYTES:
+                raise RecordInputLimitError(f"JSONL input exceeds retained row or byte limit: {path}")
             try:
                 row = json.loads(line.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError):
@@ -119,9 +122,6 @@ def _read_metrics_with_damaged_lines(path: Path) -> tuple[list[dict[str, Any]], 
                 continue
             validate_candidate_read(row, RecordInputLimitError)
             rows.append(row)
-            retained_bytes += len(line)
-            if len(rows) > MAX_JSONL_RETAINED_ROWS or retained_bytes > MAX_JSONL_RETAINED_BYTES:
-                raise RecordInputLimitError(f"JSONL input exceeds retained row or byte limit: {path}")
         after = os.fstat(handle.fileno())
     if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
         after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns
