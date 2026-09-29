@@ -41,6 +41,7 @@ from opencollab_eval.runtime_config import resolve_runtime_config as get_config
 from opencollab_eval.safe_files import write_regular_bytes_atomic
 from opencollab_eval.usage import DEFAULT_MAX_OUTPUT_TOKENS, model_context_window
 
+from .best_of_n_retention import retain_best_of_n_source
 from .best_of_n_selector import Candidate, Selection, select_candidate
 from .container_quiescence import (
     container_image_id,
@@ -218,6 +219,9 @@ def solve_candidate(
     tree: str | None = None
     metrics: dict[str, Any] = {}
     trusted_baseline = None
+    generation_image_id = None
+    generation_error: BaseException | None = None
+    extraction_succeeded = False
     try:
         cid = start_container_with_marker(image, name, run_dir)
         # The owner must survive a later full-disk candidate write failure.
@@ -256,10 +260,10 @@ def solve_candidate(
             ) in {"done", "done_with_timeout_patch"}
             remove_solver_runtime_dependencies(cid, solver_runtime)
             patch, removed_artifacts, extraction = extract_patch_guarded(cid, trusted_baseline)
+            extraction_succeeded = True
             metrics["trusted_patch_extraction"] = extraction
             metrics["removed_generated_artifacts"] = removed_artifacts
             tree = extraction.get("candidate_tree")
-            extraction_succeeded = True
             normalize_trusted_extraction_status(metrics, patch)
         else:
             extraction_succeeded = False
@@ -272,6 +276,8 @@ def solve_candidate(
             patch_extraction_succeeded=extraction_succeeded,
         )
     except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
+        if trusted_baseline is not None:
+            generation_error = exc
         _record_candidate_failure(
             run_dir,
             instance_id=iid,
@@ -302,6 +308,22 @@ def solve_candidate(
                 "candidate startup retained unresolved container ownership; "
                 "inspect candidate.json and the owned container before retrying"
             ) from exc
+    except BaseException as exc:
+        generation_error = exc
+        metrics.update(
+            workflow_status="interrupted",
+            execution_quiesced=False,
+            submission_eligible=False,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+        _record_candidate_failure(
+            run_dir,
+            instance_id=iid,
+            phase=f"{WORKFLOW_NAME}_candidate_{index}_interrupted",
+            error=exc,
+        )
+        raise
     finally:
         # The extracted patch must reach durable storage while its source still
         # exists. A failed write keeps the owned container for recovery.
@@ -309,51 +331,92 @@ def solve_candidate(
         metrics["submitted_patch_chars"] = len(patch)
         metrics["candidate_index"] = index
         metrics["candidate_tree"] = tree
+        if generation_error is not None and cid is not None:
+            retain_best_of_n_source(
+                run_dir=run_dir,
+                instance=instance,
+                image=image,
+                index=index,
+                cid=cid,
+                name=name,
+                baseline=trusted_baseline,
+                generation_image_id=generation_image_id,
+                metrics=metrics,
+                error=generation_error,
+                reason="candidate_record_unwritten" if extraction_succeeded else "trusted_patch_extraction_incomplete",
+                mark_kept=mark_container_kept,
+                quiesce=require_container_quiescence,
+                isolate=isolate_container_for_preservation,
+                persist_failure=persist_generation_failure,
+            )
         try:
             _write_candidate_record(run_dir, index=index, patch=patch, metrics=metrics)
         except BaseException as write_error:
-            _retain_source_after_write_failure(
-                run_dir=run_dir,
-                instance_id=iid,
-                index=index,
-                cid=cid,
-                error=write_error,
-            )
-            raise
-        try:
+            if generation_error is not None:
+                add_exception_note(
+                    generation_error,
+                    f"candidate record could not be written: {type(write_error).__name__}: {write_error}",
+                )
+                _record_candidate_failure(
+                    run_dir,
+                    instance_id=iid,
+                    phase=f"{WORKFLOW_NAME}_candidate_{index}_persistence",
+                    error=write_error,
+                )
+            else:
+                retain_best_of_n_source(
+                    run_dir=run_dir,
+                    instance=instance,
+                    image=image,
+                    index=index,
+                    cid=cid,
+                    name=name,
+                    baseline=trusted_baseline,
+                    generation_image_id=generation_image_id,
+                    metrics=metrics,
+                    error=write_error,
+                    reason="candidate_record_unwritten",
+                    mark_kept=mark_container_kept,
+                    quiesce=require_container_quiescence,
+                    isolate=isolate_container_for_preservation,
+                    persist_failure=persist_generation_failure,
+                )
+                raise
+        if generation_error is None:
             try:
-                if trusted_baseline is not None:
-                    trusted_baseline.cleanup()
-            finally:
-                if cid is not None:
-                    finalize_container_ownership(
-                        run_dir=run_dir,
-                        cid=cid,
-                        name=name,
-                        keep_container=keep_container,
-                        completed=metrics_have_completed_identity(metrics, patch),
-                        metrics=metrics,
-                    )
-        except BaseException as cleanup_error:
-            _record_candidate_failure(
-                run_dir,
-                instance_id=iid,
-                phase=f"{WORKFLOW_NAME}_candidate_{index}_cleanup",
-                error=cleanup_error,
-            )
-            raise
-        # The first record already protects the patch if this optional update
-        # fails after the container has been retired.
-        try:
-            _write_candidate_record(run_dir, index=index, patch=patch, metrics=metrics)
-        except BaseException as update_error:
-            _record_candidate_failure(
-                run_dir,
-                instance_id=iid,
-                phase=f"{WORKFLOW_NAME}_candidate_{index}_cleanup_record",
-                error=update_error,
-            )
-            raise
+                try:
+                    if trusted_baseline is not None:
+                        trusted_baseline.cleanup()
+                finally:
+                    if cid is not None:
+                        finalize_container_ownership(
+                            run_dir=run_dir,
+                            cid=cid,
+                            name=name,
+                            keep_container=keep_container,
+                            completed=metrics_have_completed_identity(metrics, patch),
+                            metrics=metrics,
+                        )
+            except BaseException as cleanup_error:
+                _record_candidate_failure(
+                    run_dir,
+                    instance_id=iid,
+                    phase=f"{WORKFLOW_NAME}_candidate_{index}_cleanup",
+                    error=cleanup_error,
+                )
+                raise
+            # The first record already protects the patch if this optional update
+            # fails after the container has been retired.
+            try:
+                _write_candidate_record(run_dir, index=index, patch=patch, metrics=metrics)
+            except BaseException as update_error:
+                _record_candidate_failure(
+                    run_dir,
+                    instance_id=iid,
+                    phase=f"{WORKFLOW_NAME}_candidate_{index}_cleanup_record",
+                    error=update_error,
+                )
+                raise
     return Candidate(index=index, patch=patch, tree=tree, metrics=metrics)
 
 
@@ -396,41 +459,6 @@ def _preserve_previous_candidate(run_dir: Path) -> None:
         write_regular_bytes_atomic(archive, payload, require_target_absent=True)
         print(f"  previous candidate preserved at {archive}; starting a new attempt")
         return
-
-
-def _retain_source_after_write_failure(
-    *, run_dir: Path, instance_id: str, index: int, cid: str | None, error: BaseException
-) -> None:
-    """Keep an owned workspace and stop solver writes after publication fails."""
-    evidence: dict[str, object] = {"container_retained": False, "solver_quiesced": False}
-    if cid is not None:
-        try:
-            mark_container_kept(run_dir, cid)
-            evidence["container_retained"] = True
-        except BaseException as retain_error:
-            add_exception_note(error, f"container preservation failed: {type(retain_error).__name__}: {retain_error}")
-        try:
-            require_container_quiescence(cid)
-            evidence["solver_quiesced"] = True
-        except BaseException as quiescence_error:
-            add_exception_note(
-                error,
-                f"solver quiescence failed: {type(quiescence_error).__name__}: {quiescence_error}",
-            )
-            try:
-                evidence["container_isolated"] = isolate_container_for_preservation(cid)
-            except BaseException as isolation_error:
-                add_exception_note(
-                    error,
-                    f"container isolation failed: {type(isolation_error).__name__}: {isolation_error}",
-                )
-    _record_candidate_failure(
-        run_dir,
-        instance_id=instance_id,
-        phase=f"{WORKFLOW_NAME}_candidate_{index}_persistence",
-        error=error,
-        evidence=evidence,
-    )
 
 
 def _record_candidate_failure(
