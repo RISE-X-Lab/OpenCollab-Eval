@@ -396,7 +396,7 @@ def build_document(
 ) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
-        "generated_utc": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds"),
+        "generated_utc": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
         # Two denominators, named, so a downstream reader can never pick one up
         # thinking it is the other.
         "alpha_valid_classes": sorted(alpha_valid),
