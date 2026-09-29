@@ -5,8 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import subprocess
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -410,24 +413,17 @@ def test_resume_into_own_outdir_is_allowed(experiment: dict) -> None:
 
 
 def test_the_endpoint_probe_keeps_the_key_out_of_the_process_table(experiment: dict) -> None:
-    """Seventeen accounts share this machine, so argv is public.
-
-    The probe needs the key, which is why it is not a line in
-    ``preflight_script`` -- that script is banned from reading it. What it must
-    not do is hand it to a command: python opens the env file itself and builds
-    the header in memory, so the only key-bearing thing on the command line is
-    the file's path.
-    """
+    """The generated command passes a path; the SDK reads credentials in memory."""
     host = load_host(experiment["dir"] / "hosts" / "h.yaml")
     script = batch_remote.endpoint_probe_script(host, "configs/.env.x")
     assert "curl" not in script
     assert "sk-" not in script
     # Shell-quoting rewrites every apostrophe, so match on the quote-free parts.
-    assert "OPENCOLLAB_API_KEY" in script and "Authorization" in script and "Bearer " in script
-    # The env file's path appears twice: the -f test and the argv. Nothing else
-    # on the command line comes from inside the file.
-    assert script.count("configs/.env.x") == 2
-    assert "/chat/completions" in script and "max_tokens" in script
+    assert "create_model_client" in script and "OpenCollab" in script
+    assert "OPENCOLLAB_API_KEY" not in script
+    # The path is supplied through the same environment as the driver.
+    assert script.count("configs/.env.x") == 1
+    assert "max_output_tokens" in script and "llm_max_retries" in script
 
 
 @pytest.mark.parametrize(("kind", "answer"), [("file", "present"), ("symlink", "symlink")])
@@ -444,7 +440,13 @@ def test_preflight_tells_a_symlinked_model_env_from_a_file(
     import dataclasses
 
     spec = load_spec(experiment["spec"])
-    host = dataclasses.replace(load_host(experiment["dir"] / "hosts" / "h.yaml"), workdir=str(tmp_path / "w"))
+    host = dataclasses.replace(
+        load_host(experiment["dir"] / "hosts" / "h.yaml"),
+        workdir=str(tmp_path / "w"),
+        python=sys.executable,
+    )
+    host = SimpleNamespace(**vars(host), pythonpath=os.environ.get("PYTHONPATH", ""))
+    Path(host.workdir).mkdir()
     env_path = Path(host.workdir) / host.opencollab_dir / spec.model_env
     env_path.parent.mkdir(parents=True)
     real = tmp_path / "real.env"
@@ -479,9 +481,8 @@ def test_preflight_script_never_reads_the_key(experiment: dict) -> None:
     script = batch_remote.preflight_script(spec, host, ["configs/team.handoff.x.yaml"], ["img/a-1:latest"])
     assert "OPENCOLLAB_API_KEY" not in script
     assert 'cat "$ME"' not in script and "cat $ME" not in script
-    assert 'grep -E "^OPENCOLLAB_MODEL="' in script
-    url_line = next(line for line in script.splitlines() if "^OPENCOLLAB_BASE_URL=" in line)
-    assert "sha256sum" in url_line and "printf" in url_line
+    assert "OpenCollab" in script and "configuration" in script
+    assert "base_url_sha256" in script and "OpenCollab" in script
     assert "[o]pencollab_eval.generation.gen_prediction_batch" in script
 
 
