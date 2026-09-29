@@ -36,6 +36,9 @@ contract for `oc-eval final-report`.
 [Duo file evidence](g22-file-evidence.md) describes complete candidate evidence
 files and the read-only v3 selector.
 
+[ICLR integration series](iclr-integration.md) records the ordered research
+integration, source coverage, and verified Git ancestry.
+
 The machine-readable [integrity coverage ledger](integrity-coverage.json) maps
 known integrity requirements to owners, implementation files, tests, and exact
 test node IDs. It is verified by the test suite and should be updated with the

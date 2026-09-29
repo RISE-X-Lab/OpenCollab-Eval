@@ -1,5 +1,7 @@
 # ICLR evaluation integration series
 
+**English** | [简体中文](zh-CN/iclr-integration.md)
+
 The target branch is `integrate/iclr-2027`, starting from main `1964568`.
 The source boundary is ICLR `0bcc657`. Every series pull request uses this
 integration branch as its base and carries its predecessors.
