@@ -42,7 +42,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: RISE-X-Lab/OpenCollab
-          ref: 70667edf9bfa1e63b01aa7a42be2ea711b0078ba
+          ref: f0ead300084fcfd26d5f79b218f6a0f187115f0e
           token: ${{ secrets.OPENCOLLAB_READ_TOKEN || github.token }}
           persist-credentials: false
           path: opencollab-source
@@ -109,7 +109,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: RISE-X-Lab/OpenCollab
-          ref: 70667edf9bfa1e63b01aa7a42be2ea711b0078ba
+          ref: f0ead300084fcfd26d5f79b218f6a0f187115f0e
           token: ${{ secrets.OPENCOLLAB_READ_TOKEN || github.token }}
           persist-credentials: false
           path: opencollab-source

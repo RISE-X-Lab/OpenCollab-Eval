@@ -3869,7 +3869,7 @@
     {
       "source_change": "A",
       "source_path": "tests/test_swe_outcome_join.py",
-      "disposition": "relocated",
+      "disposition": "adapted",
       "target_paths": [
         "tests/evaluation/test_swe_outcome_join.py"
       ]
