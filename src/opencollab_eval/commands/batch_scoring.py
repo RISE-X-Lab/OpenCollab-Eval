@@ -148,25 +148,37 @@ def cmd_score_report(batch: Batch, remote: Ssh) -> int:
         print(f"no reports under {sdir}/{batch_score.REPORT_DIR} yet")
         return 1
     gold_ok = None
+    model_reports_ok = True
     gold_prefix = f"gold.{spec.name}-gold-"
+    instance_ids = [row["instance_id"] for row in batch.rows]
     for name in sorted(names):
         text = remote.run(f"cat {shlex.quote(sdir + '/' + batch_score.REPORT_DIR + '/' + name)}")
         report = batch_score.read_report(text)
         gold_date = name[len(gold_prefix) : -len(".json")]
         if name.startswith(gold_prefix) and len(gold_date) == 8 and gold_date.isascii() and gold_date.isdigit():
             gold_ok, detail = batch_score.gold_verdict(report)
+            scope_ok, scope_detail = batch_score.report_scope(report, instance_ids, gold=True)
+            if not scope_ok:
+                gold_ok, detail = False, scope_detail
             print(f"  [{'ok  ' if gold_ok else 'FAIL'}] {name}: {detail}")
             continue
+        scope_ok, scope_detail = batch_score.report_scope(report, instance_ids, gold=False)
+        model_reports_ok &= scope_ok
         print(
             f"  {name}: resolved {report['resolved']}/{report['total']}"
             f" (completed {report['completed']}, empty patch {len(report['empty_patch_ids'])},"
             f" errors {len(report['error_ids'])})"
         )
+        if not scope_ok:
+            print(f"  [FAIL] {name}: {scope_detail}")
     if gold_ok is None:
         print("  no gold control in this session: every rate above is unverified.")
         return 1
     if not gold_ok:
         print("  the control failed, so no rate above is readable as a result.")
+        return 1
+    if not model_reports_ok:
+        print("  a model report does not cover the batch validated by the gold control.")
         return 1
     return 0
 
