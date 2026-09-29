@@ -27,7 +27,7 @@ destination. After accepting this series, the following check succeeds.
 git merge-base --is-ancestor 0bcc657 integrate/iclr-2027
 ```
 
-The paired runtime is OC's complete verified integration `fd610a9b`.
+The paired runtime is OC's complete verified integration `70667edf`.
 CI builds that exact runtime through the existing cross-repository setup.
 The OC integration series supplies its public team, environment, model
 inspection and profile-tool interfaces.
