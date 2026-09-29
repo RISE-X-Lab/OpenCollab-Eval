@@ -58,6 +58,7 @@ from opencollab_eval.commands.batch_scoring import (
 from opencollab_eval.commands.batch_scoring import (
     cmd_score_report as cmd_score_report,
 )
+from opencollab_eval.engine.async_runtime import add_exception_note
 from opencollab_eval.engine.swe_eval_records import MAX_JSON_DOCUMENT_BYTES, MAX_JSONL_SCAN_BYTES
 from opencollab_eval.experiment import batch_remote
 from opencollab_eval.experiment.batch_spec import (
@@ -633,7 +634,7 @@ def _launch_locked(batch: Batch, remote: Ssh, limit: int | None) -> int:
         try:
             batch_state.set_launch_state(batch, launch_index, batch_state.NOT_STARTED)
         except BaseException as state_exc:
-            exc.add_note(f"could not record confirmed non-start for {batch.spec.name}: {state_exc}")
+            add_exception_note(exc, f"could not record confirmed non-start for {batch.spec.name}: {state_exc}")
         raise
 
     out = remote.run(script, timeout=120)
