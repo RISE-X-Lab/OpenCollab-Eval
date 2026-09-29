@@ -490,3 +490,159 @@ def test_replacement_retry_merges_when_parent_metrics_are_absent(experiment: dic
     assert [row["instance_id"] for row in doc["excluded"]] == ["b__b-2"]
     assert doc["summary"]["tokens_total"] == 40
     assert doc["summary"]["tokens_all_attempts"] == 45
+
+
+@pytest.mark.parametrize(
+    ("original", "changed"),
+    [
+        ("MODEL\tdeepseek-v4-flash", "MODEL\tmodel-B"),
+        ("PROVIDER\topenai", "PROVIDER\tanthropic"),
+        ("BASE_URL_SHA\tdeadbeef", "BASE_URL_SHA\tother-address"),
+    ],
+)
+def test_first_replacement_preflight_and_launch_check_paid_original(
+    experiment: dict, original: str, changed: str
+) -> None:
+    base = Path(experiment["spec"])
+    facts = _facts(experiment)
+    args = ["--experiment-dir", str(experiment["dir"])]
+    assert batch_cli.main([*args, "launch", str(base)], remote_factory=lambda h: _LaunchRemote(facts)) == 0
+    replacement = _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2")
+    drift = facts.replace(original, changed)
+    root = Path(experiment["dir"]).parent / "batches"
+    assert not (root / "t1x.launch" / "batch.json").exists()
+    for command in ("preflight", "launch"):
+        remote = _LaunchRemote(drift)
+        assert batch_cli.main([*args, command, str(replacement)], remote_factory=lambda h, remote=remote: remote) == 2
+        assert not (root / "t1x.launch" / "batch.json").exists()
+        assert remote.copied == []
+    assert batch_cli.main([*args, "launch", str(replacement)], remote_factory=lambda h: _LaunchRemote(facts)) == 0
+
+
+@pytest.mark.parametrize("paid_first", ["replacement", "retry"])
+def test_replacement_retry_paid_first_binds_ancestors_and_siblings(experiment: dict, paid_first: str) -> None:
+    base = Path(experiment["spec"])
+    assert _plan(experiment, base) == 0
+    replacement = _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2")
+    assert _plan(experiment, replacement) == 0
+    retry = _retry_spec(experiment, "t1xr", "t1x", "rows: {start: 3, stop: 3}", "tiny")
+    assert _plan(experiment, retry) == 0
+    sibling = _retry_spec(experiment, "t1r", "t1", "rows: {start: 2, stop: 2}", "tiny")
+    assert _plan(experiment, sibling) == 0
+    args = ["--experiment-dir", str(experiment["dir"]), "launch"]
+    facts = _facts(experiment)
+    drift = facts.replace("MODEL\tdeepseek-v4-flash", "MODEL\tmodel-B")
+    first_paid = replacement if paid_first == "replacement" else retry
+    assert batch_cli.main([*args, str(first_paid)], remote_factory=lambda h: _LaunchRemote(drift)) == 0
+    for spec in (base, replacement, retry, sibling):
+        assert batch_cli.main([*args, str(spec)], remote_factory=lambda h: _LaunchRemote(facts)) == 2
+        assert batch_cli.main([*args, str(spec)], remote_factory=lambda h: _LaunchRemote(drift)) == 0
+
+
+def test_nested_replacement_and_retry_share_model_from_child(experiment: dict) -> None:
+    frame = Path(experiment["frame"])
+    with frame.open("a", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps({"instance_id": "d__d-4", "repo": "d/d", "problem_statement": "fix d", "FAIL_TO_PASS": "[]"})
+            + "\n"
+        )
+    base = Path(experiment["spec"])
+    assert _plan(experiment, base) == 0
+    first = _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2")
+    assert _plan(experiment, first) == 0
+    reserve = experiment["dir"] / "suite" / "reserve.csv"
+    reserve.write_text("order,instance_id,repo,difficulty,image\n1,d__d-4,d/d,>4 hours,img/d-4:latest\n")
+    second = _replacement_spec(
+        experiment, "t1y", "rows: {start: 1, stop: 1}", "c__c-3",
+        batch="t1x", edit=("suite: tiny\n", "suite: reserve\n"),
+    )
+    assert _plan(experiment, second) == 0
+    retry = _retry_spec(experiment, "t1yr", "t1y", "rows: {start: 1, stop: 1}", "reserve")
+    assert _plan(experiment, retry) == 0
+    args = ["--experiment-dir", str(experiment["dir"]), "launch"]
+    facts = _facts(experiment)
+    drift = facts.replace("MODEL\tdeepseek-v4-flash", "MODEL\tmodel-B")
+    assert batch_cli.main([*args, str(retry)], remote_factory=lambda h: _LaunchRemote(drift)) == 0
+    for spec in (base, first, second):
+        assert batch_cli.main([*args, str(spec)], remote_factory=lambda h: _LaunchRemote(facts)) == 2
+
+
+@pytest.mark.parametrize(
+    ("field", "changed"),
+    [("model", "model-B"), ("provider", "anthropic"), ("base_url_sha256", "other-address")],
+)
+def test_report_rejects_historical_replacement_model_drift(
+    experiment: dict, tmp_path: Path, capsys, field: str, changed: str
+) -> None:
+    base = Path(experiment["spec"])
+    assert _plan(experiment, base) == 0
+    replacement = _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2")
+    assert _plan(experiment, replacement) == 0
+    retry = _retry_spec(experiment, "t1xr", "t1x", "rows: {start: 3, stop: 3}", "tiny")
+    assert _plan(experiment, retry) == 0
+    original_retry = _retry_spec(experiment, "t1r", "t1", "rows: {start: 2, stop: 2}", "tiny")
+    assert _plan(experiment, original_retry) == 0
+    root = Path(experiment["dir"]).parent / "batches"
+    for name in ("t1", "t1x", "t1xr", "t1r"):
+        path = root / f"{name}.launch" / "batch.json"
+        record = json.loads(path.read_text())
+        identity = {"model": "model-A", "provider": "openai", "base_url_sha256": "deadbeef"}
+        if name in ("t1x", "t1xr"):
+            identity[field] = changed
+        record["launches"] = [{"model_identity": identity}]
+        path.write_text(json.dumps(record))
+    _metrics(root / "t1", [_run("a__a-1", tokens=10), _run("b__b-2", tokens=20)])
+    _metrics(root / "t1xr", [_run("c__c-3", tokens=30)])
+    report = tmp_path / "report.json"
+    for spec in (base, original_retry, replacement, retry):
+        assert _report(experiment, spec, report) == 2
+    assert "recorded paid model identity" in capsys.readouterr().err
+    assert not report.exists()
+
+    for name in ("t1x", "t1xr"):
+        path = root / f"{name}.launch" / "batch.json"
+        record = json.loads(path.read_text())
+        record["launches"][0]["model_identity"][field] = {
+            "model": "model-A", "provider": "openai", "base_url_sha256": "deadbeef"
+        }[field]
+        path.write_text(json.dumps(record))
+    assert _report(experiment, base, report) == 0
+    doc = json.loads(report.read_text())
+    assert [row["source_batch"] for row in doc["runs"]] == ["t1", "t1xr"]
+    assert doc["summary"]["tokens_total"] == 40
+
+
+def test_report_ignores_unrelated_unreadable_record_and_rejects_related_cycle(
+    experiment: dict, tmp_path: Path, capsys
+) -> None:
+    base = Path(experiment["spec"])
+    assert _plan(experiment, base) == 0
+    replacement = _replacement_spec(experiment, "t1x", "rows: {start: 3, stop: 3}", "b__b-2")
+    assert _plan(experiment, replacement) == 0
+    retry = _retry_spec(experiment, "t1r", "t1", "rows: {start: 2, stop: 2}", "tiny")
+    assert _plan(experiment, retry) == 0
+    root = Path(experiment["dir"]).parent / "batches"
+    unknown = root / "unrelated.launch" / "batch.json"
+    unknown.parent.mkdir()
+    unknown.write_text("{unreadable")
+    _metrics(root / "t1", [_run("a__a-1"), _run("b__b-2")])
+    _metrics(root / "t1x", [_run("c__c-3")])
+    report = tmp_path / "report.json"
+    assert _report(experiment, base, report) == 0
+
+    path = root / "t1.launch" / "batch.json"
+    record = json.loads(path.read_text())
+    record["spec"]["retry_of"] = "t1r"
+    path.write_text(json.dumps(record))
+    assert _report(experiment, retry, report) == 2
+    assert "cycle" in capsys.readouterr().err
+
+    record["spec"]["retry_of"] = "missing-parent"
+    path.write_text(json.dumps(record))
+    assert _report(experiment, retry, report) == 2
+    assert "missing or unreadable" in capsys.readouterr().err
+
+    record["spec"]["replaces"] = {"batch": "t1r", "instance": "b__b-2"}
+    path.write_text(json.dumps(record))
+    assert _report(experiment, retry, report) == 2
+    assert "cannot both be set" in capsys.readouterr().err
