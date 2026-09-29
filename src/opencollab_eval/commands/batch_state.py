@@ -24,6 +24,20 @@ if TYPE_CHECKING:
 
 
 MODEL_IDENTITY_FIELDS = ("model", "provider", "base_url_sha256")
+NOT_STARTED = "not_started"
+PREPARING = "preparing"
+START_UNKNOWN = "start_unknown"
+STARTED = "started"
+
+
+def launch_claims_model(launch: dict[str, Any]) -> bool:
+    """A confirmed preparation failure releases its model; older records remain paid."""
+    return launch.get("state") != NOT_STARTED
+
+
+def launch_identity(launch: dict[str, Any], record: dict[str, Any]) -> dict[str, str]:
+    source = launch.get("model_identity") or record.get("host") or {}
+    return model_identity(source if isinstance(source, dict) else {})
 
 
 @contextmanager
@@ -167,8 +181,9 @@ def check_cell_model_identity(batch: Batch, host_facts: dict[str, Any]) -> None:
         for launch in launches:
             if not isinstance(launch, dict):
                 raise SpecError(f"cell member {name!r}: launch must be an object")
-            source = launch.get("model_identity") or record.get("host") or {}
-            paid = model_identity(source if isinstance(source, dict) else {})
+            if not launch_claims_model(launch):
+                continue
+            paid = launch_identity(launch, record)
             if not all(paid.values()) or paid != current:
                 raise SpecError(
                     f"batch {batch.spec.name!r}: paid model identity in cell member {name!r} "
@@ -212,14 +227,17 @@ def previous_record(batch: Batch, record: dict[str, Any] | None = None) -> dict[
             ):
                 changed.append("instance file")
         if old.get("launches") and "host" in record:
-            launches = old["launches"]
-            first_identity = (launches[0] or {}).get("model_identity") or old.get("host") or {}
-            if not isinstance(first_identity, dict):
-                first_identity = {}
-            paid = model_identity(first_identity)
             current = model_identity(record["host"])
-            if not all(paid.values()) or paid != current:
-                changed.append("paid model identity")
+            for launch in old["launches"]:
+                if not isinstance(launch, dict):
+                    changed.append("launch history")
+                    break
+                if not launch_claims_model(launch):
+                    continue
+                paid = launch_identity(launch, old)
+                if not all(paid.values()) or paid != current:
+                    changed.append("paid model identity")
+                    break
     if changed:
         raise SpecError(
             f"batch {batch.spec.name!r}: existing {path} has different {', '.join(changed)}; "
@@ -239,3 +257,13 @@ def save_record(batch: Batch, record: dict[str, Any]) -> Path:
     path = batch.record_path()
     write_regular_bytes_atomic(path, (json.dumps(record, indent=2, ensure_ascii=False, sort_keys=True) + "\n").encode())
     return path
+
+
+def set_launch_state(batch: Batch, index: int, state: str) -> None:
+    """Advance one launch while preserving any intervening plan or preflight write."""
+    with record_transaction(batch):
+        record = previous_record(batch)
+        if record is None:
+            raise SpecError(f"batch {batch.spec.name!r}: launch record disappeared")
+        record["launches"][index]["state"] = state
+        save_record(batch, record)
