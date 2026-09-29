@@ -3320,7 +3320,8 @@
       "source_path": "src/opencollab_eval/experiment/batch_remote.py",
       "disposition": "adapted",
       "target_paths": [
-        "src/opencollab_eval/experiment/batch_remote.py"
+        "src/opencollab_eval/experiment/batch_remote.py",
+        "src/opencollab_eval/experiment/batch_model_probe.py"
       ]
     },
     {
@@ -3424,7 +3425,8 @@
       "source_path": "src/opencollab_eval/generation/gen_prediction_best_of_n.py",
       "disposition": "adapted",
       "target_paths": [
-        "src/opencollab_eval/generation/gen_prediction_best_of_n.py"
+        "src/opencollab_eval/generation/gen_prediction_best_of_n.py",
+        "src/opencollab_eval/generation/best_of_n_retention.py"
       ]
     },
     {
