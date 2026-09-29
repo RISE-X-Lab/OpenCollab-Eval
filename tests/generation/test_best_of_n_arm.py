@@ -20,7 +20,10 @@ import pytest
 
 from opencollab_eval.generation import best_of_n_selector as selector
 from opencollab_eval.generation import gen_prediction_batch as batch
-from opencollab_eval.generation import gen_prediction_patch, gen_prediction_snapshot
+from opencollab_eval.generation import (
+    gen_prediction_patch,
+    gen_prediction_snapshot,
+)
 
 bon = pytest.importorskip("opencollab_eval.generation.gen_prediction_best_of_n")
 
@@ -386,6 +389,7 @@ def _fake_containers(monkeypatch: pytest.MonkeyPatch):
         return f"cid-{len(started) - 1}"
 
     monkeypatch.setattr(bon, "start_container_with_marker", start)
+    monkeypatch.setattr(bon, "mark_container_preservation_required", lambda run_dir, cid: None)
     monkeypatch.setattr(bon, "prepare_testbed_environment", lambda cid: None)
     monkeypatch.setattr(bon, "stash_solver_runtime_dependencies", lambda *args: object())
     monkeypatch.setattr(bon, "restore_solver_runtime_dependencies", lambda *args: None)
@@ -563,6 +567,32 @@ def test_cleanup_failure_propagates_after_candidate_generation(
     with pytest.raises(RuntimeError, match="owned container remained active"):
         _run_main(monkeypatch, tmp_path, {"cid-0": "diff --git a/a b/a\n+one\n"})
     assert len(_fake_containers) == 1
+    saved = bon.candidate_run_directory(tmp_path / "out", "task-1", 0) / "candidate.json"
+    assert json.loads(saved.read_text())["patch"] == "diff --git a/a b/a\n+one\n"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def test_selector_skips_a_candidate_with_unproven_submission_or_runtime_error():
