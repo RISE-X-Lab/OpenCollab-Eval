@@ -272,21 +272,19 @@ SEAT_AT_BATCH_ROOT_ARMS = frozenset({"single"})
 SINGLE_SEAT_FILE = "agent.json"
 
 
-#: Arms where one run is one attempt directory, ``solver-<hex>/runtime-<hex>``,
-#: and the record names it (``trajectory_path``). When a resumed launch runs an
-#: instance a second time in the same out-dir, both attempts' snapshots sit
-#: under the one instance root; reading all of them let the attempt whose random
-#: directory name sorted last supply every seat of every row of that instance.
-#: Best-of-N keeps several candidate directories for one run, so it stays on
-#: the instance-wide glob.
-ATTEMPT_SCOPED_ARMS = frozenset({"team"})
+#: Each of these arms gives every generation attempt its own anonymous task
+#: directory below ``trajectories``. A trace can live in the task directory
+#: while its role snapshots live in a runtime child, or both can live in the
+#: runtime child named by the trace. Either layout stays within the named run.
+#: Best-of-N retains multiple candidates for one run and keeps its own layout.
+ATTEMPT_SCOPED_ARMS = frozenset({"team", "self-collaboration", "self-collaboration-reading-analyst"})
 
 
 def _attempt_dir(root: Path, record: dict[str, Any] | None) -> Path | None:
-    """The attempt directory the record names, under the pulled ``root``, if present.
+    """The trace directory the record names, under the pulled ``root``, if present.
 
-    ``trajectory_path`` was written on the machine that ran the batch, so only
-    its tail below ``trajectories/`` is used.
+    ``trajectory_path`` was written on the machine that ran the batch. Its
+    tail below ``trajectories/`` identifies the same directory in a pulled copy.
     """
     raw = str((record or {}).get("trajectory_path") or "")
     if not raw:
@@ -298,7 +296,7 @@ def _attempt_dir(root: Path, record: dict[str, Any] | None) -> Path | None:
     if "trajectories" not in parts:
         return None
     tail = parts[len(parts) - parts[::-1].index("trajectories") :]
-    if not tail:
+    if not tail or tail[0] in {".", ".."} or ".." in tail:
         return None
     directory = root.joinpath(*tail)
     return directory if directory.is_dir() else None
@@ -310,10 +308,23 @@ def _agent_files(cell: Path, arm: str, instance_id: str, record: dict[str, Any] 
     if not root.exists():
         return []
     found: set[Path] = set()
-    attempt = _attempt_dir(root, record) if arm in ATTEMPT_SCOPED_ARMS else None
-    if attempt is not None:
+    if arm in ATTEMPT_SCOPED_ARMS:
+        if (record or {}).get("trajectory_path"):
+            attempt = _attempt_dir(root, record)
+        else:
+            # Older metrics lack an attempt path. A single task directory has
+            # an unambiguous source; multiple tasks cannot be assigned to a row.
+            tasks = [path for path in root.iterdir() if path.is_dir()]
+            attempt = tasks[0] if len(tasks) == 1 else None
+        if attempt is None:
+            return []
         for pattern in _SEAT_FILE_PATTERNS:
             found.update(attempt.glob(pattern.rsplit("/", 1)[-1]))
+            found.update(attempt.glob(pattern.partition("/")[2]))
+        # A task-level trace or pathless legacy record may span several runtime
+        # snapshots. Only one seat directory can be assigned to this row.
+        if len({path.parent for path in found}) != 1:
+            return []
         return sorted(found)
     for pattern in _SEAT_FILE_PATTERNS:
         found.update(root.glob(pattern))

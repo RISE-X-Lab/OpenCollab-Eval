@@ -309,36 +309,59 @@ def measure_trajectory(runtime_dir: str) -> dict[str, Any]:
 # =============================================================================
 
 
-def _find_runtime_dir(cell_dir: str, instance_id: str, record: dict | None = None) -> str | None:
-    """The directory holding one run's seat snapshots, in whichever arm wrote it.
+def _has_seat_snapshot(directory: str) -> bool:
+    if os.path.isfile(os.path.join(directory, SINGLE_SEAT_FILE)):
+        return True
+    return any(glob.glob(os.path.join(directory, pattern)) for pattern in SEAT_FILE_GLOBS)
 
-    Located by the seats themselves rather than by ``team.json``: only the team
-    arm writes that file, so looking for it read every DW and every single-arm
-    run as ``no_trajectory`` -- with every seat column zero, which is also how a
-    run whose seats did nothing reads.
 
-    The single arm is the one case a glob cannot answer. Its directory sits at
-    the batch root under a random id (``agent-<hex>``) that names no instance,
-    so the tie has to come from the run's own ``trajectory_path``. That path was
-    written on the machine that ran the batch, so it is resolved by name under
-    this cell first and taken verbatim only when the batch is read where it ran.
-    """
-    seat_patterns = [os.path.join(cell_dir, "logs-*", instance_id, "**", "team.json")]
-    seat_patterns += [
-        os.path.join(cell_dir, "logs-*", instance_id, "**", glob_pattern) for glob_pattern in SEAT_FILE_GLOBS
-    ]
-    seat_patterns.append(os.path.join(cell_dir, "**", instance_id, "**", "team.json"))
-    for pattern in seat_patterns:
-        hits = sorted(glob.glob(pattern, recursive=True))
-        if hits:
-            return os.path.dirname(hits[-1])
+def _snapshot_dirs(attempt_dir: str) -> set[str]:
+    """Find seats within one attempt, including workflow runtime children."""
+    directories = {attempt_dir} if _has_seat_snapshot(attempt_dir) else set()
+    for child in glob.glob(os.path.join(attempt_dir, "runtime-*")):
+        if os.path.isdir(child) and _has_seat_snapshot(child):
+            directories.add(child)
+    return directories
+
+
+def _locate_runtime_dir(cell_dir: str, instance_id: str, record: dict | None) -> tuple[str | None, str | None]:
+    """Resolve a named attempt first; use legacy discovery only without a path."""
     raw = str((record or {}).get("trajectory_path") or "")
     if raw:
-        named = os.path.basename(raw.rstrip("/"))
-        for directory in (os.path.join(cell_dir, named), raw):
-            if os.path.isfile(os.path.join(directory, SINGLE_SEAT_FILE)):
-                return directory
-    return None
+        path = raw.rstrip("/")
+        if path.endswith(".jsonl"):
+            path = os.path.dirname(path)
+        parts = os.path.normpath(path).split(os.sep)
+        candidates: set[str] = set()
+        if "trajectories" in parts:
+            tail = parts[len(parts) - parts[::-1].index("trajectories") :]
+            for root in glob.glob(os.path.join(cell_dir, "logs-*", instance_id, "trajectories")):
+                candidates.update(_snapshot_dirs(os.path.join(root, *tail)))
+        else:
+            candidates.update(_snapshot_dirs(os.path.join(cell_dir, os.path.basename(path))))
+        if not candidates:
+            candidates.update(_snapshot_dirs(path))
+        if len(candidates) == 1:
+            return next(iter(candidates)), None
+        if candidates:
+            return None, f"trajectory_path {raw!r} matches multiple seat directories"
+        return None, f"trajectory_path {raw!r} has no seat snapshot"
+
+    candidates = set()
+    for pattern in SEAT_FILE_GLOBS:
+        search = os.path.join(cell_dir, "logs-*", instance_id, "trajectories", "**", pattern)
+        for seat in glob.glob(search, recursive=True):
+            candidates.add(os.path.dirname(seat))
+    if len(candidates) == 1:
+        return next(iter(candidates)), None
+    if candidates:
+        return None, f"instance_id {instance_id!r} has multiple unnamed seat directories"
+    return None, None
+
+
+def _find_runtime_dir(cell_dir: str, instance_id: str, record: dict | None = None) -> str | None:
+    """The unique seat directory for this metrics row, when identifiable."""
+    return _locate_runtime_dir(cell_dir, instance_id, record)[0]
 
 
 def _read_metrics(cell_dir: str) -> tuple[list[dict], list[str]]:
@@ -395,7 +418,9 @@ def scan_cell(
         error = summary.get("error") if summary.get("error") is not None else record.get("error")
         klass, evidence = classify_run(status, reason, error)
 
-        runtime_dir = _find_runtime_dir(cell_dir, instance_id, record)
+        runtime_dir, location_problem = _locate_runtime_dir(cell_dir, instance_id, record)
+        if location_problem:
+            problems.append(f"{os.path.join(cell_dir, 'metrics.jsonl')}:{record['_source_line']}: {location_problem}")
         if runtime_dir is None and klass in (alpha_valid | outcome_valid):
             # A run the runtime called complete but that left no trajectory is
             # not a usable observation; say so rather than count it at zero.
