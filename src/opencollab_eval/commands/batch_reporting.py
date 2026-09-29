@@ -36,7 +36,14 @@ def batch_records(root: Path) -> list[tuple[str, str, dict[str, Any]]]:
         spec = record.get("spec") or {}
         name = str(spec.get("name") or record_path.parent.name.removesuffix(".launch"))
         launches = record.get("launches") or []
-        at = str((launches[0] or {}).get("at") or "") if launches else ""
+        at = next(
+            (
+                str(launch.get("at") or "")
+                for launch in launches
+                if isinstance(launch, dict) and batch_state.launch_claims_model(launch)
+            ),
+            "",
+        )
         found.append((at, name, spec))
     return sorted(found)
 
@@ -130,10 +137,9 @@ def _check_recorded_cell_models(batch: Batch) -> None:
         for launch in record.get("launches") or []:
             if not isinstance(launch, dict):
                 continue
-            source = launch.get("model_identity") or record.get("host")
-            if not isinstance(source, dict):
+            if not batch_state.launch_claims_model(launch):
                 continue
-            identity = batch_state.model_identity(source)
+            identity = batch_state.launch_identity(launch, record)
             if not all(identity.values()):
                 continue
             if first is None:
