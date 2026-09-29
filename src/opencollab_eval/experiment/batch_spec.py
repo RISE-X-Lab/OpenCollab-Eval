@@ -628,14 +628,19 @@ def driver_env(spec: BatchSpec, host: HostConfig) -> dict[str, str]:
     OpenCollab from another checkout, so without this line the pinned code is
     never run and nothing reports it.
     """
+    return runtime_env(host, spec.model_env, spec.env)
+
+
+def runtime_env(host: HostConfig, model_env: str, overrides: dict[str, str] | None = None) -> dict[str, str]:
+    """Apply the driver's environment precedence for probes and launches."""
     env = {
         "PYTHONPATH": host.pythonpath,
-        "OPENCOLLAB_CONFIG_FILE": f"{host.workdir}/{host.opencollab_dir}/{spec.model_env}",
+        "OPENCOLLAB_CONFIG_FILE": f"{host.workdir}/{host.opencollab_dir}/{model_env}",
     }
     if host.proxy:
         env["http_proxy"] = host.proxy
         env["https_proxy"] = host.proxy
-    env.update(spec.env)
+    env.update(overrides or {})
     return env
 
 
