@@ -41,6 +41,32 @@ def _write_instance(
     return directory
 
 
+def _write_attempt(
+    work_dir: Path,
+    run_id: str,
+    instance_id: str,
+    record_id: str,
+    patch_sha256: str,
+    *,
+    status: str = "failed",
+) -> Path:
+    directory = work_dir / "logs" / "run_evaluation" / run_id / "m" / instance_id
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "opencollab-attempt.json").write_text(
+        json.dumps(
+            {
+                "schema": "opencollab.swe_eval_attempt.v1",
+                "instance_id": instance_id,
+                "record_id": record_id,
+                "patch_sha256": patch_sha256,
+                "status": status,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return directory
+
+
 _PARTIAL_BODY = {
     "patch_exists": True,
     "patch_successfully_applied": True,
@@ -242,6 +268,141 @@ def test_summary_keeps_the_all_runs_mean_apart_from_the_graded_only_mean(tmp_pat
     assert summary["mean_y_over_graded_runs"] == 1.0
     assert summary["resolved"] == 1
     assert summary["ungraded_reasons"] == {"patch_not_applied_or_log_unparsed": 1}
+
+
+def test_failed_attempt_without_report_counts_as_ungraded_run_not_unstarted_prediction(tmp_path: Path) -> None:
+    _write_instance(
+        tmp_path,
+        "run1",
+        "m",
+        "case-a",
+        _RESOLVED_BODY,
+        sidecar={"instance_id": "case-a", "record_id": "rec-a", "patch_sha256": "a" * 64, "status": "completed"},
+    )
+    failed = _write_attempt(tmp_path, "run1", "case-b", "rec-b", "b" * 64)
+    predictions = tmp_path / "preds.jsonl"
+    predictions.write_text(
+        "".join(
+            json.dumps({"instance_id": instance, "record_id": record, "patch_sha256": digest, "arm": arm}) + "\n"
+            for instance, record, digest, arm in (
+                ("case-a", "rec-a", "a" * 64, "success"),
+                ("case-b", "rec-b", "b" * 64, "failure"),
+                ("case-c", "rec-c", "c" * 64, "not_started"),
+            )
+        ),
+        encoding="utf-8",
+    )
+    index = PredictionIndex()
+    index.add_file(predictions)
+    rows = collect_outcomes(tmp_path, index=index, carry_fields=["arm"])
+    assert index.row_count == 3
+    assert [row["instance_id"] for row in rows] == ["case-a", "case-b"]
+    assert [row["prediction_arm"] for row in rows] == ["success", "failure"]
+    missing = rows[1]
+    assert missing["report_path"] == (failed / "report.json").as_posix()
+    assert missing["record_id"] == "rec-b"
+    assert missing["patch_sha256"] == "b" * 64
+    assert missing["attempt_status"] == "failed"
+    assert missing["identity_source"] == IDENTITY_FROM_SIDECAR
+    assert missing["identity_trusted"] is True
+    assert missing["join_status"] == JOIN_MATCHED
+    assert missing["f2p_graded"] is False
+    assert missing["ungraded_reason"] == "no_report"
+    assert missing["y"] == 0.0
+    summary = summarize(rows)
+    assert summary["runs"] == 2
+    assert summary["graded"] == 1
+    assert summary["ungraded"] == 1
+    assert summary["ungraded_reasons"] == {"no_report": 1}
+    assert summary["mean_y_over_all_runs"] == 0.5
+    assert summary["mean_y_over_graded_runs"] == 1.0
+
+
+def test_unreported_attempts_keep_each_run_identity_and_never_duplicate_a_report(tmp_path: Path) -> None:
+    for run_id, record_id, digest in (("run1", "old", "a" * 64), ("run2", "new", "b" * 64)):
+        _write_attempt(tmp_path, run_id, "case-a", record_id, digest)
+    report_dir = _write_attempt(tmp_path, "run3", "case-b", "reported", "c" * 64)
+    (report_dir / "report.json").write_text(json.dumps({"case-b": _RESOLVED_BODY}), encoding="utf-8")
+    predictions = tmp_path / "preds.jsonl"
+    predictions.write_text(
+        "".join(
+            json.dumps({"instance_id": case, "record_id": record, "patch_sha256": digest}) + "\n"
+            for case, record, digest in (
+                ("case-a", "old", "a" * 64),
+                ("case-a", "new", "b" * 64),
+                ("case-b", "reported", "c" * 64),
+            )
+        ),
+        encoding="utf-8",
+    )
+    index = PredictionIndex()
+    index.add_file(predictions)
+    rows = collect_outcomes(tmp_path, index=index)
+    assert [(row["run_id"], row["record_id"], row["prediction_line"]) for row in rows] == [
+        ("run1", "old", 1),
+        ("run2", "new", 2),
+        ("run3", "reported", 3),
+    ]
+    assert [row["ungraded_reason"] for row in rows] == ["no_report", "no_report", ""]
+    assert len(collect_outcomes(tmp_path, run_ids=["run3", "run3"], models=["m", "m"])) == 1
+    assert summarize(rows)["runs"] == 3
+
+
+def test_unreported_attempt_preserves_identity_conflicts(tmp_path: Path) -> None:
+    _write_attempt(tmp_path, "run1", "case-a", "old", "a" * 64)
+    predictions = tmp_path / "preds.jsonl"
+    predictions.write_text(
+        json.dumps({"instance_id": "case-a", "record_id": "old", "patch_sha256": "b" * 64, "arm": "new"}) + "\n",
+        encoding="utf-8",
+    )
+    index = PredictionIndex()
+    index.add_file(predictions)
+    (row,) = collect_outcomes(tmp_path, index=index, carry_fields=["arm"])
+    assert row["join_status"] == "identity_mismatch"
+    assert row["identity_trusted"] is False
+    assert "prediction_arm" not in row
+    assert row["ungraded_reason"] == "no_report"
+
+
+def test_unreported_attempt_with_legacy_sidecar_keeps_existing_identity_rules(tmp_path: Path) -> None:
+    directory = _write_attempt(tmp_path, "run1", "case-a", "rec", "a" * 64)
+    sidecar = directory / "opencollab-attempt.json"
+    payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    del payload["schema"]
+    sidecar.write_text(json.dumps(payload), encoding="utf-8")
+    (legacy,) = collect_outcomes(tmp_path)
+    assert legacy["record_id"] == "rec"
+    assert legacy["identity_trusted"] is True
+    assert legacy["ungraded_reason"] == "no_report"
+    payload["instance_id"] = "case-b"
+    sidecar.write_text(json.dumps(payload), encoding="utf-8")
+    (conflict,) = collect_outcomes(tmp_path)
+    assert conflict["join_status"] == "identity_mismatch"
+    assert conflict["identity_trusted"] is False
+    assert conflict["ungraded_reason"] == "no_report"
+
+
+def test_broken_unreported_sidecar_is_counted_without_guessing_a_prediction(tmp_path: Path) -> None:
+    directory = _write_attempt(tmp_path, "run1", "case-a", "rec", "a" * 64)
+    (directory / "opencollab-attempt.json").write_text("{broken", encoding="utf-8")
+    predictions = tmp_path / "preds.jsonl"
+    predictions.write_text(json.dumps({"instance_id": "case-a", "arm": "other"}) + "\n", encoding="utf-8")
+    index = PredictionIndex()
+    index.add_file(predictions)
+    (row,) = collect_outcomes(tmp_path, index=index, carry_fields=["arm"])
+    assert row["attempt_sidecar_error"] == "unreadable_or_missing_status"
+    assert row["ungraded_reason"] == "no_report"
+    assert row["join_status"] == "identity_mismatch"
+    assert row["identity_trusted"] is False
+    assert "prediction_arm" not in row
+
+
+def test_in_progress_sidecar_is_a_provisional_ungraded_attempt(tmp_path: Path) -> None:
+    _write_attempt(tmp_path, "run1", "case-a", "rec", "a" * 64, status="started")
+    (row,) = collect_outcomes(tmp_path)
+    assert row["attempt_status"] == "started"
+    assert row["ungraded_reason"] == "no_report"
+    assert row["y"] == 0.0
 
 
 def test_main_writes_one_row_per_run_and_prints_the_summary(tmp_path: Path, capsys) -> None:
