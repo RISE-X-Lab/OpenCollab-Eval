@@ -42,6 +42,7 @@ depend on dictionary order.
 from __future__ import annotations
 
 import hashlib
+import math
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -139,7 +140,9 @@ def allocate_by_largest_remainder(
     remaining = total
     active = {name for name, share in shares.items() if share > 0 and limits[name] > 0}
     while remaining > 0 and active:
-        mass = sum(shares[name] for name in active)
+        # Floating summation over a hash-randomized set changes close quota
+        # ties on Python 3.10/3.11. Keep both the order and sum stable.
+        mass = math.fsum(shares[name] for name in sorted(active))
         if mass <= 0:
             break
         quotas = {name: remaining * shares[name] / mass for name in active}
