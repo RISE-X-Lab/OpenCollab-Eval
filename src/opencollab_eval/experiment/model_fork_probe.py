@@ -13,7 +13,9 @@ are the endpoint's own answer:
     the request was refused (input over the limit), it was answered with both
     codes (the window holds), and it was answered with the tail code only (the
     head was dropped -- the dangerous one). ``finish_reason == "length"`` is a
-    fourth and unrelated thing: the *output* was cut, not the input.
+    fourth and unrelated thing: the *output* was cut, not the input. Transport
+    failures, unrelated HTTP errors and answers without either code remain
+    inconclusive rather than becoming evidence of a smaller input window.
 ``tool_choice``
     ``auto``, ``required`` and a named function, one request each, keeping the
     HTTP status and the endpoint's own wording. ``supports_forced_tool_choice``
@@ -32,6 +34,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import urllib.error
 import urllib.parse
@@ -151,8 +154,19 @@ def _redact_probe_error(text: str, api_key: str) -> str:
     return redact_error_text(text.replace(api_key, "[REDACTED]"))
 
 
+class _NoProbeRedirect(urllib.request.HTTPRedirectHandler):
+    """Keep the authorization header bound to the configured endpoint."""
+
+    def redirect_request(
+        self, request: urllib.request.Request, fp: Any, code: int, message: str, headers: Any, url: str
+    ) -> None:
+        return None
+
+
 def http_sender(base_url: str, api_key: str, *, timeout: float = 600.0) -> Sender:
     """A sender that posts to ``/chat/completions``; the key stays in a header."""
+
+    opener = urllib.request.build_opener(_NoProbeRedirect())
 
     def send(payload: dict[str, Any]) -> Response:
         request = urllib.request.Request(
@@ -162,10 +176,13 @@ def http_sender(base_url: str, api_key: str, *, timeout: float = 600.0) -> Sende
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed https endpoint
+            with opener.open(request, timeout=timeout) as response:
                 return Response(status=response.status, body=json.loads(response.read().decode("utf-8")))
         except urllib.error.HTTPError as error:
-            error_text = _redact_probe_error(error.read().decode("utf-8", "replace"), api_key)
+            with error:
+                error_text = _redact_probe_error(error.read().decode("utf-8", "replace"), api_key)
+            if 300 <= error.code < 400:
+                error_text = f"HTTP {error.code} redirect not followed. Probe result inconclusive. {error_text}".strip()
             return Response(status=error.code, error_text=error_text)
         except urllib.error.URLError as error:
             error_text = _redact_probe_error(f"{type(error).__name__}: {error.reason}", api_key)
@@ -186,9 +203,18 @@ def _filler(words: int, head: str, tail: str) -> str:
     )
 
 
+_CONTEXT_LIMIT_WORDING = re.compile(
+    r"context[_ -]length[_ -]exceeded|maximum context length|context window.{0,40}(?:exceed|limit)|"
+    r"range of input length|prompt is too long|input token limit exceeded",
+    re.IGNORECASE,
+)
+
+
 def _classify_context(response: Response, head: str, tail: str) -> str:
     if response.status != 200:
-        return "refused"
+        if response.status in {400, 413} and _CONTEXT_LIMIT_WORDING.search(response.text):
+            return "refused"
+        return "inconclusive"
     if response.finish_reason == "length":
         return "output-truncated"
     text = response.text
@@ -198,7 +224,7 @@ def _classify_context(response: Response, head: str, tail: str) -> str:
         return "head-dropped"
     if head in text and tail not in text:
         return "tail-dropped"
-    return "no-sentinel"
+    return "inconclusive"
 
 
 def probe_context(model: str, send: Sender, *, budget: int, ceiling_tokens: int) -> dict[str, Any]:
@@ -208,6 +234,7 @@ def probe_context(model: str, send: Sender, *, budget: int, ceiling_tokens: int)
     largest_ok: int | None = None
     smallest_bad: int | None = None
     inconclusive: list[int] = []
+    inconclusive_reason: str | None = None
     while budget > 0 and low <= high:
         size = (low + high) // 2
         head, tail = secrets.token_hex(4), secrets.token_hex(4)
@@ -232,8 +259,13 @@ def probe_context(model: str, send: Sender, *, budget: int, ceiling_tokens: int)
         if verdict == "both-sentinels":
             largest_ok = size
             low = size + 1
-        elif verdict == "output-truncated":
+        elif verdict in {"output-truncated", "inconclusive"}:
             inconclusive.append(size)
+            inconclusive_reason = (
+                "output token limit reached; input boundary cannot be inferred"
+                if verdict == "output-truncated"
+                else "endpoint response did not establish an input boundary"
+            )
             break
         else:
             smallest_bad = size
@@ -245,9 +277,7 @@ def probe_context(model: str, send: Sender, *, budget: int, ceiling_tokens: int)
         "requests_spent": len(attempts),
         "attempts": attempts,
         "note": "sizes are approximate: one whitespace word is counted as one token",
-        "inconclusive_reason": (
-            "output token limit reached; input boundary cannot be inferred" if inconclusive else None
-        ),
+        "inconclusive_reason": inconclusive_reason,
     }
 
 

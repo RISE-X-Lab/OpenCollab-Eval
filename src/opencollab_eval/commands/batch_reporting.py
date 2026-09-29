@@ -88,6 +88,7 @@ def replacement_batches(batch: Batch) -> list[tuple[str, Path, str, str]]:
     root = Path(batch.host.local_batches_dir)
     found: list[tuple[str, Path, str, str]] = []
     claimed: dict[str, str] = {}
+    arrivals: dict[str, str] = {}
     for _, name, spec in batch_records(root):
         replaces = spec.get("replaces") or {}
         if replaces.get("batch") != batch.spec.name:
@@ -106,7 +107,14 @@ def replacement_batches(batch: Batch) -> list[tuple[str, Path, str, str]]:
         if len(rows) != 1:
             print(f"  replacement {name}: its slice is {len(rows)} instances, not one; not merged")
             continue
-        found.append((name, root / name, gone, rows[0]["instance_id"]))
+        arrives = rows[0]["instance_id"]
+        if previous := arrivals.get(arrives):
+            raise SpecError(
+                f"replaces {batch.spec.name!r}: {arrives} stands in for two instances "
+                f"through {previous!r} and {name!r}"
+            )
+        arrivals[arrives] = name
+        found.append((name, root / name, gone, arrives))
     return found
 
 
@@ -146,7 +154,16 @@ def select_cell_rows(batch: Batch) -> CellSelection:
         if not (data_dir / "metrics.jsonl").exists():
             print(f"  replacement {name}: planned but not pulled ({data_dir}/metrics.jsonl missing); not merged")
             continue
-        for row in _cell_rows(batch, name, data_dir):
+        observed = _cell_rows(batch, name, data_dir)
+        if not observed:
+            print(f"  replacement {name}: metrics have no observation for {arrives}; not merged")
+            continue
+        if len(observed) != 1 or observed[0].instance_id != arrives:
+            raise SpecError(
+                f"replacement {name!r}: expected one observation for {arrives}, "
+                f"found {[row.instance_id for row in observed]}"
+            )
+        for row in observed:
             row.replacement_for = gone
             stand_ins.append(row)
         replaced[gone] = arrives
@@ -186,6 +203,9 @@ def select_cell_rows(batch: Batch) -> CellSelection:
                 kept.append(row)
         rows = kept + stand_ins
 
+    ids = [row.instance_id for row in rows]
+    if len(ids) != len(set(ids)):
+        raise SpecError(f"batch {batch.spec.name!r}: selected rows repeat an instance id: {ids}")
     suite_file = batch.suite_dir / f"{batch.spec.suite}.csv"
     ordered, missing = cell_report.order_rows(rows, suite_file)
     wanted = ({row["instance_id"] for row in batch.rows} - set(replaced)) | {r.instance_id for r in stand_ins}
