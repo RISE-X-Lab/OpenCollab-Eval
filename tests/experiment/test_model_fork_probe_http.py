@@ -19,6 +19,14 @@ from opencollab_eval.experiment import model_fork_audit, model_fork_probe
 from opencollab_eval.experiment.model_fork_probe import Response, http_sender, probe_context, run_probes
 
 FAKE_KEY = "FAKE-LOCAL-PROBE-KEY"
+VALID_CALL = {
+    "id": "call_1", "type": "function",
+    "function": {"name": "echo_probe", "arguments": '{"value":"ping"}'},
+}
+
+
+def _tool_body(calls: object, *, content: str | None = None) -> dict:
+    return {"choices": [{"message": {"content": content, "tool_calls": calls}, "finish_reason": "tool_calls"}]}
 
 
 @contextmanager
@@ -268,6 +276,80 @@ def test_invalid_http_200_does_not_count_as_a_tool_or_token_result(monkeypatch: 
         assert "Invalid chat completion" in row["endpoint_said"]
     assert report["results"]["tool_choice"]["auto"]["tool_calls"] is None
     assert report["results"]["max_tokens"]["max_tokens"]["completion_tokens"] is None
+
+
+@pytest.mark.parametrize(
+    ("calls", "valid"),
+    [
+        ([None], False),
+        ([42], False),
+        ([{}], False),
+        ([{"id": "call_1", "type": "function"}], False),
+        ([{"id": "call_1", "type": "function", "function": None}], False),
+        ([{"id": "call_1", "type": "function", "function": {"name": 42, "arguments": "{}"}}], False),
+        ([{**VALID_CALL, "id": ""}], False),
+        ([{key: value for key, value in VALID_CALL.items() if key != "id"}], False),
+        ([{**VALID_CALL, "type": "other"}], False),
+        ([{**VALID_CALL, "function": {"name": "other", "arguments": '{"value":"ping"}'}}], False),
+        ([{**VALID_CALL, "function": {"name": "echo_probe"}}], False),
+        ([{**VALID_CALL, "function": {"name": "echo_probe", "arguments": "{"}}], False),
+        ([{**VALID_CALL, "function": {"name": "echo_probe", "arguments": "[]"}}], False),
+        ([{**VALID_CALL, "function": {"name": "echo_probe", "arguments": '{"value":null}'}}], False),
+        ([VALID_CALL, None], False),
+        ([VALID_CALL, dict(VALID_CALL)], False),
+        ([], True),
+        (None, True),
+        ([VALID_CALL, {**VALID_CALL, "id": "call_2"}], True),
+    ],
+)
+def test_custom_sender_counts_only_valid_tool_calls(calls: object, valid: bool) -> None:
+    response = Response(200, body=_tool_body(calls, content="I cannot call that tool" if calls == [] else None))
+    result = model_fork_probe.probe_tool_choice("fake", lambda _: response, budget=1)["auto"]
+
+    assert result["http_status"] == 200
+    assert result["tool_calls"] == (len(calls or []) if valid else None)
+    assert result.get("inconclusive", False) is not valid
+
+
+def test_http_and_custom_senders_agree_on_tool_call_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_network_environment(monkeypatch)
+    cases = {
+        "null-element": [None],
+        "mixed": [VALID_CALL, None],
+        "duplicate-id": [VALID_CALL, dict(VALID_CALL)],
+        "refusal": [],
+        "multiple": [VALID_CALL, {**VALID_CALL, "id": "call_2"}],
+    }
+
+    class ToolCompletion(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            self.rfile.read(int(self.headers["Content-Length"]))
+            case = self.path.split("/")[1]
+            content = "I cannot call that tool" if case == "refusal" else None
+            body = json.dumps(_tool_body(cases[case], content=content)).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_: object) -> None:
+            pass
+
+    with _serve(ToolCompletion) as origin:
+        for case, calls in cases.items():
+            sender = http_sender(f"http://127.0.0.1:{origin.server_port}/{case}", FAKE_KEY)
+            http_result = model_fork_probe.probe_tool_choice("fake", sender, budget=1)["auto"]
+            content = "I cannot call that tool" if case == "refusal" else None
+            direct = Response(200, body=_tool_body(calls, content=content))
+            direct_result = model_fork_probe.probe_tool_choice(
+                "fake", lambda _, response=direct: response, budget=1
+            )["auto"]
+            assert http_result["http_status"] == direct_result["http_status"] == 200
+            assert http_result["tool_calls"] == direct_result["tool_calls"]
+            assert http_result.get("inconclusive", False) == direct_result.get("inconclusive", False)
+            assert ("Invalid chat completion" in http_result["endpoint_said"]) is (
+                case in {"null-element", "mixed", "duplicate-id"}
+            )
 
 
 @pytest.mark.parametrize("case", ["non-json", "invalid-shape"])
