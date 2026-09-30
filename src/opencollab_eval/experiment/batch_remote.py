@@ -201,7 +201,7 @@ def preflight_script(
     lines += [
         'rm -f "$IMG"',
         f'pgrep -af "{BATCH_PROCESS_PATTERN}" | grep -vF {_q(DECOY_MARK)} | while IFS= read -r line; do '
-        'printf "RUNNING\\t%s\\n" "$(printf "%s" "$line" | cut -c1-300)"; done',
+        'printf "RUNNING\\t%s\\n" "$line"; done',
         # Positive control: two commands, so bash keeps its argv instead of exec-ing.
         f"setsid nohup bash -c 'sleep 6; echo {DECOY_MARK}' < /dev/null > /dev/null 2>&1 &",
         "sleep 1",

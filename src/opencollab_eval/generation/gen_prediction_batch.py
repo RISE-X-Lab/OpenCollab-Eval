@@ -46,13 +46,13 @@ is not taken by default.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
-import subprocess
 import sys
 import time
 from collections.abc import Iterable, Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -60,7 +60,9 @@ from typing import Any
 from opencollab.teams import declared_role_names
 
 from opencollab_eval.engine.swe_eval_records import embedded_workflow_metric
+from opencollab_eval.safe_files import open_regular_text_append
 
+from .batch_processes import BatchStop, run_generator
 from .gen_prediction_constants import (
     DEFAULT_BUDGET,
     DEFAULT_MAX_STEPS,
@@ -467,7 +469,8 @@ def _run_one(
     *,
     command: Sequence[str],
     log_dir: Path,
-) -> tuple[int, float]:
+    stop: BatchStop,
+) -> tuple[int | None, float]:
     """Run one (instance, arm) and return its return code and wall time.
 
     Everything a run touches is already per-run: its own log directory, its own
@@ -477,17 +480,27 @@ def _run_one(
     """
     started = time.monotonic()
     with (log_dir / "driver.log").open("wb") as sink:
-        completed = subprocess.run(
-            command,
-            stdout=sink,
-            stderr=subprocess.STDOUT,
-            env=generator_environment(log_dir),
-            check=False,
-        )
-    return completed.returncode, round(time.monotonic() - started, 1)
+        returncode = run_generator(list(command), sink, generator_environment(log_dir), stop)
+    return returncode, round(time.monotonic() - started, 1)
 
 
 def run_batch(args: argparse.Namespace) -> int:
+    """Allow one driver to dispatch work into an output directory at a time."""
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with open_regular_text_append(out_dir / ".driver.lock") as handle:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print(f"batch driver already running for {out_dir}", flush=True)
+            return 0
+        try:
+            return _run_batch_locked(args)
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _run_batch_locked(args: argparse.Namespace) -> int:
     concurrency = getattr(args, "concurrency", 1)
     if (
         isinstance(concurrency, bool)
@@ -567,22 +580,49 @@ def run_batch(args: argparse.Namespace) -> int:
             )
         print(f"[{index}/{len(work)}] {arm} {iid} rc={returncode} in {elapsed}s", flush=True)
 
-    if args.concurrency == 1:
-        for index, iid, arm, log_dir, command in jobs:
-            print(f"[{index}/{len(work)}] {arm} {iid}", flush=True)
-            returncode, elapsed = _run_one(command=command, log_dir=log_dir)
-            record(index, iid, arm, log_dir, command, returncode, elapsed)
-    else:
-        print(f"running {args.concurrency} at a time", flush=True)
-        with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
-            futures = {
-                pool.submit(_run_one, command=job[4], log_dir=job[3]): job
-                for job in jobs
-            }
-            for future in as_completed(futures):
-                index, iid, arm, log_dir, command = futures[future]
-                returncode, elapsed = future.result()
-                record(index, iid, arm, log_dir, command, returncode, elapsed)
+    with BatchStop() as stop:
+        if args.concurrency == 1:
+            for index, iid, arm, log_dir, command in jobs:
+                if stop.event.is_set():
+                    break
+                print(f"[{index}/{len(work)}] {arm} {iid}", flush=True)
+                returncode, elapsed = _run_one(command=command, log_dir=log_dir, stop=stop)
+                if returncode is not None:
+                    record(index, iid, arm, log_dir, command, returncode, elapsed)
+        else:
+            print(f"running {args.concurrency} at a time", flush=True)
+            pool = ThreadPoolExecutor(max_workers=args.concurrency)
+            futures = {}
+            pending_jobs = iter(jobs)
+
+            def submit_next() -> None:
+                job = next(pending_jobs, None)
+                if job is not None and not stop.event.is_set():
+                    futures[pool.submit(_run_one, command=job[4], log_dir=job[3], stop=stop)] = job
+
+            try:
+                for _ in range(args.concurrency):
+                    submit_next()
+                while futures:
+                    completed, _ = wait(futures, timeout=0.1, return_when=FIRST_COMPLETED)
+                    for future in completed:
+                        job = futures.pop(future)
+                        returncode, elapsed = future.result()
+                        if returncode is not None:
+                            record(*job, returncode, elapsed)
+                    if not stop.event.is_set():
+                        for _ in completed:
+                            submit_next()
+            except BaseException:
+                stop.request()
+                raise
+            finally:
+                pool.shutdown(wait=True, cancel_futures=True)
+
+        if stop.event.is_set():
+            for path in predictions.values():
+                recover_metric_projections(path)
+            return 128 + stop.signum
 
     for path in predictions.values():
         recover_metric_projections(path)

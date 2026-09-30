@@ -154,6 +154,8 @@ def summarize(
         # anything.
         "edges_walked": sum(r.edges_walked or 0 for r in rows if r.edges_declared),
         "edges_declared": sum(r.edges_declared or 0 for r in rows),
+        "message_agent_attempts": sum(s.msg_agent for r in rows for s in r.seats.values()),
+        "message_agent_sent": sum(s.msg_agent_sent for r in rows for s in r.seats.values()),
         # Two keys, not one: a cell where no run probed the tree and a cell
         # where every run probed it and found the analyst had written nothing
         # both give a count of zero, and they are different findings.
