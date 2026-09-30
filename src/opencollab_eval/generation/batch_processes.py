@@ -13,6 +13,15 @@ from typing import Any
 STOP_GRACE_SECONDS = 10.0
 
 
+class GeneratorContainerRecoveryError(RuntimeError):
+    """One or more owned containers failed after every recovery attempt."""
+
+    def __init__(self, failures: list[tuple[Path, BaseException]]) -> None:
+        self.failures = tuple(failures)
+        details = "; ".join(f"{path}: {type(error).__name__}: {error}" for path, error in self.failures)
+        super().__init__(f"generator container recovery failed for {len(self.failures)} owned containers: {details}")
+
+
 class BatchStop:
     def __init__(self) -> None:
         self.event = threading.Event()
@@ -40,6 +49,8 @@ def _recover_generator_containers(command: list[str], pid: int, identity: str) -
     from .gen_prediction_safe_output import persist_generation_failure
 
     root = Path(command[command.index("--output") + 1]).parent
+    instance_id = Path(command[command.index("--instance-file") + 1]).stem
+    failures: list[tuple[Path, BaseException]] = []
     for path in root.glob("**/.opencollab/container_owners/*.json"):
         record = owners._read_owner(path)
         if (
@@ -58,7 +69,7 @@ def _recover_generator_containers(command: list[str], pid: int, identity: str) -
                     raise RuntimeError("retained container ownership could not be confirmed")
                 isolated = isolate_container_for_preservation(reference)
                 persist_generation_failure(
-                    run_dir, instance_id=Path(command[command.index("--instance-file") + 1]).stem,
+                    run_dir, instance_id=instance_id,
                     phase="batch_stop", error=RuntimeError("generator interrupted by batch stop"),
                     evidence={"container_retained": True, "container_isolated": isolated},
                 )
@@ -70,12 +81,14 @@ def _recover_generator_containers(command: list[str], pid: int, identity: str) -
                 )
                 owners._unlink_owner(path)
         except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
+            failures.append((path, exc))
             persist_generation_failure(
-                run_dir, instance_id=Path(command[command.index("--instance-file") + 1]).stem,
+                run_dir, instance_id=instance_id,
                 phase="batch_stop", error=exc,
                 evidence={"container_owner_path": str(path), "container_isolation_error": str(exc)},
             )
-            raise
+    if failures:
+        raise GeneratorContainerRecoveryError(failures) from failures[0][1]
 
 
 def run_generator(command: list[str], sink: Any, env: dict[str, str], stop: BatchStop) -> int | None:
