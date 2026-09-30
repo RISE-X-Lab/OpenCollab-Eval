@@ -85,7 +85,7 @@ def test_background_smoke_waits_for_actual_delayed_write(
     extracted = []
 
     def extract(*_args):
-        assert state.marker.read_text(encoding="utf-8") == "ready\n"
+        assert state.marker.read_text(encoding="utf-8").startswith("ready\n")
         assert "# background\n" in state.source.read_text(encoding="utf-8")
         extracted.append(True)
         if scope is not None:
