@@ -80,8 +80,7 @@ def _edge_lines(summary: dict[str, Any], lines: list[str]) -> None:
     lines.append(
         f"edges walked {summary['edges_walked']}/{summary['edges_declared']}"
         + (f" = {rate:.3f}" if rate is not None else "")
-        + "   (a declared channel that carried at least one message_agent call;"
-        " delegation is the line above, and the two are different questions)"
+        + "   (a declared channel that carried at least one successfully queued message)"
     )
     _edges_short(summary, lines)
 
@@ -198,7 +197,7 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
         return _render_single(rows, summary, lines)
     header = (
         f"{'#':>3} {'instance_id':40s} {'status':10s} {'tok':>9s} {'analyst':>9s} {'coder':>8s} {'tester':>8s} "
-        f"{'left':>9s} {'cut':>3s} {'deleg':5s} {'msgA':>4s} {'aWr':>3s} {'snap':>4s} cap"
+        f"{'left':>9s} {'cut':>3s} {'deleg':5s} {'msgA':>4s} {'msgS':>4s} {'aWr':>3s} {'snap':>4s} cap"
     )
     lines.append(header)
     for i, r in enumerate(rows, 1):
@@ -209,13 +208,15 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
         lines.append(
             f"{i:>3} {r.instance_id:40s} {r.status:10s} {r.tokens:>9,} {a_tok:>9,} {c_tok:>8,} {t_tok:>8,} "
             f"{_headroom(r):>9s} {'CUT' if r.timeout_censored else '-':>3s} "
-            f"{'YES' if r.delivered else 'no':5s} {sum(s.msg_agent for s in r.seats.values()):>4} {a_writes:>3} "
+            f"{'YES' if r.delivered else 'no':5s} {sum(s.msg_agent for s in r.seats.values()):>4} "
+            f"{sum(s.msg_agent_sent for s in r.seats.values()):>4} {a_writes:>3} "
             f"{r.tree_snapshots:>4} {','.join(r.cap_hit) or '-'}"
             + ("" if r.valid else "   [excluded: " + (r.reason or r.status) + "]")
             + _attempt_note(r)
             + _replacement_note(r)
         )
     lines.append("")
+    lines.append("message_agent columns: msgA attempted calls, msgS successfully queued messages")
     excluded = f"   excluded {len(summary['invalid'])}: {summary['invalid']}" if summary["invalid"] else ""
     if summary.get("alpha_readable", summary.get("team", True)):
         lo, hi = summary["ci95"]
