@@ -116,7 +116,7 @@ def _background_task(image: str, base_commit: str, run_id: str) -> dict[str, Any
         "\nwhile True:\n f=open(p,'a'); f.write('# background\\n'); "
         "f.flush(); os.fsync(f.fileno()); f.close()\n"
         " if not ready:\n"
-        "  with open('/tmp/start-background','w') as marker: marker.write('ready\\n')\n"
+        "  with open('/tmp/start-background','a') as marker: marker.write('ready\\n')\n"
         "  ready=True\n"
         " time.sleep(.001)"
     )
