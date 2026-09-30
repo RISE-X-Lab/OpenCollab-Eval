@@ -129,3 +129,119 @@ def test_interrupted_owner_recovery_preserves_candidates_and_ignores_other_owner
     assert all(path.exists() for path in records[1:])
     evidence = json.loads((tmp_path / "kept" / "generation_failure.json").read_text())["evidence"]
     assert evidence["container_isolated"] == "stopped"
+
+
+@pytest.mark.parametrize("first_failure", ["label", "isolation", "removal", "markers"])
+def test_interrupted_owner_recovery_attempts_all_matching_containers(tmp_path, monkeypatch, first_failure):
+    command = ["generator", "--output", str(tmp_path / "preds.jsonl"), "--instance-file", "a__a-1.json"]
+    records = {}
+    for name, pid, identity, state in (
+        ("first", 999999, "owned", "active" if first_failure in {"removal", "markers"} else "kept"),
+        ("second", 999999, "owned", "kept"),
+        ("third", 999999, "owned", "active"),
+        ("foreign", 999998, "owned", "active"),
+        ("reused", 999999, "older", "active"),
+        ("live", 999999, "owned", "active"),
+    ):
+        run_dir = tmp_path / name
+        owners.write_container_marker(run_dir, name + "-cid", name)
+        path = owners.container_owner_path(run_dir, name)
+        original = owners._read_owner(path)
+        updated = {**original, "owner_pid": pid, "owner_start_identity": identity, "state": state}
+        owners._replace_owner(path, original, updated)
+        records[name] = (path, updated)
+    # Choose the production scan order explicitly so every failure precedes the successes.
+    original_glob = batch_processes.Path.glob
+
+    def ordered_glob(directory, pattern):
+        if directory == tmp_path and pattern == "**/.opencollab/container_owners/*.json":
+            return iter(path for path, _record in records.values())
+        return original_glob(directory, pattern)
+
+    monkeypatch.setattr(batch_processes.Path, "glob", ordered_glob)
+    monkeypatch.setattr(owners, "_owner_is_live", lambda record: record["container_name"] == "live")
+    calls = []
+    error = subprocess.TimeoutExpired(["docker", "pause", "first-cid"], 1)
+
+    def label_state(reference, token):
+        calls.append(("label", reference))
+        assert token == records[reference.removesuffix("-cid")][1]["owner_token"]
+        return "foreign" if reference == "first-cid" and first_failure == "label" else "matching"
+
+    def isolate(reference):
+        calls.append(("isolate", reference))
+        if reference == "first-cid":
+            raise error
+        return "stopped"
+
+    def remove(record):
+        calls.append(("remove", record["container_name"]))
+        if record["container_name"] == "first" and first_failure == "removal":
+            raise error
+        return True
+
+    original_clear = owners._clear_compatibility_markers
+
+    def clear(run_dir, cid, name):
+        if name == "first" and first_failure == "markers":
+            raise OSError("marker cleanup unavailable")
+        return original_clear(run_dir, cid, name)
+
+    monkeypatch.setattr(owners, "_container_owner_label_state", label_state)
+    monkeypatch.setattr(owners, "_remove_owned_container", remove)
+    monkeypatch.setattr(owners, "_clear_compatibility_markers", clear)
+    monkeypatch.setattr("opencollab_eval.generation.container_quiescence.isolate_container_for_preservation", isolate)
+    with pytest.raises(batch_processes.GeneratorContainerRecoveryError) as caught:
+        batch_processes._recover_generator_containers(command, 999999, "owned")
+    assert len(caught.value.failures) == 1
+    first_path, first_error = caught.value.failures[0]
+    assert first_path == records["first"][0]
+    assert caught.value.__cause__ is first_error
+    if first_failure in {"isolation", "removal"}:
+        assert first_error is error
+    assert ("isolate", "second-cid") in calls
+    assert ("remove", "third") in calls
+    assert all("foreign" not in reference and "reused" not in reference and "live" not in reference
+               for _operation, reference in calls)
+    assert owners._read_owner(records["first"][0]) == records["first"][1]
+    assert not records["third"][0].exists()
+    assert all(records[name][0].exists() for name in ("second", "foreign", "reused", "live"))
+    failure = json.loads((tmp_path / "first" / "generation_failure.json").read_text())
+    assert failure["phase"] == "batch_stop"
+    assert failure["evidence"]["container_owner_path"] == str(first_path)
+    success = json.loads((tmp_path / "second" / "generation_failure.json").read_text())
+    assert success["evidence"]["container_isolated"] == "stopped"
+
+
+def test_interrupted_owner_recovery_collects_each_error(tmp_path, monkeypatch):
+    command = ["generator", "--output", str(tmp_path / "preds.jsonl"), "--instance-file", "a__a-1.json"]
+    paths = []
+    errors = {}
+    for index in range(3):
+        name = f"candidate-{index}"
+        run_dir = tmp_path / name
+        owners.write_container_marker(run_dir, name + "-cid", name)
+        path = owners.container_owner_path(run_dir, name)
+        original = owners._read_owner(path)
+        owners._replace_owner(path, original,
+                              {**original, "owner_pid": 999999, "owner_start_identity": "owned", "state": "kept"})
+        paths.append(path)
+        errors[name + "-cid"] = RuntimeError(f"isolation failed for {name}")
+    monkeypatch.setattr(owners, "_owner_is_live", lambda _record: False)
+    monkeypatch.setattr(owners, "_container_owner_label_state", lambda *_args: "matching")
+    calls = []
+
+    def isolate(reference):
+        calls.append(reference)
+        raise errors[reference]
+
+    monkeypatch.setattr("opencollab_eval.generation.container_quiescence.isolate_container_for_preservation", isolate)
+    with pytest.raises(batch_processes.GeneratorContainerRecoveryError) as caught:
+        batch_processes._recover_generator_containers(command, 999999, "owned")
+    assert len(caught.value.failures) == 3
+    assert set(calls) == set(errors)
+    assert {path for path, _error in caught.value.failures} == set(paths)
+    assert {error for _path, error in caught.value.failures} == set(errors.values())
+    assert all(path.exists() for path in paths)
+    assert all(json.loads((path.parents[2] / "generation_failure.json").read_text())["phase"] == "batch_stop"
+               for path in paths)
