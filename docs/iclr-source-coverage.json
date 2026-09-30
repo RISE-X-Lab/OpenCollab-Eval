@@ -3709,7 +3709,7 @@
     {
       "source_change": "A",
       "source_path": "tests/test_gen_prediction_batch.py",
-      "disposition": "relocated",
+      "disposition": "adapted",
       "target_paths": [
         "tests/generation/test_gen_prediction_batch.py"
       ]

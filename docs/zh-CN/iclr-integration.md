@@ -24,7 +24,7 @@
 git merge-base --is-ancestor 0bcc657 integrate/iclr-2027
 ```
 
-配套运行时为 OC 已完整验证的整合版本 `f0ead300`。
+配套运行时为 OC 已完整验证的整合版本 `8f15f050`。
 CI 通过现有的跨仓库设置构建这一指定版本。
 OC 整合系列提供公开的团队、环境、模型检查和 profile 工具接口。
 
