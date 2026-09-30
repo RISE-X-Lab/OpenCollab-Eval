@@ -6,6 +6,8 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -25,12 +27,14 @@ def test_pending_publication_accepts_published_status():
 
 
 @pytest.fixture(autouse=True)
-def _isolated_solver_snapshot(monkeypatch):
+def _isolated_solver_snapshot(monkeypatch, tmp_path):
     monkeypatch.setattr(gp, "stash_solver_runtime_dependencies", lambda *a, **k: object())
     monkeypatch.setattr(gp, "restore_solver_runtime_dependencies", lambda *a, **k: None)
     monkeypatch.setattr(gp, "remove_solver_runtime_dependencies", lambda *a, **k: None)
     monkeypatch.setattr(gp, "container_image_id", lambda container_id: "sha256:" + "8" * 64)
     monkeypatch.setattr(gp, "prepare_testbed_environment", lambda container_id: None)
+    monkeypatch.setattr(gp, "_container_owner_label_state", lambda *_args: "matching")
+    monkeypatch.setattr(gp, "require_container_quiescence", lambda _cid: None)
     evidence = gp.SolverGitSnapshot(
         anonymous_head="a" * 40,
         base_tree="b" * 40,
@@ -44,11 +48,17 @@ def _isolated_solver_snapshot(monkeypatch):
         "prepare_solver_git_snapshot",
         lambda container_id, expected_base_commit: evidence,
     )
-    baseline = type("Baseline", (), {"snapshot": evidence, "cleanup": lambda self: None})()
+    def baseline(_cid, _snapshot):
+        temporary = tempfile.TemporaryDirectory(dir=tmp_path)
+        return gp.gen_prediction_patch.TrustedPatchBaseline(
+            snapshot=evidence, temporary_directory=temporary, git_dir=Path(temporary.name) / "repo.git",
+            archive_sha256="c" * 64, archive_bytes=10, archive_entries=1, extracted_bytes=1,
+        )
+
     monkeypatch.setattr(
         gp,
         "prepare_trusted_patch_baseline",
-        lambda container_id, snapshot: baseline,
+        baseline,
     )
 
 
@@ -301,7 +311,7 @@ def test_single_main_records_transport_without_remote_environment(monkeypatch, t
     assert prediction["workflow_metric"]["workflow_env"] == metric["workflow_env"]
 
 
-def test_single_main_output_symlink_race_cleans_active_container(
+def test_single_main_output_symlink_race_retains_unwritten_candidate(
     monkeypatch,
     tmp_path,
 ):
@@ -385,10 +395,13 @@ def test_single_main_output_symlink_race_cleans_active_container(
     with pytest.raises(ValueError, match="regular file or absent"):
         gp.main()
 
-    assert removed == ["cid"]
+    assert removed == []
     assert victim.read_text(encoding="utf-8") == "unchanged\n"
     assert not list((tmp_path / ".opencollab" / "pending_outputs").glob("*.json"))
-    assert not list((tmp_path / ".opencollab" / "container_owners").glob("*.json"))
+    assert list((tmp_path / ".opencollab" / "container_owners").glob("*.json"))
+    receipts = list((tmp_path / "candidate-recovery").glob("*/recovery.json"))
+    assert len(receipts) == 1
+    assert json.loads(receipts[0].read_text())["reason"] == "candidate_record_unwritten"
 
 
 def test_next_start_recovers_owner_and_publishes_pending_once(monkeypatch, tmp_path):
