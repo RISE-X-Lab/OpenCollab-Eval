@@ -2,6 +2,22 @@
 
 All notable changes to OpenCollab-Eval are recorded in this file.
 
+## [0.8.2] - 2026-09-28
+
+Task prompts include issue discussion hints when present. Standalone runs record
+their trajectory path even after a runtime failure, and workflow output errors
+produce a stopped status in the run metrics. Container cleanup uses the
+configured Docker timeout.
+
+Standalone and workflow generation now share optional default step and token
+caps and a 30-minute wall timeout. The batch runner determines completion from
+non-empty candidate patches while retaining technical supervisor failures.
+
+Standalone and workflow generation record the same LLM transport settings,
+including stream-chat selection, alongside the model configuration. Context
+window records include the supported GPT-5.6 Luna, DeepSeek V4.1 Flash, and
+Qwen 3.8 Flash models.
+
 ## [0.8.1] - 2026-09-27
 
 Directory traversal transfers descriptor ownership before closing the parent.
