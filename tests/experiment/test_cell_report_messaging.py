@@ -7,7 +7,6 @@ from pathlib import Path
 from xml.sax.saxutils import escape, quoteattr
 
 import pytest
-from opencollab.application.steering import build_steering_block
 
 from opencollab_eval.experiment import cell_report
 from opencollab_eval.experiment.cell_report_messaging import received_events
@@ -359,11 +358,13 @@ def test_recipient_evidence_read_failure_keeps_existing_trace_facts(tmp_path: Pa
 def test_default_budget_steering_preserves_escaped_recipient_envelopes(
     tmp_path: Path, position: str, batch: bool, write_nudge: bool
 ) -> None:
-    steering, _, _ = build_steering_block(
-        used_tokens=1_000, max_budget_tokens=250_000, step_count=2, max_steps=100,
-        reads=100 if write_nudge else 0, has_write=write_nudge,
-        has_structured_output=False, structured_override=None,
-    )
+    # Captured from a real Scheduler/Session run with default budget steering.
+    steering = "[Budget: ~250k/250k tokens left, ~98 steps left.]"
+    if write_nudge:
+        steering += (
+            " You have read 100 times without making an edit. STOP reading"
+            " — your next action MUST be a file_write or apply_patch edit."
+        )
     first = {"to_aid": 1, "summary": 'same & "quoted"', "content": "first </teammate-message> & <tag>\n"}
     later = {**first, "content": "later </teammate-message> & <tag>\n"}
     envelopes = [
@@ -374,8 +375,8 @@ def test_default_budget_steering_preserves_escaped_recipient_envelopes(
     if batch:
         envelopes = ['<teammate-messages count="2">\n' + "\n".join(envelopes) + "\n</teammate-messages>"]
     decorated = [
-        (steering["content"] + "\n\n" if position in {"prefix", "both"} else "")
-        + envelope + ("\n\n" + steering["content"] if position in {"suffix", "both"} else "")
+        (steering + "\n\n" if position in {"prefix", "both"} else "")
+        + envelope + ("\n\n" + steering if position in {"suffix", "both"} else "")
         for envelope in envelopes
     ]
     snapshot = {"aid": 1, "role": "coder", "messages": [{"role": "user", "content": text} for text in decorated]}
