@@ -8,7 +8,7 @@ reaches it, or an arm that is quietly run as a different arm.
 
 from __future__ import annotations
 
-import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -122,24 +122,14 @@ def test_an_ambient_temperature_on_the_machine_does_not_reach_a_run(
 
 
 def test_the_temperature_reaches_the_generator_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The end of the chain: what a started subprocess actually has.
-
-    The two tests above check the mapping; this one checks that the mapping is
-    the one ``_run_one`` passes to ``subprocess.run``. They were separable
-    before -- the driver built an environment and then started the child with
-    the ambient one -- and that is exactly the failure that leaves no trace.
-    """
-    seen: dict[str, str] = {}
-
-    def fake_run(command, **kwargs):
-        seen.update(kwargs["env"])
-        return subprocess.CompletedProcess(command, 0)
-
+    """A real child receives the selected temperature through the owned process runner."""
     monkeypatch.setenv("OPENCOLLAB_TEMPERATURE", "0.9")
-    monkeypatch.setattr(batch.subprocess, "run", fake_run)
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-
-    batch._run_one(command=["true"], log_dir=log_dir)
-
-    assert seen["OPENCOLLAB_TEMPERATURE"] == batch.ARM_SAMPLING_TEMPERATURE
+    returncode, _elapsed = batch._run_one(
+        command=[sys.executable, "-c", "import os; print(os.environ['OPENCOLLAB_TEMPERATURE'])"],
+        log_dir=log_dir,
+        stop=batch.BatchStop(),
+    )
+    assert returncode == 0
+    assert (log_dir / "driver.log").read_text().strip() == batch.ARM_SAMPLING_TEMPERATURE
