@@ -5,12 +5,14 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import threading
 import time
 import urllib.error
 from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from itertools import permutations
 from types import SimpleNamespace
 
 import pytest
@@ -128,6 +130,49 @@ def test_probe_keeps_a_direct_successful_json_response(monkeypatch: pytest.Monke
     assert response.text == FAKE_KEY
     assert response.completion_tokens == 2
     assert FAKE_KEY not in json.dumps(report)
+
+
+@pytest.mark.parametrize("requested", [",".join(names) for names in permutations(model_fork_probe.PROBE_NAMES)])
+@pytest.mark.parametrize("max_requests", [6, 10])
+def test_every_probe_order_uses_the_remaining_context_budget(
+    monkeypatch: pytest.MonkeyPatch, requested: str, max_requests: int
+) -> None:
+    _clear_network_environment(monkeypatch)
+    received: list[dict] = []
+
+    class Success(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            received.append(payload)
+            prompt = payload["messages"][0]["content"]
+            sentinels = re.findall(r"(?:HEAD|TAIL)-CODE ([0-9a-f]+)", prompt)
+            message = {"content": " ".join(sentinels) or "ping"}
+            if "tools" in payload:
+                message["tool_calls"] = [VALID_CALL]
+            body = json.dumps({
+                "choices": [{"message": message, "finish_reason": "stop"}],
+                "usage": {"completion_tokens": 2},
+            }).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_: object) -> None:
+            pass
+
+    with _serve(Success) as origin:
+        sender = http_sender(f"http://127.0.0.1:{origin.server_port}/v1", FAKE_KEY)
+        report = run_probes(
+            "fake", requested=requested, max_requests=max_requests, sender=sender, ceiling_tokens=8_000
+        )
+
+    assert report["results"]["context"]["requests_spent"] == max_requests - 5
+    assert all(row["verdict"] == "both-sentinels" for row in report["results"]["context"]["attempts"])
+    assert len(received) == max_requests
+    assert sum("tools" in payload for payload in received) == 3
+    assert sum(payload.get("max_tokens") == 32 or "max_completion_tokens" in payload for payload in received) == 2
+    assert report["requests_remaining"] == 0
 
 
 @pytest.mark.parametrize(
