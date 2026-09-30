@@ -15,6 +15,7 @@ MESSAGE_SENT_EVENT = "message_sent"
 MESSAGE_REFUSED_EVENT = "message_refused"
 _QUEUED_ACK = re.compile(r"Message queued to aid (-?[0-9]+)\.")
 _COMMIT_REF = re.compile(r"(?<![0-9A-Za-z])[0-9a-f]{7,40}(?![0-9A-Za-z])")
+_TEAMMATE_PREFIX = re.compile(r"(?:\[(?:Budget|Progress):[^\n]*\n+\s*)*<(teammate-messages?)\s")
 
 
 def role_key(role: str) -> str:
@@ -87,10 +88,18 @@ def received_events(snapshot: dict[str, Any]) -> list[tuple[dict[str, Any], bool
         content = message.get("content")
         if message.get("role") != "user" or message.get("kind") == "stop_notice" or not isinstance(content, str):
             continue
-        if not content.startswith(("<teammate-message ", "<teammate-messages ")):
+        prefix = _TEAMMATE_PREFIX.match(content)
+        if prefix is None:
             continue
+        closing = f"</{prefix[1]}>"
+        end = content.find(closing, prefix.end())
+        if end < 0:
+            continue
+        # Scheduler bodies and attributes are XML-escaped. The literal root
+        # closing tag marks the envelope boundary before appended steering.
+        start = prefix.start(1) - 1
         try:
-            root = ET.fromstring(content)
+            root = ET.fromstring(content[start:end + len(closing)])
         except ET.ParseError:
             continue
         envelopes = [root] if root.tag == "teammate-message" else list(root)
