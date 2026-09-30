@@ -499,6 +499,8 @@ def run_probes(
     results: dict[str, Any] = {}
     for name in names:
         share = min(budget, budget - reserved if name == "context" else PROBE_COST_IN_REQUESTS[name])
+        if name != "context":
+            reserved -= PROBE_COST_IN_REQUESTS[name]
         if share <= 0:
             results[name] = {"skipped": "request budget exhausted"}
             continue

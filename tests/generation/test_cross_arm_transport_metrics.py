@@ -203,7 +203,12 @@ def test_a_finished_single_agent_run_records_how_it_reached_the_provider(
             "reasoning_effort": "high",
         },
     )
-    monkeypatch.setattr(gp, "start_container_with_marker", lambda *args, **kwargs: "cid")
+    def start(_image, name, run_dir):
+        gp.write_container_marker(run_dir, "cid", name)
+        return "cid"
+
+    monkeypatch.setattr(gp, "start_container_with_marker", start)
+    monkeypatch.setattr(gp, "_container_owner_label_state", lambda *_args: "matching")
     monkeypatch.setattr(gp, "finalize_container_ownership", lambda **kwargs: None)
 
     def stage_output(**kwargs):
