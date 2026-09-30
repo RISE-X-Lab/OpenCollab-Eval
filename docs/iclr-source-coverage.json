@@ -3621,7 +3621,7 @@
     {
       "source_change": "A",
       "source_path": "tests/test_arm_wiring.py",
-      "disposition": "relocated",
+      "disposition": "adapted",
       "target_paths": [
         "tests/experiment/test_arm_wiring.py"
       ]
