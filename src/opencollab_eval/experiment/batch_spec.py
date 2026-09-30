@@ -650,12 +650,19 @@ def launch_script(spec: BatchSpec, host: HostConfig, limit: int | None = None) -
     argv = " ".join(shlex.quote(a) for a in driver_argv(spec, host, limit))
     return "\n".join(
         [
-            "set -u",
+            "set -eu",
             f"cd {shlex.quote(host.workdir)}",
+            f"mkdir -p {shlex.quote(spec.name)}",
+            f"exec 9>> {shlex.quote(spec.name + '/.launch.lock')}",
+            f'active_driver() {{ pgrep -af "{BATCH_PROCESS_PATTERN}" '
+            f'| grep -F -- {shlex.quote("--out-dir " + spec.name + " ")} | head -1 || true; }}',
+            'if ! flock -n 9; then existing="$(active_driver)"; '
+            f'printf "%s\\n" "${{existing:-driver launch already active for {spec.name}}}"; exit 0; fi',
+            'existing="$(active_driver)"',
+            'if [ -n "$existing" ]; then printf "%s\\n" "$existing"; exit 0; fi',
             f"setsid nohup env {env} {argv} < /dev/null >> {shlex.quote(spec.log_file)} 2>&1 &",
             "sleep 5",
-            f'pgrep -af "{BATCH_PROCESS_PATTERN}" | grep -F -- {shlex.quote("--out-dir " + spec.name + " ")} '
-            "| head -1 | cut -c1-120 || true",
+            'active_driver | cut -c1-120',
             "",
         ]
     )
