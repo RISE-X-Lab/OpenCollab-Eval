@@ -1,0 +1,157 @@
+# NOT A PAPER CELL. Twelve rows at concurrency 12, to find out what this gateway
+# will carry before another full cell is spent on it.
+#
+# WHAT IT IS ANSWERING. `dual-judge-luna-pro36` was launched at concurrency 24
+# and came back 34 of 36 `failed`: thirty rows on `APIError: Concurrency limit
+# exceeded for user` and three on `gateway_queue_full`. The refusals were not a
+# burst -- the runs died between 720 s and 5400 s in, and with
+# `OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET=600` giving each seat ten minutes of
+# absorbing before it dies, that means the gateway was refusing from the first
+# minutes and did not stop for the hour and three quarters the batch ran.
+#
+# WHY A BATCH RATHER THAN THE LOAD PROBE. `~/gw-load-probe.py` answers 24 of 24
+# at this endpoint right now, at `max_tokens` 16 and at 4000 alike, because the
+# probe's prompt is trivial and the model returns about 85 tokens either way --
+# the slot is released in seconds. What the cell does is hold a streaming
+# request open for minutes at `reasoning_effort=max`. Instantaneous request
+# count is evidently not what this gateway is counting, so only a batch
+# measures it.
+#
+# THE ONE FIELD THAT MOVES, AND WHY THAT IS ALLOWED. `concurrency` is outside
+# `spec_identity` by design, because a resume may use a different one: it is a
+# property of how the work is dispatched, not a treatment. Every field the
+# ladder rests on is untouched, so if this smoke comes back clean its twelve
+# rows are measuring the same thing the cell would.
+#
+# READ IT AS PASS/FAIL, NOT AS AN ALPHA. Twelve rows of a reference cell cannot
+# carry a delegation rate worth reporting; what is being read is whether
+# `failed` is zero.
+#
+# The qwen cell's counterpart on `gpt-5.6-luna`. Derived from `dual-judge-pro36.yaml`
+# by changing `name` and `model_env` and by rewriting the endpoint paragraph
+# below, which in the qwen version asserts a property this cell does not have.
+# Every field the ladder rests on -- the 36 rows, the frame content, the
+# per-seat budget, the step cap, the wall clock, the pins, the env block --
+# is byte-identical, so a difference between two luna cells is a difference
+# between two cards.
+#
+# THE WALL CLOCK IS LEFT ALONE ON PURPOSE. This endpoint is about four times
+# slower per call, so `timeout: 5400` may cut runs that qwen finished. Raising
+# it would change a treatment field, which is outside the standing
+# authorization and would also make this ladder incomparable to the others.
+# Measure the first cell, report, then decide.
+#
+# dual-judge: G22's two-candidate organization seated as a measurable team, on the
+# SWE-bench Pro mini-36 whose repositories the solver-repo sanitize leaves intact.
+#
+# THE CELL. The reference cell: it commands nothing. Its block is byte-identical to the
+# handoff ladder's `judge.md`, because that text never names a role, so whatever
+# delegation happens here is the roster's doing and not the card's.
+#
+# THE ROSTER. An Adopter (the entry seat) and two Coders, `coder_a` and `coder_b`.
+# The Adopter can reach both; the two Coders cannot reach each other, so the
+# Adopter is the only channel between them. The card asks for them one at a
+# time: brief the first, wait for its answer, then write the second its own
+# brief. What goes into that second brief is the Adopter's -- what it learned
+# from the first is its to use or to leave out -- and which of the two answers
+# the run delivers is its choice too.
+#
+# THREE THINGS THIS IS NOT.
+#   * Not best-of-2. The two candidates are not independent: the second is
+#     briefed by an Adopter that has already read the first.
+#   * Not G22's relay. G22 forwards the first agent's output; here the Adopter
+#     writes the second brief itself, and nothing prescribes what crosses.
+#   * Not poolable with the handoff ladder. Same five moves, different roster;
+#     the two families are separate instruments and their cells do not pool.
+#
+# THE ADHERENCE NUMBER IS READABLE AGAIN. `cell_report.py` used to derive the
+# delegate seats from the literal names `coder` and `tester`, which this roster
+# matches neither, so alpha read 0.000 with a Clopper-Pearson interval printed
+# around it. Since `48254f6` it reads them off the run's own
+# `assigned.topology_nodes`, and a run whose event log has no such record falls
+# back to the old names rather than inventing a number.
+#
+# WHAT IS HELD EQUAL, AND WITH WHAT. The five specs of this family differ from
+# one another in `name` and `cell` and in nothing else, so a difference between
+# two of them is a difference between two cards. With `pro-mini36-clean` the
+# shared fields are the 36 rows, the frame content, the budget and the step cap
+# -- but not the model env, see below -- so that batch is not a baseline for
+# these numbers until its rows are re-run at this endpoint.
+#
+# CONCURRENCY IS 24, AND THE FIELD THAT BUYS IT IS `OPENCOLLAB_DOCKER_TIMEOUT`.
+# Thirty-six -- one wave for a 36-row cell -- was tried and given up: it put the
+# shared host's five-minute load at 61.8 against 64 cores with a spike to 79.9,
+# and it bought little, because a cell at 36 ends when its slowest single run
+# ends (about 90 minutes) rather than when the work is through. At 24 the same
+# 36 rows take roughly 110 minutes and leave a third of the machine to the
+# sixteen other accounts on it. At 12 against that timeout's default of 60 s, two
+# of twelve rows once died at 94 s with the snapshot step's `docker exec`
+# crossing it, before any agent ran. Daemon dispatch is not what spends the
+# minute: at 4, 12, 24, 32 and 48 simultaneous `docker exec` against a daemon
+# already serving four hundred containers for seventeen accounts, the median was
+# 0.13-0.24 s and the slowest 0.37 s. What spends it is the snapshot script's own
+# walk of the repository, which concurrency worsens only through CPU and IO
+# contention -- so the timeout is raised rather than the concurrency held down.
+# The endpoint was measured apart from the daemon: 36 simultaneous completions
+# were all answered, median 4.6 s, while 48 drew eight `API-Key Requests rate
+# limit exceeded`, putting the ceiling between the two. A batch is gentler than
+# that probe anyway, since a seat calls about once a minute. Raising the timeout
+# changes `env` and so the batch identity; `concurrency` is deliberately outside
+# the identity, because a resume may use a different one -- it is not a treatment.
+#
+# A DIFFERENT ENDPOINT UNDER A DIFFERENT KEY, AND THE COMPARISON HAS TO SAY SO.
+# The other cells of this sweep sit at the token-plan endpoint under one key,
+# which is what let their comparison say that two of them differ in the model
+# and in nothing else. This cell does not: `gpt-5.6-luna` is served by the
+# 47.100.35.241 gateway under its own key, so a difference between a luna cell
+# and a qwen cell is a difference in the model AND in the endpoint AND in the
+# account, and none of the three can be told from the other two. What survives
+# is the ladder inside this family: all five luna cells sit at this one
+# endpoint, so a difference between two of THEM is still a difference between
+# two cards. Read the luna column as its own ladder; do not read a luna-minus-
+# qwen difference as a model effect.
+#
+# WHAT THIS GATEWAY IS KNOWN TO DO. Its quota is shared with accounts we cannot
+# see: on 2026-09-20 it refused us for 45 minutes and went on answering 429
+# after our own load was gone, and it has answered `gateway_concurrency_limit`
+# to a single request with none of our load on it. Under 24 simultaneous
+# completions its median was 16.9 s against token-plan's 4.1 s, with 16 of 24
+# over ten seconds. Two consequences to watch in the first cell's readout,
+# neither of which is a reason to change a treatment field before it is
+# measured: rows may end at `wall_clock_timeout` where qwen's ended completed,
+# and a refusal storm shows up as `api_error` rows that have to be re-run
+# through `retry_of` rather than left out.
+#
+# SURVIVING A GATEWAY THAT WOBBLES. `OPENCOLLAB_LLM_MAX_RETRIES` is 30 against a
+# default of 3, and `OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET` is 600 against a
+# default of 0. The two must move together: the 60 s ceiling on exponential
+# backoff (`adapters/llm/retry.py`) applies only when a time budget exists, so
+# raising the retry count alone would let the twentieth backoff sleep for days
+# and silently spend the run's whole wall clock. With both set, a seat absorbs
+# up to ten minutes of 502s and carries on; past that it ends on a provider
+# error, which `cell_report` excludes rather than counts. That exclusion is why
+# a flaky endpoint costs rows rather than biasing them, and why the rows it
+# costs have to be re-run through `retry_of` instead of being left out.
+name: dual-judge-luna-smoke12
+host: lthpc
+arm: team
+cell: dual-judge
+suite: pro-mini36-clean
+rows: {start: 1, stop: 12}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 12
+model_env: configs/.env.gw2-luna
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+pins:
+  opencollab: 76c6676a2f661242598230c6265a012b9fe8e9d6
+  opencollab_eval: 0e04fdb235e52987dcad49c264f563dc8614d70a
+note: "concurrency smoke for the luna gateway after a 34/36 refusal storm at concurrency 24; not a paper cell; probe only, not a paper cell: the two-candidate roster on SWE-bench Pro mini-36; scoring is the official Pro evaluator, not `batch score`; no adherence number may be read from `summary.alpha` for this roster"

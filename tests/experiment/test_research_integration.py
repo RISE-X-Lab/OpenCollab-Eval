@@ -9,8 +9,9 @@ import sys
 from pathlib import Path
 
 from opencollab_eval.experiment import cell_report
+from tests.support.paths import SOURCE_ROOT
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = SOURCE_ROOT
 
 
 def test_data_module_import_does_not_require_runtime_observers() -> None:
@@ -40,6 +41,17 @@ def _merged_preds_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_merged_prediction_selects_the_observed_record_within_one_batch() -> None:
+    module = _merged_preds_module()
+    row = cell_report.RunRow("task", "completed", "", 1, 1, record_id="valid")
+    assert (
+        module._selected_prediction(
+            row, [({"record_id": "valid"}, "valid-json"), ({"record_id": "new-invalid"}, "invalid-json")]
+        )
+        == "valid-json"
+    )
 
 
 def test_batch_input_write_preserves_a_symlink_target(tmp_path: Path) -> None:

@@ -1,0 +1,34 @@
+# Second attempt at s2sc-plain-bypass-qwen38-tp-pro36 row 9 (flipt-56a620b8; Rp+, plain block,
+# topology bypass, qwen3.8-flash, OC ec89629f).
+#
+# Attempt 1 failed: the Tester's bash command ran 602 s, did not quiesce, and the execution
+# environment was revoked. The rule declared on 09-24 before any retry of the adherence
+# cells ran is at most three counted attempts per row for a failure the run itself caused
+# (revoked, lost row) and retries until success for a gateway failure; it applies to the
+# topology cells as it did to D1, D2, T1 and T2. Same fields and pins as the cell; merged by
+# `retry_of`; one spec per contiguous run of failed rows. Runs after the four full cells.
+# ---------------------------------------------------------------------------
+name: s2sc-plain-bypass-qwen38-tp-pro36-retry-r9
+host: lthpc-b
+arm: team
+cell: s2sc-plain-bypass
+suite: pro-mini36-clean
+rows: {start: 9, stop: 9}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 5400
+concurrency: 1
+model_env: configs/.env.tp3-qwen38
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+retry_of: s2sc-plain-bypass-qwen38-tp-pro36
+pins:
+  opencollab: ec89629f3e1dbc7f4f3a52e03ce5966ee759139f
+  opencollab_eval: 36bbb22e00ea4ca66187a0918275f4409baa60ad
+note: "retry of s2sc-plain-bypass-qwen38-tp-pro36 row 9 (flipt-56a620b8): the Tester's bash command ran 602 s, did not quiesce, and the execution environment was revoked; second counted attempt"

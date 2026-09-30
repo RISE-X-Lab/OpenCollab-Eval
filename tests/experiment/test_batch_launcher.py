@@ -21,6 +21,8 @@ from opencollab_eval.experiment.batch_spec import (
     build_instances,
     card_file_paths,
     cell_team_file,
+    driver_argv,
+    driver_env,
     launch_script,
     load_host,
     load_spec,
@@ -212,6 +214,31 @@ def test_missing_frame_record_is_an_error(experiment: dict) -> None:
     rows = suite_rows(spec, experiment["dir"] / "suite")
     with pytest.raises(SpecError, match="not in the frame"):
         build_instances(rows, {})
+
+
+@pytest.mark.skipif(not REAL_CACHE.exists(), reason="frame content cache not built on this machine")
+def test_real_spec_reproduces_the_hand_built_instance_file() -> None:
+    from opencollab_eval.experiment.batch_spec import load_frame_content, sha256_text
+
+    spec = load_spec(EXPERIMENT / "batches" / "cmdplain30.yaml")
+    rows = suite_rows(spec, EXPERIMENT / "suite")
+    text = build_instances(rows, load_frame_content(REAL_CACHE))
+    assert sha256_text(text) == HAND_LAUNCHED_INSTANCES_SHA256
+
+
+def test_real_spec_reproduces_the_hand_launched_command() -> None:
+    spec = load_spec(EXPERIMENT / "batches" / "cmdplain30.yaml")
+    host = load_host(EXPERIMENT / "hosts" / "gpu3.yaml")
+    assert driver_argv(spec, host) == HAND_LAUNCHED_ARGV
+    env = driver_env(spec, host)
+    assert (
+        env["PYTHONPATH"]
+        == "/home/xuzhenhua/oc-team-smoke/OpenCollab:/home/xuzhenhua/oc-team-smoke/OpenCollab-Eval/src"
+    )
+    assert env["OPENCOLLAB_CONFIG_FILE"] == "/home/xuzhenhua/oc-team-smoke/OpenCollab/configs/.env"
+    assert env["https_proxy"] == "http://proxy.example:8888"
+    assert env["OPENCOLLAB_WRITE_NUDGE_MODE"] == "off"
+    assert spec.pins == {"opencollab": PIN_OC, "opencollab_eval": PIN_EVAL}
 
 
 def test_launch_script_is_detached_and_carries_the_switches(experiment: dict) -> None:
@@ -640,6 +667,7 @@ def test_status_script_counts_rows_under_bash(experiment: dict, fake_host: dict)
 
 
 def test_rung_derives_the_cell_and_refuses_a_mismatch(experiment: dict) -> None:
+    from opencollab_eval.experiment.batch_spec import RUNG_CELLS
 
     path = experiment["dir"] / "batches" / "r.yaml"
     path.write_text(_spec_text(experiment, "cell: x\n", "rung: plain\n"), encoding="utf-8")
@@ -664,6 +692,54 @@ def test_rung_derives_the_cell_and_refuses_a_mismatch(experiment: dict) -> None:
         "propose": "cmd-propose",
         "propose2": "cmd-propose2",
     }
+
+
+def test_the_second_lthpc_checkout_is_the_same_machine() -> None:
+    """Every `lthpc-*.yaml` may differ from `lthpc.yaml` in the checkout paths only.
+
+    It exists so a second pin can run while a batch holds the first checkout,
+    and it is only sound while every other field is identical: a second host
+    file that quietly carried a different scoring dataset, python or workdir
+    would turn "which card" into "which machine" without saying so.
+    """
+    import yaml
+
+    a = yaml.safe_load((EXPERIMENT / "hosts" / "lthpc.yaml").read_text(encoding="utf-8"))
+    others = sorted((EXPERIMENT / "hosts").glob("lthpc-*.yaml"))
+    assert others, "the extra checkouts are what this test exists for"
+    seen = set()
+    for path in others:
+        b = yaml.safe_load(path.read_text(encoding="utf-8"))
+        differ = {k for k in set(a) | set(b) if a.get(k) != b.get(k)}
+        assert differ == {"name", "opencollab_dir", "eval_dir"}, (path.name, differ)
+        pair = (b["opencollab_dir"], b["eval_dir"])
+        assert pair not in seen and pair != (a["opencollab_dir"], a["eval_dir"]), path.name
+        seen.add(pair)
+
+
+def test_checked_in_specs_name_rung_and_cell_consistently() -> None:
+    # A ``TEMPLATE-`` file is not a spec: it carries `<family>`-style
+    # placeholders on purpose, so ``load_spec`` refuses its name and the refusal
+    # is the file working as intended. Loading it here turned this gate red for
+    # every checked-in spec at once, which is how a real breakage would have
+    # hidden.
+    for path in sorted((EXPERIMENT / "batches").glob("*.yaml")):
+        if path.name.startswith("TEMPLATE-"):
+            continue
+        spec = load_spec(path)
+        if spec.arm == "team":
+            assert spec.cell is not None, f"{path.name}: a team spec names the card it seats"
+            # A rung is a name the paper reports a number under, and only the
+            # cells in RUNG_CELLS have one. A batch on a ladder cell must say
+            # which rung it is, or its number cannot be placed; a batch on a
+            # roster outside the ladder must not, because naming one would file
+            # its number under a rung it is not comparable with.
+            if spec.cell in set(RUNG_CELLS.values()):
+                assert spec.rung is not None, f"{path.name}: a ladder cell names its rung"
+            else:
+                assert spec.rung is None, f"{path.name}: {spec.cell} is not a cell of the ladder"
+        assert (EXPERIMENT / "hosts" / f"{spec.host}.yaml").exists()
+        assert (EXPERIMENT / "suite" / f"{spec.suite}.csv").exists()
 
 
 def test_plan_refuses_a_pin_that_is_not_a_local_commit(experiment: dict, capsys) -> None:

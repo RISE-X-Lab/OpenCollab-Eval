@@ -23,6 +23,7 @@ import pytest
 
 from opencollab_eval.commands import batch as batch_cli
 from opencollab_eval.experiment import cell_report
+from opencollab_eval.experiment.batch_spec import load_spec, spec_digest
 from tests.experiment import batch_support as launcher
 
 EXPERIMENT = launcher.EXPERIMENT
@@ -78,8 +79,35 @@ def planted_driver():
     proc.wait()
 
 
+def test_the_readme_hand_check_sees_a_planted_driver(planted_driver) -> None:
+    checks = _readme_process_checks()
+    assert checks, f"{BATCHES_README} documents no hand check for a running driver"
+    for command in checks:
+        out = subprocess.run(["bash", "-c", command], capture_output=True, text=True, check=False).stdout
+        found = [line for line in out.splitlines() if str(planted_driver.pid) == line.split(maxsplit=1)[0]]
+        assert found, f"{command!r} did not see the planted driver; it returned {out!r}"
+        # And it must not answer with itself: the grep's own command line
+        # carries the pattern, which is the whole reason the bracket is there.
+        # Matched on the command, not on the whole line: any shell that happens
+        # to hold the pattern in an argument is ambient noise, the grep process
+        # is the defect.
+        itself = [
+            line
+            for line in out.splitlines()
+            if len(line.split(maxsplit=2)) == 3 and line.split(maxsplit=2)[2].split()[0].endswith("grep")
+        ]
+        assert not itself, f"{command!r} matched its own grep ({itself}); its answers are not process counts"
 
 
+def test_the_readme_hand_check_carries_its_own_positive_control() -> None:
+    """The instruction to plant a process before believing a "nothing running".
+
+    An empty result has two causes and the reader cannot tell them apart, so
+    the README has to say how to make the check hit something it should hit.
+    """
+    text = BATCHES_README.read_text(encoding="utf-8")
+    row = next(line for line in text.splitlines() if "sees a planted process" in line)
+    assert "exec -a" in row and "sleep" in row, row
 
 
 # --- retries: a second attempt at the instances an endpoint dropped -----------------------
@@ -92,6 +120,23 @@ def planted_driver():
 CMDPLAIN30_DIGEST = "4fb8ac66259c434e9db5ae9649627ef063bf70e031cdd1b9c7a0c8513df30caa"
 
 
+def test_retry_of_changes_the_identity_only_for_the_specs_that_use_it(experiment: dict) -> None:
+    from opencollab_eval.experiment.batch_spec import spec_identity
+
+    assert spec_digest(load_spec(EXPERIMENT / "batches" / "cmdplain30.yaml")) == CMDPLAIN30_DIGEST
+    base = load_spec(experiment["spec"])
+    assert "retry_of" not in spec_identity(base)
+    path = experiment["dir"] / "batches" / "t1r.yaml"
+    path.write_text(
+        _spec_text(experiment, "name: t1", "name: t1r\nretry_of: t1").replace(
+            "rows: {start: 1, stop: 2}", "rows: {start: 2, stop: 2}"
+        ),
+        encoding="utf-8",
+    )
+    retry = load_spec(path)
+    assert retry.retry_of == "t1"
+    assert spec_identity(retry)["retry_of"] == "t1"
+    assert spec_digest(retry) != spec_digest(base)
 
 
 def _plan(experiment: dict, path: Path) -> int:

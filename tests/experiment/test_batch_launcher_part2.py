@@ -189,8 +189,29 @@ def test_sync_reports_a_checkout_that_did_not_land(experiment: dict, capsys) -> 
     assert "RESULT: NOT synced" in capsys.readouterr().out
 
 
+@_NEEDS_PROC
+def test_sync_guard_counts_a_driver_only_against_its_own_checkout(tmp_path: Path) -> None:
+    """A batch running from `lthpc` must not stop a sync of `lthpc-b`, and must stop one of `lthpc`.
+
+    The second checkout exists so a second pin can run while a batch holds the
+    first; a guard that counts every driver on the machine refuses that sync
+    whenever anything runs anywhere, which is the one situation it exists for.
+    """
+    from_a = _checkout_pythonpath(tmp_path, "lthpc.yaml")
+
+    own = _guard_facts_with_a_driver(tmp_path, from_a, "lthpc.yaml")
+    other = _guard_facts_with_a_driver(tmp_path, from_a, "lthpc-b.yaml")
+
+    assert [f[0] for f in own] == ["RUNNING"]
+    assert [f[0] for f in other] == ["ELSEWHERE"]
 
 
+@_NEEDS_PROC
+def test_sync_guard_counts_a_driver_it_cannot_attribute_against_every_checkout(tmp_path: Path) -> None:
+    """No PYTHONPATH to read means no evidence the driver is elsewhere: refuse, as before."""
+    facts = _guard_facts_with_a_driver(tmp_path, None, "lthpc-b.yaml")
+
+    assert [f[0] for f in facts] == ["RUNNING"]
 
 
 def test_sync_proceeds_past_drivers_on_other_checkouts(experiment: dict, capsys) -> None:

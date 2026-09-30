@@ -1,0 +1,34 @@
+# Third attempt at s2tools-adopt-qwen38-tp-pro36 row 12 (flipt-b2393f07; T2, qwen3.8-flash, N2 pin), the last one the rule allows.
+#
+# Attempts 1 (T2) and 2 (-retry-r12, 102,789 tokens, 652 s) failed the same way: the Adopter streamed a call to
+# `bash`, which it is not offered; OC openai_provider.py:634 raises TransientProviderError on an
+# unregistered tool name, the provider retry resends the same prompt until the 600 s error budget
+# runs out, and the seat errors out. The rule declared before any retry ran is at most three
+# counted attempts per row, applied to every failed row alike (D2's rows 22 and 31 had theirs);
+# after this one the row stays failed whatever happens. Same fields and pins as T2; merged by
+# `retry_of`; named -retry-r12b (the b-suffix is the third attempt, as in D2).
+# ---------------------------------------------------------------------------
+name: s2tools-adopt-qwen38-tp-pro36-retry-r12b
+host: lthpc
+arm: team
+cell: s2tools-adopt
+suite: pro-mini36-clean
+rows: {start: 12, stop: 12}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 5400
+concurrency: 1
+model_env: configs/.env.tp3-qwen38
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+retry_of: s2tools-adopt-qwen38-tp-pro36
+pins:
+  opencollab: 4b231b0e128696768e168521eddb634fd8951927
+  opencollab_eval: 3ff64deb72b1879449a3f1d11d52fde329088d04
+note: "third attempt at s2tools-adopt-qwen38-tp-pro36 row 12: attempts 1 and 2 failed (Adopter called the unoffered bash; flipt-b2393f07)"

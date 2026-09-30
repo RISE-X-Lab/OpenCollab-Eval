@@ -1,0 +1,1 @@
+{"snapshot_version": 1, "aid": 0, "role": "analyst", "model": "deepseek-v4-flash", "session_state": {"used_tokens": 2000000, "context_tokens": 1234, "step_count": 60, "phase": "stopped", "terminal_reason": "budget exceeded: 2000000 tokens used"}, "messages": [{"role": "assistant", "content": "", "reasoning_content": "keep going, fix the test"}]}

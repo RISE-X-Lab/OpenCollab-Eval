@@ -1,0 +1,22 @@
+# Frame-wide self-collaboration run: frame-ordered.csv rows 1-500 (seed 20260901 order, all 500
+# images present on gpu3 at pre-flight). Same pins as the ladder and the subset
+# batches. The 50 subset tasks recur here as their second repetition. Concurrency
+# is set from the subset batches' measured disk use before launch.
+name: dw-frame500
+host: gpu3
+arm: self-collaboration
+suite: frame-ordered
+rows: {start: 1, stop: 500}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 8
+model_env: configs/.env
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: b00f256995e321e910a988908842705177d4c0f4
+  opencollab_eval: 315a06c3df10dcde3d0218a3a3b6a6b157ee12b1
+note: "Dynamic Workflow on the whole frame; theta numerator"

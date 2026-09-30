@@ -17,9 +17,10 @@ from opencollab_eval.experiment.batch_spec import (
     load_host,
     load_spec,
 )
+from tests.support.paths import SOURCE_ROOT
 
-ROOT = Path(__file__).resolve().parents[2]
-EXPERIMENT = ROOT / "experiment"
+ROOT = SOURCE_ROOT
+EXPERIMENT = SOURCE_ROOT / "experiment"
 PIN_OC = "b00f256995e321e910a988908842705177d4c0f4"
 PIN_EVAL = "315a06c3df10dcde3d0218a3a3b6a6b157ee12b1"
 
