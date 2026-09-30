@@ -32,6 +32,7 @@ from opencollab_eval.experiment.cell_report_messaging import (
     event_target,
     message_calls,
     role_key,
+    sent_targets,
 )
 from opencollab_eval.experiment.cell_report_metric_order import report_metric_records
 
@@ -376,18 +377,17 @@ def _int_or_none(value: Any) -> int | None:
 
 def _event_log_facts(
     seat_paths: list[Path],
-) -> tuple[dict[str, dict[str, Any]], dict[str, Any] | None, dict[str, Any] | None, dict[str, list[str]]]:
+) -> tuple[
+    dict[str, dict[str, Any]], dict[str, Any] | None, dict[str, Any] | None, dict[str, list[dict[str, Any]]]
+]:
     """Read the run's session, topology, roster, and message decisions.
 
     Returns the ``session_terminal`` payload of each session keyed by ``aid``,
     the single ``assigned.topology_edges`` payload and the single
-    ``assigned.topology_nodes`` payload, and successful targets per sender.
-    A sender with refusal events alone has an empty target list. Read from
-    the event log beside the seat snapshots, and read
-    defensively: these are the only quantities in the report that come from a
-    second file, and a batch pulled before the log existed, a truncated log, or
-    a log this reader cannot parse must all leave every other column exactly as
-    it was.
+    ``assigned.topology_nodes`` payload, and successful decisions per sender.
+    The decision payloads retain their resolved aids and message fields for
+    pairing with queue receipts in the seat snapshots. Truncated or missing
+    event records leave those receipts available to the report.
 
     The logs run to hundreds of megabytes a batch and hold a handful of these
     rows, so a line that can contain neither is skipped before it is parsed.
@@ -395,7 +395,7 @@ def _event_log_facts(
     found: dict[str, dict[str, Any]] = {}
     topology: dict[str, Any] | None = None
     nodes: dict[str, Any] | None = None
-    messages: dict[str, list[str]] = {}
+    messages: dict[str, list[dict[str, Any]]] = {}
     seen_messages: set[str] = set()
     for directory in dict.fromkeys(path.parent for path in seat_paths):
         for name in EVENT_LOG_NAMES:
@@ -429,13 +429,12 @@ def _event_log_facts(
                             sender = payload.get("from_aid")
                             if not isinstance(sender, int) or isinstance(sender, bool):
                                 continue
-                            targets = messages.setdefault(str(sender), [])
                             if kind != MESSAGE_SENT_EVENT:
                                 continue
                             target = event_target(payload)
                             message_id = payload.get("message_id")
                             if target and (not message_id or str(message_id) not in seen_messages):
-                                targets.append(target)
+                                messages.setdefault(str(sender), []).append(payload)
                                 if message_id:
                                     seen_messages.add(str(message_id))
             except OSError:
@@ -558,11 +557,15 @@ def _seat_role(path: Path, recorded: str) -> str:
     return label.split("-", 1)[0] or recorded
 
 
-def _read_seat(path: Path) -> tuple[int, Seat]:
+def _read_seat(
+    path: Path, message_events: dict[str, list[dict[str, Any]]] | None = None
+) -> tuple[int, Seat]:
     data = json.loads(path.read_text(encoding="utf-8"))
+    aid = int(data.get("aid") or 0)
     state = data.get("session_state") or {}
     messages = data.get("messages") or []
-    calls, targets = message_calls(messages)
+    calls, receipts = message_calls(messages)
+    targets = sent_targets(receipts, (message_events or {}).get(str(aid), []))
     seat = Seat(
         role=_seat_role(path, str(data.get("role") or "")),
         tokens=int(state.get("used_tokens") or 0),
@@ -574,7 +577,7 @@ def _read_seat(path: Path) -> tuple[int, Seat]:
         terminal=str(state.get("terminal_reason") or ""),
         msg_agent_targets=targets,
     )
-    return int(data.get("aid") or 0), seat
+    return aid, seat
 
 
 def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
@@ -595,11 +598,8 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
         terminals, topology, nodes, messages = _event_log_facts(seat_paths)
         seats: dict[str, Seat] = {}
         for path in seat_paths:
-            aid, seat = _read_seat(path)
+            aid, seat = _read_seat(path, messages)
             seat.cap = _int_or_none((terminals.get(str(aid)) or {}).get("max_budget_tokens"))
-            if str(aid) in messages:
-                seat.msg_agent_targets = messages[str(aid)]
-                seat.msg_agent_sent = len(seat.msg_agent_targets)
             seats[str(aid)] = seat
         snapshots = record.get("tree_snapshots")
         if not snapshots and isinstance(workflow_result, dict):

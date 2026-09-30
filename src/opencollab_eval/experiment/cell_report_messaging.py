@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
+from dataclasses import dataclass
 from typing import Any
 
 MESSAGE_TOOL = "message_agent"
@@ -18,11 +19,20 @@ def role_key(role: str) -> str:
     return unicodedata.normalize("NFC", role.strip()).casefold()
 
 
-def message_calls(messages: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
+@dataclass
+class QueuedReceipt:
+    """A successful queue receipt paired with the call that produced it."""
+
+    aid: int
+    target: str
+    arguments: dict[str, Any]
+
+
+def message_calls(messages: list[dict[str, Any]]) -> tuple[list[str], list[QueuedReceipt]]:
     """Count calls and recover resolved targets from their matching tool receipts."""
     calls: list[str] = []
     pending: dict[str, dict[str, Any]] = {}
-    sent: list[str] = []
+    sent: list[QueuedReceipt] = []
     for message in messages:
         if message.get("role") == "assistant":
             for call in message.get("tool_calls") or []:
@@ -46,9 +56,10 @@ def message_calls(messages: list[dict[str, Any]]) -> tuple[list[str], list[str]]
                 # queue receipt. This also supports snapshots missing the target seat.
                 role = arguments.get("to_role")
                 if isinstance(role, str) and role.strip() and arguments.get("to_aid") is None:
-                    sent.append(f"role:{role_key(role)}")
+                    target = f"role:{role_key(role)}"
                 else:
-                    sent.append(f"aid:{int(match[1])}")
+                    target = f"aid:{int(match[1])}"
+                sent.append(QueuedReceipt(aid=int(match[1]), target=target, arguments=arguments))
     return calls, sent
 
 
@@ -56,8 +67,54 @@ def event_target(payload: dict[str, Any]) -> str | None:
     """Use the scheduler's resolved role, with its resolved aid as fallback."""
     role = payload.get("to_role")
     if isinstance(role, str) and role:
-        return f"role:{role}"
+        return f"role:{role_key(role)}"
     aid = payload.get("to_aid")
     if isinstance(aid, int) and not isinstance(aid, bool):
         return f"aid:{aid}"
     return None
+
+
+def _same_send(receipt: QueuedReceipt, event: dict[str, Any]) -> bool:
+    """Pair a queue decision using its resolved target and recorded payload."""
+    aid = event.get("to_aid")
+    if isinstance(aid, int) and not isinstance(aid, bool):
+        if receipt.aid != aid:
+            return False
+    elif event_target(event) != receipt.target:
+        return False
+    arguments = receipt.arguments
+    for name in ("summary", "content"):
+        value = arguments.get(name)
+        length = event.get(f"{name}_chars")
+        if length is not None and (not isinstance(value, str) or len(value) != length):
+            return False
+    summary = event.get("summary")
+    if isinstance(summary, str):
+        requested = arguments.get("summary")
+        if not isinstance(requested, str) or not requested.startswith(summary):
+            return False
+    content_bytes = event.get("content_bytes")
+    if content_bytes is not None:
+        content = arguments.get("content")
+        if not isinstance(content, str) or len(content.encode("utf-8")) != content_bytes:
+            return False
+    return True
+
+
+def sent_targets(receipts: list[QueuedReceipt], events: list[dict[str, Any]]) -> list[str]:
+    """Merge successful decisions and receipts, consuming each match once."""
+    remaining = list(receipts)
+    successful = [(event, event_target(event)) for event in events if event_target(event) is not None]
+    targets = [target for _, target in successful if target is not None]
+    # Match detailed decisions before legacy target-only records can consume
+    # the receipt needed by a decision with matching message fields.
+    fields = ("summary", "summary_chars", "content_chars", "content_bytes")
+    for event, _ in sorted(
+        successful, key=lambda item: sum(item[0].get(key) is not None for key in fields), reverse=True
+    ):
+        for index, receipt in enumerate(remaining):
+            if _same_send(receipt, event):
+                remaining.pop(index)
+                break
+    targets.extend(receipt.target for receipt in remaining)
+    return targets
