@@ -33,3 +33,9 @@ Keep Python modules below 800 lines and new files below 500 KB.
 
 Generated reports, model transcripts, predictions, patches, datasets, runtime
 logs, PDFs, and local environment paths stay outside the source repository.
+
+## ICLR integration branch
+
+The cumulative PR series targets `integrate/iclr-2027` and is documented in
+`docs/iclr-integration.md`. Merge it in order using merge commits to retain
+the final ICLR source ancestry for subsequent Git merges.
