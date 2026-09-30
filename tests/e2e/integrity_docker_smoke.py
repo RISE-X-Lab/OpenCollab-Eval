@@ -112,9 +112,13 @@ def _blocked_image_task(image: str, run_id: str) -> dict[str, Any]:
 
 def _background_task(image: str, base_commit: str, run_id: str) -> dict[str, Any]:
     writer = (
-        "import os,time; p='" + SOURCE_PATH + "'; "
+        "import os,time; p='" + SOURCE_PATH + "'; ready=False; "
         "\nwhile True:\n f=open(p,'a'); f.write('# background\\n'); "
-        "f.flush(); os.fsync(f.fileno()); f.close(); time.sleep(.001)"
+        "f.flush(); os.fsync(f.fileno()); f.close()\n"
+        " if not ready:\n"
+        "  with open('/tmp/start-background','w') as marker: marker.write('ready\\n')\n"
+        "  ready=True\n"
+        " time.sleep(.001)"
     )
     supervisor = (
         "import os,subprocess,time; children=[]; code=" + repr(writer) + "; "
@@ -133,8 +137,11 @@ def _background_task(image: str, base_commit: str, run_id: str) -> dict[str, Any
     snapshot = prepare_solver_git_snapshot(container, base_commit)
     baseline = prepare_trusted_patch_baseline(container, snapshot)
     try:
-        _exec(container, "touch /tmp/start-background")
-        time.sleep(0.15)
+        _exec(
+            container,
+            "touch /tmp/start-background && "
+            "while ! test -s /tmp/start-background; do sleep .01; done",
+        )
         try:
             extract_patch_trusted(container, baseline)
         except WorkspaceIntegrityError as exc:
