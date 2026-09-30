@@ -370,6 +370,7 @@ def write_regular_file_atomic(
     parent_fd = open_directory_no_symlinks(target.parent)
     temp_name = f".opencollab-{uuid.uuid4().hex}.tmp"
     temp_fd = -1
+    temp_identity: tuple[int, int] | None = None
     try:
         _check_parent_identity(parent_fd, expected_parent_identity, target)
         current = _target_stat(parent_fd, target)
@@ -389,10 +390,12 @@ def write_regular_file_atomic(
             mode if current is None else stat.S_IMODE(current.st_mode),
             dir_fd=parent_fd,
         )
+        opened = os.fstat(temp_fd)
+        temp_identity = (opened.st_dev, opened.st_ino)
         if current is not None:
             os.fchmod(temp_fd, stat.S_IMODE(current.st_mode))
-        with os.fdopen(temp_fd, "w+b") as handle:
-            temp_fd = -1
+        # Keep descriptor ownership through stream construction and signal unwinding.
+        with os.fdopen(temp_fd, "w+b", closefd=False) as handle:
             writer(handle)
             handle.flush()
             if os.fstat(handle.fileno()).st_size > limit:
@@ -411,13 +414,25 @@ def write_regular_file_atomic(
             os.replace(temp_name, target.name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
         os.fsync(parent_fd)
     finally:
-        if temp_fd >= 0:
-            os.close(temp_fd)
         try:
-            os.unlink(temp_name, dir_fd=parent_fd)
-        except FileNotFoundError:
-            pass
-        os.close(parent_fd)
+            if temp_fd >= 0:
+                try:
+                    remaining = os.fstat(temp_fd)
+                except OSError as exc:
+                    if exc.errno != errno.EBADF:
+                        raise
+                else:
+                    # A writer may close the descriptor and another file may reuse its number.
+                    if temp_identity is None or (remaining.st_dev, remaining.st_ino) == temp_identity:
+                        os.close(temp_fd)
+        finally:
+            try:
+                try:
+                    os.unlink(temp_name, dir_fd=parent_fd)
+                except FileNotFoundError:
+                    pass
+            finally:
+                os.close(parent_fd)
 
 
 def write_regular_bytes_atomic(
