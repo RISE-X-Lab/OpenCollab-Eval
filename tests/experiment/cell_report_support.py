@@ -512,6 +512,16 @@ def _seat_with_messages(directory: Path, filename: str, *, aid: int, role: str, 
         }
         for i, t in enumerate(targets)
     ]
+    role_aids = {"analyst": 0, "adopter": 0, "coder": 1, "coder_a": 1, "tester": 2, "coder_b": 2}
+    for i, target in enumerate(targets):
+        destination = target.get("to_aid", role_aids.get(target.get("to_role")))
+        messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": f"c{i}",
+                "content": f"Message queued to aid {destination}." if destination is not None else "Error: no target.",
+            }
+        )
     (directory / filename).write_text(
         json.dumps(
             {

@@ -3,17 +3,11 @@
     python -m opencollab_eval.commands.batch plan      experiment/batches/<name>.yaml
     python -m opencollab_eval.commands.batch preflight experiment/batches/<name>.yaml
     python -m opencollab_eval.commands.batch launch    experiment/batches/<name>.yaml [--limit 3]
-    python -m opencollab_eval.commands.batch status    experiment/batches/<name>.yaml
-    python -m opencollab_eval.commands.batch wait      experiment/batches/<name>.yaml
     python -m opencollab_eval.commands.batch pull      experiment/batches/<name>.yaml
     python -m opencollab_eval.commands.batch report    experiment/batches/<name>.yaml
 
-``plan`` is local and free. ``preflight`` reads the host and refuses on any
-failed check. ``launch`` runs the pre-flight, copies the instance file (data,
-never source), starts the driver detached and records ``batch.json`` on both
-sides. The instance file is rebuilt from the frozen suite every time, so the
-task content a batch ran on is a digest in its record, not a file someone
-once uploaded.
+``plan`` writes locally. ``launch`` checks the host, copies rebuilt instances,
+starts a detached driver, and records ``batch.json`` on both sides.
 """
 
 from __future__ import annotations
@@ -129,22 +123,32 @@ class Ssh:
     def __init__(self, host: HostConfig) -> None:
         self.host = host
 
-    def run(self, script: str, timeout: float = 300) -> str:
+    def run(self, script: str, timeout: float = 300, *, retry_transport: bool = False) -> str:
+        """Dispatch once, or retry transport for an explicitly read-only script."""
         delays = (5, 10, 15, 20, 25)
         for attempt in range(len(delays) + 1):
-            proc = subprocess.run(
-                ["ssh", self.host.ssh, "bash -s"],
-                input=script,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
-            )
-            if proc.returncode == 255 and attempt < len(delays):
+            try:
+                proc = subprocess.run(
+                    ["ssh", self.host.ssh, "bash -s"],
+                    input=script,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired as exc:
+                if retry_transport and attempt < len(delays):
+                    time.sleep(delays[attempt])
+                    continue
+                raise RemoteError(f"ssh {self.host.ssh} timed out; remote execution outcome is unknown") from exc
+            if proc.returncode == 255 and retry_transport and attempt < len(delays):
                 time.sleep(delays[attempt])
                 continue
             if proc.returncode != 0:
-                raise RemoteError(f"ssh {self.host.ssh} exited {proc.returncode}: {proc.stderr.strip()[:500]}")
+                uncertainty = "; remote execution outcome is unknown" if proc.returncode == 255 else ""
+                raise RemoteError(
+                    f"ssh {self.host.ssh} exited {proc.returncode}: {proc.stderr.strip()[:500]}{uncertainty}"
+                )
             return proc.stdout
         raise RemoteError("unreachable")
 
@@ -162,6 +166,13 @@ class Ssh:
             check=True,
             timeout=3600,
         )
+
+
+def read_remote(remote: Any, script: str, timeout: float = 300) -> str:
+    """Retry read-only SSH probes while preserving alternate remote adapters."""
+    if isinstance(remote, Ssh):
+        return remote.run(script, timeout, retry_transport=True)
+    return remote.run(script, timeout)
 
 
 def commit_exists(repo: str | Path, sha: str) -> bool:
@@ -506,7 +517,7 @@ def cmd_sync(batch: Batch, remote: Ssh) -> int:
     (the checkout would move the code under a running batch) and local
     modifications (the pin would stop naming what ran).
     """
-    facts = batch_remote.parse_facts(remote.run(batch_remote.sync_guard_script(batch.host)))
+    facts = batch_remote.parse_facts(read_remote(remote, batch_remote.sync_guard_script(batch.host)))
     # A fact line can carry tabs of its own (a process command line does), so
     # these read by index rather than unpacking a pair.
     running = [f[1] for f in facts if f[0] == "RUNNING" and len(f) > 1]
@@ -679,14 +690,16 @@ def _print_status(facts: list[tuple[str, ...]], spec: BatchSpec) -> None:
 
 
 def cmd_status(batch: Batch, remote: Ssh) -> int:
-    facts = batch_remote.parse_facts(remote.run(batch_remote.status_script(batch.spec, batch.host), timeout=120))
+    facts = batch_remote.parse_facts(
+        read_remote(remote, batch_remote.status_script(batch.spec, batch.host), timeout=120)
+    )
     _print_status(facts, batch.spec)
     return 0
 
 
 def cmd_wait(batch: Batch, remote: Ssh, poll: int, timeout: float) -> int:
     facts = batch_remote.parse_facts(
-        remote.run(batch_remote.wait_script(batch.spec, batch.host, poll), timeout=timeout)
+        read_remote(remote, batch_remote.wait_script(batch.spec, batch.host, poll), timeout=timeout)
     )
     _print_status(facts, batch.spec)
     return 0
@@ -723,6 +736,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("score")
     p.add_argument("spec")
     p.add_argument("--max-workers", type=int, default=12)
+    p.add_argument("--run-id", default=None, help="reuse an existing scoring run identifier")
     p.add_argument("--timeout", type=int, default=1800, help="per-instance seconds inside the harness")
     p.add_argument(
         "--no-gold",
@@ -765,7 +779,9 @@ def main(argv: Sequence[str] | None = None, remote_factory: Callable[[HostConfig
         if args.command == "pull":
             return cmd_pull(batch, remote)
         if args.command == "score":
-            return cmd_score(batch, remote, max_workers=args.max_workers, timeout=args.timeout, gold=args.gold)
+            return cmd_score(
+                batch, remote, max_workers=args.max_workers, timeout=args.timeout, gold=args.gold, run_id=args.run_id
+            )
         if args.command == "score-report":
             return cmd_score_report(batch, remote)
         if args.command == "report":
