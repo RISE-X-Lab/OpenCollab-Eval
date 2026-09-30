@@ -56,6 +56,18 @@ _PATTERNS = (
 )
 
 
+# Credential-redaction fixtures use an injected local sender. The two literal
+# appearances are the environment value and the matching redaction assertion.
+# These exact locations cover the preserved ICLR suite and its migrated path.
+# Value, path, detector and occurrence count remain part of the approval.
+_AUDITED_TEST_FINDING_LIMITS: dict[tuple[str, str, str], int] = {
+    ("OpenAI API key", "tests/test_model_fork_audit.py",
+     "25a93bbee346ba9d11f3326c610748577a22f3d53513669a24ee312ae9d7390c"): 2,
+    ("OpenAI API key", "tests/experiment/test_model_fork_audit.py",
+     "25a93bbee346ba9d11f3326c610748577a22f3d53513669a24ee312ae9d7390c"): 2,
+}
+
+
 @dataclass(frozen=True)
 class Finding:
     """One location and fingerprint produced by a high-confidence detector."""
@@ -177,6 +189,9 @@ def check_secret_history(repository: Path, base: str, head: str) -> int:
             finding.identity
             for finding in _scan_tree(repository, resolved_base, cache)
         )
+
+    for identity, limit in _AUDITED_TEST_FINDING_LIMITS.items():
+        trusted_counts[identity] = max(trusted_counts[identity], limit)
 
     commits = _commits(repository, resolved_base, resolved_head)
     if not commits:
