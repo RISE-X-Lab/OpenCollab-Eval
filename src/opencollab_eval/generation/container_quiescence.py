@@ -550,45 +550,58 @@ def isolate_container_for_preservation(container_id: str) -> str:
             raise RuntimeError(f"retained container state probe failed: {detail}")
         return inspected.stdout.strip()
 
-    try:
-        current = state()
-    except RuntimeError:
-        current = "unknown"
+    errors: list[str] = []
+
+    def probe() -> str:
+        try:
+            return state()
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
+            errors.append(f"state probe {type(exc).__name__}: {exc}")
+            return "unknown"
+
+    current = probe()
     if current.startswith("false "):
         return "stopped"
     if current == "true true":
         return "paused"
-    if current not in {"true false", "unknown"}:
-        raise RuntimeError(f"retained container has unknown state: {current!r}")
-    pause_detail = ""
     if current == "true false":
-        paused = subprocess.run(
-            ["docker", "pause", container_id],
+        after_pause = "unknown"
+        try:
+            paused = subprocess.run(
+                ["docker", "pause", container_id],
+                capture_output=True,
+                text=True,
+                timeout=container_control_timeout(),
+                check=False,
+            )
+            errors.append(f"pause exit {paused.returncode}: {(paused.stderr or paused.stdout).strip()}")
+            after_pause = probe()
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            errors.append(f"pause {type(exc).__name__}: {exc}")
+        if after_pause == "true true":
+            return "paused"
+        if after_pause.startswith("false "):
+            return "stopped"
+    try:
+        stopped = subprocess.run(
+            ["docker", "stop", "--time", "10", container_id],
             capture_output=True,
             text=True,
             timeout=container_control_timeout(),
             check=False,
         )
-        pause_detail = (paused.stderr or paused.stdout).strip()
-        try:
-            after_pause = state()
-        except RuntimeError:
-            after_pause = "unknown"
-        if after_pause == "true true":
-            return "paused"
-        if after_pause.startswith("false "):
-            return "stopped"
-    stopped = subprocess.run(
-        ["docker", "stop", "--time", "10", container_id],
-        capture_output=True,
-        text=True,
-        timeout=container_control_timeout(),
-        check=False,
-    )
-    if state().startswith("false "):
+        errors.append(f"stop exit {stopped.returncode}: {(stopped.stderr or stopped.stdout).strip()}")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        errors.append(f"stop {type(exc).__name__}: {exc}")
+    final = probe()
+    if final.startswith("false "):
         return "stopped"
-    detail = (stopped.stderr or stopped.stdout or pause_detail).strip()
-    raise RuntimeError(f"retained container pause and stop were not proven: {detail}")
+    if final == "true true":
+        return "paused"
+    raise RuntimeError(
+        f"retained container pause and stop were not proven (final state {final!r}): "
+        + "; ".join(errors)
+    )
 
 
 @contextmanager

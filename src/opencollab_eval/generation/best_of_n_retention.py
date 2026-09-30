@@ -53,6 +53,7 @@ def retain_best_of_n_source(
             try:
                 evidence["container_isolated"] = isolate(cid)
             except BaseException as isolation_error:
+                evidence["container_isolation_error"] = f"{type(isolation_error).__name__}: {isolation_error}"
                 add_exception_note(
                     record_error,
                     f"container isolation failed: {type(isolation_error).__name__}: {isolation_error}",
