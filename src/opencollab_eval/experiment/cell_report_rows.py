@@ -31,6 +31,7 @@ from opencollab_eval.experiment.cell_report_messaging import (
     MESSAGE_TOOL,
     event_target,
     message_calls,
+    received_events,
     role_key,
     sent_targets,
 )
@@ -439,6 +440,28 @@ def _event_log_facts(
                                     seen_messages.add(str(message_id))
             except OSError:
                 continue
+    # Recipient envelopes preserve message identities and exact bodies after
+    # trace recovery, even when the sender's last receipt was not autosaved.
+    by_id = {event["message_id"]: event for events in messages.values() for event in events if event.get("message_id")}
+    for path in seat_paths:
+        try:
+            snapshot = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(snapshot, dict):
+            continue
+        for received, queued in received_events(snapshot):
+            prior = by_id.get(received["message_id"])
+            if prior is not None:
+                if prior.get("from_aid") == received["from_aid"] and prior.get("to_aid") == received["to_aid"]:
+                    prior.setdefault("content", received["content"])
+                    prior["summary"] = received["summary"]
+                    prior["summary_chars"] = received["summary_chars"]
+                continue
+            if not queued:
+                continue
+            messages.setdefault(str(received["from_aid"]), []).append(received)
+            by_id[received["message_id"]] = received
     return found, topology, nodes, messages
 
 
