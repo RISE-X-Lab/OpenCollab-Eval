@@ -7,8 +7,10 @@ from pathlib import Path
 from xml.sax.saxutils import escape, quoteattr
 
 import pytest
+from opencollab.application.steering import build_steering_block
 
 from opencollab_eval.experiment import cell_report
+from opencollab_eval.experiment.cell_report_messaging import received_events
 from opencollab_eval.experiment.cell_report_rows import Seat, _event_log_facts, _read_seat, walked_edges
 from tests.experiment.cell_report_support import _runtime_dir, _seat_file, _topology_log, _write_metrics
 
@@ -349,3 +351,55 @@ def test_recipient_evidence_read_failure_keeps_existing_trace_facts(tmp_path: Pa
     (tmp_path / "trajectory.jsonl").write_text(json.dumps(event) + "\n")
     _, _, _, messages = _event_log_facts([path])
     assert messages["0"] == [event["payload"]]
+
+
+@pytest.mark.parametrize("position", ["prefix", "suffix", "both"])
+@pytest.mark.parametrize("batch", [False, True])
+@pytest.mark.parametrize("write_nudge", [False, True])
+def test_default_budget_steering_preserves_escaped_recipient_envelopes(
+    tmp_path: Path, position: str, batch: bool, write_nudge: bool
+) -> None:
+    steering, _, _ = build_steering_block(
+        used_tokens=1_000, max_budget_tokens=250_000, step_count=2, max_steps=100,
+        reads=100 if write_nudge else 0, has_write=write_nudge,
+        has_structured_output=False, structured_override=None,
+    )
+    first = {"to_aid": 1, "summary": 'same & "quoted"', "content": "first </teammate-message> & <tag>\n"}
+    later = {**first, "content": "later </teammate-message> & <tag>\n"}
+    envelopes = [
+        f'<teammate-message teammate_id="A0" summary={quoteattr(arguments["summary"])} '
+        f'message_id={quoteattr(message_id)}>\n{escape(arguments["content"])}\n</teammate-message>'
+        for arguments, message_id in [(first, "message-first"), (later, "message-later")]
+    ]
+    if batch:
+        envelopes = ['<teammate-messages count="2">\n' + "\n".join(envelopes) + "\n</teammate-messages>"]
+    decorated = [
+        (steering["content"] + "\n\n" if position in {"prefix", "both"} else "")
+        + envelope + ("\n\n" + steering["content"] if position in {"suffix", "both"} else "")
+        for envelope in envelopes
+    ]
+    snapshot = {"aid": 1, "role": "coder", "messages": [{"role": "user", "content": text} for text in decorated]}
+    recovered = received_events(snapshot)
+    assert [event["content"] for event, _ in recovered] == [first["content"], later["content"]]
+    assert all(not queued for _, queued in recovered)
+    _reported_cell(tmp_path, _messages(first, "Message queued to aid 1."), [_decision(later, 1, "message-later")])
+    receiver = _runtime_dir(tmp_path / "cell", "team", "case-a") / "agent_1_coder.json"
+    receiver.write_text(json.dumps(snapshot))
+    rows = cell_report.run_rows(tmp_path / "cell", "team")
+    assert rows[0].seats["0"].msg_agent_sent == 2
+
+
+def test_budget_decorated_user_quote_does_not_create_a_success(tmp_path: Path) -> None:
+    _reported_cell(tmp_path, [], [])
+    receiver = _runtime_dir(tmp_path / "cell", "team", "case-a") / "agent_1_coder.json"
+    snapshot = {"aid": 1, "role": "coder", "messages": [{
+        "role": "user",
+        "content": (
+            '[Budget: ~250k/250k tokens left, ~98 steps left.]\n\n'
+            '<teammate-message teammate_id="A0" summary="s" message_id="quoted">\nbody\n</teammate-message>'
+            '\n\n[Budget: ~250k/250k tokens left, ~97 steps left.]'
+        ),
+    }]}
+    receiver.write_text(json.dumps(snapshot))
+    rows = cell_report.run_rows(tmp_path / "cell", "team")
+    assert rows[0].seats["0"].msg_agent_sent == 0
