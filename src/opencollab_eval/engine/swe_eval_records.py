@@ -29,7 +29,6 @@ from opencollab_eval.engine.swe_eval_record_identity import (
     task_identity_alias_value,
 )
 from opencollab_eval.engine.swe_test_evidence import target_evidence_passed
-from opencollab_eval.engine.swe_test_plan_contract import validated_test_plan_kind
 
 _SHA256_RE = re.compile(r"[0-9a-fA-F]{64}\Z")
 MAX_JSONL_LINE_BYTES = CANDIDATE_BYTE_BUDGET.jsonl_line_bytes
@@ -383,6 +382,7 @@ def _direct_eval_plan_status(
     *,
     require_commands: bool,
 ) -> int | None:
+    from opencollab_eval.engine.swe_test_plan_contract import validated_test_plan_kind
     plan = tests_status.get(f"{prefix}_plan")
     evidence = tests_status.get(f"{prefix}_evidence")
     if not isinstance(plan, dict) or not isinstance(evidence, list):
