@@ -97,6 +97,7 @@ def _create_tracer(
     task_id: str,
     output_dir: str,
     workflow: Any,
+    team_config: Any = None,
 ) -> tuple[str, str | None, Any]:
     trajectories_dir = os.path.join(output_dir, "trajectories")
     run_dir = os.path.join(trajectories_dir, task_id)
@@ -104,7 +105,7 @@ def _create_tracer(
     tracer = facade.Tracer(
         run_id=task_id,
         output_dir=runtime_dir,
-        filename=(facade.ORCHESTRATION_FILENAME if workflow is not None else "trajectory.jsonl"),
+        filename=(facade.ORCHESTRATION_FILENAME if workflow is not None else facade.TRAJECTORY_FILENAME),
     )
     return trajectories_dir, run_dir, tracer
 
@@ -116,6 +117,7 @@ def prepare_eval_run(
     output_dir: str,
     workflow: Any,
     max_steps: int | None,
+    team_config: Any = None,
     checkpoint_interval_seconds: float | None,
     cancellation_cleanup_timeout: float,
 ) -> PreparedEvalRun:
@@ -133,6 +135,7 @@ def prepare_eval_run(
         task_id=task.task_id,
         output_dir=output_dir,
         workflow=workflow,
+        team_config=team_config,
     )
     wall_timeout = generation_wall_timeout(task.timeout)
     return PreparedEvalRun(

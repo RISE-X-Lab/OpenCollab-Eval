@@ -98,10 +98,21 @@ from opencollab_eval.engine.evaluator_sessions import (
     _run_single_session as _run_single_session,
 )
 from opencollab_eval.engine.evaluator_sessions import (
+    _run_team_mode as _run_team_mode,
+)
+from opencollab_eval.engine.evaluator_sessions import (
     _run_workflow_mode as _run_workflow_mode,
 )
 from opencollab_eval.engine.evaluator_task import run_eval_task_impl
-from opencollab_eval.engine.evidence_trace import EvidenceTrace
+from opencollab_eval.engine.evidence_trace import (
+    ORCHESTRATION_FILENAME as ORCHESTRATION_FILENAME,
+)
+from opencollab_eval.engine.evidence_trace import (
+    TRAJECTORY_FILENAME as TRAJECTORY_FILENAME,
+)
+from opencollab_eval.engine.evidence_trace import (
+    EvidenceTrace,
+)
 from opencollab_eval.engine.swe_checkpoint import (
     WorktreeCheckpoint as WorktreeCheckpoint,
 )
@@ -125,7 +136,6 @@ DEFAULT_TEMPERATURE = 0.2
 DEFAULT_TOP_P: float | None = None
 DEFAULT_THINKING = False
 DEFAULT_THINKING_PARAMS = {"enable_thinking": True}
-ORCHESTRATION_FILENAME = "orchestration.jsonl"
 Tracer = EvidenceTrace
 DockerEnvironment = docker_environment
 WorktreeEnvironment = worktree_environment
@@ -424,8 +434,11 @@ async def run_eval_task(
     defer_patch_extraction: bool = False,
     context_window: int | None = None,
     agent_profile: str | None = None,
+    team_config: str | os.PathLike[str] | None = None,
 ) -> EvalResult:
-    """Run one isolated evaluation task in session or workflow mode."""
+    """Run one isolated task with an agent, workflow, or configured team."""
+    if workflow is not None and team_config is not None:
+        raise ValueError("workflow and team_config are mutually exclusive")
     return await run_eval_task_impl(
         task,
         model,
@@ -455,6 +468,7 @@ async def run_eval_task(
         defer_patch_extraction,
         context_window=context_window,
         agent_profile=agent_profile,
+        team_config=team_config,
     )
 
 
