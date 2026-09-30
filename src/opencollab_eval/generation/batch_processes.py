@@ -43,7 +43,9 @@ class BatchStop:
             signal.signal(signum, handler)
 
 
-def _recover_generator_containers(command: list[str], pid: int, identity: str) -> None:
+def _recover_generator_containers(
+    command: list[str], pid: int, identity: str, *, phase: str = "batch_stop",
+) -> None:
     from . import gen_prediction_docker as owners
     from .container_quiescence import isolate_container_for_preservation
     from .gen_prediction_safe_output import persist_generation_failure
@@ -64,13 +66,17 @@ def _recover_generator_containers(command: list[str], pid: int, identity: str) -
         run_dir = path.parents[2]
         reference = record.get("container_id") or record["container_name"]
         try:
-            if record["state"] in {"kept", "preservation_required"}:
+            preserve_active = phase == "generator_exit" and record["state"] == "active"
+            if record["state"] in {"kept", "preservation_required"} or preserve_active:
                 if owners._container_owner_label_state(reference, record["owner_token"]) != "matching":
                     raise RuntimeError("retained container ownership could not be confirmed")
+                if preserve_active:
+                    # Active owners may hold the sole candidate before output staging.
+                    owners.mark_container_preservation_required(run_dir, record["container_id"])
                 isolated = isolate_container_for_preservation(reference)
                 persist_generation_failure(
                     run_dir, instance_id=instance_id,
-                    phase="batch_stop", error=RuntimeError("generator interrupted by batch stop"),
+                    phase=phase, error=RuntimeError("generator interrupted before completion"),
                     evidence={"container_retained": True, "container_isolated": isolated},
                 )
             else:
@@ -84,7 +90,7 @@ def _recover_generator_containers(command: list[str], pid: int, identity: str) -
             failures.append((path, exc))
             persist_generation_failure(
                 run_dir, instance_id=instance_id,
-                phase="batch_stop", error=exc,
+                phase=phase, error=exc,
                 evidence={"container_owner_path": str(path), "container_isolation_error": str(exc)},
             )
     if failures:
@@ -122,11 +128,12 @@ def run_generator(command: list[str], sink: Any, env: dict[str, str], stop: Batc
             break
         except subprocess.TimeoutExpired:
             continue
-    if stop.event.is_set():
+    if stop.event.is_set() or returncode < 0:
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
         # Reap the handle before owner PID checks or container recovery.
-        _recover_generator_containers(command, process.pid, identity)
+        phase = "batch_stop" if stop.event.is_set() else "generator_exit"
+        _recover_generator_containers(command, process.pid, identity, phase=phase)
     return returncode

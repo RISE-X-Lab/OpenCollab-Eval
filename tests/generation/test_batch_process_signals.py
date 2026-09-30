@@ -8,6 +8,7 @@ import signal
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -97,6 +98,84 @@ def test_two_real_batch_entries_dispatch_the_models_once(tmp_path):
         finally:
             os.kill(first.pid, signal.SIGTERM)
             assert first.wait(timeout=8) == 143
+
+
+@pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGKILL])
+@pytest.mark.parametrize("owner_state", ["pending", "active"])
+def test_generator_killed_outside_batch_recovers_its_processes_and_container(
+    tmp_path, monkeypatch, signum, owner_state,
+):
+    generator = tmp_path / "generator.py"
+    run_dir = tmp_path / "run"
+    container_state = tmp_path / "container.json"
+    generator.write_text(
+        "import json,os,subprocess,sys,time\nfrom pathlib import Path\n"
+        "from opencollab_eval.generation import gen_prediction_docker as owners\n"
+        f"root=Path({str(tmp_path)!r})\n"
+        f"run_dir=Path({str(run_dir)!r})\n"
+        f"owner_state={owner_state!r}\n"
+        "if owner_state=='active':\n"
+        " owners.write_container_marker(run_dir,'fixture-cid','fixture-container')\n"
+        " (root/'candidate.patch').write_text('saved candidate')\n"
+        "else:\n owners._create_pending_owner(run_dir,'fixture-container')\n"
+        "record=owners._read_owner(owners.container_owner_path(run_dir,'fixture-container'))\n"
+        "(root/'container.json').write_text(json.dumps(record))\n"
+        "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'])\n"
+        "(root/'child').write_text(str(child.pid))\n"
+        "(root/'started').write_text(str(os.getpid()))\n"
+        "time.sleep(60)\n"
+    )
+    binary_dir = tmp_path / "bin"
+    binary_dir.mkdir()
+    docker = binary_dir / "docker"
+    docker.write_text(
+        f"#!{sys.executable}\nimport json,sys\nfrom pathlib import Path\n"
+        f"state=Path({str(container_state)!r})\n"
+        "if sys.argv[1]=='rm':\n state.unlink(missing_ok=True)\n"
+        " (state.parent/'candidate.patch').unlink(missing_ok=True)\n sys.exit(0)\n"
+        "if not state.exists():\n print('Error: No such container',file=sys.stderr)\n sys.exit(1)\n"
+        "record=json.loads(state.read_text())\n"
+        "if sys.argv[1]=='pause':\n record['paused']=True\n state.write_text(json.dumps(record))\n sys.exit(0)\n"
+        "if any('.State.Running' in arg for arg in sys.argv):\n"
+        " print('true true' if record.get('paused') else 'true false')\n"
+        "else:\n print(record['owner_token'])\n"
+    )
+    docker.chmod(0o700)
+    monkeypatch.setenv("PATH", str(binary_dir) + os.pathsep + os.environ["PATH"])
+    command = [sys.executable, str(generator), "--output", str(tmp_path / "preds.jsonl"),
+               "--instance-file", str(tmp_path / "a__a-1.json")]
+    unrelated = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True)
+    stop = batch_processes.BatchStop()
+    with (tmp_path / "generator.log").open("wb") as sink, ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(batch_processes.run_generator, command, sink, dict(os.environ), stop)
+        try:
+            _wait_for(lambda: (tmp_path / "started").exists())
+            os.kill(int((tmp_path / "started").read_text()), signum)
+            assert future.result(timeout=8) == -signum
+            assert not stop.event.is_set()
+            assert unrelated.poll() is None
+            _wait_for(lambda: not _alive(int((tmp_path / "child").read_text())), timeout=1)
+            owner_path = owners.container_owner_path(run_dir, "fixture-container")
+            if owner_state == "active":
+                assert json.loads(container_state.read_text())["paused"] is True
+                assert owners._read_owner(owner_path)["state"] == "preservation_required"
+                assert (tmp_path / "candidate.patch").read_text() == "saved candidate"
+                failure = json.loads((run_dir / "generation_failure.json").read_text())
+                assert failure["phase"] == "generator_exit"
+                assert failure["evidence"]["container_isolated"] == "paused"
+            else:
+                assert not container_state.exists()
+                assert not owner_path.exists()
+                assert not (run_dir / "container.id").exists()
+        finally:
+            for marker in ("started", "child"):
+                if (tmp_path / marker).exists():
+                    try:
+                        os.kill(int((tmp_path / marker).read_text()), signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+            unrelated.terminate()
+            unrelated.wait(timeout=5)
 
 
 def test_interrupted_owner_recovery_preserves_candidates_and_ignores_other_owners(tmp_path, monkeypatch):
