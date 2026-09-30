@@ -25,6 +25,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from opencollab_eval.experiment.cell_report_messaging import (
+    MESSAGE_REFUSED_EVENT,
+    MESSAGE_SENT_EVENT,
+    MESSAGE_TOOL,
+    event_target,
+    message_calls,
+    role_key,
+)
 from opencollab_eval.experiment.cell_report_metric_order import report_metric_records
 
 WRITE_TOOLS = frozenset({"apply_patch", "file_write"})
@@ -111,12 +119,11 @@ ASSIGNED_TOPOLOGY_EVENT = "assigned.topology_edges"
 #: around it with no complaint.
 ASSIGNED_NODES_EVENT = "assigned.topology_nodes"
 #: The tool one seat addresses another with. A declared edge is *walked* when a
-#: seat holding its ``from_role`` made at least one ``message_agent`` call that
-#: resolved to its ``to_role``. That is not alpha: alpha is whether an agent
+#: seat holding its ``from_role`` successfully queued at least one message to
+#: its ``to_role``. That is not alpha: alpha is whether an agent
 #: chose to hand the work on (a coder or tester seat that spent tokens and
 #: spoke), one number per run; walking an edge is whether a declared channel
 #: carried anything at all. A run can walk an edge and deliver nothing.
-MESSAGE_TOOL = "message_agent"
 
 
 @dataclass
@@ -127,11 +134,9 @@ class Seat:
     assistant: int = 0
     writes: int = 0
     msg_agent: int = 0
+    msg_agent_sent: int = 0
     terminal: str = ""
-    #: Who this seat addressed, one entry per ``message_agent`` call, as the
-    #: call itself named the target: ``role:<name>`` or ``aid:<n>`` (the tool
-    #: takes exactly one of ``to_role`` and ``to_aid``). Kept as written so the
-    #: aid can be resolved against this run's own roster rather than guessed.
+    #: Successfully queued targets from scheduler events or matched tool receipts.
     msg_agent_targets: list[str] = field(default_factory=list)
     #: The allowance this session was handed, from its ``session_terminal``
 
@@ -369,13 +374,16 @@ def _int_or_none(value: Any) -> int | None:
     return int(value)
 
 
-def _event_log_facts(seat_paths: list[Path]) -> tuple[dict[str, dict[str, Any]], dict[str, Any] | None]:
-    """The two things this run's event log records: its sessions and its topology.
+def _event_log_facts(
+    seat_paths: list[Path],
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any] | None, dict[str, Any] | None, dict[str, list[str]]]:
+    """Read the run's session, topology, roster, and message decisions.
 
     Returns the ``session_terminal`` payload of each session keyed by ``aid``,
     the single ``assigned.topology_edges`` payload and the single
-    ``assigned.topology_nodes`` payload, either of the last two ``None`` when
-    the run wrote none. Read from the event log beside the seat snapshots, and read
+    ``assigned.topology_nodes`` payload, and successful targets per sender.
+    A sender with refusal events alone has an empty target list. Read from
+    the event log beside the seat snapshots, and read
     defensively: these are the only quantities in the report that come from a
     second file, and a batch pulled before the log existed, a truncated log, or
     a log this reader cannot parse must all leave every other column exactly as
@@ -387,6 +395,8 @@ def _event_log_facts(seat_paths: list[Path]) -> tuple[dict[str, dict[str, Any]],
     found: dict[str, dict[str, Any]] = {}
     topology: dict[str, Any] | None = None
     nodes: dict[str, Any] | None = None
+    messages: dict[str, list[str]] = {}
+    seen_messages: set[str] = set()
     for directory in dict.fromkeys(path.parent for path in seat_paths):
         for name in EVENT_LOG_NAMES:
             log = directory / name
@@ -399,6 +409,8 @@ def _event_log_facts(seat_paths: list[Path]) -> tuple[dict[str, dict[str, Any]],
                             SESSION_TERMINAL_EVENT not in line
                             and ASSIGNED_TOPOLOGY_EVENT not in line
                             and ASSIGNED_NODES_EVENT not in line
+                            and MESSAGE_SENT_EVENT not in line
+                            and MESSAGE_REFUSED_EVENT not in line
                         ):
                             continue
                         try:
@@ -413,9 +425,22 @@ def _event_log_facts(seat_paths: list[Path]) -> tuple[dict[str, dict[str, Any]],
                             topology = payload
                         elif kind == ASSIGNED_NODES_EVENT:
                             nodes = payload
+                        elif kind in {MESSAGE_SENT_EVENT, MESSAGE_REFUSED_EVENT}:
+                            sender = payload.get("from_aid")
+                            if not isinstance(sender, int) or isinstance(sender, bool):
+                                continue
+                            targets = messages.setdefault(str(sender), [])
+                            if kind != MESSAGE_SENT_EVENT:
+                                continue
+                            target = event_target(payload)
+                            message_id = payload.get("message_id")
+                            if target and (not message_id or str(message_id) not in seen_messages):
+                                targets.append(target)
+                                if message_id:
+                                    seen_messages.add(str(message_id))
             except OSError:
                 continue
-    return found, topology, nodes
+    return found, topology, nodes, messages
 
 
 def delegate_roles(nodes: dict[str, Any] | None) -> frozenset[str] | None:
@@ -475,20 +500,20 @@ def declared_edges(topology: dict[str, Any] | None) -> set[tuple[str, str]] | No
 def walked_edges(seats: dict[str, Seat], declared: set[tuple[str, str]]) -> set[tuple[str, str]]:
     """Which declared edges carried at least one message.
 
-    A call addressed ``to_aid`` is resolved against this run's own roster, so
-    the same edge addressed by role and by id counts once. A call to a pair the
-    team file never declared is not counted: the scheduler refuses it
-    (``_topology_forbids``), and counting it would put a refusal in the column
-    that says a channel carried something.
+    Targets come from successful sends. Receipt-only snapshots resolve the
+    acknowledged aid against the run's roster, while current scheduler events
+    carry the resolved role directly.
     """
     role_of_aid = {aid: seat.role for aid, seat in seats.items()}
+    edge_keys = {(role_key(source), role_key(target)): (source, target) for source, target in declared}
     walked: set[tuple[str, str]] = set()
     for seat in seats.values():
         for target in seat.msg_agent_targets:
             kind, _, value = target.partition(":")
             to_role = value if kind == "role" else role_of_aid.get(value)
-            if to_role and (seat.role, to_role) in declared:
-                walked.add((seat.role, to_role))
+            edge = edge_keys.get((role_key(seat.role), role_key(to_role))) if to_role else None
+            if edge:
+                walked.add(edge)
     return walked
 
 
@@ -537,29 +562,7 @@ def _read_seat(path: Path) -> tuple[int, Seat]:
     data = json.loads(path.read_text(encoding="utf-8"))
     state = data.get("session_state") or {}
     messages = data.get("messages") or []
-    calls = []
-    targets: list[str] = []
-    for message in messages:
-        for call in message.get("tool_calls") or []:
-            function = call.get("function") or {}
-            name = function.get("name") or ""
-            calls.append(name)
-            if name != MESSAGE_TOOL:
-                continue
-            try:
-                arguments = json.loads(function.get("arguments") or "{}")
-            except ValueError:
-                arguments = {}
-            if not isinstance(arguments, dict):
-                arguments = {}
-            if arguments.get("to_role"):
-                targets.append(f"role:{arguments['to_role']}")
-            elif arguments.get("to_aid") is not None:
-                targets.append(f"aid:{arguments['to_aid']}")
-            else:
-                # The tool requires exactly one of the two; a call with
-                # neither was refused and addressed nobody.
-                targets.append("unaddressed")
+    calls, targets = message_calls(messages)
     seat = Seat(
         role=_seat_role(path, str(data.get("role") or "")),
         tokens=int(state.get("used_tokens") or 0),
@@ -567,6 +570,7 @@ def _read_seat(path: Path) -> tuple[int, Seat]:
         assistant=sum(1 for m in messages if m.get("role") == "assistant"),
         writes=sum(1 for name in calls if name in WRITE_TOOLS),
         msg_agent=sum(1 for name in calls if name == MESSAGE_TOOL),
+        msg_agent_sent=len(targets),
         terminal=str(state.get("terminal_reason") or ""),
         msg_agent_targets=targets,
     )
@@ -588,11 +592,14 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
         # none produces.
         workflow_result = record.get("workflow_result")
         seat_paths = _seat_files(cell, arm, record)
-        terminals, topology, nodes = _event_log_facts(seat_paths)
+        terminals, topology, nodes, messages = _event_log_facts(seat_paths)
         seats: dict[str, Seat] = {}
         for path in seat_paths:
             aid, seat = _read_seat(path)
             seat.cap = _int_or_none((terminals.get(str(aid)) or {}).get("max_budget_tokens"))
+            if str(aid) in messages:
+                seat.msg_agent_targets = messages[str(aid)]
+                seat.msg_agent_sent = len(seat.msg_agent_targets)
             seats[str(aid)] = seat
         snapshots = record.get("tree_snapshots")
         if not snapshots and isinstance(workflow_result, dict):

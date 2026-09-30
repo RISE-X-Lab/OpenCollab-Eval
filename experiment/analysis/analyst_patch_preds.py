@@ -43,7 +43,23 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
+
+# The analysis entry point also runs directly from a checkout with python -S.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+
+from opencollab_eval.engine.swe_eval_records import (  # noqa: E402
+    latest_paired_rows,
+    read_jsonl,
+    row_explicit_patch_sha,
+    row_patch_sha,
+    row_record_id,
+    row_task_id,
+)
+from opencollab_eval.experiment.cell_report_metric_order import report_metric_records  # noqa: E402
+from opencollab_eval.experiment.cell_report_rows import run_rows  # noqa: E402
+from opencollab_eval.experiment.cell_report_statistics import merge_attempts  # noqa: E402
 
 #: The literal marker ``_snapshot`` writes before the diff body.
 SNAPSHOT_MARK = "[Tracked changes vs HEAD]\n"
@@ -70,10 +86,6 @@ def same_patch(left: str, right: str) -> bool:
     return strip(left) == strip(right)
 
 
-def read_jsonl(path: Path) -> list[dict]:
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-
-
 def build(batch_dir: Path, arm: str) -> tuple[list[dict], dict]:
     """The predictions rows and the sidecar that says what they are.
 
@@ -82,8 +94,8 @@ def build(batch_dir: Path, arm: str) -> tuple[list[dict], dict]:
     null snapshot would write an empty patch that is indistinguishable from a
     run whose analyst wrote nothing.
     """
-    metrics = read_jsonl(batch_dir / "metrics.jsonl")
-    graded = {row["instance_id"]: row.get("model_patch", "") for row in read_jsonl(batch_dir / f"preds-{arm}.jsonl")}
+    metrics = report_metric_records(batch_dir, batch_dir / "metrics.jsonl", arm)
+    predictions = read_jsonl(batch_dir / f"preds-{arm}.jsonl")
     if not metrics:
         raise SystemExit(f"{batch_dir}/metrics.jsonl is empty")
 
@@ -91,8 +103,34 @@ def build(batch_dir: Path, arm: str) -> tuple[list[dict], dict]:
     refused: list[dict] = []
     identical = 0
     model = ""
-    for run in metrics:
-        instance = run["instance_id"]
+    selected = merge_attempts([(batch_dir.name, run_rows(batch_dir, arm))])
+    for chosen in selected:
+        instance = chosen.instance_id
+        candidates = [prediction for prediction in predictions if row_task_id(prediction) == instance]
+        if chosen.record_id:
+            candidates = [prediction for prediction in candidates if row_record_id(prediction) == chosen.record_id]
+        elif chosen.patch_sha256:
+            candidates = [
+                prediction for prediction in candidates
+                if row_patch_sha(prediction).lower() == chosen.patch_sha256.lower()
+            ]
+        pair = latest_paired_rows(candidates, metrics, instance)
+        # A single historical row without attempt identity still has an unambiguous
+        # comparison. Multiple such rows cannot identify the adopted attempt.
+        legacy = [
+            metric for metric in metrics
+            if row_task_id(metric) == instance and not row_record_id(metric) and not row_explicit_patch_sha(metric)
+        ]
+        run = pair.metric
+        if (
+            not chosen.record_id and not chosen.patch_sha256 and len(candidates) == 1 and len(legacy) == 1
+            and not row_record_id(candidates[0])
+        ):
+            run = legacy[0]
+        if run is None or pair.prediction is None or len(candidates) != 1:
+            refused.append({"instance_id": instance, "why": "selected attempt has no unique paired prediction"})
+            continue
+        graded = pair.prediction.get("model_patch", "")
         model = run.get("llm_model") or model
         snaps = (run.get("workflow_result") or {}).get("tree_snapshots") or []
         snap = next((s for s in snaps if s.get("after") == BOUNDARY), None)
@@ -103,13 +141,14 @@ def build(batch_dir: Path, arm: str) -> tuple[list[dict], dict]:
             refused.append({"instance_id": instance, "why": "snapshot truncated at the cap"})
             continue
         patch = snapshot_body(snap.get("diff"))
-        if same_patch(patch, graded.get(instance, "")):
+        if same_patch(patch, graded):
             identical += 1
         rows.append(
             {
                 "instance_id": instance,
                 "model_name_or_path": f"analyst-only.{run.get('llm_model') or 'unknown'}",
                 "model_patch": patch,
+                **({"record_id": chosen.record_id} if chosen.record_id else {}),
             }
         )
     sidecar = {

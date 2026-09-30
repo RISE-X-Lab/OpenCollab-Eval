@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -223,11 +222,11 @@ def _args(tmp_path: Path, **overrides: object) -> argparse.Namespace:
 
 
 def _completed_run(predictions: Path, iid: str, returncode: int):
-    def fake_run(command, **kwargs):
+    def fake_run(*, command, log_dir, stop):
         predictions.parent.mkdir(parents=True, exist_ok=True)
         with predictions.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps({"instance_id": iid, "model_patch": "diff"}) + "\n")
-        return subprocess.CompletedProcess(command, returncode)
+        return returncode, 0.1
 
     return fake_run
 
@@ -245,7 +244,7 @@ def test_a_run_that_exited_non_zero_but_wrote_a_prediction_is_not_a_lost_run(
     """
     args = _args(tmp_path)
     predictions = Path(args.out_dir) / "preds-single.jsonl"
-    monkeypatch.setattr(batch.subprocess, "run", _completed_run(predictions, "a-1", returncode=1))
+    monkeypatch.setattr(batch, "_run_one", _completed_run(predictions, "a-1", returncode=1))
 
     exit_code = batch.run_batch(args)
 
@@ -260,9 +259,9 @@ def test_a_run_that_wrote_nothing_is_reported_and_fails_the_batch(
 ) -> None:
     args = _args(tmp_path)
     monkeypatch.setattr(
-        batch.subprocess,
-        "run",
-        lambda command, **kwargs: subprocess.CompletedProcess(command, 1),
+        batch,
+        "_run_one",
+        lambda **kwargs: (1, 0.1),
     )
 
     exit_code = batch.run_batch(args)
@@ -390,7 +389,7 @@ def test_runs_go_out_in_the_planned_order_so_whole_tasks_are_in_flight(
     )
     submitted: list[tuple[str, str]] = []
 
-    def fake_run_one(*, command, log_dir):
+    def fake_run_one(*, command, log_dir, stop):
         submitted.append((Path(log_dir).parent.name, Path(log_dir).name))
         return 0, 0.1
 
