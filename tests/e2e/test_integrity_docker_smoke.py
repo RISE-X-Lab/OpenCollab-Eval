@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -16,7 +17,8 @@ from tests.e2e import integrity_docker_smoke as smoke
 
 @pytest.fixture
 def local_background_container(monkeypatch, tmp_path):
-    source = tmp_path / smoke.SOURCE_PATH
+    repo = tmp_path / "testbed"
+    source = repo / smoke.SOURCE_PATH
     source.parent.mkdir(parents=True)
     source.write_text("def add(left, right):\n    return left - right\n", encoding="utf-8")
     marker = tmp_path / "start-background"
@@ -25,10 +27,12 @@ def local_background_container(monkeypatch, tmp_path):
     cleaned = []
     state = SimpleNamespace(
         source=source,
+        repo=repo,
         marker=marker,
         exec_timeouts=exec_timeouts,
         exec_timeout=5,
         cleaned=cleaned,
+        replace_workspace=False,
     )
 
     def run(arguments, *, timeout):
@@ -36,13 +40,16 @@ def local_background_container(monkeypatch, tmp_path):
         if arguments[1] == "run":
             code = arguments[-1].replace("/tmp/start-background", str(marker))
             code = code.replace(
-                "subprocess.Popen(['python3','-c',code])",
-                f"subprocess.Popen([{sys.executable!r},'-c','import time; time.sleep(.4);'+code])",
+                "['python3','-c',code]",
+                f"[{sys.executable!r},'-c','import time; time.sleep(.4);'+code]",
             )
+            code = code.replace("cwd='/testbed'", f"cwd={str(repo)!r}")
+            workdir = arguments[arguments.index("--workdir") + 1] if "--workdir" in arguments else "/testbed"
+            assert workdir in {"/", "/testbed"}
             supervisors.append(
                 subprocess.Popen(
                     [sys.executable, "-c", code],
-                    cwd=tmp_path,
+                    cwd=tmp_path if workdir == "/" else repo,
                     start_new_session=True,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
@@ -54,7 +61,7 @@ def local_background_container(monkeypatch, tmp_path):
         command = arguments[-1].replace("/tmp/start-background", str(marker))
         return subprocess.run(
             ["sh", "-c", command],
-            cwd=tmp_path,
+            cwd=repo,
             check=True,
             capture_output=True,
             text=True,
@@ -62,7 +69,17 @@ def local_background_container(monkeypatch, tmp_path):
         )
 
     monkeypatch.setattr(smoke, "_run", run)
-    monkeypatch.setattr(smoke, "prepare_solver_git_snapshot", lambda *_args: object())
+    def prepare_snapshot(*_args):
+        if state.replace_workspace:
+            prepared = tmp_path / "prepared"
+            backup = tmp_path / "old-testbed"
+            shutil.copytree(repo, prepared)
+            repo.rename(backup)
+            prepared.rename(repo)
+            shutil.rmtree(backup)
+        return object()
+
+    monkeypatch.setattr(smoke, "prepare_solver_git_snapshot", prepare_snapshot)
     monkeypatch.setattr(
         smoke,
         "prepare_trusted_patch_baseline",
@@ -78,10 +95,12 @@ def local_background_container(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("scope", [FailureScope.TASK, FailureScope.IMAGE, None])
+@pytest.mark.parametrize("replace_workspace", [False, True])
 def test_background_smoke_waits_for_actual_delayed_write(
-    monkeypatch, local_background_container, scope,
+    monkeypatch, local_background_container, scope, replace_workspace,
 ):
     state = local_background_container
+    state.replace_workspace = replace_workspace
     extracted = []
 
     def extract(*_args):
