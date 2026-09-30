@@ -27,7 +27,10 @@ the spec's instance list before anything is launched.
 from __future__ import annotations
 
 import json
+import re
 import shlex
+import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +46,39 @@ SCORE_DECOY_MARK = "swebench.harness.run_evaluation decoy-for-score"
 
 #: What the harness process looks like on the host.
 SCORE_PROCESS_PATTERN = "swebench.harness.run_evaluation"
+
+_RUN_STAMP = r"[0-9]{8}(?:-[0-9]{12}-[0-9a-f]{32})?"
+
+
+def new_run_id(spec: BatchSpec, *, gold: bool) -> str:
+    """Give a new grading invocation its own harness cache namespace."""
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S%f")
+    return f"{spec.name}{'-gold' if gold else ''}-{stamp}-{uuid.uuid4().hex}"
+
+
+def run_stamp(run_id: str, spec: BatchSpec, *, gold: bool) -> str | None:
+    """Read current invocation IDs and the older date-only IDs."""
+    prefix = f"{spec.name}{'-gold' if gold else ''}-"
+    suffix = run_id.removeprefix(prefix)
+    return suffix if run_id.startswith(prefix) and re.fullmatch(_RUN_STAMP, suffix) else None
+
+
+def latest_report_names(names: list[str], spec: BatchSpec) -> list[str]:
+    """Keep the latest report per model and run kind, preserving unknown names."""
+    latest: dict[tuple[str, bool], tuple[str, str]] = {}
+    other: list[str] = []
+    pattern = re.compile(rf"(.+)\.({re.escape(spec.name)}(?:-gold)?-({_RUN_STAMP}))\.json")
+    for name in names:
+        match = pattern.fullmatch(name)
+        if match is None:
+            other.append(name)
+            continue
+        model, run_id, stamp = match.groups()
+        gold_run = run_stamp(run_id, spec, gold=True) is not None
+        key = (model, gold_run)
+        if key not in latest or stamp > latest[key][0]:
+            latest[key] = (stamp, name)
+    return sorted([*other, *(name for _stamp, name in latest.values())])
 
 
 def _q(value: str) -> str:

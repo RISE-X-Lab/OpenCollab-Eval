@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import shlex
-import time
 from typing import TYPE_CHECKING, Any
 
 from opencollab_eval.experiment import batch_remote, batch_score
@@ -23,15 +22,24 @@ def _score_facts(batch: Batch, remote: Ssh) -> dict[str, Any]:
     return out
 
 
-def cmd_score(batch: Batch, remote: Ssh, *, max_workers: int, timeout: int, gold: bool) -> int:
+def cmd_score(
+    batch: Batch, remote: Ssh, *, max_workers: int, timeout: int, gold: bool, run_id: str | None = None
+) -> int:
     """Score a finished batch: the gold control first, then the batch's patches.
 
     Blocking, and slow -- the harness builds a container per instance. Run it
     detached and read the printed report paths afterwards.
+    Each invocation creates a new run ID. Supply a previously printed run ID
+    to continue its existing harness cache.
     """
     spec, host = batch.spec, batch.host
+    if run_id is not None and batch_score.run_stamp(run_id, spec, gold=gold) is None:
+        print(f"invalid run ID for this batch and scoring mode: {run_id}")
+        return 1
+    run_id = run_id or batch_score.new_run_id(spec, gold=gold)
     ids = [row["instance_id"] for row in batch.rows]
     print(f"score {spec.name} on {host.ssh}: {len(ids)} instances, arm {spec.arm}")
+    print(f"  scoring run ID: {run_id}")
 
     if not host.scoring_dataset:
         print("  REFUSED: this host file names no scoring_dataset. Nothing was run.")
@@ -88,7 +96,6 @@ def cmd_score(batch: Batch, remote: Ssh, *, max_workers: int, timeout: int, gold
     print(f"  dataset: {made.get('DATASET_ROWS', '?')} rows -> {batch_score.score_dir(host, spec)}/dataset.jsonl")
 
     sdir = batch_score.score_dir(host, spec)
-    stamp = time.strftime("%Y%m%d")
     if gold:
         rows = batch_score.dataset_rows(batch.frame_content, ids)
         gold_file = batch.local_dir / "gold-predictions.jsonl"
@@ -96,13 +103,12 @@ def cmd_score(batch: Batch, remote: Ssh, *, max_workers: int, timeout: int, gold
             gold_file, "".join(json.dumps(r) + "\n" for r in batch_score.gold_predictions(rows)).encode("utf-8")
         )
         remote.copy_to([gold_file], sdir)
-        gold_id = f"{spec.name}-gold-{stamp}"
-        print(f"  gold control: {gold_id} ({len(rows)} reference patches)")
+        print(f"  gold control: {run_id} ({len(rows)} reference patches)")
         remote.run(
             batch_score.score_script(
                 host,
                 spec,
-                run_id=gold_id,
+                run_id=run_id,
                 predictions=f"{sdir}/gold-predictions.jsonl",
                 dataset=f"{sdir}/dataset.jsonl",
                 max_workers=max_workers,
@@ -116,7 +122,6 @@ def cmd_score(batch: Batch, remote: Ssh, *, max_workers: int, timeout: int, gold
         print(f"    batch score --no-gold {batch.spec_path}   # then the batch's patches")
         return 0
 
-    run_id = f"{spec.name}-{stamp}"
     launched = remote.run(
         batch_score.score_script(
             host,
@@ -149,13 +154,11 @@ def cmd_score_report(batch: Batch, remote: Ssh) -> int:
         return 1
     gold_ok = None
     model_reports_ok = True
-    gold_prefix = f"gold.{spec.name}-gold-"
     instance_ids = [row["instance_id"] for row in batch.rows]
-    for name in sorted(names):
+    for name in batch_score.latest_report_names(names, spec):
         text = remote.run(f"cat {shlex.quote(sdir + '/' + batch_score.REPORT_DIR + '/' + name)}")
         report = batch_score.read_report(text)
-        gold_date = name[len(gold_prefix) : -len(".json")]
-        if name.startswith(gold_prefix) and len(gold_date) == 8 and gold_date.isascii() and gold_date.isdigit():
+        if name.startswith("gold.") and batch_score.run_stamp(name[len("gold.") : -len(".json")], spec, gold=True):
             gold_ok, detail = batch_score.gold_verdict(report)
             scope_ok, scope_detail = batch_score.report_scope(report, instance_ids, gold=True)
             if not scope_ok:

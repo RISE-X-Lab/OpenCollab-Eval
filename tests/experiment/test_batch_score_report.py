@@ -188,3 +188,30 @@ def test_older_model_report_can_prove_its_instance_set_from_outcomes(capsys) -> 
     }
     assert _score_report(reports, batch_name="cell", ids=ids) == 0
     assert "[FAIL]" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("newer_resolved", [False, True])
+def test_latest_gold_invocation_supersedes_a_same_day_control(newer_resolved: bool, capsys) -> None:
+    new_name = "gold.cell-gold-20260930-120000000001-" + "a" * 32 + ".json"
+    reports = {
+        "gold.cell-gold-20260930.json": _report(resolved_ids=() if newer_resolved else None),
+        new_name: _report(resolved_ids=None if newer_resolved else ()),
+    }
+    assert _score_report(reports, batch_name="cell") == (0 if newer_resolved else 1)
+    output = capsys.readouterr().out
+    assert new_name in output
+    assert "gold.cell-gold-20260930.json" not in output
+
+
+@pytest.mark.parametrize("newer_valid", [False, True])
+def test_latest_model_invocation_selects_its_own_scope(newer_valid: bool, capsys) -> None:
+    new_name = "model.cell-20260930-120000000001-" + "b" * 32 + ".json"
+    reports = {
+        "gold.cell-gold-20260930.json": _report(),
+        "model.cell-20260930.json": _report(("case-x",)) if newer_valid else _report(),
+        new_name: _report() if newer_valid else _report(("case-x",)),
+    }
+    assert _score_report(reports, batch_name="cell") == (0 if newer_valid else 1)
+    output = capsys.readouterr().out
+    assert new_name in output
+    assert "model.cell-20260930.json" not in output
