@@ -5,6 +5,7 @@ from __future__ import annotations
 import errno
 import os
 import shutil
+import signal
 import stat
 import sys
 import tempfile
@@ -14,12 +15,14 @@ from types import SimpleNamespace
 import pytest
 
 import opencollab_eval.safe_files as safe_files
+from opencollab_eval.commands.swe_auto_eval_claim_runner import TerminationRequested
 from opencollab_eval.safe_files import (
     create_regular_bytes_atomic,
     ensure_directory_no_symlinks,
     open_directory_no_symlinks,
     read_regular_bytes,
     write_regular_bytes_atomic,
+    write_regular_file_atomic,
 )
 
 
@@ -100,6 +103,92 @@ def test_create_only_never_replaces_existing_evidence(tmp_path) -> None:
     with pytest.raises(FileExistsError):
         create_regular_bytes_atomic(path, b"second")
     assert path.read_bytes() == b"first"
+
+
+@pytest.mark.parametrize("stage", ["before_construction", "after_construction", "context_entry"])
+def test_atomic_stream_interruption_preserves_signal_and_cleans_resources(tmp_path, monkeypatch, stage) -> None:
+    path = tmp_path / "evidence"
+    path.write_bytes(b"previous")
+    interruption = TerminationRequested(signal.SIGTERM)
+    original_fdopen = os.fdopen
+    original_open_directory = safe_files.open_directory_no_symlinks
+    parent_fds: list[int] = []
+    temporary_fds: list[int] = []
+
+    def track_directory(directory):
+        fd = original_open_directory(directory)
+        parent_fds.append(fd)
+        return fd
+
+    class InterruptedContext:
+        def __init__(self, stream):
+            self.stream = stream
+
+        def __enter__(self):
+            self.stream.close()
+            raise interruption
+
+        def __exit__(self, *_args):
+            self.stream.close()
+
+    def interrupt_fdopen(fd, *args, **kwargs):
+        temporary_fds.append(fd)
+        if stage == "before_construction":
+            raise interruption
+        stream = original_fdopen(fd, *args, **kwargs)
+        if stage == "context_entry":
+            return InterruptedContext(stream)
+        stream.close()
+        raise interruption
+
+    monkeypatch.setattr(safe_files, "open_directory_no_symlinks", track_directory)
+    monkeypatch.setattr(safe_files.os, "fdopen", interrupt_fdopen)
+    with pytest.raises(TerminationRequested) as caught:
+        write_regular_bytes_atomic(path, b"next")
+    assert caught.value is interruption
+    assert path.read_bytes() == b"previous"
+    assert not list(tmp_path.glob(".opencollab-*.tmp"))
+    assert parent_fds and temporary_fds
+    for fd in parent_fds + temporary_fds:
+        with pytest.raises(OSError) as closed:
+            os.fstat(fd)
+        assert closed.value.errno == errno.EBADF
+
+
+@pytest.mark.parametrize("reuse", [False, True])
+def test_atomic_construction_closed_descriptor_preserves_error_and_unrelated_file(tmp_path, monkeypatch, reuse) -> None:
+    path = tmp_path / "evidence"
+    path.write_bytes(b"previous")
+    unrelated = tmp_path / "unrelated"
+    unrelated.write_bytes(b"keep")
+    interruption = TerminationRequested(signal.SIGTERM)
+    reused_fd = -1
+    original_fdopen = os.fdopen
+
+    def interrupt_fdopen(fd, *args, **kwargs):
+        nonlocal reused_fd
+        stream = original_fdopen(fd, *args, **kwargs)
+        stream.close()
+        os.close(fd)
+        if reuse:
+            reused_fd = os.open(unrelated, os.O_RDWR)
+            assert reused_fd == fd
+        raise interruption
+
+    monkeypatch.setattr(safe_files.os, "fdopen", interrupt_fdopen)
+    try:
+        with pytest.raises(TerminationRequested) as caught:
+            write_regular_file_atomic(path, lambda handle: handle.write(b"next"), max_bytes=4)
+        assert caught.value is interruption
+        assert path.read_bytes() == b"previous"
+        assert not list(tmp_path.glob(".opencollab-*.tmp"))
+        if reuse:
+            assert os.read(reused_fd, 4) == b"keep"
+            os.write(reused_fd, b"-open")
+            assert unrelated.read_bytes() == b"keep-open"
+    finally:
+        if reused_fd >= 0:
+            os.close(reused_fd)
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS exposes /var and /tmp compatibility aliases")
