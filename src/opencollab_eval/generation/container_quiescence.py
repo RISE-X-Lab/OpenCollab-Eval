@@ -532,6 +532,78 @@ def require_container_quiescence(container_id: str) -> None:
     )
 
 
+def isolate_container_for_preservation(container_id: str) -> str:
+    """Pause or stop a retained source if process quiescence is unproven."""
+    def state() -> str:
+        inspected = subprocess.run(
+            [
+                "docker", "inspect", "--type", "container", "--format",
+                "{{.State.Running}} {{.State.Paused}}", container_id,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=container_control_timeout(),
+            check=False,
+        )
+        if inspected.returncode != 0:
+            detail = (inspected.stderr or inspected.stdout).strip()
+            raise RuntimeError(f"retained container state probe failed: {detail}")
+        return inspected.stdout.strip()
+
+    errors: list[str] = []
+
+    def probe() -> str:
+        try:
+            return state()
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
+            errors.append(f"state probe {type(exc).__name__}: {exc}")
+            return "unknown"
+
+    current = probe()
+    if current.startswith("false "):
+        return "stopped"
+    if current == "true true":
+        return "paused"
+    if current == "true false":
+        after_pause = "unknown"
+        try:
+            paused = subprocess.run(
+                ["docker", "pause", container_id],
+                capture_output=True,
+                text=True,
+                timeout=container_control_timeout(),
+                check=False,
+            )
+            errors.append(f"pause exit {paused.returncode}: {(paused.stderr or paused.stdout).strip()}")
+            after_pause = probe()
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            errors.append(f"pause {type(exc).__name__}: {exc}")
+        if after_pause == "true true":
+            return "paused"
+        if after_pause.startswith("false "):
+            return "stopped"
+    try:
+        stopped = subprocess.run(
+            ["docker", "stop", "--time", "10", container_id],
+            capture_output=True,
+            text=True,
+            timeout=container_control_timeout(),
+            check=False,
+        )
+        errors.append(f"stop exit {stopped.returncode}: {(stopped.stderr or stopped.stdout).strip()}")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        errors.append(f"stop {type(exc).__name__}: {exc}")
+    final = probe()
+    if final.startswith("false "):
+        return "stopped"
+    if final == "true true":
+        return "paused"
+    raise RuntimeError(
+        f"retained container pause and stop were not proven (final state {final!r}): "
+        + "; ".join(errors)
+    )
+
+
 @contextmanager
 def frozen_container(container_id: str):
     """Pause one quiescent task container while the controller copies its workspace."""
