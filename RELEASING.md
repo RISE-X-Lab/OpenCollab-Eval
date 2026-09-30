@@ -1,6 +1,6 @@
 # Releasing OpenCollab-Eval
 
-OpenCollab-Eval 0.8.1 is paired with OpenCollab 0.8.1. Releases use the verified compatible OpenCollab release. PyPI publishing is outside the current release process.
+OpenCollab-Eval 0.8.2 is paired with OpenCollab 0.8.2. Releases use the verified compatible OpenCollab release. PyPI publishing is outside the current release process.
 
 ## Release invariants
 
@@ -65,6 +65,6 @@ Install the evaluator wheel in a new Python 3.12 environment. Verify `opencollab
 
 ## Tag and publish
 
-Create the annotated `vX.Y.Z` tag on `release_sha`, verify its peeled target, and push only that ref. Publish a GitHub prerelease while the project remains Alpha. Attach the evaluator source distribution, wheel, and `SHA256SUMS`.
+Create the annotated `vX.Y.Z` tag on `release_sha`, verify its peeled target, and push only that ref. Publish a GitHub Release. Attach the evaluator source distribution, wheel, and `SHA256SUMS`.
 
 After publication, download the assets into a new directory, verify their hashes, repeat the installed-wheel probe, and confirm that an anonymous clone of the tag reaches `release_sha`.
