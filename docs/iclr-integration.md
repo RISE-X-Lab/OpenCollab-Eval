@@ -63,3 +63,8 @@ file reads, Duo V5 workspace delivery, and the V6 selection rules.
 The paired runtime also includes worktree cleanup recovery and configuration
 error handling from main PR #138. Missing evaluation reports remain explicit
 ungraded attempts, and gold controls use the exact model and batch run identity.
+
+The complete integration now includes main `ff4083dc`. The supported runtime
+is the signed OpenCollab 0.9.0 release at
+`25d9fd025ff8fe7e2e57be6e6bc6ead339672a65`. CI, installation requirements,
+and remote runtime preparation use the same 0.9.x compatibility range.

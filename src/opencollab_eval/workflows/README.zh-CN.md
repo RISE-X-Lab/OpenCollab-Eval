@@ -8,7 +8,7 @@ Python 代码定义控制流程，其中包括智能体
 分支和修复轮次。验证门禁与停止条件也由 Python 代码管理，模型在这套控制流内
 分析并修改仓库。
 
-该包依赖 OpenCollab 0.8.0 或更高 0.8.x 版本中的工作流编写接口。
+该包依赖 OpenCollab 0.9.0 或更高 0.9.x 版本中的工作流编写接口。
 
 ```python
 from opencollab.builtin_workflows import duo

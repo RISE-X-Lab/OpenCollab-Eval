@@ -29,7 +29,7 @@ def test_opencollab_sdk_can_come_from_the_built_wheel() -> None:
     if expected_eval_root:
         assert Path(opencollab_eval.__file__).is_relative_to(Path(expected_eval_root))
     sdk_version = Version(distribution_version("opencollab")).release
-    assert (0, 8, 0) <= sdk_version < (0, 9)
+    assert (0, 9, 0) <= sdk_version < (0, 10)
     assert callable(opencollab.builtin_workflows.duo)
     assert [spec.name for spec in opencollab.builtin_workflows.get_builtin_workflows().list_specs()] == ["duo"]
     assert opencollab.profiles.resolve_profile_name("base") == "single2"
