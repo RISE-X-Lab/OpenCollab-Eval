@@ -18,6 +18,8 @@ _PUBLIC_MODULES = frozenset(
         "opencollab.environments",
         "opencollab.patches",
         "opencollab.profiles",
+        "opencollab.models",
+        "opencollab.teams",
         "opencollab.tools",
         "opencollab.workflows",
     }
@@ -25,6 +27,10 @@ _PUBLIC_MODULES = frozenset(
 _PUBLIC_NAMES = {
     "opencollab": frozenset({"OpenCollab", "RunError", "RunResult", "workflow"}),
     "opencollab.profiles": frozenset({"BASE_PROFILE", "resolve_profile_name"}),
+    "opencollab.models": frozenset({"inspect_model_runtime"}),
+    "opencollab.teams": frozenset({
+        "declared_role_names", "declared_role_tools", "declared_role_prompt_digests", "declared_role_profiles",
+    }),
     "opencollab.builtin_workflows": frozenset({
         "CONTRACT_PROMPT", "duo", "get_builtin_workflows", "run_dual_coder",
     }),
@@ -35,6 +41,7 @@ _PUBLIC_NAMES = {
     "opencollab.environments": frozenset(
         {
             "Environment",
+            "build_repo_map_via_env",
             "attach_container",
             "docker_environment",
             "local_environment",
@@ -43,7 +50,7 @@ _PUBLIC_NAMES = {
     ),
     "opencollab.tools": frozenset(
         {"BashEvidence", "BuiltinToolName", "Tool", "VerificationTool", "builtin_tools",
-         "evidence_tools", "has_pass_evidence", "profile_tool_limits"}
+         "evidence_tools", "has_pass_evidence", "profile_tool_limits", "profile_tool_names"}
     ),
     "opencollab.workflows": frozenset({"WorkflowContext", "CandidateRun", "workflow"}),
 }

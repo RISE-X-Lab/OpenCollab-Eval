@@ -13,13 +13,13 @@ def test_runtime_sync_rejects_opencollab_before_required_api(monkeypatch):
     package = runtime_config.importlib.import_module("opencollab")
     monkeypatch.setattr(package, "__version__", "0.4.1")
 
-    with pytest.raises(RuntimeError, match="OpenCollab >=0.8,<0.9"):
+    with pytest.raises(RuntimeError, match="OpenCollab >=0.9,<0.10"):
         runtime_config._runtime_directory_sources()
 
 
 def test_runtime_sync_rejects_distribution_source_version_drift(monkeypatch):
     monkeypatch.delenv("OPENCOLLAB_SOURCE_ROOT", raising=False)
-    monkeypatch.setattr(runtime_config, "version", lambda _name: "0.8.0")
+    monkeypatch.setattr(runtime_config, "version", lambda _name: "0.9.0")
     package = runtime_config.importlib.import_module("opencollab")
     monkeypatch.setattr(package, "__version__", "0.4.0")
 
@@ -32,15 +32,15 @@ def test_runtime_sync_uses_explicit_opencollab_source_checkout(monkeypatch, tmp_
     package_root = source_root / "opencollab"
     package_root.mkdir(parents=True)
     (source_root / "pyproject.toml").write_text("[project]\nname='opencollab'\n")
-    (package_root / "__init__.py").write_text('__version__ = "0.8.0"\n')
+    (package_root / "__init__.py").write_text('__version__ = "0.9.0"\n')
     monkeypatch.setenv("OPENCOLLAB_SOURCE_ROOT", str(source_root))
-    monkeypatch.setattr(runtime_config, "version", lambda _name: "0.8.0")
+    monkeypatch.setattr(runtime_config, "version", lambda _name: "0.9.0")
     monkeypatch.setattr(runtime_config, "verify_runtime_import_contract", lambda: None)
 
     sources, release = runtime_config._runtime_directory_sources()
 
     assert sources["src/opencollab"] == package_root.resolve()
-    assert release == "0.8.0"
+    assert release == "0.9.0"
 
 
 def test_runtime_sync_rejects_invalid_explicit_source_checkout(monkeypatch, tmp_path):
@@ -64,19 +64,22 @@ def test_runtime_sync_rejects_opencollab_k3_capability_release(monkeypatch):
     package = runtime_config.importlib.import_module("opencollab")
     monkeypatch.setattr(package, "__version__", "0.4.1")
 
-    with pytest.raises(RuntimeError, match="OpenCollab >=0.8,<0.9"):
+    with pytest.raises(RuntimeError, match="OpenCollab >=0.9,<0.10"):
         runtime_config._runtime_directory_sources()
 
 
-@pytest.mark.parametrize(("release", "accepted"), [("0.7.1", False), ("0.8.0", True), ("0.9.0", False)])
-def test_runtime_sync_requires_the_base_profile_release(monkeypatch, release, accepted):
+@pytest.mark.parametrize(
+    ("release", "accepted"),
+    [("0.8.4", False), ("0.9.0", True), ("0.9.1", True), ("0.10.0", False)],
+)
+def test_runtime_sync_requires_the_09_release(monkeypatch, release, accepted):
     monkeypatch.delenv("OPENCOLLAB_SOURCE_ROOT", raising=False)
     monkeypatch.setattr(runtime_config, "version", lambda _name: release)
     package = runtime_config.importlib.import_module("opencollab")
     monkeypatch.setattr(package, "__version__", release)
 
     if not accepted:
-        with pytest.raises(RuntimeError, match=f"OpenCollab >=0.8,<0.9 is required, found {release}"):
+        with pytest.raises(RuntimeError, match=f"OpenCollab >=0.9,<0.10 is required, found {release}"):
             runtime_config._runtime_directory_sources()
         return
     sources, actual_release = runtime_config._runtime_directory_sources()
@@ -90,7 +93,7 @@ def test_runtime_sync_rejects_opencollab_before_public_inspection_api(monkeypatc
     package = runtime_config.importlib.import_module("opencollab")
     monkeypatch.setattr(package, "__version__", "0.6.0")
 
-    with pytest.raises(RuntimeError, match="OpenCollab >=0.8,<0.9"):
+    with pytest.raises(RuntimeError, match="OpenCollab >=0.9,<0.10"):
         runtime_config._runtime_directory_sources()
 
 

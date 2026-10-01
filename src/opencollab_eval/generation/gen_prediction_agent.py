@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 import os
+import time
 import uuid
 from pathlib import Path
 from typing import Any
 
 from opencollab import OpenCollab, RunError, RunResult
-from opencollab.environments import attach_container
+from opencollab.environments import attach_container, build_repo_map_via_env
 from opencollab.profiles import resolve_profile_name
 
-from opencollab_eval.benchmarks.task_specification import (
-    compose_task_specification,
-)
+from opencollab_eval.benchmarks.task_specification import CONTAINER_REPO_ROOT
 from opencollab_eval.engine.native_failure_attribution import classify_failure
 from opencollab_eval.engine.native_progress_watch import (
     generation_timing,
@@ -41,6 +40,8 @@ from .gen_prediction_constants import (
     DOCKER_WORKDIR,
     MAX_INSTANCE_BYTES,
 )
+from .gen_prediction_run_summary import RUN_SUMMARY_KEY, build_run_summary
+from .gen_prediction_task_text import BLIND_VALIDATION_BLOCK, append_repository_layout, compose_shared_task
 
 _CONTROLLED_STOP_REASON_PREFIXES = (
     "budget exceeded:",
@@ -53,10 +54,11 @@ _CONTROLLED_STOP_REASON_PREFIXES = (
     "output truncated:",
 )
 _CONTROLLED_STOP_REASON_NAMES = frozenset({"budget_exceeded", "context_overflow", "step_limit_exceeded", "timeout"})
-def build_task(instance: dict) -> str:
-    hints = (instance.get("hints_text") or "").strip()
-    hints_block = f"\n## Hints (from the issue discussion — may help locate the cause)\n{hints}\n" if hints else ""
-    return f"# Issue to fix in `{instance['repo']}`\n\n{compose_task_specification(instance)}\n{hints_block}"
+
+
+def build_task(instance: dict, *, repo_root: str = CONTAINER_REPO_ROOT) -> str:
+    """Build the shared public task with the blind grading notice."""
+    return compose_shared_task(instance, repo_root=repo_root) + BLIND_VALIDATION_BLOCK
 
 
 def load_instance(path: str | Path) -> dict:
@@ -93,7 +95,13 @@ def _technical_interruption_recoverable(error: BaseException | None) -> bool:
     return provider_or_transport and classify_failure(error=error).get("retryable") is True
 
 
-def _runtime_failure_metrics(exc: Exception, *, phase: str = "public_api_execution") -> dict[str, Any]:
+def _runtime_failure_metrics(
+    exc: Exception,
+    duration_s: float | None = None,
+    artifact_dir: Path | None = None,
+    *,
+    phase: str = "public_api_execution",
+) -> dict[str, Any]:
     chain = []
     current: BaseException | None = exc
     seen: set[int] = set()
@@ -123,6 +131,10 @@ def _runtime_failure_metrics(exc: Exception, *, phase: str = "public_api_executi
         else "public_api_exception_unclassified"
     )
     return {
+        **({"trajectory_path": str(artifact_dir / "trajectory.jsonl")} if artifact_dir is not None else {}),
+        RUN_SUMMARY_KEY: build_run_summary(
+            steps=0, tokens=None, status="failed", reason=type(exc).__name__, duration_s=duration_s, error=str(exc)
+        ),
         "workflow_status": "error",
         "failure_origin": origin,
         "failure_phase": phase,
@@ -166,7 +178,7 @@ def _controlled_stop_status(reason: object) -> str | None:
     return None
 
 
-def _result_metrics(result: RunResult[str]) -> dict[str, Any]:
+def _result_metrics(result: RunResult[str], duration_s: float | None = None) -> dict[str, Any]:
     values = result.metrics
     if "session_quiesced" in values:
         session_quiesced = values.get("session_quiesced") is True
@@ -213,6 +225,14 @@ def _result_metrics(result: RunResult[str]) -> dict[str, Any]:
         else "none"
     )
     metrics = {
+        RUN_SUMMARY_KEY: build_run_summary(
+            steps=values.get("steps"),
+            tokens=result.tokens,
+            status=result.status,
+            reason=result.reason,
+            duration_s=duration_s,
+            error=result.error,
+        ),
         "workflow_status": workflow_status,
         "failure_origin": failure_origin,
         "failure_phase": phase if session_quiesced else "public_result_not_quiesced",
@@ -249,13 +269,15 @@ def _result_metrics(result: RunResult[str]) -> dict[str, Any]:
         metrics["error"] = str(error or result.reason or "agent execution failed")
     if values.get("agent_profile"):
         metrics["agent_profile"] = values["agent_profile"]
-    for key in ("no_progress_timeout", "evaluation_time_policy", "resume_snapshot"):
+    for key in ("no_progress_timeout", "evaluation_time_policy", "resume_snapshot", "agent_tool_names"):
         if key in values:
             metrics[key] = values[key]
     if progress_stop:
         metrics.update(
-            error_type=type(result.error).__name__, error=str(result.error),
-            usage_complete=False, used_tokens_lower_bound=True,
+            error_type=type(result.error).__name__,
+            error=str(result.error),
+            usage_complete=False,
+            used_tokens_lower_bound=True,
             usage_status="snapshot_counter_lower_bound_after_inactivity_stop",
         )
     return metrics
@@ -277,6 +299,7 @@ async def run_agent(
     profile = resolve_profile_name(profile)
     max_steps, budget = resolve_agent_generation_limits(profile, max_steps, budget)
     artifact_dir = None
+    started = time.monotonic()
     try:
         model_api_key = cfg.get("api_key") or os.environ.get("OPENCOLLAB_API_KEY")
         model_base_url = cfg.get("base_url") or os.environ.get("OPENCOLLAB_BASE_URL")
@@ -296,6 +319,7 @@ async def run_agent(
             command_prefix=image_activation_prefix(cid, _ACTIVATE) if runtime is None else _ACTIVATE,
             timeout_returncode=124,
         )
+        task = append_repository_layout(task, await build_repo_map_via_env(environment))
         artifact_dir = Path(reserve_run_directory(artifact_root))
         client = runtime or OpenCollab(
             Path.cwd(),
@@ -326,7 +350,10 @@ async def run_agent(
         )
         print(f"  agent artifacts: {artifact_dir}")
     except Exception as exc:
-        metrics = {**_runtime_failure_metrics(exc, phase="adapter_setup"), "agent_profile": profile}
+        metrics = {
+            **_runtime_failure_metrics(exc, time.monotonic() - started, phase="adapter_setup"),
+            "agent_profile": profile,
+        }
         if artifact_dir is not None:
             metrics["trajectory_path"] = str(artifact_dir / "trajectory.jsonl")
         return metrics
@@ -346,10 +373,10 @@ async def run_agent(
             result = await guarded_agent(operation, artifact_root, artifact_dir)
         else:
             result = await operation
-        metrics = _result_metrics(result)
+        metrics = _result_metrics(result, time.monotonic() - started)
     except Exception as exc:
         print(f"  agent: runtime failed with {type(exc).__name__}: {exc}")
-        metrics = _runtime_failure_metrics(exc)
+        metrics = _runtime_failure_metrics(exc, time.monotonic() - started)
     metrics["agent_profile"] = profile
     metrics["trajectory_path"] = str(artifact_dir / "trajectory.jsonl")
     model_configuration = {

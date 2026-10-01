@@ -1,0 +1,23 @@
+# Ladder rung "primary" (facts-v2) on subset-50 rows 41-50. Together with
+# cmdprimary40 (rows 1-40, same pins) this is Team primary's first repetition on
+# the whole replication subset; the frame-wide primary run follows.
+name: cmdprimary41to50
+host: gpu3
+arm: team
+rung: primary
+cell: facts-v2
+suite: subset-50
+rows: {start: 41, stop: 50}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: b00f256995e321e910a988908842705177d4c0f4
+  opencollab_eval: 315a06c3df10dcde3d0218a3a3b6a6b157ee12b1
+note: "Team primary (facts-v2) on subset-50 rows 41-50; completes the subset's first Team primary repetition with cmdprimary40"

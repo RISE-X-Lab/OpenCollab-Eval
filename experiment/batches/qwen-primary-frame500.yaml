@@ -1,0 +1,64 @@
+# The ladder's `primary` rung under qwen3.8-flash, over the whole 500-task frame.
+#
+# Decision of record: the project lead asked on 2026-09-08 for qwen3.8-flash to
+# be run over the several-hundred-task set, and for gpt-5.6-luna to be left
+# alone. This is that run.
+#
+# Why the frame and not the subset. qwen's adherence on this ladder is
+# currently one cell of forty runs -- `qwen-cmdprimary40-r4`, alpha 0.150 with
+# a 95% interval of 0.057 to 0.298 -- and an interval that wide cannot separate
+# "this model rarely delegates" from "this model delegates about as often as
+# the first one". `frame-ordered.csv` is the whole sampling frame in one
+# seeded order (seed 20260901, namespace `frame`), so its rows are a random
+# ordering of every SWE-bench Verified instance and any prefix of it is a
+# random subsample. Running it whole takes the interval from a quarter of the
+# unit scale to a few points of it.
+#
+# Pairing survives. All fifty rows of `subset-50.csv` -- the task list every
+# deepseek cell ran -- appear in `frame-ordered.csv`, verified row by row, so
+# the task-by-task sign test the paper draws between snapshots still has all
+# forty of the ladder's tasks. They are scattered through the order (rows 2 to
+# 499), so a *partial* completion of this batch keeps a valid marginal alpha
+# but pairs on only the subset rows it happened to reach. That is the cost of
+# stopping early and it is stated here rather than discovered later.
+#
+# Pins are qwen's own, not the ladder's. `dfc88219` is the commit that records
+# the context window qwen3.8-flash actually runs under; at the ladder's
+# `898d5807` this model silently takes the dataclass defaults, which is the
+# failure shape the 2026-09-06 audit found six times. `70512754` carries the
+# same model's two measured capability values. Both are the pins
+# `qwen-cmdprimary40-r4` ran at, so qwen's cells are internally at one pin and
+# the cross-model comparison crosses a pin, as it already did.
+#
+# concurrency stays at 6, the number `qwen-cmdprimary40-r4` ran at. It is a
+# scheduling parameter and not a treatment, but per-run wall clock depends on
+# contention at the gateway and `timeout` censoring is read off wall clock, so
+# the cell this one extends and this one are scheduled identically. At qwen's
+# measured mean of 23.3 minutes a run, 500 runs at 6 is about 32 hours.
+#
+# BEFORE LAUNCHING: 418 of the frame's 500 task images were absent from lthpc
+# on 2026-09-08 (82 present). Nominal size is about 2.9 GB each; docker layer
+# sharing makes the marginal cost unknown and it must be measured on a sample
+# rather than assumed, because the host's free space is a shared 44 TB mount at
+# 98% whose headroom moves by hundreds of GB during a run. The pre-flight
+# refuses on missing images, which is the intended answer, not an obstacle.
+name: qwen-primary-frame500
+host: lthpc
+arm: team
+rung: primary
+cell: facts-v2
+suite: frame-ordered
+rows: {start: 1, stop: 500}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env.qwen
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "qwen3.8-flash on the whole 500-task frame, primary rung, at qwen-cmdprimary40-r4's pins; extends that cell's alpha 0.150 (0.057-0.298) from 40 runs to 500"

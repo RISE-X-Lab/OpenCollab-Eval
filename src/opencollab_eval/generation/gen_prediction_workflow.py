@@ -33,11 +33,11 @@ import math
 import os
 import tempfile
 import uuid
-from dataclasses import fields
 from pathlib import Path
 
 from opencollab.builtin_workflows import get_builtin_workflows
-from opencollab.environments import attach_container
+from opencollab.environments import attach_container, build_repo_map_via_env
+from opencollab.teams import declared_role_prompt_digests, declared_role_tools
 
 from opencollab_eval import workflows as bundled_workflows
 from opencollab_eval.engine.evaluator import EvalTask, run_eval_task  # noqa: E402
@@ -54,8 +54,8 @@ from opencollab_eval.generation.trajectory_identity import verified_provider_mod
 from opencollab_eval.patch_diff import (
     patch_paths as _patch_paths,
 )
+from opencollab_eval.runtime_config import SINGLE2_AUTHORIZED_BUDGET, resolve_workflow_agent_profile
 from opencollab_eval.runtime_config import resolve_runtime_config as get_config
-from opencollab_eval.runtime_config import resolve_workflow_agent_profile
 from opencollab_eval.usage import DEFAULT_MAX_OUTPUT_TOKENS, model_context_window
 
 from . import gen_prediction as gp  # noqa: E402 — shared container plumbing
@@ -71,6 +71,9 @@ from .candidate_retention import (
 from .container_quiescence import require_container_quiescence  # noqa: E402
 from .gen_prediction_constants import DEFAULT_BUDGET, DEFAULT_MAX_STEPS, DEFAULT_TIMEOUT
 from .gen_prediction_patch import extract_patch_guarded  # noqa: E402
+from .gen_prediction_run_summary import _json_safe as _json_safe
+from .gen_prediction_run_summary import workflow_result_metrics as _result_metrics
+from .gen_prediction_task_text import append_repository_layout
 from .gen_prediction_workflow_inputs import (  # noqa: E402
     _blind_validation_default as _blind_validation_default,
 )
@@ -154,24 +157,8 @@ from opencollab_eval.engine.workflows import generate_review_fix  # noqa: E402
 DEFAULT_CHECKPOINT_INTERVAL_SECONDS = 0.0
 
 
-def _json_safe(value: object) -> object:
-    if value is None or isinstance(value, str | int | float | bool):
-        return value
-    if isinstance(value, dict):
-        return {str(key): _json_safe(item) for key, item in value.items()}
-    if isinstance(value, list | tuple | set):
-        return [_json_safe(item) for item in value]
-    return str(value)
-
-
 def _patch_sha256(patch: str) -> str:
     return hashlib.sha256(patch.encode("utf-8", errors="surrogatepass")).hexdigest()
-
-
-def _result_metrics(result) -> dict:
-    return {field.name: _json_safe(getattr(result, field.name)) for field in fields(result) if field.name != "patch"}
-
-
 
 
 def _workflow_status_for_result(result, patch: str) -> str:
@@ -251,12 +238,18 @@ async def generate(
     args: argparse.Namespace,
     workflow_fn,
     workflow_label: str | None = None,
+    team_config: str | None = None,
 ) -> tuple[str, dict]:
     """Run the chosen workflow in a fresh container; return (patch, metrics)."""
+    if workflow_fn is not None and team_config is not None:
+        raise ValueError("workflow and team_config are mutually exclusive")
     selected_profile = getattr(args, "agent_profile", None)
     agent_profile = resolve_workflow_agent_profile(
         cfg.get("agent_profile") if selected_profile is None else selected_profile
     )
+    effective_budget = getattr(args, "budget", None)
+    if team_config is not None and effective_budget is None:
+        effective_budget = SINGLE2_AUTHORIZED_BUDGET
     iid = instance["instance_id"]
     name = gp.unique_container_name("oc-wf-", iid)
     run_dir = Path(args.output).parent
@@ -328,11 +321,14 @@ async def generate(
         if bool(args.resume) or args.checkpoint_interval_seconds > 0:
             raise RuntimeError("trusted host extraction does not accept container Git checkpoints")
         include_hidden_tests = not blind_validation
+        repo_map = await build_repo_map_via_env(env)
         task = EvalTask(
             task_id=gp.anonymous_solver_task_id(),
-            description=build_task(instance, include_fail_to_pass=include_hidden_tests),
+            description=append_repository_layout(
+                build_task(instance, include_fail_to_pass=include_hidden_tests), repo_map
+            ),
             timeout=args.timeout,
-            max_tokens=args.budget,
+            max_tokens=effective_budget,
             extras=build_extras(instance, include_hidden_tests=include_hidden_tests),
         )
         workflow_log_dir = Path(
@@ -350,6 +346,7 @@ async def generate(
             env_factory=env_factory,
             max_steps=args.max_steps,
             workflow=workflow_fn,
+            **({"team_config": team_config} if team_config is not None else {}),
             agent_profile=agent_profile,
             temperature=cfg["temperature"],
             top_p=cfg.get("top_p"),
@@ -444,7 +441,7 @@ async def generate(
                 "temperature": cfg["temperature"],
                 "top_p": cfg.get("top_p"),
                 "max_output_tokens": cfg.get("max_output_tokens", DEFAULT_MAX_OUTPUT_TOKENS),
-                "budget": args.budget,
+                "budget": effective_budget,
                 "max_steps": args.max_steps,
                 "solver_runtime_dependencies": list(solver_runtime.roots),
             }
@@ -452,6 +449,10 @@ async def generate(
         if agent_profile is not None:
             metrics["agent_profile"] = agent_profile
         gp.bind_llm_transport(metrics)
+        if team_config is not None:
+            metrics["team_config_path"] = team_config
+            metrics["role_prompt_sha256"] = declared_role_prompt_digests(team_config)
+            metrics["role_tools"] = declared_role_tools(team_config)
         metrics["generation_image_id"] = generation_image_id
         metrics["solver_git_snapshot"] = snapshot.as_dict()
         if extraction_proof is not None:
@@ -540,7 +541,8 @@ async def generate(
                 if generation_error is None:
                     raise
                 gp._raise_or_note_cleanup_failures(
-                    (("candidate retention", retention_error),), generation_error,
+                    (("candidate retention", retention_error),),
+                    generation_error,
                 )
         else:
             cleanup_failures = gp._cleanup_generation_attempt(
@@ -615,11 +617,13 @@ def main() -> None:
         help="Agent profile used by every role of the selected workflow",
     )
     ap.add_argument("--model-name", default=None, help="model_name_or_path in predictions")
-    ap.add_argument(
+    solver_group = ap.add_mutually_exclusive_group()
+    solver_group.add_argument(
         "--workflow",
         default=None,
         help="Bundled workflow name (e.g. analyst-solve); default: the built-in generate_review_fix",
     )
+    solver_group.add_argument("--team-config", default=None, help="Run a prebuilt team from this configuration file")
     blind_group = ap.add_mutually_exclusive_group()
     blind_group.add_argument(
         "--blind-validation",
@@ -636,7 +640,10 @@ def main() -> None:
     ap.set_defaults(blind_validation=True)
     ap.add_argument("--max-steps", type=int, default=DEFAULT_MAX_STEPS, help="Optional step cap per workflow session")
     ap.add_argument(
-        "--budget", type=int, default=DEFAULT_BUDGET, help="Optional shared token budget across workflow sessions",
+        "--budget",
+        type=int,
+        default=DEFAULT_BUDGET,
+        help="Optional shared token budget across workflow sessions",
     )
     ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
     ap.add_argument(
@@ -675,7 +682,13 @@ def main() -> None:
     image = args.image or f"sweb.eval.{args.arch}.{iid}:latest"
 
     # Resolve a named bundled workflow or use the built-in fallback.
-    if args.workflow:
+    team_config_path = None
+    if args.team_config:
+        team_config_path = Path(args.team_config).expanduser().resolve()
+        if not team_config_path.is_file():
+            ap.error(f"--team-config is not a file: {team_config_path}")
+        workflow_fn, wf_label = None, "team"
+    elif args.workflow:
         try:
             workflow_fn = _BUNDLED_WORKFLOWS[args.workflow]
         except KeyError:
@@ -720,7 +733,17 @@ def main() -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     args.model_name = model_name
     args._persist_output_after_cleanup = True
-    patch, metrics = gp.run_with_bounded_shutdown(generate(instance, image, cfg, args, workflow_fn, wf_label))
+    patch, metrics = gp.run_with_bounded_shutdown(
+        generate(
+            instance,
+            image,
+            cfg,
+            args,
+            workflow_fn,
+            wf_label,
+            **({"team_config": str(team_config_path)} if team_config_path is not None else {}),
+        )
+    )
 
     if patch.strip():
         print(f"\nPatch ({len(patch)} chars) written to {out_path}")

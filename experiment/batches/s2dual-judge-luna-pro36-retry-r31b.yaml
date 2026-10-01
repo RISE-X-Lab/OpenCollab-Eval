@@ -1,0 +1,37 @@
+# Third attempt at s2dual-judge-luna-pro36 row 31 (teleport-eefac60a; G1, gpt-5.6-luna, judge card, N2 pin), the last one the rule allows.
+#
+# Attempts 1 (G1's main batch) and 2 (-retry-r31, 712,201 tokens, 05:10-06:08Z on 09-24) failed the
+# same way: a recursive grep over a large tree outlived its 120 s timeout and did not quiesce, and
+# the execution environment was revoked. In attempt 2 the Adopter grepped /go/pkg/mod, then coder_a
+# grepped / and coder_b /tmp /workspace /root, each looking for an upstream DMIInfoFromFS or
+# ParseOSReleaseFromReader that the repository does not have yet (G2's row 31, the same task, was
+# revoked the same way). These failures are the agents' own, so they count: at most three counted
+# attempts per row, declared before any retry ran; after this one the row stays failed whatever
+# happens. Launched once the luna gateway has recovered, with the other luna retries, at most six
+# luna runs at a time. Same fields and pins as G1; merged by `retry_of`; named -retry-r31b (the
+# b-suffix is the third attempt, as in D2, T1 and T2).
+# ---------------------------------------------------------------------------
+name: s2dual-judge-luna-pro36-retry-r31b
+host: lthpc
+arm: team
+cell: s2dual-judge
+suite: pro-mini36-clean
+rows: {start: 31, stop: 31}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 7200
+concurrency: 1
+model_env: configs/.env.gw2-luna
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+retry_of: s2dual-judge-luna-pro36
+pins:
+  opencollab: 4b231b0e128696768e168521eddb634fd8951927
+  opencollab_eval: 3ff64deb72b1879449a3f1d11d52fde329088d04
+note: "third attempt at s2dual-judge-luna-pro36 row 31 (teleport-eefac60a)"

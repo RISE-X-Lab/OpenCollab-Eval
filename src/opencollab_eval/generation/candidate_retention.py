@@ -63,12 +63,17 @@ def retain_failed_candidate(
     workflow_log_dir: Path | None,
     task_id: str | None,
     trajectory_path: str | None,
+    reason: str = "trusted_patch_extraction_incomplete",
 ) -> Path:
     """Keep the original baseline and publish a zero-model recovery entry."""
-    if baseline is None or metrics.get("patch_extraction_succeeded") is True:
+    if reason not in {"trusted_patch_extraction_incomplete", "candidate_record_unwritten"}:
+        raise ValueError(f"unknown candidate retention reason: {reason}")
+    if baseline is None or (
+        reason == "trusted_patch_extraction_incomplete" and metrics.get("patch_extraction_succeeded") is True
+    ):
         raise ValueError("candidate retention requires an unfinished trusted extraction")
     metrics["container_preservation_required"] = True
-    metrics["container_retention_reason"] = "trusted_patch_extraction_incomplete"
+    metrics["container_retention_reason"] = reason
     errors: list[str] = []
     # TemporaryDirectory otherwise erases this baseline when generate unwinds,
     # including when saving the receipt fails because the output disk is full.
@@ -116,7 +121,7 @@ def retain_failed_candidate(
     package_source = Path(gp.__file__).resolve().parents[2]
     receipt = {
         "created_epoch": time.time(),
-        "reason": "trusted_patch_extraction_incomplete",
+        "reason": reason,
         "container_id": cid,
         "container_name": name,
         "owner_record": str(owner_path),

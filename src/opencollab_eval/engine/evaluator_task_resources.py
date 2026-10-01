@@ -235,6 +235,7 @@ def build_eval_result(
         runtime_status=getattr(workflow_ctx or session, "runtime_status", None),
         runtime_reason=getattr(workflow_ctx or session, "runtime_reason", None),
         runtime_state=getattr(workflow_ctx or session, "runtime_state", None),
+        tree_snapshots=getattr(workflow_ctx or session, "tree_snapshots", None),
         checkpoint_result=state.checkpoint_result,
         test_patch_isolation_failed=state.test_patch_isolation_failed,
         execution_quiesced=state.execution_quiesced,

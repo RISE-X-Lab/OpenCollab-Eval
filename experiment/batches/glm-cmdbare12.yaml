@@ -1,0 +1,62 @@
+# Breadth cell: glm-5.2 at the bare rung, on the first twelve tasks.
+#
+# What the breadth table is for. The ladder on forty tasks (deepseek five rungs,
+# qwen four) shows that alpha moves across [0,1] when the wording moves. The
+# breadth table answers the other half: knowing the model name does not let you
+# recover alpha either. Only both halves together make the quantity
+# unrecoverable from what a paper reports, which is the identification claim.
+#
+# Why twelve tasks and not forty. On subset-50 rows 1-12, recomputed from the
+# two ladders already run, the two models separate at exactly one rung:
+#
+#     rung       deepseek   qwen    paired b/c   exact two-sided sign test
+#     primary        0/12    1/12        1 / 0   p = 1.000
+#     bare           5/12   11/12        6 / 0   p = 0.031
+#     plain         11/12   12/12        1 / 0   p = 1.000
+#
+# So twelve tasks carry the comparison this table makes, and carry nothing
+# finer: the marginal Clopper-Pearson intervals at n=12 overlap even where the
+# paired test separates, and no claim about where a step falls is readable at
+# this sample size. The table prints counts out of twelve, not rates.
+#
+# Tasks are subset-50 rows 1-12, a true subset of the forty the ladder ran, so
+# deepseek's and qwen's cells here are recomputed from data already on disk and
+# are not re-run.
+#
+# 2026-09-10, endpoint. This cell runs against the private gateway (configs/.env.glm-pg, http://47.100.35.241:56477/v1). The principal ruled on 2026-09-10 that
+# all endpoints behind this provider are equivalent and only the model varies.
+# Probed from lthpc before launch: http 200, echoed model glm-5.2, reasoning
+# tokens present; a bogus model id returns 404, so the probe would have
+# reported a missing model.
+#
+# Read-out, written before the run:
+#   - This is the discriminating rung: the only one of the five where the two
+#     models already run separate on twelve tasks.
+#   - >= 10/12 -> this model is on qwen's side; its step is at or below bare,
+#     i.e. dropping the opt-out sentence is enough for it.
+#   - <= 6/12  -> this model is on deepseek's side; its step is above bare,
+#     i.e. it needs the framing sentence that plain adds.
+#   - 7 to 9   -> twelve tasks cannot place it. Report the count, make no
+#     claim about which side it falls on, and say so in the caption.
+#   - Any value: this cell does not enter the forty-task ladder and is not a
+#     retry of anything.
+name: glm-cmdbare12
+host: lthpc
+arm: team
+rung: bare
+cell: cmd-bare
+suite: subset-50
+rows: {start: 1, stop: 12}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env.glm-pg
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "third snapshot, discriminating rung; run only if glm-cmdprohibit12 cleared"

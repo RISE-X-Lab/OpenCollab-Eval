@@ -1,0 +1,68 @@
+# Retry of dsv4pro-cmdprimary40-tp, suite rows 5 (1 runs).
+#
+# Why these runs are being re-run. At 16:02-16:04 UTC on 2026-09-13 the
+# token-plan endpoint began refusing every call with http 403,
+# 'AccessDenied.Unpurchased' -- an account-entitlement error, not an invalid
+# key and not a missing model. Twelve of this batch's runs died on it; seven
+# of those were refused on their very first call (one step, zero tokens) and
+# five were cut mid-run with tokens already spent. The thirteen runs that
+# finished between 15:22 and 15:59 UTC were all normal. The same 403 hit
+# qwen3.8-max on the same key at 16:03:48 (qwenmax-cmdprimary28-tp-retry-17-20,
+# django__django-13569), so the refusal is a property of the key's
+# entitlement, not of a model, an endpoint path, or a task -- which is the
+# condition under which this project re-runs rather than records.
+#
+# The entitlement came back: probed from lthpc at 19:45 UTC, all six
+# endpoint/model pairs in use returned http 200, key fingerprint unchanged.
+# That probe was run with negative controls in the same call -- a deliberately
+# invalid key returned 401 and a nonexistent model name returned 404 -- so a
+# 200 there distinguishes a live entitlement from both other failure modes.
+# Nothing tells us when it may lapse again; it has now failed twice today
+# (the 600s stall at 10:24-10:48, this 403 at 16:02).
+#
+# This spec covers two kinds of row, and they differ in one way that matters:
+# rows that hit the 403 DID write prediction rows, so a plain resume of the
+# parent batch would skip them; rows that never produced a prediction row
+# would be picked up by a resume, but are folded in here so that the whole
+# repair lands in one set of out-dirs with one set of pins.
+#
+# Read-out, written before the run.
+#   - These rows carry no separate interpretation. They exist to restore the
+#     denominator of dsv4pro-cmdprimary40-tp and are read only through that
+#     batch's own read-out, declared before its launch: delivered <=2/40 is
+#     the baseline shape, 3-5/40 sits between flash and qwen3.8-flash, >=6/40
+#     means this model delegates without being told to.
+#   - If a run here fails the same way again it stays infra_failed and leaves
+#     the denominator short. A cell that comes out below 40 valid runs is NOT
+#     forty tasks: report the true denominator, and say so in Deviations. Do
+#     not quietly divide by forty.
+#   - This model's adherence is reportable at all only because its own
+#     prohibit control cleared on 2026-09-13: dsv4pro-cmdprohibit12-tp,
+#     delivered 11/11 valid, Q >= 10. That verdict is already in and is not to
+#     be revisited in the light of whatever these runs show.
+#   - Concurrency is 6 across the four retry specs (1 here), the figure
+#     the principal set. Ten was in flight when the endpoint stalled this
+#     morning; this batch cannot tell load from an endpoint-side fault, so 6
+#     is a cost-control choice and not a claim about the cause.
+
+name: dsv4pro-cmdprimary40-tp-retry-5
+host: lthpc
+arm: team
+rung: primary
+cell: facts-v2
+suite: subset-50
+rows: {start: 5, stop: 5}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 1
+model_env: configs/.env.tp-dsv4pro
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+retry_of: dsv4pro-cmdprimary40-tp
+note: "retry of dsv4pro-cmdprimary40-tp rows 5 after the token-plan key lost its entitlement (http 403 AccessDenied.Unpurchased) at 16:02-16:04 UTC; entitlement re-probed 200 at 19:45 UTC with 401/404 negative controls"

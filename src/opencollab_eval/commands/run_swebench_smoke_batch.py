@@ -12,7 +12,7 @@ from pathlib import Path
 
 from opencollab_eval.commands import swebench_process as process_tools
 from opencollab_eval.commands import swebench_smoke_io as smoke_io
-from opencollab_eval.commands.swebench_smoke_spec import make_test_spec
+from opencollab_eval.commands.swebench_smoke_spec import instance_image
 from opencollab_eval.engine.swe_eval_records import (
     MAX_JSONL_LINE_BYTES,
     MAX_JSONL_RETAINED_BYTES,
@@ -451,8 +451,7 @@ def main() -> int:
     for path in instance_paths:
         instance = _read_instance(path)
         instance_id = instance["instance_id"]
-        spec = make_test_spec(instance, namespace="swebench", arch=spec_arch)
-        image = spec.instance_image_key
+        image = instance_image(instance, namespace="swebench", arch=spec_arch)
         print(f"\n=== {instance_id} ===", flush=True)
         print(f"image: {image}", flush=True)
 

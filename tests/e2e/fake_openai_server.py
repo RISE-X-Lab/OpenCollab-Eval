@@ -266,7 +266,6 @@ def main() -> int:
         raise RuntimeError("provider credential canary reached fake model environment: " + ", ".join(leaked))
     trace = TraceWriter(args.trace)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler_class(trace, args.ready_file))
-    args.ready_file.write_text(str(args.port) + "\n", encoding="utf-8")
     trace.append(
         {
             "event": "started",
@@ -275,6 +274,7 @@ def main() -> int:
             "time_ns": time.time_ns(),
         }
     )
+    args.ready_file.write_text(str(args.port) + "\n", encoding="utf-8")
     try:
         server.serve_forever(poll_interval=0.05)
     finally:

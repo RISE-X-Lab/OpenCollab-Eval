@@ -14,7 +14,7 @@ review replies use Chinese while retaining an English Conventional Commit type.
 The dependency direction is `opencollab_eval -> opencollab public API`.
 Production code may use the documented root facade and the public
 `opencollab.builtin_workflows`, `opencollab.environments`, `opencollab.patches`,
-`opencollab.profiles`, `opencollab.tools`, and `opencollab.workflows` modules. It must never import the retired `opencollab.sdk` package or
+`opencollab.profiles`, `opencollab.models`, `opencollab.teams`, `opencollab.tools`, and `opencollab.workflows` modules. It must never import the retired `opencollab.sdk` package or
 `opencollab.adapters`, `opencollab.application`, `opencollab.bootstrap`,
 `opencollab.domain`, or `opencollab.harness`.
 
@@ -33,3 +33,11 @@ Keep Python modules below 800 lines and new files below 500 KB.
 
 Generated reports, model transcripts, predictions, patches, datasets, runtime
 logs, PDFs, and local environment paths stay outside the source repository.
+
+## ICLR integration branch
+
+The cumulative PR series targets `integrate/iclr-2027` and is documented in
+`docs/iclr-integration.md`. Merge it in order using merge commits to retain
+the final ICLR source ancestry for subsequent Git merges.
+
+Commit authorship and `Co-authored-by` trailers are reserved for human contributors.

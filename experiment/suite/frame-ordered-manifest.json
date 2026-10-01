@@ -1,0 +1,73 @@
+{
+  "frame": {
+    "name": "SWE-bench Verified",
+    "path": "frame-verified-500.csv",
+    "sha256": "a909bb5e299f2419e993eb055751cdd4c4a5102122a9f08b0274d786c547f49b"
+  },
+  "library_sha256": "5dabd984a6a56f56ddb5d5515a2a45978c904b1b90c6f1c991fcd88ebddd7fa2",
+  "namespace": "frame",
+  "note": "frame-ordered.csv is the whole frame in one seeded order, no cap and no strata; a frame-wide batch cites it through its suite field and a slice of the order column, and a prefix of it is a random subsample of the frame.",
+  "preflight": {
+    "images_host": "gpu3",
+    "images_seen": 681,
+    "skipped": []
+  },
+  "repository_counts": {
+    "astropy/astropy": {
+      "frame": 22,
+      "ordered": 22
+    },
+    "django/django": {
+      "frame": 231,
+      "ordered": 231
+    },
+    "matplotlib/matplotlib": {
+      "frame": 34,
+      "ordered": 34
+    },
+    "mwaskom/seaborn": {
+      "frame": 2,
+      "ordered": 2
+    },
+    "pallets/flask": {
+      "frame": 1,
+      "ordered": 1
+    },
+    "psf/requests": {
+      "frame": 8,
+      "ordered": 8
+    },
+    "pydata/xarray": {
+      "frame": 22,
+      "ordered": 22
+    },
+    "pylint-dev/pylint": {
+      "frame": 10,
+      "ordered": 10
+    },
+    "pytest-dev/pytest": {
+      "frame": 19,
+      "ordered": 19
+    },
+    "scikit-learn/scikit-learn": {
+      "frame": 32,
+      "ordered": 32
+    },
+    "sphinx-doc/sphinx": {
+      "frame": 44,
+      "ordered": 44
+    },
+    "sympy/sympy": {
+      "frame": 75,
+      "ordered": 75
+    }
+  },
+  "script_sha256": "eda87d39db9ed79ead7323395d95d1977e9889c7fbb646cac6d962f228fd32c0",
+  "seed": 20260901,
+  "seed_status": "frozen 2026-09-02 (PI confirmed seed 20260901)",
+  "sizes": {
+    "frame": 500,
+    "ordered": 500,
+    "skipped": 0
+  }
+}

@@ -1,0 +1,64 @@
+# The luna leg of the ladder: the same five rungs, run against a second model
+# family so the alpha step can be read off an instrument that is not the one it
+# was found on. Not a repetition of cmdplain30 and never merged with it --
+# a different gateway is a different instrument, so this batch is reported on
+# its own.
+#
+# Four fields differ from cmdplain30.yaml; every other field is byte-identical.
+#
+#   1. name        cmdplain30-r2 -> luna-cmdplain30. A new gateway is a new
+#      batch identity: `--out-dir` is the spec's `name` (batch_spec.py:379), so
+#      a shared name would resume the deepseek out-dir and plan zero runs.
+#   2. model_env   configs/.env -> configs/.env.luna. The luna file names
+#      OPENCOLLAB_MODEL=gpt-5.6-luna at http://47.100.35.241/v1; the deepseek
+#      file names deepseek-v4-flash at the same host's port 56477.
+#   3. concurrency 6 -> 8. Capacity only; `concurrency` is excluded from
+#      `spec_digest`, so it is not part of what this batch is.
+#   4. note        rewritten to say which leg this is.
+#
+# The three switches are unchanged, and OPENCOLLAB_REASONING_EFFORT stays "max":
+# probed against the luna gateway on 2026-09-05, which accepted it and returned
+# completion_tokens_details.reasoning_tokens.
+#
+# Facts measured on the paid pre-flight of luna-cmdprimary40 (2026-09-05,
+# three runs, 591 llm_call events), to carry into the analysis of this leg:
+#   - luna DOES report cache counters under real prompts: cache_read_tokens is
+#     non-zero on 591/591 calls and sums to 94.6% of input tokens (deepseek r2,
+#     three runs: 95.4%). An earlier 220-byte probe saw no counter only because
+#     the prompt was too small for the gateway to report prompt_tokens_details.
+#     cache_creation_tokens is 0 on every call: an Anthropic-shaped field this
+#     gateway never reports, not a measurement of anything.
+#   - reasoning IS captured: 186-195 non-empty reasoning entries per run
+#     (short summary headings, median 78-89 characters, not the full chain of
+#     thought), and completion_tokens_details.reasoning_tokens is present
+#     (43,515 / 79,263 / 54,705 per run).
+#   - metrics.context_window reads None (gpt-5.6-luna has no entry in
+#     _EXACT_MODEL_CAPABILITIES; deepseek reads 1,048,576), so history
+#     compaction runs on the fixed defaults instead of a window-derived
+#     trigger. metrics.temperature records 1.0 on this leg and on the deepseek
+#     leg alike, so it is not a difference between the legs.
+#   - gpt-5.6-luna matches the reasoning-model pattern at openai_provider.py:52,
+#     so its requests omit temperature and top_p and spend
+#     max_completion_tokens rather than max_tokens.
+#
+# 2026-09-06: .env.luna sets OPENCOLLAB_LLM_MAX_RETRIES=8 (transport-level; the first 40 primary runs ran with the default 3); concurrency lowered 8->4 after the gateway's per-user concurrency errors.
+name: luna-cmdplain30
+host: gpu3
+arm: team
+rung: plain
+cell: cmd-plain
+suite: subset-30
+rows: {start: 1, stop: 30}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 4
+model_env: configs/.env.luna
+env:                               # quote every value: YAML reads off/true as booleans
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"      # reasoning text is only captured from the stream
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"      # the nudge commands an action that competes with delegating
+pins:
+  opencollab: 9175297ed56be6a0377b38d6f5949e07d34d7073
+  opencollab_eval: 898d5807305edbac17917ad18a2dafc85dae7487
+note: "luna gateway, gpt-5.6-luna, generalization leg of the ladder; measured 2026-09-05 on 3 runs: cache_read counted (94.6% of input), reasoning summaries and reasoning_tokens recorded, cache_creation always 0, context_window None, temperature 1.0 as on deepseek"

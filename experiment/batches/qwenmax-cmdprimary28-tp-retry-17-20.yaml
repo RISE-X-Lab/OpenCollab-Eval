@@ -1,0 +1,64 @@
+# Retry of qwenmax-cmdprimary28-tp, suite rows 17-20 (4 runs).
+#
+# Why these runs are being re-run. Between 10:24 and 10:48 UTC on 2026-09-13 the
+# token-plan endpoint stopped answering. Twenty-one of that batch's twenty-seven
+# runs died with the same reason -- 'GenerationTimeoutError: LLM generation
+# exceeded the 600.0s per-call timeout' -- and fourteen of them died on their
+# very first LLM call, at zero tokens and one step. Runs that finished before
+# 10:24 (279s, 1352s, 2806s) and after 10:53 (579s, 987s) were normal, and a
+# live probe at 11:26 UTC returned http 200 in 1.64s with echoed_model
+# 'qwen3.8-max'. The failure is therefore a property of the path, not of this
+# model or of these tasks, which is the condition under which this project
+# re-runs rather than records. The failed runs did write prediction rows, so a
+# plain resume would skip them; that is why this is a separate out-dir.
+#
+# Of the 4 runs here, 0 produced zero tokens (never reached the model) and
+# 4 died mid-run with tokens already spent. For the second group the first
+# attempt is discarded whole: report merges on the last attempt that actually
+# ran, and an attempt with runtime_status 'failed' does not count as one.
+#
+# Read-out, written before the run.
+#   - These rows carry no separate interpretation. They exist to restore the
+#     denominator of qwenmax-cmdprimary28-tp, and are read only through that
+#     batch's own read-out (delivered <=2/28 merge; 3-5/28 note the split
+#     denominator; >=6/28 do not merge).
+#   - If a run here fails the same way again, it stays infra_failed and leaves
+#     the denominator short. A cell that comes out below 28 valid runs is NOT
+#     forty tasks: report the true denominator and say so in Deviations. Do not
+#     quietly divide by forty.
+# Concurrency raised 1 -> 3 at 13:0x UTC, mid-batch. The first run of this
+# segment took the full 90-minute wall clock, so four of them one at a time
+# would have finished around 17:30, well past the hour the token-plan key is
+# expected to die. The driver was killed after run 1 landed and the spec
+# relaunched: concurrency is excluded from spec_digest and resume skips any
+# instance already in preds-team.jsonl, so run 1 is kept and only the remaining
+# three are re-dispatched. One run that had just started was lost with the
+# driver; it wrote no preds row, so resume re-runs it. Token-plan load goes to
+# 11 for about an hour, above the 10 in flight when the endpoint stalled -- a
+# deliberate trade of stall risk against the key's deadline, not a claim that 10
+# is safe.
+#   - Concurrency was 6 across the three retry specs (4 here plus 1+1), down from
+#     the 9 that was in flight when the endpoint stalled. That is a cost-control
+#     choice, not a claim that load caused the stall; this batch cannot tell the
+#     two apart.
+name: qwenmax-cmdprimary28-tp-retry-17-20
+host: lthpc
+arm: team
+rung: primary
+cell: facts-v2
+suite: subset-50
+rows: {start: 17, stop: 20}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 3
+model_env: configs/.env.tp-qwenmax
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+retry_of: qwenmax-cmdprimary28-tp
+note: "retry of qwenmax-cmdprimary28-tp rows 17-20 after the token-plan endpoint stalled 10:24-10:48 UTC; all 4 died with GenerationTimeoutError at the 600s per-call limit"

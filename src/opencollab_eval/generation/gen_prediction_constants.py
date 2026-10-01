@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import re
 
+from opencollab_eval.benchmarks.task_specification import CONTAINER_REPO_ROOT
 from opencollab_eval.candidate_bytes import CANDIDATE_BYTE_BUDGET, MAX_CANDIDATE_FILE_BYTES
 
-DOCKER_WORKDIR = "/testbed"
+DOCKER_WORKDIR = CONTAINER_REPO_ROOT
 # Profile resolution supplies the effective standalone limits after parsing.
 # Both generators start from the workflow's optional caps and wall timeout.
 DEFAULT_BUDGET = None
@@ -44,23 +45,14 @@ AGENT_CANCELLATION_GRACE_SECONDS = 2.0
 _MISSING_CONTAINER_RE = re.compile(r"(?:no such (?:container|object)|not found)", re.IGNORECASE)
 
 
-AGENT_PROMPT = """\
-You are an autonomous software engineer fixing a real bug in a software repository.
-The repository is checked out at /testbed and all dependencies are installed.
+# Working tools for the scripted collaboration seats. Native agents own their tools.
+WORKING_TOOL_NAMES = ("apply_patch", "bash", "file_read", "file_write", "grep", "submit")
 
-Rules:
-- Explore briefly to find the root cause (a few grep/file_read calls), then ACT.
-- As soon as you know the fix, APPLY it with the file_write tool (str_replace
-  mode is best for a targeted edit). Diagnosing is not enough — you MUST edit
-  the source file. Do not keep exploring once the cause is clear.
-- Make the smallest correct change to the SOURCE code that fixes the issue.
-- Do NOT edit test files — your fix is graded against the project's own tests.
-- After editing, verify with a quick check using the repository's language and tools that the reported behavior
-  is fixed, then stop.
-- Do NOT run `git commit`. Just leave your edits in the working tree.
+AGENT_PROMPT = """\
+You are an autonomous software engineer working on a real bug in a software
+repository. You are working on this task alone.
 """
 
 WORKFLOW_AGENT_PROMPT = """\
 Obey the current software role. Use public repository evidence only.
-Leave source changes in /testbed and do not run git commit.
 """

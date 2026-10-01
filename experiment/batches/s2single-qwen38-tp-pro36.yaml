@@ -1,0 +1,46 @@
+# s2single: the Single2 agent alone, the single arm of the s2dual family.
+#
+# WHAT IT IS FOR. Every s2dual cell seats OpenCollab's Single2 agent in all
+# three roles (Adopter, coder_a, coder_b) with the role's card appended. The
+# single arm used to run this repository's AGENT_PROMPT and working bundle, so
+# "team minus single" on that family measured the organization and the seat at
+# once. `profile: single2` (Eval dc32491) seats the same Single2 agent alone:
+# its own system prompt, its six tools, 200 steps, no card. ITT, PP and CACE of
+# every s2dual cell are computed against this cell.
+#
+# WHAT IS HELD EQUAL WITH THE TEAM CELLS. Suite, rows, frame, per-seat budget
+# (2M), step cap, timeout, env, endpoint and key (token-plan, `ca8430b2`), and
+# the OC pin of the J'/P' re-runs (35c2eccc). The task text is byte-identical
+# to what the Adopter receives: both paths compose the shared task, append the
+# blind-validation block, and append the same repository layout.
+#
+# WHAT DIFFERS BY DESIGN. One seat instead of three (so a 2M pool, not 6M), no
+# role card, no message_agent. That is the organization.
+#
+# EVAL PIN dc32491. Between it and 4eeb7a29 (the J'/P' pin) the only code change
+# is the profile plumbing: a spec without `profile` builds the same argv and the
+# same runtime request as before, so the team cells are unaffected by it.
+# ---------------------------------------------------------------------------
+name: s2single-qwen38-tp-pro36
+host: lthpc
+arm: single
+profile: single2
+suite: pro-mini36-clean
+rows: {start: 1, stop: 36}
+frame_content: ~/.cache/opencollab-eval/swebench-pro-mini36-clean.jsonl
+budget_per_seat: 2000000
+max_steps: 200
+timeout: 5400
+concurrency: 36
+model_env: configs/.env.tp3-qwen38
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+  OPENCOLLAB_LLM_MAX_RETRIES: "30"
+  OPENCOLLAB_PROVIDER_ERROR_TIME_BUDGET: "600"
+  OPENCOLLAB_DOCKER_TIMEOUT: "300"
+pins:
+  opencollab: 35c2ecccceeddac1c0393ddf71560f9fb5aa19cd
+  opencollab_eval: dc3249158d15c60d27a18ae77e3bd74f72410509
+note: "Single2 alone (profile single2) on SWE-bench Pro mini-36, token-plan qwen3.8-flash; the single arm of the s2dual family, the S in ITT/PP/CACE; scoring is the official Pro evaluator, not `batch score`"

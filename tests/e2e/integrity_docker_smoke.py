@@ -28,11 +28,21 @@ from tests.e2e.deterministic_swe_driver import (
 from tests.e2e.integrity_evidence import require_sanitized_snapshot
 
 
-def _start(image: str, name: str, run_id: str, command: list[str] | None = None) -> str:
+def _start(
+    image: str,
+    name: str,
+    run_id: str,
+    command: list[str] | None = None,
+    *,
+    workdir: str | None = None,
+) -> str:
     args = [
         "docker", "run", "-d", "--name", name,
-        "--label", f"{OWNER_LABEL}={run_id}", "--network", "none", image,
+        "--label", f"{OWNER_LABEL}={run_id}", "--network", "none",
     ]
+    if workdir is not None:
+        args.extend(["--workdir", workdir])
+    args.append(image)
     if command:
         args.extend(command)
     container_id = _run(args, timeout=30).stdout.strip()
@@ -112,16 +122,20 @@ def _blocked_image_task(image: str, run_id: str) -> dict[str, Any]:
 
 def _background_task(image: str, base_commit: str, run_id: str) -> dict[str, Any]:
     writer = (
-        "import os,time; p='" + SOURCE_PATH + "'; "
+        "import os,time; p='" + SOURCE_PATH + "'; ready=False; "
         "\nwhile True:\n f=open(p,'a'); f.write('# background\\n'); "
-        "f.flush(); os.fsync(f.fileno()); f.close(); time.sleep(.001)"
+        "f.flush(); os.fsync(f.fileno()); f.close()\n"
+        " if not ready:\n"
+        "  with open('/tmp/start-background','a') as marker: marker.write('ready\\n')\n"
+        "  ready=True\n"
+        " time.sleep(.001)"
     )
     supervisor = (
         "import os,subprocess,time; children=[]; code=" + repr(writer) + "; "
         "\nwhile True:\n"
         " children=[p for p in children if p.poll() is None]\n"
         " if os.path.exists('/tmp/start-background'):\n"
-        "  while len(children)<3: children.append(subprocess.Popen(['python3','-c',code]))\n"
+        "  while len(children)<3: children.append(subprocess.Popen(['python3','-c',code], cwd='/testbed'))\n"
         " time.sleep(.001)"
     )
     container = _start(
@@ -129,12 +143,16 @@ def _background_task(image: str, base_commit: str, run_id: str) -> dict[str, Any
         f"oc-integrity-background-{run_id}",
         run_id,
         ["python3", "-c", supervisor],
+        workdir="/",
     )
     snapshot = prepare_solver_git_snapshot(container, base_commit)
     baseline = prepare_trusted_patch_baseline(container, snapshot)
     try:
-        _exec(container, "touch /tmp/start-background")
-        time.sleep(0.15)
+        _exec(
+            container,
+            "touch /tmp/start-background && "
+            "while ! test -s /tmp/start-background; do sleep .01; done",
+        )
         try:
             extract_patch_trusted(container, baseline)
         except WorkspaceIntegrityError as exc:

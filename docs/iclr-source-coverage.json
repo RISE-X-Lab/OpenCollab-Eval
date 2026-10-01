@@ -1,0 +1,3926 @@
+{
+  "main_base": "1964568",
+  "iclr_source": "c02a194",
+  "entries": [
+    {
+      "source_change": "M",
+      "source_path": ".github/workflows/ci.yml",
+      "disposition": "adapted",
+      "target_paths": [
+        ".github/workflows/ci.yml"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "docs/architecture.md",
+      "disposition": "adapted",
+      "target_paths": [
+        "docs/architecture.md"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "docs/integrity-coverage.json",
+      "disposition": "current_main_retained",
+      "target_paths": [
+        "docs/integrity-coverage.json"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "docs/zh-CN/architecture.md",
+      "disposition": "adapted",
+      "target_paths": [
+        "docs/zh-CN/architecture.md"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/analyst_patch_preds.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "experiment/analysis/analyst_patch_preds.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/merged_preds.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "experiment/analysis/merged_preds.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/scan_batch.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "experiment/analysis/scan_batch.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-clean/logs-team/beta__beta-1/trajectories/t0/runtime-deadbeef/agent_0_analyst.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-clean/logs-team/beta__beta-1/trajectories/t0/runtime-deadbeef/agent_0_analyst.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-clean/logs-team/beta__beta-1/trajectories/t0/runtime-deadbeef/team.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-clean/logs-team/beta__beta-1/trajectories/t0/runtime-deadbeef/team.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-clean/logs-team/beta__beta-2/trajectories/t0/runtime-deadbeef/agent_0_analyst.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-clean/logs-team/beta__beta-2/trajectories/t0/runtime-deadbeef/agent_0_analyst.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-clean/logs-team/beta__beta-2/trajectories/t0/runtime-deadbeef/team.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-clean/logs-team/beta__beta-2/trajectories/t0/runtime-deadbeef/team.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-clean/metrics.jsonl",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-clean/metrics.jsonl"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-1/trajectories/t0/runtime-deadbeef/agent_0_analyst.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-1/trajectories/t0/runtime-deadbeef/agent_0_analyst.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-1/trajectories/t0/runtime-deadbeef/agent_1_coder.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-1/trajectories/t0/runtime-deadbeef/agent_1_coder.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-1/trajectories/t0/runtime-deadbeef/agent_2_tester.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-1/trajectories/t0/runtime-deadbeef/agent_2_tester.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-1/trajectories/t0/runtime-deadbeef/team.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-1/trajectories/t0/runtime-deadbeef/team.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-2/trajectories/t0/runtime-deadbeef/agent_0_analyst.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-2/trajectories/t0/runtime-deadbeef/agent_0_analyst.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-2/trajectories/t0/runtime-deadbeef/team.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-2/trajectories/t0/runtime-deadbeef/team.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-3/trajectories/t0/runtime-deadbeef/agent_0_analyst.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-3/trajectories/t0/runtime-deadbeef/agent_0_analyst.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-3/trajectories/t0/runtime-deadbeef/agent_1_coder.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-3/trajectories/t0/runtime-deadbeef/agent_1_coder.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-3/trajectories/t0/runtime-deadbeef/team.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-3/trajectories/t0/runtime-deadbeef/team.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-4/trajectories/t0/runtime-deadbeef/agent_0_analyst.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-4/trajectories/t0/runtime-deadbeef/agent_0_analyst.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-4/trajectories/t0/runtime-deadbeef/team.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-4/trajectories/t0/runtime-deadbeef/team.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-5/trajectories/t0/runtime-deadbeef/agent_0_analyst.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-5/trajectories/t0/runtime-deadbeef/agent_0_analyst.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-5/trajectories/t0/runtime-deadbeef/team.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-5/trajectories/t0/runtime-deadbeef/team.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-6/trajectories/t0/runtime-deadbeef/agent_0_analyst.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-6/trajectories/t0/runtime-deadbeef/agent_0_analyst.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-6/trajectories/t0/runtime-deadbeef/agent_1_coder.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-6/trajectories/t0/runtime-deadbeef/agent_1_coder.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-6/trajectories/t0/runtime-deadbeef/team.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-6/trajectories/t0/runtime-deadbeef/team.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-7/trajectories/t0/runtime-deadbeef/agent_0_analyst.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-7/trajectories/t0/runtime-deadbeef/agent_0_analyst.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-7/trajectories/t0/runtime-deadbeef/team.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-mixed/logs-team/acme__acme-7/trajectories/t0/runtime-deadbeef/team.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-mixed/metrics.jsonl",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-mixed/metrics.jsonl"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-unknown/logs-team/gamma__gamma-1/trajectories/t0/runtime-deadbeef/agent_0_analyst.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-unknown/logs-team/gamma__gamma-1/trajectories/t0/runtime-deadbeef/agent_0_analyst.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-unknown/logs-team/gamma__gamma-1/trajectories/t0/runtime-deadbeef/team.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-unknown/logs-team/gamma__gamma-1/trajectories/t0/runtime-deadbeef/team.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/fixtures/cell-unknown/metrics.jsonl",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/analysis/tests/fixtures/cell-unknown/metrics.jsonl"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/make_fixtures.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "experiment/analysis/tests/make_fixtures.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/mutate.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "experiment/analysis/tests/mutate.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/test_analyst_patch_preds.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "experiment/analysis/tests/test_analyst_patch_preds.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/tests/test_scan_batch.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "experiment/analysis/tests/test_scan_batch.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/analysis/think_scan.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "experiment/analysis/think_scan.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/README.md",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/README.md"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/TEMPLATE-openrouter-breadth.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/TEMPLATE-openrouter-breadth.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdbare40-r2-repl-scikit-learn__scikit-learn-26323.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdbare40-r2-repl-scikit-learn__scikit-learn-26323.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdbare40-r2-retry-astropy__astropy-14369.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdbare40-r2-retry-astropy__astropy-14369.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdbare40-r2-retry-django__django-16938.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdbare40-r2-retry-django__django-16938.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdbare40-r2-retry-matplotlib__matplotlib-24870.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdbare40-r2-retry-matplotlib__matplotlib-24870.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdbare40-r2-retry-matplotlib__matplotlib-25775.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdbare40-r2-retry-matplotlib__matplotlib-25775.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdbare40-r2-retry-scikit-learn__scikit-learn-12682.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdbare40-r2-retry-scikit-learn__scikit-learn-12682.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdbare40-r2-retry-scikit-learn__scikit-learn-9288.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdbare40-r2-retry-scikit-learn__scikit-learn-9288.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdbare40-r2-retry-sphinx-doc__sphinx-10673.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdbare40-r2-retry-sphinx-doc__sphinx-10673.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdbare40-r2-retry-sympy__sympy-13480.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdbare40-r2-retry-sympy__sympy-13480.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdbare40-r2-retry-sympy__sympy-13798.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdbare40-r2-retry-sympy__sympy-13798.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdbare40-r2.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdbare40-r2.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdbare40.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdbare40.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdoptout40-r2-repl-scikit-learn__scikit-learn-26323.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdoptout40-r2-repl-scikit-learn__scikit-learn-26323.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdoptout40-r2-retry-astropy__astropy-14369.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdoptout40-r2-retry-astropy__astropy-14369.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdoptout40-r2-retry-django__django-16938.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdoptout40-r2-retry-django__django-16938.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdoptout40-r2-retry-matplotlib__matplotlib-24870.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdoptout40-r2-retry-matplotlib__matplotlib-24870.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdoptout40-r2-retry-matplotlib__matplotlib-25775.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdoptout40-r2-retry-matplotlib__matplotlib-25775.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdoptout40-r2-retry-scikit-learn__scikit-learn-12682.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdoptout40-r2-retry-scikit-learn__scikit-learn-12682.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdoptout40-r2-retry-sphinx-doc__sphinx-10673.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdoptout40-r2-retry-sphinx-doc__sphinx-10673.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdoptout40-r2-retry-sympy__sympy-13798.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdoptout40-r2-retry-sympy__sympy-13798.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdoptout40-r2.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdoptout40-r2.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdoptout40.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdoptout40.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdplain30-r2-retry-astropy__astropy-14369.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdplain30-r2-retry-astropy__astropy-14369.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdplain30-r2-retry-django__django-15128.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdplain30-r2-retry-django__django-15128.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdplain30-r2-retry-matplotlib__matplotlib-25775.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdplain30-r2-retry-matplotlib__matplotlib-25775.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdplain30-r2-retry-scikit-learn__scikit-learn-12682.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdplain30-r2-retry-scikit-learn__scikit-learn-12682.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdplain30-r2-retry-sympy__sympy-15875.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdplain30-r2-retry-sympy__sympy-15875.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdplain30-r2.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdplain30-r2.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdplain30.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdplain30.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdplain31to40-r2-repl-scikit-learn__scikit-learn-26323.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdplain31to40-r2-repl-scikit-learn__scikit-learn-26323.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdplain31to40-r2.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdplain31to40-r2.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdplain31to40.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdplain31to40.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprimary40-cap4m-astropy__astropy-14096.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprimary40-cap4m-astropy__astropy-14096.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprimary40-cap4m-astropy__astropy-14369.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprimary40-cap4m-astropy__astropy-14369.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprimary40-cap4m-django__django-13569.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprimary40-cap4m-django__django-13569.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprimary40-cap4m-matplotlib__matplotlib-25775.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprimary40-cap4m-matplotlib__matplotlib-25775.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprimary40-cap4m-pylint-dev__pylint-8898.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprimary40-cap4m-pylint-dev__pylint-8898.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprimary40-cap4m-sphinx-doc__sphinx-10673.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprimary40-cap4m-sphinx-doc__sphinx-10673.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprimary40-cap4m-sympy__sympy-20438.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprimary40-cap4m-sympy__sympy-20438.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprimary40-r2-repl-scikit-learn__scikit-learn-26323.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprimary40-r2-repl-scikit-learn__scikit-learn-26323.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprimary40-r2-retry-django__django-14539.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprimary40-r2-retry-django__django-14539.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprimary40-r2-retry-django__django-15128.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprimary40-r2-retry-django__django-15128.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprimary40-r2-retry-sympy__sympy-20438.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprimary40-r2-retry-sympy__sympy-20438.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprimary40-r2.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprimary40-r2.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprimary40.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprimary40.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprimary41to50-r2-retry-sympy__sympy-13974.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprimary41to50-r2-retry-sympy__sympy-13974.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprimary41to50-r2-retry-sympy__sympy-23950.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprimary41to50-r2-retry-sympy__sympy-23950.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprimary41to50-r2.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprimary41to50-r2.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprimary41to50.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprimary41to50.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprohibit40-r2-repl-scikit-learn__scikit-learn-26323.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprohibit40-r2-repl-scikit-learn__scikit-learn-26323.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprohibit40-r2-retry-astropy__astropy-14369.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprohibit40-r2-retry-astropy__astropy-14369.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprohibit40-r2-retry-django__django-13569.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprohibit40-r2-retry-django__django-13569.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprohibit40-r2-retry-django__django-13933.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprohibit40-r2-retry-django__django-13933.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprohibit40-r2-retry-matplotlib__matplotlib-22871.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprohibit40-r2-retry-matplotlib__matplotlib-22871.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprohibit40-r2-retry-matplotlib__matplotlib-25775.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprohibit40-r2-retry-matplotlib__matplotlib-25775.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprohibit40-r2-retry-sympy__sympy-15875.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprohibit40-r2-retry-sympy__sympy-15875.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprohibit40-r2.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprohibit40-r2.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/cmdprohibit40.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/cmdprohibit40.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dsv4pro-cmdprimary40-tp-retry-10.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dsv4pro-cmdprimary40-tp-retry-10.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dsv4pro-cmdprimary40-tp-retry-14-15.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dsv4pro-cmdprimary40-tp-retry-14-15.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dsv4pro-cmdprimary40-tp-retry-18-40.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dsv4pro-cmdprimary40-tp-retry-18-40.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dsv4pro-cmdprimary40-tp-retry-5.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dsv4pro-cmdprimary40-tp-retry-5.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dsv4pro-cmdprimary40-tp.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dsv4pro-cmdprimary40-tp.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dsv4pro-cmdprohibit12-tp.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dsv4pro-cmdprohibit12-tp.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-bare-dsv41f-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-bare-dsv41f-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-bare-luna-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-bare-luna-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-bare-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-bare-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-judge-dsv41f-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-judge-dsv41f-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-judge-luna-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-judge-luna-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-judge-luna-smoke12.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-judge-luna-smoke12.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-judge-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-judge-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-optout-dsv41f-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-optout-dsv41f-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-optout-luna-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-optout-luna-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-optout-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-optout-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-plain-dsv41f-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-plain-dsv41f-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-plain-luna-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-plain-luna-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-plain-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-plain-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-plain-qwen38-pro36-retry-r11.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-plain-qwen38-pro36-retry-r11.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-plain-qwen38-pro36-retry-r17.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-plain-qwen38-pro36-retry-r17.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-plain-qwen38-pro36-retry-r23.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-plain-qwen38-pro36-retry-r23.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-plain-qwen38-pro36-retry-r30.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-plain-qwen38-pro36-retry-r30.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-plain-qwen38-pro36-retry-r32.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-plain-qwen38-pro36-retry-r32.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-plain-qwen38-pro36-retry-r34.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-plain-qwen38-pro36-retry-r34.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-plain-qwen38-pro36-retry-r36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-plain-qwen38-pro36-retry-r36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-prohibit-dsv41f-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-prohibit-dsv41f-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-prohibit-luna-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-prohibit-luna-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-prohibit-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-prohibit-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-prohibit-qwen38-pro36-retry-r1.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-prohibit-qwen38-pro36-retry-r1.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-prohibit-qwen38-pro36-retry-r11.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-prohibit-qwen38-pro36-retry-r11.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-prohibit-qwen38-pro36-retry-r14.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-prohibit-qwen38-pro36-retry-r14.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-prohibit-qwen38-pro36-retry-r16-17.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-prohibit-qwen38-pro36-retry-r16-17.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-prohibit-qwen38-pro36-retry-r19.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-prohibit-qwen38-pro36-retry-r19.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-prohibit-qwen38-pro36-retry-r21-23.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-prohibit-qwen38-pro36-retry-r21-23.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-prohibit-qwen38-pro36-retry-r26-28.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-prohibit-qwen38-pro36-retry-r26-28.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-prohibit-qwen38-pro36-retry-r3.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-prohibit-qwen38-pro36-retry-r3.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-prohibit-qwen38-pro36-retry-r32.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-prohibit-qwen38-pro36-retry-r32.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dual-prohibit-qwen38-pro36-retry-r5-9.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dual-prohibit-qwen38-pro36-retry-r5-9.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dw-frame500.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dw-frame500.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dw-reading-probe2.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dw-reading-probe2.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dw-reading-subset50.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dw-reading-subset50.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dw-subset50-analystonly.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dw-subset50-analystonly.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dw-subset50-r2-repl-scikit-learn__scikit-learn-26323.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dw-subset50-r2-repl-scikit-learn__scikit-learn-26323.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dw-subset50-r2.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dw-subset50-r2.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dw-subset50.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dw-subset50.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dwread-empty6-2m-astropy__astropy-12907.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dwread-empty6-2m-astropy__astropy-12907.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dwread-empty6-2m-astropy__astropy-14096.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dwread-empty6-2m-astropy__astropy-14096.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dwread-empty6-2m-matplotlib__matplotlib-25775.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dwread-empty6-2m-matplotlib__matplotlib-25775.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dwread-empty6-2m-pylint-dev__pylint-8898.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dwread-empty6-2m-pylint-dev__pylint-8898.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dwread-empty6-2m-sphinx-doc__sphinx-10673.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dwread-empty6-2m-sphinx-doc__sphinx-10673.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dwread-empty6-2m-sympy__sympy-13757.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dwread-empty6-2m-sympy__sympy-13757.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dwread-empty6-4m-astropy__astropy-12907.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dwread-empty6-4m-astropy__astropy-12907.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dwread-empty6-4m-astropy__astropy-14096.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dwread-empty6-4m-astropy__astropy-14096.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dwread-empty6-4m-matplotlib__matplotlib-25775.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dwread-empty6-4m-matplotlib__matplotlib-25775.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dwread-empty6-4m-pylint-dev__pylint-8898.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dwread-empty6-4m-pylint-dev__pylint-8898.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dwread-empty6-4m-sphinx-doc__sphinx-10673.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dwread-empty6-4m-sphinx-doc__sphinx-10673.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/dwread-empty6-4m-sympy__sympy-13757.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/dwread-empty6-4m-sympy__sympy-13757.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/glm-cmdbare12.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/glm-cmdbare12.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/glm-cmdoptout12.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/glm-cmdoptout12.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/glm-cmdplain12.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/glm-cmdplain12.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/glm-cmdprimary12.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/glm-cmdprimary12.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/glm-cmdprohibit12.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/glm-cmdprohibit12.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/lthpc-msgctl-plain-deepseek.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/lthpc-msgctl-plain-deepseek.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/lthpc-smoke-deepseek-primary.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/lthpc-smoke-deepseek-primary.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/lthpc-smoke-qwen-primary.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/lthpc-smoke-qwen-primary.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/lthpc-smoke2-deepseek-primary.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/lthpc-smoke2-deepseek-primary.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/lthpc-smoke2-qwen-primary.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/lthpc-smoke2-qwen-primary.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdbare40.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdbare40.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdoptout40.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdoptout40.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdplain30.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdplain30.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdplain31to40.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdplain31to40.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-astropy__astropy-14096.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-astropy__astropy-14096.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-astropy__astropy-14369.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-astropy__astropy-14369.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-django__django-13569.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-django__django-13569.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-django__django-13933.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-django__django-13933.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-django__django-14089.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-django__django-14089.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-django__django-14787.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-django__django-14787.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-django__django-15525.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-django__django-15525.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-django__django-16595.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-django__django-16595.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-django__django-16938.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-django__django-16938.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-matplotlib__matplotlib-24177.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-matplotlib__matplotlib-24177.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-matplotlib__matplotlib-24870.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-matplotlib__matplotlib-24870.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-matplotlib__matplotlib-25287.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-matplotlib__matplotlib-25287.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-pydata__xarray-3677.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-pydata__xarray-3677.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-pylint-dev__pylint-4661.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-pylint-dev__pylint-4661.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-pytest-dev__pytest-5262.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-pytest-dev__pytest-5262.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-scikit-learn__scikit-learn-12682.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-scikit-learn__scikit-learn-12682.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-scikit-learn__scikit-learn-9288.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-scikit-learn__scikit-learn-9288.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-sphinx-doc__sphinx-10673.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-sphinx-doc__sphinx-10673.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-sphinx-doc__sphinx-7462.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-sphinx-doc__sphinx-7462.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-sphinx-doc__sphinx-7889.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-sphinx-doc__sphinx-7889.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-sphinx-doc__sphinx-9673.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-sphinx-doc__sphinx-9673.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-sympy__sympy-12489.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-sympy__sympy-12489.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-sympy__sympy-13480.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-sympy__sympy-13480.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-sympy__sympy-13798.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-sympy__sympy-13798.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-sympy__sympy-15875.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-sympy__sympy-15875.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-sympy__sympy-20438.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-sympy__sympy-20438.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40-retry-sympy__sympy-22714.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40-retry-sympy__sympy-22714.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary40.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary40.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprimary41to50.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprimary41to50.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/luna-cmdprohibit40.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/luna-cmdprohibit40.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/pro-mini36-clean.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/pro-mini36-clean.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/pro-mini36-smoke.yaml",
+      "disposition": "adapted",
+      "target_paths": [
+        "experiment/batches/pro-mini36-smoke.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-bare40-seat-coder.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-bare40-seat-coder.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-bare40-seat-tester.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-bare40-seat-tester.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-cmdbare40.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-cmdbare40.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-cmdoptout40.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-cmdoptout40.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-cmdplain40.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-cmdplain40.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-cmdprimary40-r2.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-cmdprimary40-r2.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-cmdprimary40-r3.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-cmdprimary40-r3.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-cmdprimary40-r4-repl-scikit-learn__scikit-learn-26323.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-cmdprimary40-r4-repl-scikit-learn__scikit-learn-26323.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-cmdprimary40-r4-retry-astropy__astropy-14096.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-cmdprimary40-r4-retry-astropy__astropy-14096.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-cmdprimary40-r4-retry-django__django-12663.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-cmdprimary40-r4-retry-django__django-12663.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-cmdprimary40-r4-retry-django__django-14089.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-cmdprimary40-r4-retry-django__django-14089.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-cmdprimary40-r4-retry-django__django-14140.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-cmdprimary40-r4-retry-django__django-14140.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-cmdprimary40-r4-retry-django__django-14539.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-cmdprimary40-r4-retry-django__django-14539.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-cmdprimary40-r4-retry-django__django-15128.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-cmdprimary40-r4-retry-django__django-15128.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-cmdprimary40-r4-retry-sympy__sympy-13798.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-cmdprimary40-r4-retry-sympy__sympy-13798.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-cmdprimary40-r4.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-cmdprimary40-r4.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-cmdprimary40.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-cmdprimary40.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-cmdprohibit12.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-cmdprohibit12.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-plain-frame500.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-plain-frame500.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-plain40-4m.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-plain40-4m.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-plain40-cap4m-astropy__astropy-14369.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-plain40-cap4m-astropy__astropy-14369.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-plain40-cap4m-matplotlib__matplotlib-22871.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-plain40-cap4m-matplotlib__matplotlib-22871.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-plain40-cap4m-matplotlib__matplotlib-25775.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-plain40-cap4m-matplotlib__matplotlib-25775.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-plain40-cap4m-pylint-dev__pylint-8898.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-plain40-cap4m-pylint-dev__pylint-8898.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-plain40-cap4m-sphinx-doc__sphinx-10673.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-plain40-cap4m-sphinx-doc__sphinx-10673.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-plain40-cap4m-sympy__sympy-20438.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-plain40-cap4m-sympy__sympy-20438.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-primary-frame500.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-primary-frame500.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-propose2-40-4m.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-propose2-40-4m.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-propose2-6-4m-astropy__astropy-14369.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-propose2-6-4m-astropy__astropy-14369.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-propose2-6-4m-matplotlib__matplotlib-22871.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-propose2-6-4m-matplotlib__matplotlib-22871.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-propose2-6-4m-matplotlib__matplotlib-25775.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-propose2-6-4m-matplotlib__matplotlib-25775.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-propose2-6-4m-pylint-dev__pylint-8898.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-propose2-6-4m-pylint-dev__pylint-8898.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-propose2-6-4m-sphinx-doc__sphinx-10673.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-propose2-6-4m-sphinx-doc__sphinx-10673.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-propose2-6-4m-sympy__sympy-20438.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-propose2-6-4m-sympy__sympy-20438.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-propose40-4m.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-propose40-4m.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-propose6-4m-astropy__astropy-14369.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-propose6-4m-astropy__astropy-14369.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-propose6-4m-matplotlib__matplotlib-22871.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-propose6-4m-matplotlib__matplotlib-22871.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-propose6-4m-matplotlib__matplotlib-25775.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-propose6-4m-matplotlib__matplotlib-25775.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-propose6-4m-pylint-dev__pylint-8898.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-propose6-4m-pylint-dev__pylint-8898.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-propose6-4m-sphinx-doc__sphinx-10673.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-propose6-4m-sphinx-doc__sphinx-10673.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-propose6-4m-sympy__sympy-20438.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-propose6-4m-sympy__sympy-20438.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-single40-4m-dash.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-single40-4m-dash.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-single40-4m.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-single40-4m.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-single40-cap4m-astropy__astropy-14369.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-single40-cap4m-astropy__astropy-14369.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-single40-cap4m-dash-astropy__astropy-14369.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-single40-cap4m-dash-astropy__astropy-14369.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-single40-cap4m-dash-matplotlib__matplotlib-22871.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-single40-cap4m-dash-matplotlib__matplotlib-22871.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-single40-cap4m-dash-matplotlib__matplotlib-25775.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-single40-cap4m-dash-matplotlib__matplotlib-25775.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-single40-cap4m-dash-pylint-dev__pylint-8898.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-single40-cap4m-dash-pylint-dev__pylint-8898.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-single40-cap4m-dash-sphinx-doc__sphinx-10673.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-single40-cap4m-dash-sphinx-doc__sphinx-10673.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-single40-cap4m-dash-sympy__sympy-20438.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-single40-cap4m-dash-sympy__sympy-20438.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-single40-cap4m-matplotlib__matplotlib-22871.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-single40-cap4m-matplotlib__matplotlib-22871.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-single40-cap4m-matplotlib__matplotlib-25775.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-single40-cap4m-matplotlib__matplotlib-25775.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-single40-cap4m-pylint-dev__pylint-8898.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-single40-cap4m-pylint-dev__pylint-8898.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-single40-cap4m-sphinx-doc__sphinx-10673.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-single40-cap4m-sphinx-doc__sphinx-10673.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-single40-cap4m-sympy__sympy-20438.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-single40-cap4m-sympy__sympy-20438.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-single40.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-single40.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-verify40-4m.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-verify40-4m.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-verify6-4m-astropy__astropy-14369.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-verify6-4m-astropy__astropy-14369.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-verify6-4m-matplotlib__matplotlib-22871.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-verify6-4m-matplotlib__matplotlib-22871.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-verify6-4m-matplotlib__matplotlib-25775.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-verify6-4m-matplotlib__matplotlib-25775.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-verify6-4m-pylint-dev__pylint-8898.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-verify6-4m-pylint-dev__pylint-8898.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-verify6-4m-sphinx-doc__sphinx-10673.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-verify6-4m-sphinx-doc__sphinx-10673.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwen-verify6-4m-sympy__sympy-20438.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwen-verify6-4m-sympy__sympy-20438.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwenmax-cmdbare12.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwenmax-cmdbare12.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwenmax-cmdoptout12.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwenmax-cmdoptout12.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwenmax-cmdplain12.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwenmax-cmdplain12.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwenmax-cmdprimary12-retry-django__django-15128.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwenmax-cmdprimary12-retry-django__django-15128.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwenmax-cmdprimary12.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwenmax-cmdprimary12.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwenmax-cmdprimary28-tp-retry-13-14.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwenmax-cmdprimary28-tp-retry-13-14.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwenmax-cmdprimary28-tp-retry-17-20.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwenmax-cmdprimary28-tp-retry-17-20.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwenmax-cmdprimary28-tp-retry-23-37.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwenmax-cmdprimary28-tp-retry-23-37.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwenmax-cmdprimary28-tp.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwenmax-cmdprimary28-tp.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/qwenmax-cmdprohibit12.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/qwenmax-cmdprohibit12.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-bare-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-bare-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-dsv41f-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-dsv41f-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-dsv41f-r2-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-dsv41f-r2-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-dsv41f-tp-pro36-retry-r1-2.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-dsv41f-tp-pro36-retry-r1-2.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-dsv41f-tp-pro36-retry-r12.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-dsv41f-tp-pro36-retry-r12.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-dsv41f-tp-pro36-retry-r18.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-dsv41f-tp-pro36-retry-r18.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-dsv41f-tp-pro36-retry-r22.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-dsv41f-tp-pro36-retry-r22.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-dsv41f-tp-pro36-retry-r27.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-dsv41f-tp-pro36-retry-r27.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-dsv41f-tp-pro36-retry-r29.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-dsv41f-tp-pro36-retry-r29.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-dsv41f-tp-pro36-retry-r35.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-dsv41f-tp-pro36-retry-r35.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-dsv41f-tp-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-dsv41f-tp-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-luna-pro36-retry-r10.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-luna-pro36-retry-r10.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-luna-pro36-retry-r12.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-luna-pro36-retry-r12.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-luna-pro36-retry-r13-14.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-luna-pro36-retry-r13-14.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-luna-pro36-retry-r16.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-luna-pro36-retry-r16.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-luna-pro36-retry-r20.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-luna-pro36-retry-r20.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-luna-pro36-retry-r3.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-luna-pro36-retry-r3.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-luna-pro36-retry-r31.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-luna-pro36-retry-r31.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-luna-pro36-retry-r31b.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-luna-pro36-retry-r31b.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-luna-pro36-retry-r3b.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-luna-pro36-retry-r3b.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-luna-pro36-retry-r5-7.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-luna-pro36-retry-r5-7.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-luna-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-luna-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-luna-r2-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-luna-r2-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-luna-r3-pro36-retry-r25-27.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-luna-r3-pro36-retry-r25-27.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-luna-r3-pro36-retry-r31.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-luna-r3-pro36-retry-r31.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-luna-r3-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-luna-r3-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-qwen38-pro36-retry-teleport-10123c04.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-qwen38-pro36-retry-teleport-10123c04.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-qwen38-pro36-retry-vuls-6682232b.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-qwen38-pro36-retry-vuls-6682232b.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-qwen38-tp-r2-pro36-retry-qutebrowser-e70f5b03.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-qwen38-tp-r2-pro36-retry-qutebrowser-e70f5b03.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judge-qwen38-tp-r2-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judge-qwen38-tp-r2-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judgeinfo05m-qwen38-tp-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judgeinfo05m-qwen38-tp-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judgeinfo1m-qwen38-tp-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judgeinfo1m-qwen38-tp-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judgeinfo2m-qwen38-tp-pro36-retry-r17.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judgeinfo2m-qwen38-tp-pro36-retry-r17.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judgeinfo2m-qwen38-tp-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judgeinfo2m-qwen38-tp-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-judgeinfo4m-qwen38-tp-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-judgeinfo4m-qwen38-tp-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-optout-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-optout-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r18.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r18.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r18c.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r18c.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r2.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r2.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r22.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r22.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r22b.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r22b.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r22c.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r22c.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r2c.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r2c.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r31.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r31.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r31b.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r31b.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r31c.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-dsv41f-tp-pro36-retry-r31c.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-dsv41f-tp-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-dsv41f-tp-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-luna-pro36-retry-r23.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-luna-pro36-retry-r23.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-luna-pro36-retry-r31.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-luna-pro36-retry-r31.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-luna-pro36-retry-r32.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-luna-pro36-retry-r32.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-luna-pro36-retry-r33.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-luna-pro36-retry-r33.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-luna-pro36-retry-r34.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-luna-pro36-retry-r34.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-luna-pro36-retry-r34b.yaml",
+      "disposition": "adapted",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-luna-pro36-retry-r34b.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-luna-pro36-retry-r34c.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-luna-pro36-retry-r34c.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-luna-pro36-retry-r34d.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-luna-pro36-retry-r34d.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-luna-pro36-retry-r35.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-luna-pro36-retry-r35.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-luna-pro36-retry-r36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-luna-pro36-retry-r36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-luna-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-luna-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-luna-r2-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-luna-r2-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-luna-r3-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-luna-r3-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-plain-qwen38-tp-r2-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-plain-qwen38-tp-r2-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2dual-prohibit-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2dual-prohibit-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2sc-judge-bypass-qwen38-tp-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2sc-judge-bypass-qwen38-tp-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2sc-judge-bypass-qwen38-tp-smoke1.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2sc-judge-bypass-qwen38-tp-smoke1.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2sc-judge-pipeline-qwen38-tp-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2sc-judge-pipeline-qwen38-tp-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2sc-judge-pipeline-qwen38-tp-smoke1.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2sc-judge-pipeline-qwen38-tp-smoke1.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2sc-plain-bypass-qwen38-tp-pro36-retry-r27.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2sc-plain-bypass-qwen38-tp-pro36-retry-r27.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2sc-plain-bypass-qwen38-tp-pro36-retry-r9.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2sc-plain-bypass-qwen38-tp-pro36-retry-r9.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2sc-plain-bypass-qwen38-tp-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2sc-plain-bypass-qwen38-tp-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2sc-plain-bypass-qwen38-tp-smoke1.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2sc-plain-bypass-qwen38-tp-smoke1.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2sc-plain-pipeline-qwen38-tp-pro36-retry-r24.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2sc-plain-pipeline-qwen38-tp-pro36-retry-r24.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2sc-plain-pipeline-qwen38-tp-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2sc-plain-pipeline-qwen38-tp-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2sc-plain-pipeline-qwen38-tp-smoke1.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2sc-plain-pipeline-qwen38-tp-smoke1.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2single-qwen38-tp-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2single-qwen38-tp-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2single-qwen38-tp-r2-pro36-retry-r10.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2single-qwen38-tp-r2-pro36-retry-r10.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2single-qwen38-tp-r2-pro36-retry-r36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2single-qwen38-tp-r2-pro36-retry-r36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2single-qwen38-tp-r2-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2single-qwen38-tp-r2-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2tools-adopt-qwen38-tp-pro36-retry-r12.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2tools-adopt-qwen38-tp-pro36-retry-r12.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2tools-adopt-qwen38-tp-pro36-retry-r12b.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2tools-adopt-qwen38-tp-pro36-retry-r12b.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2tools-adopt-qwen38-tp-pro36-retry-r14.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2tools-adopt-qwen38-tp-pro36-retry-r14.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2tools-adopt-qwen38-tp-pro36-retry-r14b.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2tools-adopt-qwen38-tp-pro36-retry-r14b.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2tools-adopt-qwen38-tp-pro36-retry-r3.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2tools-adopt-qwen38-tp-pro36-retry-r3.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2tools-adopt-qwen38-tp-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2tools-adopt-qwen38-tp-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2tools-noedit-qwen38-tp-pro36-retry-r1.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2tools-noedit-qwen38-tp-pro36-retry-r1.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2tools-noedit-qwen38-tp-pro36-retry-r19.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2tools-noedit-qwen38-tp-pro36-retry-r19.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2tools-noedit-qwen38-tp-pro36-retry-r33.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2tools-noedit-qwen38-tp-pro36-retry-r33.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2tools-noedit-qwen38-tp-pro36-retry-r34.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2tools-noedit-qwen38-tp-pro36-retry-r34.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2tools-noedit-qwen38-tp-pro36-retry-r9.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2tools-noedit-qwen38-tp-pro36-retry-r9.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2tools-noedit-qwen38-tp-pro36-retry-r9b.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2tools-noedit-qwen38-tp-pro36-retry-r9b.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/s2tools-noedit-qwen38-tp-pro36.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/s2tools-noedit-qwen38-tp-pro36.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/single-frame500.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/single-frame500.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/single-subset50-r2-repl-scikit-learn__scikit-learn-26323.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/single-subset50-r2-repl-scikit-learn__scikit-learn-26323.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/single-subset50-r2-retry-django__django-15128.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/single-subset50-r2-retry-django__django-15128.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/single-subset50-r2.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/single-subset50-r2.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/single-subset50.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/single-subset50.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/smoke-falsecap-dw.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/smoke-falsecap-dw.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/smoke-falsecap-single.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/smoke-falsecap-single.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/smoke-falsecap-team-primary.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/smoke-falsecap-team-primary.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/smoke-truecap-single.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/smoke-truecap-single.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/batches/team-primary-frame500.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/batches/team-primary-frame500.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/hosts/gpu3.yaml",
+      "disposition": "adapted",
+      "target_paths": [
+        "experiment/hosts/gpu3.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/hosts/lthpc-b.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/hosts/lthpc-b.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/hosts/lthpc-c.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/hosts/lthpc-c.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/hosts/lthpc.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/hosts/lthpc.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/model-forks/qwen3.8-flash.yaml",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/model-forks/qwen3.8-flash.yaml"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/suite/README.md",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/suite/README.md"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/suite/frame-ordered-manifest.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/suite/frame-ordered-manifest.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/suite/frame-ordered.csv",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/suite/frame-ordered.csv"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/suite/frame-verified-500.csv",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/suite/frame-verified-500.csv"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/suite/pro-mini36-clean.csv",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/suite/pro-mini36-clean.csv"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/suite/pro-mini36.csv",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/suite/pro-mini36.csv"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/suite/sampling-manifest.json",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/suite/sampling-manifest.json"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/suite/subset-30.csv",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/suite/subset-30.csv"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/suite/subset-50.csv",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/suite/subset-50.csv"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "experiment/suite/suite-100.csv",
+      "disposition": "source_identical",
+      "target_paths": [
+        "experiment/suite/suite-100.csv"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "pyproject.toml",
+      "disposition": "adapted",
+      "target_paths": [
+        "pyproject.toml"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/benchmarks/task_specification.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/benchmarks/task_specification.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/commands/batch.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/commands/batch.py",
+        "src/opencollab_eval/commands/batch_state.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/commands/draw_task_suite.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/commands/draw_task_suite.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/commands/order_frame.py",
+      "disposition": "source_identical",
+      "target_paths": [
+        "src/opencollab_eval/commands/order_frame.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/commands/swe_outcome_join.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/commands/swe_outcome_join.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/commands/swe_v1_runtime_source.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/commands/swe_v1_runtime_source.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/engine/evaluator.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/engine/evaluator.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/engine/evaluator_models.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/engine/evaluator_models.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/engine/evaluator_sessions.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/engine/evaluator_sessions.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/engine/evaluator_task.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/engine/evaluator_task.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/engine/evaluator_task_execution.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/engine/evaluator_task_execution.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/engine/evaluator_task_resources.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/engine/evaluator_task_resources.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/engine/evaluator_task_setup.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/engine/evaluator_task_setup.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/engine/evidence_trace.py",
+      "disposition": "source_identical",
+      "target_paths": [
+        "src/opencollab_eval/engine/evidence_trace.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/engine/swe_fail_to_pass_fraction.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/engine/swe_fail_to_pass_fraction.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/engine/swe_infra_failure_recheck.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/engine/swe_infra_failure_recheck.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/experiment/__init__.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/experiment/__init__.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/experiment/arm_audit.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/experiment/arm_audit.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/experiment/arm_probe.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/experiment/arm_probe.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/experiment/arm_registry.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/experiment/arm_registry.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/experiment/batch_remote.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/experiment/batch_remote.py",
+        "src/opencollab_eval/experiment/batch_model_probe.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/experiment/batch_score.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/experiment/batch_score.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/experiment/batch_spec.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/experiment/batch_spec.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/experiment/cell_report.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/experiment/cell_report.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/experiment/model_fork_audit.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/experiment/model_fork_audit.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/experiment/model_fork_probe.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/experiment/model_fork_probe.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/experiment/model_fork_runtime.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/experiment/model_fork_runtime.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/experiment/model_forks.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/experiment/model_forks.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/experiment/task_sampling.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/experiment/task_sampling.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/generation/best_of_n_selector.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/generation/best_of_n_selector.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/generation/gen_prediction.py",
+      "disposition": "current_main_retained",
+      "target_paths": [
+        "src/opencollab_eval/generation/gen_prediction.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/generation/gen_prediction_agent.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/generation/gen_prediction_agent.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/generation/gen_prediction_batch.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/generation/gen_prediction_batch.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/generation/gen_prediction_best_of_n.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/generation/gen_prediction_best_of_n.py",
+        "src/opencollab_eval/generation/best_of_n_retention.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/generation/gen_prediction_config.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/generation/gen_prediction_config.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/generation/gen_prediction_constants.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/generation/gen_prediction_constants.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/generation/gen_prediction_docker.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/generation/gen_prediction_docker.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/generation/gen_prediction_run_summary.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/generation/gen_prediction_run_summary.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/generation/gen_prediction_task_text.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/generation/gen_prediction_task_text.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/generation/gen_prediction_workflow.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/generation/gen_prediction_workflow.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/generation/gen_prediction_workflow_inputs.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/generation/gen_prediction_workflow_inputs.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/usage.py",
+      "disposition": "current_main_retained",
+      "target_paths": [
+        "src/opencollab_eval/usage.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/workflows/__init__.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/workflows/__init__.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/workflows/_analyst_solve_runtime.py",
+      "disposition": "current_main_retained",
+      "target_paths": [
+        "src/opencollab_eval/workflows/_analyst_solve_runtime.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/workflows/_swe_committee_v2_defs.py",
+      "disposition": "current_main_retained",
+      "target_paths": [
+        "src/opencollab_eval/workflows/_swe_committee_v2_defs.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/workflows/_swe_committee_v2_impl.py",
+      "disposition": "current_main_retained",
+      "target_paths": [
+        "src/opencollab_eval/workflows/_swe_committee_v2_impl.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/workflows/_validation_council_solve_defs.py",
+      "disposition": "current_main_retained",
+      "target_paths": [
+        "src/opencollab_eval/workflows/_validation_council_solve_defs.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/workflows/base_team.py",
+      "disposition": "current_main_retained",
+      "target_paths": [
+        "src/opencollab_eval/workflows/base_team.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/workflows/scout_solve.py",
+      "disposition": "current_main_retained",
+      "target_paths": [
+        "src/opencollab_eval/workflows/scout_solve.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/workflows/self_collab.py",
+      "disposition": "current_main_retained",
+      "target_paths": [
+        "src/opencollab_eval/workflows/self_collab.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "src/opencollab_eval/workflows/self_collaboration.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "src/opencollab_eval/workflows/self_collaboration.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "src/opencollab_eval/workflows/split_solve.py",
+      "disposition": "current_main_retained",
+      "target_paths": [
+        "src/opencollab_eval/workflows/split_solve.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/gen_prediction_single_agent_support.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/support/gen_prediction_single_agent_support.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/retired_run_tests.py",
+      "disposition": "superseded_by_current_execution",
+      "target_paths": [
+        "tests/orchestration/test_workflow_run_tests_controls.py",
+        "tests/orchestration/test_analyst_solve_f2p_gate.py",
+        "tests/orchestration/test_analyst_solve_target_tests.py",
+        "tests/orchestration/test_phase1_toolset_whitelist.py",
+        "tests/orchestration/test_phase2_warts.py"
+      ],
+      "reason": "Current native Bash verification and its executed tests replace the source module-wide skip helper."
+    },
+    {
+      "source_change": "M",
+      "source_path": "tests/test_analyst_solve_f2p_gate.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/orchestration/test_analyst_solve_f2p_gate.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "tests/test_analyst_solve_target_tests.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/orchestration/test_analyst_solve_target_tests.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_arm_alignment_gate.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/experiment/test_arm_alignment_gate.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_arm_wiring.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "tests/experiment/test_arm_wiring.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_batch_launcher.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/experiment/test_batch_launcher.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_batch_replacement.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/experiment/test_batch_replacement.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_batch_retry.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/experiment/test_batch_retry.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_best_of_n_arm.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/generation/test_best_of_n_arm.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "tests/test_boundaries.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/packaging/test_boundaries.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_cell_report.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/experiment/test_cell_report.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_cell_report_attempt_seats.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "tests/experiment/test_cell_report_attempt_seats.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_delivery_tree_metrics.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/evaluation/test_delivery_tree_metrics.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_eval_team_mode.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/evaluation/test_eval_team_mode.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "tests/test_evaluator_configuration.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/evaluation/test_evaluator_configuration.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_gen_prediction_batch.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "tests/generation/test_gen_prediction_batch.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_gen_prediction_docker_timeout.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/generation/test_gen_prediction_docker_timeout.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_gen_prediction_patch_eligibility.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/generation/test_gen_prediction_patch_eligibility.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_gen_prediction_run_summary.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/generation/test_gen_prediction_run_summary.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "tests/test_gen_prediction_single_agent.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/generation/test_gen_prediction_single_agent.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_gen_prediction_task_text.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/generation/test_gen_prediction_task_text.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_gen_prediction_workflow_card_provenance.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/generation/test_gen_prediction_workflow_card_provenance.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "tests/test_gen_prediction_workflow_generation.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/generation/test_gen_prediction_workflow_generation.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "tests/test_integrity_coverage_ledger.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/packaging/test_integrity_coverage_ledger.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_llm_transport_metrics.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/generation/test_llm_transport_metrics.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_model_fork_audit.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/experiment/test_model_fork_audit.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "tests/test_phase1_toolset_whitelist.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/orchestration/test_phase1_toolset_whitelist.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "tests/test_phase2_warts.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/orchestration/test_phase2_warts.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "tests/test_publication_workflows.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/packaging/test_publication_workflows.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "tests/test_release_metadata.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/packaging/test_release_metadata.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_repo_root_is_arm_invariant.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/generation/test_repo_root_is_arm_invariant.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_self_collaboration_workflow.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/orchestration/test_self_collaboration_workflow.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_single2_single_arm.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/generation/test_single2_single_arm.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_swe_fail_to_pass_fraction.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/evaluation/test_swe_fail_to_pass_fraction.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_swe_infra_failure_recheck.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/evaluation/test_swe_infra_failure_recheck.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_swe_outcome_join.py",
+      "disposition": "adapted",
+      "target_paths": [
+        "tests/evaluation/test_swe_outcome_join.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "tests/test_swe_v1_prolite_runtime_version.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/orchestration/test_swe_v1_prolite_runtime_version.py"
+      ]
+    },
+    {
+      "source_change": "A",
+      "source_path": "tests/test_task_sampling.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/experiment/test_task_sampling.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "tests/test_usage.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/orchestration/test_usage.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "tests/test_validation_council_toolsets.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/orchestration/test_validation_council_toolsets.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "tests/test_wheel_contract.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/packaging/test_wheel_contract.py"
+      ]
+    },
+    {
+      "source_change": "M",
+      "source_path": "tests/test_workflow_run_tests_controls.py",
+      "disposition": "relocated",
+      "target_paths": [
+        "tests/orchestration/test_workflow_run_tests_controls.py"
+      ]
+    }
+  ]
+}

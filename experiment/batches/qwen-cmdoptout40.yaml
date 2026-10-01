@@ -1,0 +1,76 @@
+# The ladder's `opt-out` rung under the second model, `qwen3.8-flash`.
+#
+# What it is for, in one sentence: qwen's ladder currently has one step, from
+# primary (0.150) straight to bare (0.950), and this rung is the only cell that
+# can say where inside that gap the step actually falls.
+#
+# Why it is worth a cell now, when D19 named only three rungs. D19's three
+# main-text rungs (primary / bare / plain) were chosen when the cross-model
+# paragraph was a robustness check. It is now a load-bearing claim: the paper's
+# argument is that the realized treatment swings across [0,1] under changes no
+# paper reports, and the *shape* of that swing differs by model. deepseek's
+# step sits between bare and plain; qwen's bare and plain are identical
+# (0.950 both), so qwen's step is somewhere at or below bare. opt-out is the
+# rung between primary and bare, and it is the only measurement that separates
+# "the step moved one rung" from "the step moved three rungs".
+#
+# Every paid field is copied verbatim from the first snapshot's opt-out cell
+# (`cmdoptout40-r2`) -- arm, rung, cell, budget_per_seat, max_steps, timeout,
+# concurrency and the three switches -- and the model and pins are copied from
+# `qwen-cmdbare40`, so this cell differs from deepseek's opt-out in the model
+# and from qwen's bare in the rung, and in nothing else that was chosen.
+#
+# One thing is deliberate and must be declared:
+#
+#   * no `withdraw_replacements`. deepseek's opt-out cell withdrew
+#     `pylint-dev__pylint-4661` on gpu3; that withdrawal was reverted on
+#     2026-09-07 once lthpc resolved the same instance's gold patch 1/1.
+#     qwen's primary, bare and plain cells all ran the full forty with
+#     pylint-4661 in place, so this one does too and all four qwen rungs share
+#     one denominator.
+#
+# Read-out, written before the run:
+#   - alpha_adh near primary's 0.150 -> qwen's step falls between opt-out and
+#     bare, i.e. one rung lower than deepseek's. The cross-model paragraph
+#     reports two ladders whose steps sit at different rungs, and §4's sentence
+#     about "you may" versus "you must" is rewritten as model-specific
+#   - alpha_adh near bare's 0.950 -> qwen's step falls between primary and
+#     opt-out: the mere presence of an imperative is enough under this model
+#     even when it carries an explicit permission to depart, which is a
+#     stronger version of the same finding and must be said as such
+#   - alpha_adh strictly between (roughly 0.3-0.8) -> qwen's ladder is
+#     monotone with a shallower step; `tab:ladder` prints four qwen points and
+#     the shape claim is reported as a difference of slope, not of location
+#   - any value: this cell does NOT enter the deepseek ladder's denominator and
+#     is not a retry of anything; it is the fourth point of the second ladder
+#
+# 2026-09-10, endpoint. This cell runs against the private gateway
+# (`configs/.env.qwen-pg`, http://47.100.35.241:56477/v1) while qwen's primary,
+# bare and plain cells ran against dashscope. The principal ruled on 2026-09-10
+# that the two endpoints are equivalent: the gateway is a proxy layer we placed
+# in front of the same upstream provider for key management, so the only thing
+# that varies across the model axis is the model. Recorded here because it is a
+# paid field that differs from this cell's neighbours, and §4 must be able to
+# say so. The gateway was probed from lthpc before launch: HTTP 200,
+# echoed_model `qwen3.8-flash`, reasoning_tokens present; a bogus model id
+# returns 404, so the probe would have reported a missing model.
+name: qwen-cmdoptout40
+host: lthpc
+arm: team
+rung: opt-out
+cell: cmd-optout
+suite: subset-50
+rows: {start: 1, stop: 40}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env.qwen-pg
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "the second snapshot's opt-out rung, on the same forty tasks and at the same pins as qwen's primary, bare and plain; the only cell that locates where qwen's step falls"

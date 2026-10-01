@@ -1,0 +1,66 @@
+# The ladder's `primary` rung run under a second model, `qwen3.8-flash`.
+#
+# Purpose: the paper's claim about delegation is currently carried by one
+# model. This cell is the same card, the same 40 tasks and the same seat budget
+# under a model that is not deepseek, so an alpha read off it is a fact about
+# the rung rather than about deepseek.
+#
+# Every paid field is copied from `cmdprimary40-r2` verbatim -- arm, rung,
+# cell, suite, rows, budget_per_seat, max_steps, timeout, concurrency and the
+# three switches -- so that the two cells differ in the model and in nothing
+# else that was chosen.
+#
+# Three differences are unavoidable and are declared rather than hidden:
+#
+#   * `host`. cmdprimary40-r2 ran on gpu3; this runs on lthpc, because the
+#     shared gateway gpu3 reaches is occupied by another tenant. A machine is
+#     an instrument: `alpha` (a within-run structural fact) carries across,
+#     `resolve` (which depends on wall clock and on the endpoint) does not.
+#   * `pins.opencollab`. The ladder ran at 9175297e. This runs at 70512754,
+#     which differs from it by one dictionary entry -- `qwen3.8-flash`'s two
+#     measured capability values -- and its tests. The entry is what makes this
+#     model's run defined at all: without it the model silently took the
+#     dataclass defaults, which are a different compaction threshold and a
+#     forced tool choice this endpoint answers with HTTP 400. That the entry is
+#     inert for deepseek is not assumed: `lthpc-smoke2-deepseek-primary`
+#     re-runs two of the ladder's own rows at the parent of this pin and is
+#     compared, row by row, against the same rows at 9175297e; 70512754 changes
+#     one integer inside the qwen entry and touches no other row, which the
+#     capability table's tests pin field by field.
+#   * `pins.opencollab_eval`. The ladder ran at 898d5807. This runs at dfc88219,
+#     which differs from it by one dictionary row and its tests, and the change
+#     is recording-only. `model_context_window` is called in exactly one place
+#     on this arm's path -- `gen_prediction_workflow.py:511`, which writes the
+#     value into `metrics.jsonl` -- and by nothing that spends, caps, censors or
+#     scores. The one behavioural caller, `swe_eval_run.py:679`, passes it to
+#     external solvers (kimi, claude-code, openhands) and is not on the batch
+#     driver's path. deepseek's row is unchanged and pinned by a test, so the
+#     ladder's cells remain comparable to this one; the pin difference must
+#     still be declared wherever the paper traces a batch to its commits.
+#   * `model_env`. A second model is a second file, never an edit of the first.
+#
+# One confound no code change removes: deepseek's context window is 1,048,576
+# in the capability table and qwen3.8-flash's is 983,616, so the two models
+# compact their history at different sizes (trigger 1,015,576 against 950,616).
+# It is a property of the models, it is declared in the audit table, and it is
+# not something this spec can hold equal.
+name: qwen-cmdprimary40-r4
+host: lthpc
+arm: team
+rung: primary
+cell: facts-v2
+suite: subset-50
+rows: {start: 1, stop: 40}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 6
+model_env: configs/.env.qwen
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 7051275497d9cfd17b029b4cd0b7659ba7c31846
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "ladder rung primary (facts-v2) under qwen3.8-flash on lthpc, the cross-model leg of the same 40 subset-50 rows as cmdprimary40-r2; every paid field copied from that spec, differing only in host, model_env and the two pins; alpha is comparable across the two cells, resolve is not, because the machine and the endpoint differ. FOURTH attempt at this cell. The three earlier ones are void, and every byte they wrote is kept on disk, not deleted, overwritten or resumed; none of their numbers may be cited. (1) qwen-cmdprimary40, 8 of 40 runs finished, stopped by hand: it ran at OpenCollab be6fa3bf, where the capability table recorded 131,072 for this model -- that model's maximum *output* tokens filed under the input field -- so the runtime compacted history at 98,072 tokens, about a tenth of the usable window. (2) qwen-cmdprimary40-r2, 2 of 40 runs, same wrong value in the runtime, stopped by hand. (3) qwen-cmdprimary40-r3, 3 of 40 runs, stopped by hand: the runtime was correct at OpenCollab 70512754 (a run reached tokens_before=172,519 without compacting, which the old 98,072 trigger would have made impossible), but OpenCollab-Eval 898d5807 had no row for this model in its own context-window table, so the substring rule answered 131,072 and wrote that into metrics.jsonl as the run's context_window -- the field the paper's audit table reads as realized context. This batch fixes the recorder: OpenCollab-Eval dfc88219 adds the row and a test that asserts, for every model a batch runs under, that the value recorded equals the value OpenCollab's table holds. The correct values, verified on the host at these pins before launch: qwen3.8-flash context_window 983,616 (its maximum input in thinking mode, the mode this batch runs in via OPENCOLLAB_REASONING_EFFORT=max), history compaction trigger 950,616 and target 712,962; deepseek-v4-flash unchanged at 1,048,576 with trigger 1,015,576 and target 761,682. No number from any stopped batch was read as a reason to re-run: the reasons are a human interruption, a wrong runtime value and a wrong recorded value respectively. The Eval pin differs from the deepseek ladder's (898d5807) by a recording-only change and must be declared as such wherever the paper traces a batch to its commits. Commits: OpenCollab 7051275497d9cfd17b029b4cd0b7659ba7c31846, OpenCollab-Eval dfc88219226b97c7c037104f6444e0b3364400f7."

@@ -71,7 +71,8 @@ from . import (
     gen_prediction_safe_output,
     gen_prediction_snapshot,
 )
-from .container_quiescence import container_image_id, require_container_quiescence
+from .candidate_retention import arm_candidate_retention, complete_candidate_retention, retain_failed_candidate
+from .container_quiescence import container_image_id, isolate_container_for_preservation, require_container_quiescence
 from .gen_prediction_agent import (
     SINGLE2_AUTHORIZED_BUDGET,
     SINGLE2_AUTHORIZED_MAX_STEPS,
@@ -417,6 +418,10 @@ def main() -> None:
     pending_required = False
     generation_error: BaseException | None = None
     trusted_baseline = None
+    candidate_started = False
+    generation_image_id = None
+    task = None
+    module = sys.modules[__name__]
     try:
         generation_image_id = container_image_id(cid)
         prepare_testbed_environment(cid)
@@ -428,6 +433,9 @@ def main() -> None:
         trusted_baseline = prepare_trusted_patch_baseline(cid, snapshot)
         restore_solver_runtime_dependencies(cid, solver_runtime)
         task = build_task(instance)
+        if trusted_baseline is not None:
+            arm_candidate_retention(module, run_dir=run_dir, cid=cid, name=name)
+        candidate_started = True
         metrics = run_with_bounded_shutdown(
             run_agent(
                 task,
@@ -481,6 +489,8 @@ def main() -> None:
             patch=patch,
             patch_extraction_succeeded=patch_extraction_succeeded,
         )
+        if trusted_baseline is not None and metrics.get("patch_extraction_succeeded") is True:
+            complete_candidate_retention(module, run_dir=run_dir, cid=cid, name=name)
         metrics["patch_produced"] = bool(patch.strip())
         metrics["submitted_patch_chars"] = len(patch)
         record, metric_record = build_output_records(
@@ -515,18 +525,49 @@ def main() -> None:
         )
         raise
     finally:
-        cleanup_failures = _cleanup_generation_attempt(
-            trusted_baseline=trusted_baseline,
-            run_dir=run_dir,
-            cid=cid,
-            name=name,
-            args=args,
-            metrics=metrics,
-            patch=patch,
-            pending_required=pending_required,
-            pending_path=pending_path,
-            generation_error=generation_error,
+        staged_owner = _read_owner(container_owner_path(run_dir, name)) if pending_required else None
+        staging_protected = staged_owner is not None and staged_owner["state"] in {
+            "candidate_staged", "preservation_required",
+        }
+        retention_required = trusted_baseline is not None and candidate_started and (
+            metrics.get("patch_extraction_succeeded") is not True
+            or generation_error is not None and pending_path is None and not staging_protected
         )
+        if retention_required:
+            failures: list[tuple[str, BaseException]] = []
+            try:
+                retain_failed_candidate(
+                    module, run_dir=run_dir, cid=cid, name=name, baseline=trusted_baseline,
+                    instance=instance, image=image, generation_image_id=generation_image_id,
+                    metrics=metrics, generation_error=generation_error, workflow_log_dir=None,
+                    task_id=getattr(task, "task_id", None), trajectory_path=metrics.get("trajectory_path"),
+                    reason="candidate_record_unwritten" if metrics.get("patch_extraction_succeeded") is True
+                    else "trusted_patch_extraction_incomplete",
+                )
+            except BaseException as exc:
+                failures.append(("candidate retention", exc))
+            try:
+                require_container_quiescence(cid)
+                metrics["container_execution_quiesced"] = True
+            except BaseException:
+                try:
+                    metrics["container_isolated"] = isolate_container_for_preservation(cid)
+                except BaseException as exc:
+                    failures.append(("candidate isolation", exc))
+            cleanup_failures = tuple(failures)
+        else:
+            cleanup_failures = _cleanup_generation_attempt(
+                trusted_baseline=trusted_baseline,
+                run_dir=run_dir,
+                cid=cid,
+                name=name,
+                args=args,
+                metrics=metrics,
+                patch=patch,
+                pending_required=pending_required,
+                pending_path=pending_path,
+                generation_error=generation_error,
+            )
         _raise_or_note_cleanup_failures(cleanup_failures, generation_error)
 
     if record is None or metric_record is None:

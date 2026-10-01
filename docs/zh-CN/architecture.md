@@ -30,6 +30,8 @@ OpenCollab-Eval 使用以下 OpenCollab 公开接口。
 | `opencollab.builtin_workflows` | `duo`、`get_builtin_workflows` 和 `run_dual_coder` |
 | `opencollab.patches` | 通用 Git diff 分块与路径解析 |
 | `opencollab.profiles` | `BASE_PROFILE` 和 `resolve_profile_name` |
+| `opencollab.models` | 离线 `inspect_model_runtime` 查询 |
+| `opencollab.teams` | `declared_role_names`, `declared_role_tools`, `declared_role_prompt_digests`, `declared_role_profiles` |
 | `opencollab.workflows` | `workflow` |
 
 已退役的 `opencollab.sdk` 包以及 OpenCollab 的 `adapters`、`application`、
@@ -221,3 +223,9 @@ sidecar 负责报告用量与 Solver 身份，补丁内容仍由候选构造器�
 
 新增报告字段应从持久且大小受限的产物推导，并保留将其关联到同一任务、运行、
 候选与评测尝试所需的身份字段。
+
+## ICLR 整合中的研究能力
+
+整合分支保留批次定义、历史运行条件、抽样清单与离线分析工具。运行所需的主机配置由调用者显式选择。新增的模型行为查询通过 `opencollab.models.inspect_model_runtime` 执行，静态源代码分析从明确给定的包目录读取源码。
+
+评分扩展使用 SWE-bench 5.0.2，F2P 中的跳过节点保留在失败分母中。原有结果身份与正式测试证据检查继续用于结果接收。

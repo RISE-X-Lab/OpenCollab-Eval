@@ -8,7 +8,7 @@ Python 代码定义控制流程，其中包括智能体
 分支和修复轮次。验证门禁与停止条件也由 Python 代码管理，模型在这套控制流内
 分析并修改仓库。
 
-该包依赖 OpenCollab 0.8.0 或更高 0.8.x 版本中的工作流编写接口。
+该包依赖 OpenCollab 0.9.0 或更高 0.9.x 版本中的工作流编写接口。
 
 ```python
 from opencollab.builtin_workflows import duo
@@ -26,6 +26,8 @@ from opencollab.workflows import WorkflowContext, workflow
 | `duo` | OpenCollab 内置双 coder，按公开要求选择候选 |
 | `base-team` | 分析员先给出简报，随后进入有界的编码与测试循环 |
 | `self-collab` | 按阶段执行，并审查计划和各阶段结果 |
+| `self-collaboration` | 三个预算座位依次执行 Analyst 分析、Coder 实现、Tester 验证和 Analyst 裁决 |
+| `self-collaboration-reading-analyst` | 保持同一脚本流程，初始 Analyst 阶段使用读取工具 |
 | `split-solve` | 分别完成独立子任务，随后统一验证 |
 | `scout-solve` | 并行只读勘察，随后进行一轮修复 |
 | `analyst-solve` | 由分析员组织勘察、分阶段修复和最终验证 |
@@ -132,3 +134,22 @@ python -m opencollab_eval.generation.gen_prediction_workflow \
 `opencollab_eval.workflows.duo`，它引用同一个公开函数。
 `oc-eval duo` 默认选择统一的 `duo` 和 `agent_profile="base"`，解析后记录为 `single2`，
 裁决者始终通过文件读取完整证据。`oc-eval g22` 调用同一评测器。
+
+`self-collaboration` 的多个会话共用三个角色座位各自的预算，并允许一轮修复。
+读取变体在初始 Analyst 阶段采用读取工具集合。两者都在工作流结果中保存阶段
+之间的连接和源码树快照。
+
+生成器接受 `--team-config /path/to/team.yaml`，运行采用独立工作树和串行轮次的
+预建团队。team 和 workflow 选择互斥。单智能体、工作流与团队共享公开问题、
+requirements、interface、hints 和从执行环境取得的仓库清单。原生 Base 选择
+Single2，并保留其提示和工具。每条指标记录都带有 `run_summary` 与实际观察到的
+模型传输设置。团队记录还保存角色卡片、角色工具和交付树阶段记录。
+
+Best-of-N 使用 `opencollab_eval.generation.gen_prediction_best_of_n`。它将一份
+运行预算分给独立候选容器，逐个保存候选记录，某个候选启动或运行失败后继续
+其余候选。容器清理失败沿用已有的所有权处理。选择器保留 ICLR 已记录的占位
+规则，并通过 `best_of_n.arbitrary_choice` 表明任意选择。
+
+批次驱动入口为 `opencollab_eval.generation.gen_prediction_batch`。研究预算、
+步数上限和截止时间由各 arm 显式设置。通用命令省略 token 和步数上限时沿用
+当前运行时默认值。

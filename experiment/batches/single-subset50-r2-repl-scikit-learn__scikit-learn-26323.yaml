@@ -1,0 +1,46 @@
+# The stand-in for pylint-dev__pylint-4661, which this cell drew and cannot be scored on.
+#
+# Why the instance leaves: its SWE-bench evaluation environment does not run.
+# The benchmark's own gold patch does not resolve there, so every arm scores
+# zero on it whatever the agent did, and the score is the outcome the grid
+# reads. Nothing about the run is wrong; the instrument for reading it is.
+#
+# Why this instance and not another: a broken environment is not a random
+# event, so the replacement cannot be chosen after the fact. The suite draw is
+# an ordered 110 (`experiment/suite/sampling-manifest.json`, `ordered_draw`)
+# of which the suite is the first 100 -- rows 101-110 are the reserve, drawn
+# under the same capped, stratified rule on 2026-09-01, before anyone knew
+# which instance would fail. scikit-learn__scikit-learn-26323 is row 101: the
+# first row of the ordered draw that no cell has run. It is in neither
+# `suite-100.csv` nor `subset-50.csv`.
+#
+# Why the suite field is `frame-ordered`: a spec addresses an instance as a
+# row of a suite file, and the reserve rows are in no `suite-*.csv` -- the
+# suite file stops at 100. `frame-ordered.csv` is the other pre-registration
+# artifact that carries every frame instance with its image, and row 282 of
+# it is this instance. The row number there is an address, not the reason;
+# the reason is `ordered_draw` row 101.
+#
+# `single-subset50-r2` reports this run in place of the one it replaces:
+# the replaced run stays in the report JSON under `excluded`, in no
+# denominator. Every other field is `single-subset50-r2.yaml`'s own,
+# byte for byte.
+name: single-subset50-r2-repl-scikit-learn__scikit-learn-26323
+host: gpu3
+arm: single
+suite: frame-ordered
+rows: {start: 282, stop: 282}
+budget_per_seat: 2000000
+max_steps: 100
+timeout: 5400
+concurrency: 1
+model_env: configs/.env
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: 9175297ed56be6a0377b38d6f5949e07d34d7073
+  opencollab_eval: 898d5807305edbac17917ad18a2dafc85dae7487
+replaces: {batch: single-subset50-r2, instance: pylint-dev__pylint-4661}
+note: "stands in for pylint-dev__pylint-4661 (subset-50 row 39) in single-subset50-r2: its SWE-bench evaluation environment is unusable, the benchmark's own gold patch does not resolve there. The stand-in is row 101 of the ordered draw, addressed as frame-ordered.csv row 282."

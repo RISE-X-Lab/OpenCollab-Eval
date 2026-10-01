@@ -10,7 +10,7 @@
 
 OpenCollab-Eval owns candidate generation, isolated official evaluation, and
 result evidence for [OpenCollab](https://github.com/RISE-X-Lab/OpenCollab).
-The current source version is **0.8.3** and requires **OpenCollab >=0.8,<0.9**.
+The current source version is **0.9.0** and requires **OpenCollab >=0.9,<0.10**.
 
 <a id="duo-quick-start"></a>
 
@@ -65,7 +65,7 @@ python -c 'from importlib.metadata import version; print("OC", version("opencoll
 cd OpenCollab-Eval
 ```
 
-The printed package versions should both be at least 0.8.0 and remain in 0.8.x. The editable installation
+The printed package versions should show OpenCollab 0.9.x and the matching evaluator source version. The editable installation
 uses the code in the two clones. `oc-eval --version` reports the installed Eval
 version. [CONTRIBUTING.md](CONTRIBUTING.md) covers development setup.
 
@@ -484,7 +484,7 @@ OpenCollab-Eval is licensed under [MulanPSL-2.0](LICENSE).
 
 本文对应上方[英文原文](#english)。OpenCollab-Eval 负责
 [OpenCollab](https://github.com/RISE-X-Lab/OpenCollab) 的候选生成、隔离正式评测与结果证据。
-当前源码版本为 **0.8.3**，依赖 **OpenCollab >=0.8,<0.9**。
+当前源码版本为 **0.9.0**，依赖 **OpenCollab >=0.9,<0.10**。
 
 <a id="duo-quick-start-zh-cn"></a>
 
@@ -534,7 +534,7 @@ python -c 'from importlib.metadata import version; print("OC", version("opencoll
 cd OpenCollab-Eval
 ```
 
-输出的两个包版本均应至少为 0.8.0，并保持在 0.8.x 范围内。editable 安装使用两个 clone 内的源码。
+输出的两个包版本均应至少为 0.9.0，并保持在 0.9.x 范围内。editable 安装使用两个 clone 内的源码。
 `oc-eval --version` 显示已安装的 Eval 版本。
 开发环境说明见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 

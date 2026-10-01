@@ -1,0 +1,94 @@
+# An intervention cell at the 4M operating point: `cmd-plain` with the Analyst's
+# closing block changed and nothing else, on the same forty-task list, the same
+# suite, the same endpoint and the same scoring dataset as `qwen-plain40-4m`.
+#
+# WHAT DIFFERS FROM qwen-plain40-4m, EXHAUSTIVELY
+#
+#   cell            cmd-plain -> cmd-verify
+#   opencollab pin  7051275497d9 -> ed820840d411
+#   host file       lthpc -> lthpc-b
+#
+# `lthpc-b` is the same machine, the same workdir, the same python, the same
+# docker daemon and the same scoring dataset as `lthpc`: a second pair of git
+# checkouts and nothing else, asserted field by field by
+# `test_the_second_lthpc_checkout_is_the_same_machine`. It exists because a
+# checkout sits at one commit and `sync` refuses to move the one a running
+# driver is using -- with a single pair, this cell could not start until
+# `qwen-plain40-4m` had finished its last thirty-two runs.
+#
+# The pin is the running cell's own pin with two commits cherry-picked onto it,
+# one per intervention cell, so `git diff` between the two pins is seven added
+# files and no deletion. A run loads one team file: the other cell's files are
+# inert bytes in the checkout. One pin rather than two because the host has one
+# checkout and `sync` refuses to move it while a driver is alive.
+#
+# The Coder's card, the Tester's card, the shared body, all three tool bundles
+# and the six directed edges are byte for byte the running cell's. Proof to
+# check in the metrics of every run here: `role_prompt_sha256.analyst` =
+# 0b436dd8b50df9894a49925fe513909f3f54cb18a291a9e99c7ca66d0a883a43, against
+# e8353bd71aed5846617d590ec134529ce78f2c4fe95281997d4e09a4186c5771 for
+# cmd-plain; `.coder` = 3e2f7cab06d9... and `.tester` = 6a85260af189...
+# unchanged.
+#
+# WHY THIS PARAGRAPH
+#
+# The cap was the first hypothesis and it is spent: at 4M the Analyst is no
+# longer the seat that runs out. Measured on the first five runs of
+# `qwen-plain40-4m`, the Analyst used 0.07-0.47 of its own 4M and all five ended
+# on `submitted`. What is left is that the team's three seats produce work the
+# graded tree never sees. `cmd-plain` asks the Tester for "the tests that should
+# cover the change" and never has to come back for the answer; on the forty 2M
+# runs of that cell, teammates committed and sent a sha in 33 runs and the
+# Analyst checked one out in 13.
+#
+# This card asks for the return trip and states the arithmetic behind it: a
+# seat's budget is its own and is not returned, so a suite the Tester runs is a
+# suite the Analyst did not pay for out of what it has left to think with.
+#
+# WHAT THIS CELL MAY NOT BE USED FOR
+#
+# No adherence number: the card prescribes the `message_agent` calls, so a
+# delegation count here is compliance with the file and not a choice, and α is
+# defined on cards that leave the alternative open. Not a rung of the command
+# ladder and not poolable with one.
+#
+# READ-OUT, WRITTEN BEFORE THE RUN
+#
+# The comparison is against Single at the same operating point
+# (`qwen-single40-4m-dash`, same endpoint, same forty tasks, 4M per seat), with
+# `qwen-plain40-4m` as the team card this one is a one-block edit of.
+#
+#   this cell > Single        -> the goal is met. Report the pair per task: b,
+#                                c, the exact two-sided sign test, and both
+#                                arms' token cost.
+#   > cmd-plain but <= Single -> the exchange helps the team and the team still
+#                                does not beat one agent. Report both contrasts;
+#                                reporting the gain over cmd-plain alone would
+#                                be the selective reading this project has
+#                                refused elsewhere.
+#   <= cmd-plain              -> prescribing the exchange does not pay.
+#
+# Either arm's gold control short of 40/40 -> no resolve may be read at all.
+#
+# Cost is part of the answer: this cell spends three seats to answer one agent's
+# question, and a win that costs 3x is a different claim from a win.
+name: qwen-verify40-4m
+host: lthpc-b
+arm: team
+rung: verify
+cell: cmd-verify
+suite: subset-50
+rows: {start: 1, stop: 40}
+budget_per_seat: 4000000
+max_steps: 200
+timeout: 10800
+concurrency: 6
+model_env: configs/.env.qwen
+env:
+  OPENCOLLAB_LLM_STREAM_CHAT: "true"
+  OPENCOLLAB_REASONING_EFFORT: "max"
+  OPENCOLLAB_WRITE_NUDGE_MODE: "off"
+pins:
+  opencollab: ed820840d411856c1c87a916607f2229028669e9
+  opencollab_eval: dfc88219226b97c7c037104f6444e0b3364400f7
+note: "the forty-task measurement of the cmd-verify card at the 4M per-seat operating point; one block of the Analyst card apart from qwen-plain40-4m, and compared against qwen-single40-4m-dash"
