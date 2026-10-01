@@ -2,6 +2,12 @@
 
 All notable changes to OpenCollab-Eval are recorded in this file.
 
+## [0.8.3] - 2026-10-01
+
+Paired with OpenCollab 0.8.3. This release updates the package version, release
+documentation, and pinned OpenCollab CI commit. OpenCollab-Eval's evaluator
+implementation follows the current main branch.
+
 ## [0.8.2] - 2026-09-28
 
 Task prompts include issue discussion hints when present. Standalone runs record
