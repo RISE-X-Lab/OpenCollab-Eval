@@ -16,6 +16,9 @@ _TITLE = re.compile(
 _CHINESE = re.compile(r"[\u3400-\u9fff]")
 _ZERO_SHA = "0" * 40
 _GITHUB_MERGE = re.compile(r"^Merge pull request #[1-9][0-9]* from \S+$")
+# Preserve titles in the reviewed ICLR history when importing it into main.
+# Descendants and unrelated commits remain subject to the current convention.
+_PRESERVED_HISTORY_TIPS = ("d7cd9e167ce6b52d3d2a65a2de81a237f3fd8100",)
 
 
 def _git_environment() -> dict[str, str]:
@@ -66,6 +69,24 @@ def commits_in_range(repository: Path, base: str, head: str) -> list[str]:
     return completed.stdout.split()
 
 
+def _preserved_history(repository: Path) -> set[str]:
+    commits: set[str] = set()
+    for tip in _PRESERVED_HISTORY_TIPS:
+        available = subprocess.run(
+            ["git", "--no-replace-objects", "cat-file", "-e", f"{tip}^{{commit}}"],
+            cwd=repository, capture_output=True, env=_git_environment(),
+        )
+        if available.returncode:
+            continue
+        completed = subprocess.run(
+            ["git", "--no-replace-objects", "rev-list", tip],
+            cwd=repository, check=True, capture_output=True,
+            env=_git_environment(), text=True,
+        )
+        commits.update(completed.stdout.split())
+    return commits
+
+
 def _commit_title_error(repository: Path, commit: str, subject: str) -> str | None:
     error = validate_title(subject)
     if error is None or not _GITHUB_MERGE.fullmatch(subject):
@@ -105,7 +126,9 @@ def main(argv: list[str] | None = None) -> int:
             if not commits:
                 print("::error::No pushed commits were available for title validation.")
                 return 1
-            for commit in commits:
+            preserved = _preserved_history(Path.cwd())
+            current_commits = [commit for commit in commits if commit not in preserved]
+            for commit in current_commits:
                 title = commit_subject(Path.cwd(), commit)
                 error = _commit_title_error(Path.cwd(), commit, title)
                 if error:
@@ -113,7 +136,10 @@ def main(argv: list[str] | None = None) -> int:
                         f"::error::{error}. Commit {commit} has title {title!r}."
                     )
                     return 1
-            print(f"Conventional title checks passed for {len(commits)} commits.")
+            print(
+                f"Conventional title checks passed for {len(current_commits)} commits. "
+                f"Preserved {len(commits) - len(current_commits)} reviewed historical titles."
+            )
             return 0
         title = (
             args.title
