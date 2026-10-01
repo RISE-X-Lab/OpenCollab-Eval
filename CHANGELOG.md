@@ -2,6 +2,22 @@
 
 All notable changes to OpenCollab-Eval are recorded in this file.
 
+## [0.9.0] - 2026-10-02
+
+Paired with OpenCollab 0.9.0. Installation requirements, remote runtime
+preparation, CI, and installed-wheel checks use the same supported 0.9.x
+runtime range. CI pins the immutable OpenCollab 0.9.0 release commit.
+
+The complete ICLR integration adds shared role task text, native team and
+scripted collaboration, independent candidates, and generation batches.
+Official SWE-bench 5.0.2 outcomes are associated with their exact attempts,
+while reports retain selected and historical attempt consumption separately.
+
+Declarative experiment specifications cover task sampling, batch execution,
+retries, replacements, observations, reports, and offline analysis. Active
+replacement selection is shared between reporting and prediction export.
+Existing candidate preservation, quiescence, and evidence checks remain active.
+
 ## [0.8.3] - 2026-10-01
 
 Paired with OpenCollab 0.8.3. This release updates the package version, release
@@ -132,3 +148,5 @@ truncated, or mismatched execution output.
 [0.5.0]: https://github.com/RISE-X-Lab/OpenCollab-Eval/releases/tag/v0.5.0
 
 [0.7.0]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.5.1...v0.7.0
+
+[0.9.0]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.8.3...v0.9.0
