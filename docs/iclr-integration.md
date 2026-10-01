@@ -3,7 +3,7 @@
 **English** | [简体中文](zh-CN/iclr-integration.md)
 
 The target branch is `integrate/iclr-2027`, starting from main `1964568`.
-The source boundary is ICLR `0bcc657`. Every series pull request uses this
+The source boundary is ICLR `c02a194`. Every series pull request uses this
 integration branch as its base and carries its predecessors.
 
 | Order | Head branch | Scope |
@@ -24,10 +24,10 @@ The source relationship is recorded after every changed source path has a
 destination. After accepting this series, the following check succeeds.
 
 ```sh
-git merge-base --is-ancestor 0bcc657 integrate/iclr-2027
+git merge-base --is-ancestor c02a194 integrate/iclr-2027
 ```
 
-The paired runtime is OC's complete verified integration `df893b08`.
+The paired runtime is OC's complete verified integration `993b8cee`.
 CI builds that exact runtime through the existing cross-repository setup.
 The OC integration series supplies its public team, environment, model
 inspection and profile-tool interfaces.

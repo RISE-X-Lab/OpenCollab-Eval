@@ -39,3 +39,5 @@ logs, PDFs, and local environment paths stay outside the source repository.
 The cumulative PR series targets `integrate/iclr-2027` and is documented in
 `docs/iclr-integration.md`. Merge it in order using merge commits to retain
 the final ICLR source ancestry for subsequent Git merges.
+
+Commit authorship and `Co-authored-by` trailers are reserved for human contributors.
