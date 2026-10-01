@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from scripts import check_conventional_title as checker
 from scripts.check_conventional_title import validate_title
 from tests.support.paths import SOURCE_ROOT
 
@@ -221,3 +222,31 @@ def test_single_parent_commit_cannot_impersonate_a_github_merge(tmp_path):
 
 def test_pr_title_cannot_use_a_merge_subject():
     assert validate_title("Merge pull request #28 from org/feature") is not None
+
+
+def test_range_preserves_reviewed_titles_and_checks_new_descendants(tmp_path, monkeypatch):
+    repository = _repository(tmp_path, "historical imported title")
+    reviewed = _git(repository, "rev-parse", "HEAD")
+    monkeypatch.setattr(checker, "_PRESERVED_HISTORY_TIPS", (reviewed,))
+    monkeypatch.chdir(repository)
+    _git(repository, "commit", "--allow-empty", "-m", _CLEAN_SNAPSHOT)
+
+    assert checker.main(["--range", _ZERO_SHA, "HEAD"]) == 0
+
+    _git(repository, "commit", "--allow-empty", "-m", "invalid new descendant")
+    assert checker.main(["--range", _ZERO_SHA, "HEAD"]) == 1
+
+
+def test_reviewed_history_does_not_exempt_an_unrelated_branch(tmp_path, monkeypatch):
+    repository = _repository(tmp_path, _CLEAN_SNAPSHOT)
+    base = _git(repository, "rev-parse", "HEAD")
+    _git(repository, "checkout", "-b", "reviewed")
+    _git(repository, "commit", "--allow-empty", "-m", "historical imported title")
+    reviewed = _git(repository, "rev-parse", "HEAD")
+    _git(repository, "checkout", "-b", "other", base)
+    _git(repository, "commit", "--allow-empty", "-m", "invalid unrelated title")
+    _git(repository, "merge", "--no-ff", "reviewed", "-m", _CLEAN_SNAPSHOT)
+    monkeypatch.setattr(checker, "_PRESERVED_HISTORY_TIPS", (reviewed,))
+    monkeypatch.chdir(repository)
+
+    assert checker.main(["--range", base, "HEAD"]) == 1
