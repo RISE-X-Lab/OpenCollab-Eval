@@ -208,7 +208,9 @@ def workflow_stop_metrics(result) -> dict:
         "workflow_role_failure_origins": role_origins,
         "workflow_role_observation_errors": observation_errors,
         "agent_failures": list(result.agent_failures),
-        **({"workflow_role_selection": {key: output.get(key) for key in ("status", "winner", "adopted")}}
+        **({"workflow_role_selection": {key: output.get(key) for key in (
+            "status", "winner", "adopted", "adoption_attempts"
+        )}}
            if result.agent_failures else {}),
         "workflow_role_failures_tolerated": completed and bool(result.agent_failures) and role_failures_handled,
         "usage_complete": usage_complete,
