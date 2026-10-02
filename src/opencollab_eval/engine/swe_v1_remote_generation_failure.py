@@ -31,7 +31,10 @@ def _generation_base_commit_matches(row, metric):
 def _generation_provider_failure_result(row, task, prediction, metric, pairing, *, expected_generation_image_id):
     metric = metric if isinstance(metric, dict) else {}
     if isinstance(metric.get("runtime_state"), dict):
-        if metric.get("failure_origin") in {"none", "oc", "evaluation_deadline", "evaluation_adapter", "unclassified"}:
+        if metric.get("failure_origin") in {
+            "none", "oc", "evaluation_deadline", "evaluation_adapter", "evaluation_storage", "evaluation_persistence",
+            "evaluation_environment", "unclassified"
+        }:
             return None
         if metric.get("recovery_kind") == "failed_quiesced_capture":
             from opencollab_eval.generation.gen_prediction_recovery import failed_capture_recovery_valid

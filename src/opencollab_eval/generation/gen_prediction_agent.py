@@ -8,12 +8,16 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from opencollab import OpenCollab, RunError, RunResult
+from opencollab import OpenCollab, RunResult
 from opencollab.environments import attach_container, build_repo_map_via_env
 from opencollab.profiles import resolve_profile_name
 
 from opencollab_eval.benchmarks.task_specification import CONTAINER_REPO_ROOT
-from opencollab_eval.engine.native_failure_attribution import classify_failure
+from opencollab_eval.engine.native_failure_attribution import (
+    classify_failure,
+    exception_chain,
+    persistence_failure,
+)
 from opencollab_eval.engine.native_progress_watch import (
     generation_timing,
     generation_wall_timeout,
@@ -87,12 +91,9 @@ def reserve_run_directory(root: str | Path) -> str:
 def _technical_interruption_recoverable(error: BaseException | None) -> bool:
     if not isinstance(error, Exception):
         return False
-    provider_or_transport = (
-        isinstance(error, OSError)
-        or type(error).__module__.startswith(("openai", "httpx", "httpcore", "aiohttp"))
-        or type(error).__name__ in {"TransientProviderError", "APIError", "APIConnectionError", "APITimeoutError"}
-    )
-    return provider_or_transport and classify_failure(error=error).get("retryable") is True
+    attribution = classify_failure(error=error)
+    return attribution["technical_failure"] and attribution["retryable"]
+
 
 
 def _runtime_failure_metrics(
@@ -102,25 +103,17 @@ def _runtime_failure_metrics(
     *,
     phase: str = "public_api_execution",
 ) -> dict[str, Any]:
-    chain = []
-    current: BaseException | None = exc
-    seen: set[int] = set()
-    oc_lifecycle = False
-    provider_failure = False
-    while current is not None and id(current) not in seen:
-        seen.add(id(current))
-        kind, module = type(current).__name__, type(current).__module__
-        chain.append({"type": kind, "module": module})
-        oc_lifecycle = (
-            oc_lifecycle
-            or isinstance(current, RunError)
-            or (
-                module.startswith("opencollab.")
-                and kind in {"ProgrammaticLifecycleError", "AgentRuntimeLifecycleError"}
-            )
-        )
-        provider_failure = provider_failure or module.startswith(("openai", "httpx", "httpcore", "aiohttp"))
-        current = current.__cause__ or current.__context__
+    chain = exception_chain(exc)
+    attribution = classify_failure(exc)
+    oc_lifecycle = any(
+        node["type"] == "RunError" or (
+            node["module"].startswith("opencollab.")
+            and node["type"] in {"ProgrammaticLifecycleError", "AgentRuntimeLifecycleError"}
+        ) for node in chain
+    )
+    provider_failure = any(
+        node["module"].startswith(("openai", "httpx", "httpcore", "aiohttp")) for node in chain
+    )
     origin = (
         "evaluation_adapter"
         if phase == "adapter_setup"
@@ -130,6 +123,9 @@ def _runtime_failure_metrics(
         if provider_failure
         else "public_api_exception_unclassified"
     )
+    if attribution["origin"] in {"evaluation_storage", "evaluation_environment"}:
+        origin, phase = attribution["origin"], attribution["basis"]
+    technical = True
     return {
         **({"trajectory_path": str(artifact_dir / "trajectory.jsonl")} if artifact_dir is not None else {}),
         RUN_SUMMARY_KEY: build_run_summary(
@@ -139,8 +135,9 @@ def _runtime_failure_metrics(
         "failure_origin": origin,
         "failure_phase": phase,
         "failure_exception_chain": chain,
-        "technical_failure": origin != "oc",
-        "oc_failure": origin == "oc",
+        "failure_attribution": attribution,
+        "technical_failure": technical,
+        "oc_failure": origin == "oc" and not technical,
         "agent_status": "failed",
         "agent_reason": str(exc),
         "technical_interruption_recoverable": _technical_interruption_recoverable(exc),
@@ -224,6 +221,15 @@ def _result_metrics(result: RunResult[str], duration_s: float | None = None) -> 
         if result.status in {"stopped", "failed"}
         else "none"
     )
+    attribution = classify_failure(result.error)
+    if persistence_failure(values):
+        attribution.update(origin="evaluation_persistence", technical_failure=True, retryable=True,
+                           basis="required_evidence_persistence_failed")
+        failure_origin, phase = attribution["origin"], "required_evidence_persistence"
+    if attribution["origin"] in {"evaluation_storage", "evaluation_environment"}:
+        failure_origin, phase = attribution["origin"], attribution["basis"]
+    technical = (not session_quiesced or result.status == "failed"
+                 or attribution["technical_failure"] or failure_origin not in {"none", "oc"})
     metrics = {
         RUN_SUMMARY_KEY: build_run_summary(
             steps=values.get("steps"),
@@ -236,18 +242,23 @@ def _result_metrics(result: RunResult[str], duration_s: float | None = None) -> 
         "workflow_status": workflow_status,
         "failure_origin": failure_origin,
         "failure_phase": phase if session_quiesced else "public_result_not_quiesced",
-        "technical_failure": failure_origin not in {"none", "oc"},
-        "oc_failure": not session_quiesced
-        or (
-            result.status in {"stopped", "failed"}
-            and not provider_failure
-            and not progress_stop
-            and (not timed_out or values.get("outcome") == "completed")
+        "failure_attribution": attribution,
+        "failure_exception_chain": exception_chain(result.error),
+        "technical_failure": technical,
+        "oc_failure": not technical and (
+            not session_quiesced or (
+                result.status in {"stopped", "failed"}
+                and not provider_failure
+                and not progress_stop
+                and (not timed_out or values.get("outcome") == "completed")
+            )
         ),
         "runtime_outcome": values.get("outcome"),
         "agent_status": result.status,
         "agent_reason": result.reason,
-        "technical_interruption_recoverable": progress_stop or _technical_interruption_recoverable(result.error),
+        "technical_interruption_recoverable": (
+            progress_stop or attribution["technical_failure"] and attribution["retryable"]
+        ),
         "session_phase": phase,
         "step_count": int(values.get("steps") or 0),
         "used_tokens": int(result.tokens or 0),

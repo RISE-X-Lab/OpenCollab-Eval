@@ -11,6 +11,11 @@ preserve code blocks and technical identifiers, and remain structurally
 aligned with the canonical content. Commit messages, pull request text, and
 review replies use Chinese while retaining an English Conventional Commit type.
 
+Merge pull requests with a merge commit, preserving the feature-branch history and
+human authorship. Keep commits focused on meaningful implementation, tests, or
+documentation changes. Merge commit subjects also use Chinese descriptions with
+an English Conventional Commit type.
+
 The dependency direction is `opencollab_eval -> opencollab public API`.
 Production code may use the documented root facade and the public
 `opencollab.builtin_workflows`, `opencollab.environments`, `opencollab.patches`,

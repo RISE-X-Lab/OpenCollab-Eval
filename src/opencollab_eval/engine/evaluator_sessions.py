@@ -15,7 +15,11 @@ from opencollab.tools import Tool
 
 from opencollab_eval.engine.environment import ExecutionEnvironment
 from opencollab_eval.engine.evidence_trace import ORCHESTRATION_FILENAME, TRAJECTORY_FILENAME
-from opencollab_eval.engine.native_failure_attribution import classify_failure
+from opencollab_eval.engine.native_failure_attribution import (
+    classify_failure,
+    exception_chain,
+    persistence_failure,
+)
 from opencollab_eval.engine.native_progress_watch import (
     generation_wall_timeout,
     guarded_agent,
@@ -145,19 +149,11 @@ class _EvalRunRecord:
     @property
     def runtime_state(self) -> dict[str, Any]:
         error = self.result.error
-        chain: list[dict[str, str]] = []
-        seen: set[int] = set()
-        current = error
-        while current is not None and id(current) not in seen:
-            seen.add(id(current))
-            chain.append(
-                {
-                    "type": type(current).__name__,
-                    "module": type(current).__module__,
-                }
-            )
-            current = current.__cause__ or current.__context__
+        chain = exception_chain(error)
         attribution = classify_failure(error)
+        if persistence_failure(self.result.metrics):
+            attribution.update(origin="evaluation_persistence", technical_failure=True, retryable=True,
+                               basis="required_evidence_persistence_failed")
         return {
             "status": self.result.status,
             "reason": self.result.reason,

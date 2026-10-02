@@ -57,6 +57,41 @@ def handled_revoked_role_failures(metric):
     return True
 
 
+def handled_workflow_role_failures(metric):
+    """Recognize proven revocation and completed, discarded-candidate cleanup."""
+    if handled_revoked_role_failures(metric):
+        return True
+    failures = metric.get("agent_failures")
+    output = metric.get("workflow_result") or metric.get("workflow_role_selection") or {}
+    states = metric.get("workflow_role_states") or []
+    if not isinstance(failures, (list, tuple)) or not isinstance(output, dict) or not isinstance(states, list):
+        return False
+    selected = output.get("adopted")
+    if (selected not in {"A", "B"} or output.get("winner") != selected or output.get("status") != "done"
+            or metric.get("runtime_status", metric.get("agent_status")) != "completed"
+            or metric.get("execution_quiesced", metric.get("session_quiesced")) is not True):
+        return False
+    discarded = "dual-coder-contract-" + ("b" if selected == "A" else "a")
+    remaining = []
+    for failure in failures:
+        if not isinstance(failure, dict):
+            return False
+        if failure.get("label") != discarded + ":cleanup":
+            remaining.append(failure)
+            continue
+        matches = [state for state in states if isinstance(state, dict)
+                   and str(state.get("artifact", "")).partition("_")[2] == discarded + ".json"]
+        if (failure.get("exception_type") != "RuntimeError" or failure.get("status_code") is not None
+                or failure.get("provider_error_type") is not None or len(matches) != 1):
+            return False
+        state = matches[0]
+        if (state.get("phase") != "done" or state.get("terminal_reason") != "completed"
+                or state.get("pending_events") != 0 or state.get("pending_external_user_turn") is not False
+                or state.get("active_turn_start_message_index") is not None):
+            return False
+    return handled_revoked_role_failures({**metric, "agent_failures": remaining})
+
+
 def adopted_workflow_candidate(metric):
     """Recognize explicit delivery separately from the council's own verdict."""
     if not isinstance(metric, dict):
@@ -194,6 +229,21 @@ def generation_integrity_evidence(metric):
     return {field: metric[field] for field in GENERATION_INTEGRITY_FIELDS if field in metric}
 
 
+
+def generation_execution_invalid(metric):
+    """Recognize a failed or unfinished execution before interpreting its candidate."""
+    if not isinstance(metric, dict):
+        return False
+    return bool(
+        metric.get("technical_failure") is True
+        or metric.get("agent_status") == "failed"
+        or metric.get("runtime_status") == "failed"
+        or metric.get("session_quiesced") is False
+        or metric.get("execution_quiesced") is False
+        or bool(metric.get("workflow_role_observation_errors"))
+        or not handled_workflow_role_failures(metric)
+    )
+
 def generation_outcome_evidence(metric, patch):
     """Keep OC's terminal outcome separate from candidate test performance."""
     if not isinstance(metric, dict):
@@ -203,8 +253,8 @@ def generation_outcome_evidence(metric, patch):
     explicit = agent_status in {"completed", "stopped", "failed"} and origin is not None
     if not explicit:
         return {}
-    technical = metric.get("technical_failure") is True or origin not in {"none", "oc"}
-    intrinsic = metric.get("oc_failure") is True or (not technical and not patch.strip())
+    technical = generation_execution_invalid(metric) or origin not in {"none", "oc"}
+    intrinsic = not technical and (metric.get("oc_failure") is True or not patch.strip())
     return {
         "usage_complete": metric.get("usage_complete"),
         "used_tokens_lower_bound": metric.get("used_tokens_lower_bound"),
@@ -222,7 +272,7 @@ def generation_outcome_evidence(metric, patch):
         "origin_record_id": metric.get("origin_record_id", metric.get("record_id")),
         **({field: metric[field] for field in (
             "agent_failures", "workflow_role_failure_origins", "workflow_role_states",
-            "workflow_role_failures_tolerated"
+            "workflow_role_failures_tolerated", "workflow_role_selection", "session_quiesced", "execution_quiesced"
         ) if field in metric} if metric.get("agent_failures") else {}),
         **({"original_generation_projection": metric["original_generation_projection"]}
            if "original_generation_projection" in metric else {}),
