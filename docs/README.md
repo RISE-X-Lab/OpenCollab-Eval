@@ -33,6 +33,8 @@ runtime layers and explains which entrypoints produce candidates or official
 verdicts. [final-report.md](final-report.md) is the complete input and evidence
 contract for `oc-eval final-report`.
 
+[Terminal container runtime](terminal-container-runtime.md) documents foreground command ownership and complete-container candidate adoption.
+
 [Duo file evidence](g22-file-evidence.md) describes complete candidate evidence
 files and the read-only v3 selector.
 
