@@ -86,23 +86,25 @@ def config_for(run_dir, *, seconds=None, environment=None):
     return config
 
 
-def start_epoch(run_dir, default=None):
-    owner = progress.read(Path(run_dir) / "native-progress-owner.json", {})
+def start_epoch(run_dir, default=None, *, decision=None):
+    decision = {} if decision is None else decision
+    owner = progress.read_observation(Path(run_dir) / "native-progress-owner.json", {}, decision)
     if isinstance(owner.get("started_epoch"), (int, float)):
         return owner["started_epoch"]
-    state = progress.read(Path(run_dir) / "generation.state.json", {})
+    state = progress.read_observation(Path(run_dir) / "generation.state.json", {}, decision)
     try:
         return datetime.fromisoformat(state["last_started_at"]).timestamp()
     except (KeyError, TypeError, ValueError):
         return time.time() if default is None else default
 
 
-def register_generator(run_dir, *, source=None):
+def register_generator(run_dir, *, source=None, decision=None):
     if timeout_seconds() is None:
         return
+    decision = {} if decision is None else decision
     run_dir = Path(run_dir)
     owner_path = run_dir / "native-progress-owner.json"
-    owner = progress.read(owner_path, {})
+    owner = progress.read_observation(owner_path, {}, decision)
     identity = progress.process_identity(os.getpid())
     if owner.get("generation_identity") != identity or owner.get("generation_completed_epoch") is not None:
         owner = {
@@ -114,21 +116,23 @@ def register_generator(run_dir, *, source=None):
         }
     if source is not None and str(source) not in owner["native_progress_sources"]:
         owner["native_progress_sources"].append(str(source))
-    progress.save(owner_path, owner)
+    progress.save_observation(owner_path, owner, decision)
+    return owner
 
 
-def finish_generation(run_dir, *, phase="candidate_capture"):
+def finish_generation(run_dir, *, phase="candidate_capture", owner=None, decision=None):
     """Generation ends before candidate capture, report writing and scoring."""
     if timeout_seconds() is None:
         return
+    decision = {} if decision is None else decision
     path = Path(run_dir) / "native-progress-owner.json"
-    owner = progress.read(path, {})
+    owner = dict(owner) if owner is not None else progress.read_observation(path, {}, decision)
     owner.update(phase=phase, generation_completed_epoch=time.time())
-    progress.save(path, owner)
+    progress.save_observation(path, owner, decision)
 
 
 def generation_timing(run_dir):
-    owner = progress.read(Path(run_dir) / "native-progress-owner.json", {})
+    owner = progress.read_observation(Path(run_dir) / "native-progress-owner.json", {}, {})
     if owner.get("generation_identity") != progress.process_identity(os.getpid()):
         return {}
     started, completed = owner.get("started_epoch"), owner.get("generation_completed_epoch")
@@ -142,22 +146,24 @@ def generation_timing(run_dir):
 
 def record_stage(run_dir, phase):
     path = Path(run_dir) / "native-progress-status.json"
-    state = progress.read(path, {})
+    decision = {}
+    state = progress.read_observation(path, {}, decision)
     if state:
         state.update(phase=phase, stage_started_epoch=time.time())
-        progress.save(path, state)
+        progress.save_observation(path, state, decision)
 
 
 async def guarded_agent(operation, run_dir, artifacts, *, config=None):
     """Use public cancellation cleanup and public journal replay for a paused agent."""
     from opencollab import OpenCollab, RunResult
 
-    register_generator(run_dir, source=Path(artifacts) / "trajectory.jsonl")
+    decision = {}
+    owner = register_generator(run_dir, source=Path(artifacts) / "trajectory.jsonl", decision=decision)
     config = config or config_for(run_dir)
     config["native_workflow_sources"] = [str(Path(artifacts) / "trajectory.jsonl")]
-    decision = {}
+    started = owner["started_epoch"] if owner else start_epoch(run_dir, decision=decision)
     try:
-        return await progress.run_with_stop_request(operation, config, start_epoch(run_dir), decision)
+        return await progress.run_with_stop_request(operation, config, started, decision)
     except progress.EvaluationNoProgressTimeout as error:
         # The public agent coroutine propagates cancellation after its owned
         # execution and final snapshot have quiesced. Lifecycle failures raise.
@@ -174,29 +180,29 @@ async def guarded_agent(operation, run_dir, artifacts, *, config=None):
                      "no_progress_timeout": decision, "resume_snapshot": str(path)},
         )
     finally:
-        finish_generation(run_dir)
+        finish_generation(run_dir, owner=owner, decision=decision)
 
 
 def guarded_workflow(flow, run_dir, *, config=None, orchestration_path=None):
     config = config or config_for(run_dir)
+    registration_decision = {}
+    owner = None
     if orchestration_path is not None:
-        register_generator(run_dir, source=orchestration_path)
-        owner_path = Path(run_dir) / "native-progress-owner.json"
-        owner = progress.read(owner_path, {})
-        paths = owner.setdefault("native_progress_sources", [])
+        owner = register_generator(run_dir, source=orchestration_path, decision=registration_decision)
+        paths = list((owner or {}).get("native_progress_sources", []))
         if str(orchestration_path) not in paths:
             paths.append(str(orchestration_path))
-        progress.save(owner_path, owner)
         config["native_workflow_sources"] = paths
     actual = getattr(flow, "fn", flow)
 
     @functools.wraps(actual)
     async def guarded(ctx, args):
-        decision = {}
+        decision = dict(registration_decision)
+        started = owner["started_epoch"] if owner else start_epoch(run_dir, decision=decision)
         try:
-            return await progress.run_with_stop_request(actual(ctx, args), config, start_epoch(run_dir), decision)
+            return await progress.run_with_stop_request(actual(ctx, args), config, started, decision)
         finally:
-            finish_generation(run_dir)
+            finish_generation(run_dir, owner=owner, decision=decision)
 
     return guarded
 
@@ -212,14 +218,15 @@ def wait_generation(proc, run_dir, *, wall_timeout, environment=None, config=Non
     run_dir = Path(run_dir)
     owner_path = run_dir / "native-progress-owner.json"
     status_path = run_dir / "native-progress-status.json"
-    started = start_epoch(run_dir)
+    decision = {}
+    started = start_epoch(run_dir, decision=decision)
     interval = config["progress_poll_seconds"]
     probe = {"started_epoch": started}
     while proc.poll() is None:
-        owner = progress.read(owner_path)
+        owner = progress.read_observation(owner_path, None, decision)
         if owner and progress.same_process(owner.get("generation_identity")):
             record = {**owner, "outer_generation_pid": proc.pid}
-            saved = progress.read(status_path, {})
+            saved = progress.read_observation(status_path, {}, decision)
             if (
                 saved.get("generation_identity") == owner["generation_identity"]
                 and saved.get("started_epoch") == owner["started_epoch"]
@@ -245,7 +252,7 @@ def wait_generation(proc, run_dir, *, wall_timeout, environment=None, config=Non
         if wall_timeout is not None and time.time() >= config["generation_wall_deadline_epoch"]:
             raise subprocess.TimeoutExpired(getattr(proc, "args", []), wall_timeout)
         probe.update(phase="preparing", outer_generation_pid=proc.pid)
-        progress.save(status_path, probe)
+        progress.save_observation(status_path, probe, decision)
         time.sleep(interval)
     return proc.returncode
 

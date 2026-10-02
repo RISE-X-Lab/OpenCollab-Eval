@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import os
 import signal
@@ -13,6 +14,8 @@ from datetime import datetime
 from pathlib import Path
 
 from . import provider_wait_watchdog
+
+logger = logging.getLogger(__name__)
 
 
 class EvaluationNoProgressTimeout(TimeoutError):
@@ -36,6 +39,57 @@ def save(path, value):
         stream.flush()
         os.fsync(stream.fileno())
     pending.replace(path)
+
+
+def observation_error(path, error, decision):
+    """Retain observation failures in memory when their own storage is unavailable."""
+    failures = decision.setdefault("progress_observation_errors", {})
+    key = str(path)
+    previous = failures.get(key, {})
+    failure = {
+        **previous,
+        "path": key,
+        "error_type": type(error).__name__,
+        "errno": getattr(error, "errno", None),
+        "error": str(error),
+        "count": previous.get("count", 0) + 1,
+        "first_epoch": previous.get("first_epoch", time.time()),
+        "last_epoch": time.time(),
+    }
+    failures[key] = failure
+    if not previous or (previous.get("errno"), previous.get("error_type")) != (failure["errno"], failure["error_type"]):
+        try:
+            logger.warning("Progress observation storage failed for %s: %s", path, error)
+        except OSError as logging_error:
+            failure.update(logging_error_type=type(logging_error).__name__, logging_errno=logging_error.errno,
+                           logging_error=str(logging_error))
+
+
+def save_observation(path, value, decision):
+    """Save reconstructible progress metadata without cancelling its producer."""
+    if decision.get("progress_observation_errors"):
+        value["progress_observation_errors"] = decision["progress_observation_errors"]
+    try:
+        save(path, value)
+    except OSError as error:
+        observation_error(path, error, decision)
+        return False
+    return True
+
+
+def read_observation(path, default, decision):
+    missing = object()
+    try:
+        value = read(path, missing)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as error:
+        observation_error(path, error, decision)
+        return default
+    if value is missing:
+        return default
+    if not isinstance(value, dict):
+        observation_error(path, TypeError("progress observation must be a JSON object"), decision)
+        return default
+    return value
 
 
 def records(path):
@@ -66,10 +120,13 @@ def native_sources(config, state):
         stat = path.stat()
         signature = [stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns]
         if catalog.get("signature") != signature:
-            owner = read(path, {})
-            catalog.update(signature=signature, paths=owner.get("native_progress_sources", []))
+            owner = read_observation(path, None, state)
+            if owner is not None:
+                catalog.update(signature=signature, paths=owner.get("native_progress_sources", []))
     except FileNotFoundError:
         pass
+    except OSError as error:
+        observation_error(path, error, state)
     sources = [(Path(path), "native") for path in catalog.get("paths", [])]
     sources.extend((Path(path), "stream") for path in config.get("model_progress_sources", []))
     return sources
@@ -237,10 +294,10 @@ def observe(config, record, now=None):
     return record["no_progress_seconds"] >= float(config.get("no_progress_timeout_seconds", 43200))
 
 
-def stop_recheck_state(config, started_epoch):
+def stop_recheck_state(config, started_epoch, decision):
     """Continue the registered generator observation and recheck its stop condition."""
     path = config.get("progress_state_path")
-    saved = read(path, {}) if path else {}
+    saved = read_observation(path, {}, decision) if path else {}
     if saved.get("started_epoch") == started_epoch and saved.get("generation_identity") == process_identity(
         os.getpid()
     ):
@@ -253,7 +310,7 @@ async def run_with_stop_request(operation, config, started_epoch, decision):
     task = asyncio.create_task(operation)
     request_path = Path(config["output"]) / "no-progress-stop.json"
     interval = float(config.get("progress_poll_seconds", 5))
-    probe = stop_recheck_state(config, started_epoch)
+    probe = stop_recheck_state(config, started_epoch, decision)
     role_probe = {}
     try:
         while True:
@@ -261,7 +318,7 @@ async def run_with_stop_request(operation, config, started_epoch, decision):
             if done:
                 return task.result()
             stalled = observe(config, probe)
-            save(Path(config["output"]) / "native-progress-status.json", probe)
+            save_observation(Path(config["output"]) / "native-progress-status.json", probe, decision)
             role_sources = [path for path, kind in native_sources(config, role_probe) if kind == "native"]
             role_probe = provider_wait_watchdog.scan(
                 role_sources,
@@ -273,7 +330,7 @@ async def run_with_stop_request(operation, config, started_epoch, decision):
                     )
                 ),
             )
-            save(Path(config["output"]) / "provider-wait-status.json", role_probe)
+            save_observation(Path(config["output"]) / "provider-wait-status.json", role_probe, decision)
             if config.get("stop_stalled_role") and role_probe["pause_candidates"]:
                 provider_wait = role_probe["pause_candidates"][0]
                 request = {
@@ -281,7 +338,7 @@ async def run_with_stop_request(operation, config, started_epoch, decision):
                     "reason": "role_model_call_has_no_complete_event",
                     "provider_wait": provider_wait,
                 }
-                save(Path(config["output"]) / "provider-wait-stop.json", request)
+                save_observation(Path(config["output"]) / "provider-wait-stop.json", request, decision)
                 decision.update(
                     reason="provider_call_no_progress",
                     requested_epoch=request["requested_epoch"],
@@ -289,7 +346,7 @@ async def run_with_stop_request(operation, config, started_epoch, decision):
                     provider_wait=provider_wait,
                     no_progress_seconds=provider_wait["elapsed_seconds"],
                 )
-                save(Path(config["output"]) / "no-progress-decision.json", decision)
+                save_observation(Path(config["output"]) / "no-progress-decision.json", decision, decision)
                 task.cancel()
                 try:
                     await task
@@ -301,7 +358,7 @@ async def run_with_stop_request(operation, config, started_epoch, decision):
                 continue
             if request is None:
                 request = {"requested_epoch": time.time(), "reason": "evaluation_no_progress"}
-            checkpoint = stop_recheck_state(config, started_epoch)
+            checkpoint = stop_recheck_state(config, started_epoch, decision)
             if checkpoint.get("observed_epoch", -1) > probe.get("observed_epoch", -1):
                 probe = checkpoint
             if not observe(config, probe):
@@ -314,7 +371,7 @@ async def run_with_stop_request(operation, config, started_epoch, decision):
                 no_progress_seconds=probe["no_progress_seconds"],
                 provider_fault_waits=probe.get("provider_fault_waits", {}),
             )
-            save(Path(config["output"]) / "no-progress-decision.json", decision)
+            save_observation(Path(config["output"]) / "no-progress-decision.json", decision, decision)
             task.cancel()
             try:
                 result = await task
@@ -333,7 +390,9 @@ async def run_with_stop_request(operation, config, started_epoch, decision):
 
 
 def apply_decision(metrics, decision):
-    if decision:
+    if decision.get("progress_observation_errors"):
+        metrics["progress_observation_errors"] = decision["progress_observation_errors"]
+    if decision.get("reason"):
         metrics.update(evaluation_time_policy="completed_event_inactivity", no_progress_timeout=decision)
         if metrics.get("session_quiesced") is True and metrics.get("error_type") == "EvaluationNoProgressTimeout":
             metrics.update(
@@ -352,6 +411,8 @@ def monitor(config, record, state_path, child=None):
     interval = float(config.get("progress_poll_seconds", 5))
     request_path = output / "no-progress-stop.json"
     grace = float(config.get("no_progress_cleanup_grace_seconds", 120))
+    request = None
+    request_saved = False
     while True:
         if child is not None:
             child.poll()
@@ -368,33 +429,40 @@ def monitor(config, record, state_path, child=None):
                 )
             else:
                 record.update(phase="generation_exited", returncode=receipt["returncode"], generation_exit=receipt)
-            save(state_path, record)
+            save_observation(state_path, record, record)
             return record
         if config.get("native_generator_owner"):
-            owner = read(output / "native-progress-owner.json", {})
+            owner = read_observation(output / "native-progress-owner.json", {}, record)
             if owner.get("generation_completed_epoch") is not None:
                 record.update(owner)
                 record["generation_duration_seconds"] = max(
                     0, owner["generation_completed_epoch"] - record["started_epoch"],
                 )
-                save(state_path, record)
+                save_observation(state_path, record, record)
                 return record
         wall_deadline = config.get("generation_wall_deadline_epoch")
         if wall_deadline is not None and time.time() >= wall_deadline:
             raise subprocess.TimeoutExpired(getattr(child, "args", []), max(0, wall_deadline - record["started_epoch"]))
         stalled = observe(config, record)
-        request = read(request_path)
+        saved_request = read(request_path)
+        if saved_request is not None or request_saved:
+            request = saved_request
+            request_saved = saved_request is not None
         if stalled and request is None:
             request = {
                 "requested_epoch": time.time(),
                 "progress": record["progress"],
                 "reason": "evaluation_no_progress",
             }
-            save(request_path, request)
+            request_saved = save_observation(request_path, request, record)
             record["phase"] = "requesting_no_progress_stop"
         elif not stalled and request is not None:
-            request_path.unlink(missing_ok=True)
+            try:
+                request_path.unlink(missing_ok=True)
+            except OSError as error:
+                observation_error(request_path, error, record)
             request = None
+            request_saved = False
             record["phase"] = "resuming"
         if request is not None and time.time() - request["requested_epoch"] >= grace:
             # A blocked interpreter cannot finish OC cleanup. Preserve its memory and
@@ -407,7 +475,7 @@ def monitor(config, record, state_path, child=None):
                 artifacts_preserved=True,
                 paused_epoch=time.time(),
             )
-            save(state_path, record)
+            save_observation(state_path, record, record)
             return record
-        save(state_path, record)
+        save_observation(state_path, record, record)
         time.sleep(interval)
