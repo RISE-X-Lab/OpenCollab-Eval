@@ -57,32 +57,61 @@ def handled_revoked_role_failures(metric):
     return True
 
 
+def _completed_duo_role(states, label):
+    import re
+
+    matches = [state for state in states if isinstance(state, dict)
+               and re.fullmatch(r"\d+_" + re.escape(label) + r"\.json", str(state.get("artifact") or ""))]
+    if len(matches) != 1:
+        return False
+    state = matches[0]
+    return bool(
+        state.get("phase") == "done" and state.get("terminal_reason") == "completed"
+        and type(state.get("pending_events")) is int and state["pending_events"] == 0
+        and state.get("pending_external_user_turn") is False
+        and "active_turn_start_message_index" in state and state["active_turn_start_message_index"] is None
+    )
+
+
 def handled_workflow_role_failures(metric):
     """Recognize proven revocation and completed, discarded-candidate cleanup."""
-    if handled_revoked_role_failures(metric):
+    output = metric.get("workflow_result") or metric.get("workflow_role_selection") or {}
+    selected = output.get("adopted") if isinstance(output, dict) else None
+    winner = output.get("winner") if isinstance(output, dict) else None
+    fallback = selected in ("A", "B") and winner in ("A", "B") and winner != selected
+    if not metric.get("agent_failures") or not fallback and handled_revoked_role_failures(metric):
         return True
     failures = metric.get("agent_failures")
-    output = metric.get("workflow_result") or metric.get("workflow_role_selection") or {}
     states = metric.get("workflow_role_states") or []
     if not isinstance(failures, (list, tuple)) or not isinstance(output, dict) or not isinstance(states, list):
         return False
-    selected = output.get("adopted")
-    if (selected not in {"A", "B"} or output.get("winner") != selected or output.get("status") != "done"
+    if (selected not in ("A", "B") or winner not in ("A", "B") or output.get("status") != "done"
             or metric.get("runtime_status", metric.get("agent_status")) != "completed"
             or metric.get("execution_quiesced", metric.get("session_quiesced")) is not True):
         return False
     discarded = "dual-coder-contract-" + ("b" if selected == "A" else "a")
+    if fallback:
+        from opencollab_eval.engine.native_failure_attribution import classify_failure
+
+        if (output.get("adoption_attempts") != [winner, selected]
+                or not _completed_duo_role(states, "dual-coder-contract-" + selected.lower())
+                or not _completed_duo_role(states, discarded)):
+            return False
     remaining = []
     for failure in failures:
         if not isinstance(failure, dict):
             return False
         if failure.get("label") != discarded + ":cleanup":
+            if fallback:
+                return False
             remaining.append(failure)
             continue
         matches = [state for state in states if isinstance(state, dict)
                    and str(state.get("artifact", "")).partition("_")[2] == discarded + ".json"]
         if (failure.get("exception_type") != "RuntimeError" or failure.get("status_code") is not None
                 or failure.get("provider_error_type") is not None or len(matches) != 1):
+            return False
+        if fallback and classify_failure(record=failure)["origin"] != "oc":
             return False
         state = matches[0]
         if (state.get("phase") != "done" or state.get("terminal_reason") != "completed"
@@ -255,6 +284,7 @@ def generation_outcome_evidence(metric, patch):
         return {}
     technical = generation_execution_invalid(metric) or origin not in {"none", "oc"}
     intrinsic = not technical and (metric.get("oc_failure") is True or not patch.strip())
+    selection = metric.get("workflow_result") or metric.get("workflow_role_selection") or {}
     return {
         "usage_complete": metric.get("usage_complete"),
         "used_tokens_lower_bound": metric.get("used_tokens_lower_bound"),
@@ -272,8 +302,11 @@ def generation_outcome_evidence(metric, patch):
         "origin_record_id": metric.get("origin_record_id", metric.get("record_id")),
         **({field: metric[field] for field in (
             "agent_failures", "workflow_role_failure_origins", "workflow_role_states",
-            "workflow_role_failures_tolerated", "workflow_role_selection", "session_quiesced", "execution_quiesced"
+            "workflow_role_failures_tolerated", "session_quiesced", "execution_quiesced"
         ) if field in metric} if metric.get("agent_failures") else {}),
+        **({"workflow_role_selection": {key: selection.get(key) for key in (
+            "status", "winner", "adopted", "adoption_attempts"
+        )} if isinstance(selection, dict) else selection} if metric.get("agent_failures") else {}),
         **({"original_generation_projection": metric["original_generation_projection"]}
            if "original_generation_projection" in metric else {}),
     }
