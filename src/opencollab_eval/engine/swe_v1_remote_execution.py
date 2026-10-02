@@ -3,6 +3,7 @@
 # ruff: noqa: E501, F403, F405
 
 from opencollab_eval.engine.swe_eval_scoring_adapters import prepare_scoring_row
+from opencollab_eval.engine.swe_v1_generation_outcomes import generation_execution_invalid
 from opencollab_eval.engine.swe_v1_remote_artifacts import *
 from opencollab_eval.engine.swe_v1_remote_commands import *
 from opencollab_eval.engine.swe_v1_remote_core import *
@@ -25,8 +26,9 @@ def task_outcome(gen, ev):
     """Report capability outcome while preserving the original official summary."""
     official = ev.get("summary") or {}
     candidate_resolved = official.get("resolved") if ev.get("status") == "eval_done" else None
-    intrinsic = gen.get("oc_failure") is True
-    technical = gen.get("technical_failure") is True or (
+    generation_technical = generation_execution_invalid(gen)
+    intrinsic = gen.get("oc_failure") is True and not generation_technical
+    technical = generation_technical or (
         gen.get("status")
         not in {
             "generation_done",
@@ -38,7 +40,9 @@ def task_outcome(gen, ev):
         or ev.get("status") not in {"eval_done", "skipped_empty_patch", "skipped_intrinsic_unresolved", "would_eval"}
     )
     status = (
-        "resolved"
+        "technical_failure"
+        if generation_technical
+        else "resolved"
         if candidate_resolved is True
         else "unresolved"
         if intrinsic
