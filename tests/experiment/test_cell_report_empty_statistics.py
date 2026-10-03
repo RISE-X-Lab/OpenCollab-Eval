@@ -1,7 +1,6 @@
 """A cell without valid samples writes standard missing JSON values."""
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -17,7 +16,6 @@ def _reject_constant(value):
     raise ValueError(f"nonstandard JSON numeric literal {value}")
 
 
-@pytest.mark.xfail(strict=True, reason="P2-20 undefined intervals are serialized as NaN")
 def test_report_without_valid_samples_writes_null_intervals(experiment, tmp_path):
     args = ["--experiment-dir", str(experiment["dir"])]
     assert batch_cli.main([*args, "plan", str(experiment["spec"])], remote_factory=lambda host: None) == 0

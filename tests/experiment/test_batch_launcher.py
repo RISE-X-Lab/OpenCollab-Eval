@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import os
 import subprocess
 import sys
@@ -591,7 +590,7 @@ def test_clopper_pearson_known_values() -> None:
     assert cell_report.clopper_pearson(3, 3)[0] == pytest.approx(0.292, abs=0.001)
     assert cell_report.clopper_pearson(27, 40)[0] > 0.5
     assert cell_report.clopper_pearson(26, 40)[0] < 0.5
-    assert all(math.isnan(v) for v in cell_report.clopper_pearson(0, 0))  # no denominator, no interval
+    assert cell_report.clopper_pearson(0, 0) == (None, None)  # no denominator, no interval
 
 
 def test_decoy_carries_the_unbracketed_pattern() -> None:

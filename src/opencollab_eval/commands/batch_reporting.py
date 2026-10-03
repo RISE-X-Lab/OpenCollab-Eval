@@ -302,7 +302,8 @@ def cmd_report(batch: Batch, _remote: Ssh | None, scanner: str | None, json_out:
             json_out,
             (
                 json.dumps(
-                    cell_report.report_document(ordered, summary, missing, excluded), indent=2, ensure_ascii=False
+                    cell_report.report_document(ordered, summary, missing, excluded),
+                    indent=2, ensure_ascii=False, allow_nan=False
                 )
                 + "\n"
             ).encode("utf-8"),

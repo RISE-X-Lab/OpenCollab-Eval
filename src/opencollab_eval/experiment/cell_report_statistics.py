@@ -28,10 +28,10 @@ def binom_cdf(k: int, n: int, p: float) -> float:
     ))
 
 
-def clopper_pearson(k: int, n: int, alpha: float = 0.05) -> tuple[float, float]:
+def clopper_pearson(k: int, n: int, alpha: float = 0.05) -> tuple[float | None, float | None]:
     """Exact binomial interval by bisection on the binomial CDF."""
     if n == 0:
-        return (float("nan"), float("nan"))
+        return (None, None)
     if k == 0:
         low = 0.0
     else:
