@@ -335,3 +335,27 @@ def test_glm_monitor_cli_returns_nonzero_for_incomplete_input(tmp_path):
 
     assert result.returncode == 2
     assert "input_status: incomplete" in result.stdout
+
+
+@pytest.mark.xfail(strict=True, reason="P2-17 monitor omits known cache creation tokens")
+@pytest.mark.parametrize("creation_price", [None, 2.0])
+def test_known_cache_creation_is_reported_and_priced(tmp_path, monkeypatch, capsys, creation_price):
+    (tmp_path / "run.jsonl").write_text(json.dumps({
+        "type": "llm_call", "payload": {"model": "glm-5.2", "usage": {
+            "input_tokens": 1000, "uncached_input_tokens": 200, "cache_read_tokens": 300,
+            "cache_creation_tokens": 500, "output_tokens": 100, "total_tokens": 1100,
+        }},
+    }) + "\n")
+    args = ["monitor", "--trajectories-dir", str(tmp_path), "--input-price-per-mtok", "1.4",
+            "--cached-input-price-per-mtok", "0.26", "--output-price-per-mtok", "4.4"]
+    if creation_price is not None:
+        args.extend(["--cache-creation-price-per-mtok", str(creation_price)])
+    monkeypatch.setattr(sys, "argv", args)
+    assert monitor.main() == 0
+    output = capsys.readouterr().out
+    assert "cache_creation=500" in output
+    expected = 0.001498 if creation_price is None else 0.001798
+    assert f"cost_usd_from_logged_usage: ${expected:.6f}" in output
+    totals = monitor.collect(tmp_path, "glm-5.2")
+    assert totals["cache_creation_tokens"] == 500
+    assert totals["uncached_input_tokens"] == 200
