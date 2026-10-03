@@ -52,7 +52,6 @@ class LocalSession:
         return dict(meta, messages=messages)
 
 
-@pytest.mark.xfail(strict=True, reason="P2-08 XML parsing normalizes saved message line endings")
 @pytest.mark.parametrize("ending", ["\r\n", "\r"])
 @pytest.mark.parametrize("state", ["queued", "delivered", "recovered"])
 async def test_scheduler_line_endings_preserve_send_count(tmp_path: Path, ending: str, state: str):
