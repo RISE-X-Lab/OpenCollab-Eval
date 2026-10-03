@@ -6,8 +6,9 @@ import json
 import re
 from pathlib import Path
 
-import httpx
 import pytest
+from openai.resources.chat.completions import AsyncCompletions
+from openai.types.chat import ChatCompletion
 from opencollab import OpenCollab
 
 from opencollab_eval.experiment.cell_report_messaging import received_events
@@ -27,9 +28,8 @@ async def test_scheduler_line_endings_preserve_send_count(tmp_path: Path, monkey
     bodies = [f"line1{ending}first", f"line1{ending}other"]
     requests = []
 
-    async def send(client, request, **kwargs):
-        payload = json.loads(request.content)
-        requests.append({"keys": list(payload), "stream": payload.get("stream"), "path": request.url.path})
+    async def create_completion(resource, **payload):
+        requests.append({"keys": list(payload), "stream": payload.get("stream")})
         lead = any("LINE_ENDING_LEAD" in str(msg.get("content")) for msg in payload["messages"])
         first = lead and not any(msg.get("role") == "tool" for msg in payload["messages"])
         message = {"role": "assistant", "content": "received"}
@@ -41,19 +41,23 @@ async def test_scheduler_line_endings_preserve_send_count(tmp_path: Path, monkey
                     }),
                 },
             } for index, body in enumerate(bodies)]}
-        return httpx.Response(200, request=request, json={
+        return ChatCompletion(**{
             "id": "chatcmpl-offline", "object": "chat.completion", "created": 1, "model": "offline-model",
             "choices": [{"index": 0, "message": message, "finish_reason": "tool_calls" if first else "stop"}],
             "usage": {"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30},
         })
 
-    monkeypatch.setattr(httpx.AsyncClient, "send", send)
-    client = OpenCollab(tmp_path, provider="openai", model="offline-model", api_key="offline-fixture", config={
+    monkeypatch.setattr(AsyncCompletions, "create", create_completion)
+    client = OpenCollab(
+        tmp_path, provider="openai", model="offline-model", api_key="offline-fixture",
+        base_url="https://fixture.invalid/v1", config={
         "wire_protocol": "chat_completions", "llm_stream_chat": False, "llm_max_retries": 0,
-    })
+        },
+    )
     result = await client.team("Send both handoffs", config=team, artifacts=runtime, use_worktrees=False,
                                prebuild_team=True, serialize_turns=True, budget=100000, max_steps=4, timeout=5)
     assert result.status == "completed", f"{result}; requests={requests}"
+    assert requests, "The public completion request must enter the offline SDK fixture"
     lead = next(runtime.glob("agent_0_*.json"))
     receiver = next(runtime.glob("agent_1_*.json"))
     snapshot = OpenCollab.read_session_snapshot(receiver)
