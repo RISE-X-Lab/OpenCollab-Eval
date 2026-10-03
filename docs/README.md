@@ -34,6 +34,7 @@ verdicts. [final-report.md](final-report.md) is the complete input and evidence
 contract for `oc-eval final-report`.
 
 [Terminal container runtime](terminal-container-runtime.md) documents foreground command ownership and complete-container candidate adoption.
+[Terminal verifier preparation](terminal-verifier-preparation.md) covers task prerequisites, fresh outputs, and the original scoring budget.
 
 [Duo file evidence](g22-file-evidence.md) describes complete candidate evidence
 files and the read-only v3 selector.
