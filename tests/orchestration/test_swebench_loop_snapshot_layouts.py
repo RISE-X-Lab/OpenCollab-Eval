@@ -9,7 +9,6 @@ from opencollab_eval.commands import swebench_loop_monitor as monitor
 from tests.orchestration.test_swebench_loop_journal import TEXT, _args
 
 
-@pytest.mark.xfail(strict=True, reason="P3-08 single and workflow snapshot layouts are skipped")
 @pytest.mark.parametrize("filename", ["agent.json", "000_analyst.json", "001_coder-r1.json"])
 @pytest.mark.parametrize("journal_only", [False, True])
 def test_public_snapshot_layouts_are_discovered(tmp_path: Path, filename: str, journal_only: bool):

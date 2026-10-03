@@ -319,7 +319,7 @@ def _event_paths_status(
 
 
 def _session_paths_status(session_root: Path) -> tuple[list[Path], list[str]]:
-    paths: list[Path] = []
+    paths: set[Path] = set()
     errors: list[str] = []
     pending = [session_root]
     scanned = 0
@@ -347,9 +347,13 @@ def _session_paths_status(session_root: Path) -> tuple[list[Path], list[str]]:
                         f"{entry.path}: {type(exc).__name__}: {exc}"
                     )
                     continue
-                if not fnmatch.fnmatch(entry.name, "agent_*.json"):
+                # A base snapshot and its journal identify the same session.
+                name = entry.name.removesuffix(".journal")
+                if not any(fnmatch.fnmatch(name, pattern) for pattern in (
+                    "agent.json", "agent_*.json", "[0-9][0-9][0-9]_*.json",
+                )):
                     continue
-                paths.append(Path(entry.path))
+                paths.add(directory / name)
                 if len(paths) > MAX_SESSION_FILES:
                     raise ValueError(
                         f"session files exceed limit of {MAX_SESSION_FILES}"
