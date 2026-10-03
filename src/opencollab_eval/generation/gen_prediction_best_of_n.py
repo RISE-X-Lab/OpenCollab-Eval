@@ -650,11 +650,9 @@ def main() -> None:
     iid = instance["instance_id"]
     image = args.image or default_container_image(args.arch, iid)
 
-    cfg = get_config(str(Path.cwd()))
-    if args.model:
-        cfg["model"] = args.model
-    if args.provider:
-        cfg["provider"] = args.provider
+    cfg = get_config(
+        str(Path.cwd()), overrides={"model": args.model, "provider": args.provider},
+    )
     if args.temperature is not None:
         if not 0.0 <= args.temperature <= 2.0:
             ap.error("--temperature must be between 0 and 2")

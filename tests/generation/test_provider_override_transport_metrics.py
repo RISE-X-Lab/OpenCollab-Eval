@@ -2,6 +2,7 @@
 
 import importlib
 import json
+import os
 import sys
 
 import pytest
@@ -21,10 +22,9 @@ class ReachedExecutionBoundary(BaseException):
     pass
 
 
-@pytest.mark.xfail(strict=True, reason="P3-12 provider override retains diagnostics from the previous provider")
 @pytest.mark.parametrize("module_name", MODULES)
 def test_cli_provider_override_records_actual_endpoint(module_name, tmp_path, monkeypatch):
-    for name in list(__import__("os").environ):
+    for name in list(os.environ):
         if name.startswith(("OPENCOLLAB_", "OPENAI_", "ANTHROPIC_")):
             monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("OPENCOLLAB_PROVIDER", "openai")

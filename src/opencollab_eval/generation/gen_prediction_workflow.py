@@ -708,11 +708,9 @@ def main() -> None:
         workflow_fn, wf_label = generate_review_fix, "generate_review_fix"
     args.blind_validation = _resolve_blind_validation(workflow_fn, args.blind_validation, wf_label)
 
-    cfg = get_config(str(_REPO_ROOT))
-    if args.model:
-        cfg["model"] = args.model
-    if args.provider:
-        cfg["provider"] = args.provider
+    cfg = get_config(
+        str(_REPO_ROOT), overrides={"model": args.model, "provider": args.provider},
+    )
     if args.temperature is not None:
         if not 0.0 <= args.temperature <= 2.0:
             ap.error("--temperature must be between 0 and 2")

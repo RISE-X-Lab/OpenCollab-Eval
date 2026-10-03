@@ -212,7 +212,7 @@ def test_single_main_cleanup_failure_stages_candidate_before_publish(
     monkeypatch.setattr(
         gp,
         "get_config",
-        lambda root: {
+        lambda root, **_kwargs: {
             "model": "model",
             "provider": "provider",
             "api_key": "key",
@@ -274,7 +274,7 @@ def test_single_main_records_transport_without_remote_environment(monkeypatch, t
         "repo": "acme/repo", "problem_statement": "fix it",
     }), encoding="utf-8")
     output, metrics_path = tmp_path / "predictions.jsonl", tmp_path / "metrics.jsonl"
-    monkeypatch.setattr(gp, "get_config", lambda root: {
+    monkeypatch.setattr(gp, "get_config", lambda root, **_kwargs: {
         "model": "model", "provider": "openai", "api_key": "key",
         "base_url": "https://model.example.invalid/v1", "base_url_sha256": "7" * 64,
         "wire_protocol": "responses", "reasoning_effort": "high",
@@ -334,7 +334,7 @@ def test_single_main_output_symlink_race_retains_unwritten_candidate(
     monkeypatch.setattr(
         gp,
         "get_config",
-        lambda root: {
+        lambda root, **_kwargs: {
             "model": "model",
             "provider": "provider",
             "api_key": "key",
