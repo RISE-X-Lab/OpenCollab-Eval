@@ -105,7 +105,7 @@ def test_single_agent_cli_records_resolved_profile(monkeypatch, tmp_path, profil
         arguments.extend(["--agent-profile", profile])
     monkeypatch.setattr(sys, "argv", arguments)
     monkeypatch.delenv("OPENCOLLAB_SWE_WORKFLOW", raising=False)
-    monkeypatch.setattr(gp, "get_config", lambda *_: _agent_config())
+    monkeypatch.setattr(gp, "get_config", lambda *_, **_kwargs: _agent_config())
     monkeypatch.setattr(gp, "start_container_with_marker", lambda *a, **kw: "unused-container")
     monkeypatch.setattr(gp, "prepare_testbed_environment", lambda *_: None)
     monkeypatch.setattr(gp, "stash_solver_runtime_dependencies", lambda *_: None)
