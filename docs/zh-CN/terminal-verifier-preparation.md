@@ -26,7 +26,9 @@ from pathlib import Path
 from opencollab_eval.generation.terminal_container_backend import ContainerEnvironment
 from opencollab_eval.generation.terminal_verifier import run_terminal_verifier
 
-async def score_candidate(task, candidate_copy, task_settings, original_verify, output):
+async def score_candidate(
+    task, candidate_copy, task_settings, original_verify, output, preparation_receipt
+):
     environment = ContainerEnvironment(
         candidate_copy, task_settings["workspace"], Path(output) / "commands"
     )
@@ -45,6 +47,7 @@ async def score_candidate(task, candidate_copy, task_settings, original_verify, 
         verify,
         timeout_seconds=task_settings["verifier_timeout_seconds"],
         login_probe=task_settings.get("login_probe"),
+        preparation_receipt=preparation_receipt,
     )
 ```
 
@@ -66,6 +69,8 @@ if task.name == "configure-git-webserver":
 ```
 
 ## 结果与恢复
+
+每次调用由调用方提供一个新的 `preparation_receipt` 字典，保存过程中产生的备份与隔离位置。外部取消继续传播标准的 `asyncio.CancelledError`，调用方仍可从这个字典读取并持久保存恢复证据。回执独立于取消异常对象，因此适用于 Python 3.10、3.11 和 3.12 的任务取消行为。
 
 可用的原评分结果返回的 `status` 为 `normal`，`reward` 保留官方 0 或 1，`verifier` 保留原结果。准备成功后，真实功能失败仍为 reward 0。
 

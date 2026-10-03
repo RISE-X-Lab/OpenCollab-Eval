@@ -358,22 +358,23 @@ async def test_scoring_cancellation_after_frame_move_retains_recovery_evidence(
             environment.frame.read_bytes(), mode=environment.frame.stat().st_mode & 0o7777,
         ),
     )
+    receipt = {}
     task = asyncio.create_task(run_terminal_verifier(
         "make-doom-for-mips", environment, tmp_path / "artifacts", verifier,
         timeout_seconds=5 if external_cancel else 0.2,
+        preparation_receipt=receipt,
     ))
     await asyncio.wait_for(entered.wait(), 1)
     if external_cancel:
         task.cancel()
-        with pytest.raises(asyncio.CancelledError) as caught:
+        with pytest.raises(asyncio.CancelledError):
             await task
-        receipt = caught.value.receipt
     else:
         result = await task
         assert result["status"] == "facility_error"
         assert result["timed_out"] is True
         assert result["reward"] is None
-        receipt = result["preparation"]
+        assert result["preparation"] is receipt
     assert aborted
     assert receipt["status"] == "error"
     assert not environment.frame.exists()

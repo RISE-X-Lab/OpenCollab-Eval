@@ -48,7 +48,9 @@ from pathlib import Path
 from opencollab_eval.generation.terminal_container_backend import ContainerEnvironment
 from opencollab_eval.generation.terminal_verifier import run_terminal_verifier
 
-async def score_candidate(task, candidate_copy, task_settings, original_verify, output):
+async def score_candidate(
+    task, candidate_copy, task_settings, original_verify, output, preparation_receipt
+):
     environment = ContainerEnvironment(
         candidate_copy, task_settings["workspace"], Path(output) / "commands"
     )
@@ -67,6 +69,7 @@ async def score_candidate(task, candidate_copy, task_settings, original_verify, 
         verify,
         timeout_seconds=task_settings["verifier_timeout_seconds"],
         login_probe=task_settings.get("login_probe"),
+        preparation_receipt=preparation_receipt,
     )
 ```
 
@@ -91,6 +94,12 @@ if task.name == "configure-git-webserver":
 ```
 
 ## Results and recovery
+
+Supply a fresh `preparation_receipt` dictionary per call to retain backup and
+isolation paths as preparation proceeds. External cancellation propagates the
+standard `asyncio.CancelledError`; the caller can still read and persist this
+dictionary in its cancellation handler. Receipt ownership is independent of
+cancellation exception identity across Python 3.10, 3.11, and 3.12.
 
 The returned `status` is `normal` for a usable original-verifier result. Its
 `reward` preserves the official 0 or 1, and `verifier` retains the raw result.

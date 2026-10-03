@@ -270,3 +270,57 @@ async def test_score_evidence_survives_post_verifier_quiescence_failure(tmp_path
     assert result["status"] == "facility_error"
     assert result["verifier"] is raw
     assert result["reward"] is None
+
+
+async def test_caller_owns_preparation_record_when_cancellation_cleanup_fails(tmp_path, monkeypatch):
+    entered = asyncio.Event()
+    receipt = {}
+    environment = Environment()
+
+    async def preparation(*args, **kwargs):
+        kwargs["receipt"].update(archive_path="saved/frame.tar", quarantine_path="/tmp/saved/frame.bmp")
+        entered.set()
+        await asyncio.Event().wait()
+
+    async def failed_abort():
+        raise OSError("cleanup transport unavailable")
+
+    async def verifier(remaining):
+        pytest.fail("preparation is still in progress")
+
+    monkeypatch.setattr(scoring, "prepare_terminal_verifier", preparation)
+    environment.abort = failed_abort
+    task = asyncio.create_task(scoring.run_terminal_verifier(
+        "task", environment, tmp_path, verifier, timeout_seconds=5, preparation_receipt=receipt,
+    ))
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(OSError, match="cleanup transport"):
+        await task
+    assert receipt == {"archive_path": "saved/frame.tar", "quarantine_path": "/tmp/saved/frame.bmp"}
+
+
+async def test_caller_receipts_stay_separate_for_concurrent_cancelled_tasks(tmp_path, monkeypatch):
+    entered = {name: asyncio.Event() for name in ["first", "second"]}
+    receipts = {name: {} for name in entered}
+
+    async def preparation(name, environment, artifacts, **kwargs):
+        kwargs["receipt"].update(task_name=name, archive_path=f"{name}/frame.tar")
+        entered[name].set()
+        await asyncio.Event().wait()
+
+    async def verifier(remaining):
+        pytest.fail("preparation is still in progress")
+
+    monkeypatch.setattr(scoring, "prepare_terminal_verifier", preparation)
+    tasks = [asyncio.create_task(scoring.run_terminal_verifier(
+        name, Environment(), tmp_path / name, verifier, timeout_seconds=5,
+        preparation_receipt=receipts[name],
+    )) for name in entered]
+    await asyncio.gather(*(event.wait() for event in entered.values()))
+    for task in tasks:
+        task.cancel()
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    assert all(isinstance(result, asyncio.CancelledError) for result in results)
+    assert receipts["first"] == {"task_name": "first", "archive_path": "first/frame.tar"}
+    assert receipts["second"] == {"task_name": "second", "archive_path": "second/frame.tar"}

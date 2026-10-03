@@ -137,13 +137,18 @@ async def prepare_terminal_verifier(
     *,
     login_probe: str | None = None,
     timeout: float = 30.0,
+    receipt: dict | None = None,
 ) -> dict:
     """Prepare an isolated verifier clone and return evidence of any changes.
 
     The trusted runner supplies the SSH login probe for configure-git-webserver.
     Its text and output are kept out of command logs and returned evidence.
+    A caller-owned receipt retains progress when asyncio replaces cancellation
+    exceptions while crossing task boundaries.
     """
-    receipt = {"task_name": task_name, "status": "ready", "action": "none"}
+    if receipt is None:
+        receipt = {}
+    receipt.update(task_name=task_name, status="ready", action="none")
     if task_name not in MIPS_TASKS and task_name != "configure-git-webserver":
         return receipt
     if not math.isfinite(timeout) or timeout <= 0:
@@ -235,14 +240,17 @@ async def prepare_terminal_verifier(
     try:
         return await asyncio.wait_for(prepare(), timeout)
     except VerifierPreparationError as exc:
-        exc.receipt = {**receipt, **exc.receipt, "status": "error", "reason": exc.reason}
+        receipt.update(exc.receipt)
+        receipt.update(status="error", reason=exc.reason)
+        exc.receipt = receipt
         raise
-    except asyncio.CancelledError as exc:
-        exc.receipt = {**receipt, "status": "error", "reason": "preparation_cancelled"}
+    except asyncio.CancelledError:
+        receipt.update(status="error", reason="preparation_cancelled")
         raise
     except asyncio.TimeoutError as exc:
+        receipt.update(status="error", reason="preparation_timeout")
         raise VerifierPreparationError(
             "preparation_timeout",
             "Verifier preparation exceeded its timeout",
-            receipt={**receipt, "status": "error", "reason": "preparation_timeout"},
+            receipt=receipt,
         ) from exc

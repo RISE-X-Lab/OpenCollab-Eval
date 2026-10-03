@@ -23,28 +23,35 @@ async def run_terminal_verifier(
     *,
     timeout_seconds: float,
     login_probe: str | None = None,
+    preparation_receipt: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run preparation and scoring within the task's existing total time limit.
 
     ``environment`` is a dedicated scoring copy of the retained candidate. The
     callback runs the unchanged official verifier with the supplied remaining
     seconds and returns its raw reward, exit_code, timed_out, and error fields.
-    The caller retains that raw evidence and owns the scoring container.
+    The caller retains that raw evidence and owns the scoring container. Pass
+    a fresh preparation_receipt dictionary to retain recovery paths even when
+    the scoring task is externally cancelled.
     """
     if isinstance(timeout_seconds, bool) or not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be finite and positive")
     started = monotonic()
-    preparation = None
+    preparation = preparation_receipt if preparation_receipt is not None else {}
+    preparation.clear()
     stage = "preparation"
     raw_verifier = None
 
     async def execute():
-        nonlocal preparation, stage, raw_verifier
+        nonlocal stage, raw_verifier
         await environment.ensure_quiescent()
-        preparation = await prepare_terminal_verifier(
+        # The caller owns progress independently of asyncio exception identity.
+        prepared = await prepare_terminal_verifier(
             task_name, environment, Path(artifacts), login_probe=login_probe,
             timeout=max(0.001, timeout_seconds - (monotonic() - started)),
+            receipt=preparation,
         )
+        preparation.update(prepared)
         stage = "verifier"
         remaining = timeout_seconds - (monotonic() - started)
         if remaining <= 0:
@@ -72,13 +79,10 @@ async def run_terminal_verifier(
     try:
         result = await asyncio.wait_for(execute(), timeout_seconds)
     except VerifierPreparationError as exc:
-        preparation = exc.receipt
+        preparation.update(exc.receipt)
         result = _failure(exc.reason, "preparation", None)
         await _abort(environment, result)
-    except asyncio.TimeoutError as exc:
-        cancellation_receipt = getattr(exc.__cause__, "receipt", None)
-        if cancellation_receipt is not None:
-            preparation = cancellation_receipt
+    except asyncio.TimeoutError:
         result = _failure("verifier_budget_exhausted", stage, raw_verifier)
         result["timed_out"] = True
         await _abort(environment, result)
