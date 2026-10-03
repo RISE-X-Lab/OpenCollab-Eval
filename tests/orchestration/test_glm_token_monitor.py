@@ -362,7 +362,6 @@ def test_known_cache_creation_is_reported_and_priced(tmp_path, monkeypatch, caps
     assert totals["uncached_input_tokens"] == 200
 
 
-@pytest.mark.xfail(strict=True, reason="P2-18 unknown optional cache counters are treated as known zero")
 @pytest.mark.parametrize("cached_tokens", [300, None])
 def test_responses_unknown_cache_is_kept_in_cost_estimate(tmp_path, monkeypatch, capsys, cached_tokens):
     details = {} if cached_tokens is None else {"cached_tokens": cached_tokens}

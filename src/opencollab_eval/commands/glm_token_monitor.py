@@ -304,18 +304,16 @@ def collect(trajectories_dir: Path, model_filter: str | None) -> dict:
                     total_tokens = _nonnegative_int(raw_total_tokens)
                 cached_input_tokens = _nonnegative_int(usage.get("cache_read_tokens"))
                 cache_creation_tokens = _nonnegative_int(usage.get("cache_creation_tokens"))
-                if "uncached_input_tokens" in usage:
-                    uncached_input_tokens = _nonnegative_int(
-                        usage.get("uncached_input_tokens")
-                    )
-                else:
-                    uncached_input_tokens = max(input_tokens - cached_input_tokens - cache_creation_tokens, 0)
-                has_cache_accounting = (
-                    "cache_read_tokens" in usage
-                    or "cache_creation_tokens" in usage
-                    or bool(usage.get("raw_usage"))
-                    or bool(usage.get("estimated"))
+                has_cache_accounting = all(
+                    usage.get(name) is not None for name in ("cache_read_tokens", "cache_creation_tokens")
                 )
+                residual_input = max(input_tokens - cached_input_tokens - cache_creation_tokens, 0)
+                if usage.get("uncached_input_tokens") is not None and has_cache_accounting:
+                    uncached_input_tokens = _nonnegative_int(usage["uncached_input_tokens"])
+                else:
+                    # Price the unresolved input at the ordinary input rate,
+                    # retaining its uncertainty separately from known counters.
+                    uncached_input_tokens = residual_input
 
                 totals["runs"].add(record.get("run_id") or path.stem)
                 totals["calls"] += 1
@@ -329,7 +327,7 @@ def collect(trajectories_dir: Path, model_filter: str | None) -> dict:
                     totals["estimated_calls"] += 1
                 if input_tokens and not has_cache_accounting:
                     totals["unknown_cache_calls"] += 1
-                    totals["unknown_cache_input_tokens"] += input_tokens
+                    totals["unknown_cache_input_tokens"] += residual_input
                 if input_tokens or output_tokens:
                     totals["split_total_tokens"] += total_tokens
                 else:
@@ -416,7 +414,8 @@ def print_report(args: argparse.Namespace) -> bool:
     print(
         f"latency_s: {totals['latency_s']:.1f}  "
         f"estimated_calls: {totals['estimated_calls']}  "
-        f"legacy_unknown_cache_calls: {totals['unknown_cache_calls']}"
+        f"unknown_cache_calls: {totals['unknown_cache_calls']} "
+        f"unknown_cache_input_tokens: {totals['unknown_cache_input_tokens']}"
     )
     if cost is None:
         if mode == "missing_cached_price":
@@ -433,14 +432,14 @@ def print_report(args: argparse.Namespace) -> bool:
     else:
         exact_from_log = (
             totals["estimated_calls"] == 0
-            and totals["unknown_cache_input_tokens"] == 0
+            and totals["unknown_cache_calls"] == 0
             and totals["unknown_split_tokens"] == 0
         )
         label = "cost_usd_from_logged_usage" if exact_from_log else "cost_usd_estimate"
         print(f"{label}: ${cost:.6f} ({mode})")
         if totals["unknown_cache_input_tokens"]:
             print(
-                "cost_note: legacy logs without cache fields were priced as uncached input; "
+                "cost_note: input with missing cache counters was priced at the input rate; "
                 "provider billing is needed for exact historical cache discounts."
             )
     return bool(totals["complete"])
