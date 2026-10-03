@@ -14,7 +14,6 @@ from opencollab_eval.commands.eval_batch import _eval
 from opencollab_eval.engine import evaluator, evaluator_sessions
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="P1-02: batch cancellation loses completed patches")
 def test_cli_cancellation_saves_completed_candidate_and_cleans_running_task(monkeypatch, tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
