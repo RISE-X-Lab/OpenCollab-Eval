@@ -6,7 +6,6 @@ from types import SimpleNamespace
 
 import pytest
 from opencollab import OpenCollab
-from opencollab.adapters.storage import SessionStore
 
 from opencollab_eval.commands import swebench_loop_monitor as monitor
 
@@ -16,6 +15,20 @@ TEXT = "I am inspecting the same test output once again before making the next s
 def _args(root):
     return SimpleNamespace(session_root=str(root), events_file=[], diff_file=None,
                            instance_id="case-a", output=str(root.parent / "report.json"))
+
+
+def _write_snapshot(path, messages, meta):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({**meta, "messages": messages}))
+
+
+def _write_journal(path, *, replace_from, messages, meta):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Path(f"{path}.journal").write_text(json.dumps({
+        "journal_version": 1, "sequence": 1, "replace_from": replace_from,
+        "message_count": replace_from + len(messages), "messages": messages, "meta": meta,
+        "seen_result_hashes_reset": False, "seen_result_hashes_added": [],
+    }) + "\n")
 
 
 def _native_journal(root: Path):
@@ -29,10 +42,8 @@ def _native_journal(root: Path):
         }]},
         {"role": "tool", "tool_call_id": "write-1", "content": "Wrote 5 bytes to a.py"},
     ]
-    store = SessionStore()
-    store.save(str(path), first, meta={"aid": 0, "role": "analyst"})
-    store.append_snapshot_delta(str(path), sequence=1, replace_from=1, messages=latest,
-                                meta={"aid": 0, "role": "analyst"})
+    _write_snapshot(path, first, {"aid": 0, "role": "analyst"})
+    _write_journal(path, replace_from=1, messages=latest, meta={"aid": 0, "role": "analyst"})
     return path, first + latest
 
 
