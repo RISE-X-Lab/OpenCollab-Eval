@@ -344,7 +344,7 @@ def _single_agent_files(cell: Path, record: dict[str, Any]) -> list[Path]:
     """The one seat of a single-agent run, found through the run's own record.
 
     Nothing in the directory name ties ``agent-<hex>`` to an instance, so the
-    tie has to come from ``metrics.jsonl``, which records the directory as
+    tie has to come from ``metrics.jsonl``, which records a trajectory file or its directory as
     ``trajectory_path``. That path was written on the machine that ran the
     batch, so it is resolved by name under the pulled cell first and taken
     verbatim only when the batch is read where it ran. A record without the
@@ -355,6 +355,8 @@ def _single_agent_files(cell: Path, record: dict[str, Any]) -> list[Path]:
     if not raw:
         return []
     named = Path(raw)
+    if named.suffix == ".jsonl":
+        named = named.parent
     for directory in (cell / named.name, named):
         snapshot = directory / SINGLE_SEAT_FILE
         if snapshot.is_file():

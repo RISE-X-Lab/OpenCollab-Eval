@@ -10,10 +10,12 @@ from opencollab_eval.engine.swe_eval_outcome import (
 )
 
 
-def target_evidence_passed(item: dict[str, Any]) -> bool | None:
+def target_evidence_passed(item: dict[str, Any], *, allow_skipped: bool = False) -> bool | None:
     """Return the declared-target outcome, or ``None`` for invalid evidence."""
     outcome = target_evidence_outcome(item)
     if outcome is TargetOutcome.PASSED:
+        return True
+    if outcome is TargetOutcome.SKIPPED and allow_skipped:
         return True
     if outcome in {TargetOutcome.CANDIDATE_FAILED, TargetOutcome.SKIPPED}:
         return False

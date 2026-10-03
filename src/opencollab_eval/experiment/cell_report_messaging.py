@@ -99,7 +99,10 @@ def received_events(snapshot: dict[str, Any]) -> list[tuple[dict[str, Any], bool
         # closing tag marks the envelope boundary before appended steering.
         start = prefix.start(1) - 1
         try:
-            root = ET.fromstring(content[start:end + len(closing)])
+            # XML normalizes literal CR and CRLF. Character references preserve
+            # the exact scheduler body used by the send receipt and queue metadata.
+            envelope_xml = content[start:end + len(closing)].replace("\r", "&#13;")
+            root = ET.fromstring(envelope_xml)
         except ET.ParseError:
             continue
         envelopes = [root] if root.tag == "teammate-message" else list(root)

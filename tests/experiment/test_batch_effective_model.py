@@ -335,14 +335,17 @@ def test_invalid_effective_config_cannot_be_recorded_as_a_model(experiment: dict
     envfile = Path(experiment["repo"]) / "configs" / ".env"
     envfile.write_text("OPENCOLLAB_MODEL=file-model\n")
     monkeypatch.setenv("OPENCOLLAB_CONFIG_FILE", str(envfile))
-    monkeypatch.setenv("OPENCOLLAB_MODEL", "  ")
+    monkeypatch.setenv("OPENCOLLAB_TEMPERATURE", "3")
+    with pytest.raises(ValueError, match="temperature"):
+        _public_config(experiment)
     host = _local_host(experiment)
-    script = probe_script(host, "configs/.env", {"OPENCOLLAB_MODEL": "  "}, endpoint=False)
+    script = probe_script(host, "configs/.env", {"OPENCOLLAB_TEMPERATURE": "3"}, endpoint=False)
     output = subprocess.run(["bash", "-s"], input=script, capture_output=True, text=True, check=True).stdout
     facts = batch_remote.parse_facts(output)
     assert batch_remote.fact(facts, "MODEL_ENV") == "invalid"
     assert batch_remote.fact(facts, "MODEL_CONFIG_ERROR") == "ValidationError"
     assert batch_remote.fact(facts, "MODEL") == ""
+
 
 
 @pytest.mark.parametrize("status", [429, 503])

@@ -508,7 +508,8 @@ def eval_for_task_once(row, patch_selection=None):
         patch_selection["candidate_expectation"],
     )
     verdict = derive_eval_verdict(
-        artifacts, docker_exit=docker_exit, cleanup_quiesced=cleanup_quiesced, container_cleanup=container_cleanup
+        artifacts, docker_exit=docker_exit, cleanup_quiesced=cleanup_quiesced, container_cleanup=container_cleanup,
+        pass_to_pass_skips_allowed=row.get("pass_to_pass_skips_allowed", True) is True,
     )
     output_artifact_errors = verdict["output_artifact_errors"]
     diagnostic_artifact_errors = artifacts["diagnostic_artifact_errors"]
@@ -565,6 +566,7 @@ def eval_for_task_once(row, patch_selection=None):
         "model_patch_chars": len(original_model_patch),
         "eval_model_patch_chars": len(model_patch),
         "tests_status": {
+            "pass_to_pass_skips_allowed": verdict["pass_to_pass_skips_allowed"],
             "base_commit_status": base_commit_status,
             "service_bootstrap_status": service_status,
             "before_repo_status": before_status,

@@ -66,6 +66,8 @@ def target_evidence_outcome(item: dict[str, Any]) -> TargetOutcome:
 def classify_evaluation(
     *,
     evidence: Iterable[dict[str, Any]],
+    pass_to_pass_evidence: Iterable[dict[str, Any]] = (),
+    pass_to_pass_skips_allowed: bool = True,
     prerequisite_reasons: Iterable[str] = (),
     candidate_application_failed: bool = False,
 ) -> VerdictDecision:
@@ -85,7 +87,14 @@ def classify_evaluation(
             (),
             ("candidate_patch_could_not_be_applied",),
         )
-    outcomes = tuple(target_evidence_outcome(item) for item in evidence)
+    evidence = tuple(evidence)
+    pass_to_pass_evidence = tuple(pass_to_pass_evidence)
+    if not evidence:
+        return VerdictDecision(
+            EvaluationOutcome.TECHNICAL_FAILURE, False,
+            ("target_outcome_unknown",), ("insufficient_semantic_test_evidence",),
+        )
+    outcomes = _grouped_target_outcomes(evidence, pass_to_pass_evidence, pass_to_pass_skips_allowed)
     if any(
         outcome in {TargetOutcome.CANDIDATE_FAILED, TargetOutcome.SKIPPED}
         for outcome in outcomes
@@ -105,13 +114,25 @@ def classify_evaluation(
             EvaluationOutcome.RESOLVED,
             True,
             (),
-            ("all_declared_targets_passed",),
+            ("all_declared_targets_passed_or_maintained" if any(
+                target_evidence_outcome(item) is TargetOutcome.SKIPPED for item in pass_to_pass_evidence
+            ) else "all_declared_targets_passed",),
         )
     return VerdictDecision(
         EvaluationOutcome.TECHNICAL_FAILURE,
         False,
         ("target_outcome_unknown",),
         ("insufficient_semantic_test_evidence",),
+    )
+
+
+def _grouped_target_outcomes(fail_to_pass, pass_to_pass, skips_allowed):
+    """Apply SWE-bench's maintained-test rule only to the P2P group."""
+    required = tuple(target_evidence_outcome(item) for item in fail_to_pass)
+    maintained = tuple(target_evidence_outcome(item) for item in pass_to_pass)
+    return required + tuple(
+        TargetOutcome.PASSED if skips_allowed is True and outcome is TargetOutcome.SKIPPED else outcome
+        for outcome in maintained
     )
 
 
@@ -145,14 +166,16 @@ def derive_eval_verdict(
     docker_exit: int,
     cleanup_quiesced: bool,
     container_cleanup: dict[str, Any],
+    pass_to_pass_skips_allowed: bool = True,
 ) -> dict[str, Any]:
     """Derive a verdict from identity-bound artifacts and semantic evidence."""
-    evidence = [*artifacts["f2p_evidence"], *artifacts["p2p_evidence"]]
+    fail_to_pass = artifacts["f2p_evidence"]
+    pass_to_pass = artifacts["p2p_evidence"]
     operational_warnings = list(artifacts.get("operational_warnings") or [])
     container_stopped = docker_exit == 0 and cleanup_quiesced
     if not container_cleanup.get("ok") and container_stopped:
         operational_warnings.append("container_removal_failed_after_stop")
-    target_outcomes = tuple(target_evidence_outcome(item) for item in evidence)
+    target_outcomes = _grouped_target_outcomes(fail_to_pass, pass_to_pass, pass_to_pass_skips_allowed)
     conclusive_candidate_failure = any(
         outcome in {TargetOutcome.CANDIDATE_FAILED, TargetOutcome.SKIPPED}
         for outcome in target_outcomes
@@ -212,7 +235,9 @@ def derive_eval_verdict(
     )
     prerequisite_reasons = [reason for reason, active in reason_checks if active]
     decision = classify_evaluation(
-        evidence=evidence,
+        evidence=fail_to_pass,
+        pass_to_pass_evidence=pass_to_pass,
+        pass_to_pass_skips_allowed=pass_to_pass_skips_allowed,
         prerequisite_reasons=prerequisite_reasons,
         candidate_application_failed=candidate_application_failed,
     )
@@ -222,11 +247,14 @@ def derive_eval_verdict(
         if _plan_evidence_mismatch(artifacts, "p2p"):
             prerequisite_reasons.append("pass_to_pass_evidence")
         decision = classify_evaluation(
-            evidence=evidence,
+            evidence=fail_to_pass,
+            pass_to_pass_evidence=pass_to_pass,
+            pass_to_pass_skips_allowed=pass_to_pass_skips_allowed,
             prerequisite_reasons=prerequisite_reasons,
         )
     technical_error = decision.outcome is EvaluationOutcome.TECHNICAL_FAILURE
     return {
+        "pass_to_pass_skips_allowed": pass_to_pass_skips_allowed is True,
         "outcome": decision.outcome.value,
         "outcome_basis": list(decision.basis),
         "technical_reasons": list(decision.technical_reasons),

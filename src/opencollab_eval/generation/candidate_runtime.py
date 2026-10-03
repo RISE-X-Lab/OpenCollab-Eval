@@ -105,7 +105,8 @@ def hydrate(store, workspace):
             available = sorted((store / "ready").iterdir())
             if claimed.exists() or not available:
                 raise ValueError("candidate dependency preparation is incomplete or exhausted")
-            available[0].rename(claimed)
+            allocated = available[0]
+            allocated.rename(claimed)
         installed = []
         try:
             for name in config["roots"]:
@@ -132,7 +133,14 @@ def hydrate(store, workspace):
                     installed.append((target, cached, False))
                 else:
                     installed.append((target, cached, True))
+            marker.write_text(
+                json.dumps(
+                    {"workspace": str(workspace), "roots": config["roots"],
+                     "elapsed_seconds": time.monotonic() - started}
+                )
+            )
         except BaseException:
+            marker.unlink(missing_ok=True)
             for target, cached, moved in reversed(installed):
                 if moved:
                     cached.parent.mkdir(parents=True, exist_ok=True)
@@ -142,12 +150,12 @@ def hydrate(store, workspace):
                         shutil.rmtree(target)
                     else:
                         target.unlink()
+            # Return only a fully rolled-back copy while allocation is locked.
+            # The workspace lock still excludes a second writer for this candidate.
+            with (store / "state" / "allocation.lock").open("a") as allocation:
+                fcntl.flock(allocation, fcntl.LOCK_EX)
+                claimed.rename(allocated)
             raise
-        marker.write_text(
-            json.dumps(
-                {"workspace": str(workspace), "roots": config["roots"], "elapsed_seconds": time.monotonic() - started}
-            )
-        )
     return True
 
 

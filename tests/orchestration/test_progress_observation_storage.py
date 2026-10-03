@@ -235,26 +235,37 @@ def test_required_writer_error_and_cause_propagate(tmp_path, monkeypatch, code, 
     error = OSError(code, os.strerror(code), str(tmp_path / name))
     cause = RuntimeError("required artifact persistence failed")
     actual = Path.open
+    observation_failed = asyncio.Event()
+    decision = {}
 
     def injected(path, mode="r", *args, **kwargs):
-        if path.name == name and any(flag in mode for flag in "wa+"):
+        writing = any(flag in mode for flag in "wa+")
+        if path.name == name and writing:
             raise error from cause
-        return actual(path, mode, *args, **kwargs)
+        try:
+            return actual(path, mode, *args, **kwargs)
+        except OSError:
+            if writing and any(path.name == item or path.name.startswith(item + ".") for item in OBSERVATIONS):
+                observation_failed.set()
+            raise
 
     monkeypatch.setattr(Path, "open", injected)
 
     async def operation():
-        await asyncio.sleep(0.02)
+        await asyncio.wait_for(observation_failed.wait(), timeout=1)
         (tmp_path / "retained-workspace.txt").write_text("retained work")
         (tmp_path / name).write_text("required artifact")
 
     with pytest.raises(OSError) as caught:
         asyncio.run(progress.run_with_stop_request(
-            operation(), settings(tmp_path, tmp_path / "trajectory.jsonl"), time.time(), {},
+            operation(), settings(tmp_path, tmp_path / "trajectory.jsonl", seconds=1), time.time(), decision,
         ))
     assert caught.value is error
     assert caught.value.__cause__ is cause
     assert (tmp_path / "retained-workspace.txt").read_text() == "retained work"
+    assert observation_failed.is_set()
+    assert decision["progress_observation_errors"]
+    assert "reason" not in decision
 
 
 def test_unrelated_observer_failure_still_propagates_and_finalizes(tmp_path, monkeypatch):

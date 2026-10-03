@@ -40,7 +40,7 @@ def test_generation_cli_limits_reach_execution(monkeypatch, tmp_path, generator,
 
     if generator == "single-agent":
         monkeypatch.setattr(gp, "validate_generation_limits", capture_validation)
-        monkeypatch.setattr(gp, "get_config", lambda *_: config)
+        monkeypatch.setattr(gp, "get_config", lambda *_, **_kwargs: config)
         monkeypatch.setattr(gp, "start_container_with_marker", lambda *a, **kw: "fixture-container")
         monkeypatch.setattr(gp, "prepare_testbed_environment", lambda *_: None)
         monkeypatch.setattr(gp, "stash_solver_runtime_dependencies", lambda *_: None)
@@ -59,7 +59,7 @@ def test_generation_cli_limits_reach_execution(monkeypatch, tmp_path, generator,
         entry = gp.main
     else:
         monkeypatch.setattr(gp, "validate_generation_limits", capture_validation)
-        monkeypatch.setattr(gpw, "get_config", lambda *_: config)
+        monkeypatch.setattr(gpw, "get_config", lambda *_, **_kwargs: config)
 
         async def execute(instance, image, cfg, args, workflow, workflow_name):
             captured["execution"] = (args.max_steps, args.budget, args.timeout)

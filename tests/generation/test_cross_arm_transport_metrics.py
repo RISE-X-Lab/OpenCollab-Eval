@@ -193,7 +193,7 @@ def test_a_finished_single_agent_run_records_how_it_reached_the_provider(
     monkeypatch.setattr(
         gp,
         "get_config",
-        lambda root: {
+        lambda root, **_kwargs: {
             "model": "model",
             "provider": "provider",
             "api_key": "key",

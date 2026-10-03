@@ -283,6 +283,8 @@ async def _run_single_session(
     operation = client.agent(
         task.description,
         profile=agent_profile,
+        tools=tools,
+        system_prompt=prompt,
         budget=task.max_tokens,
         max_steps=max_steps,
         timeout=generation_wall_timeout(task.timeout),
