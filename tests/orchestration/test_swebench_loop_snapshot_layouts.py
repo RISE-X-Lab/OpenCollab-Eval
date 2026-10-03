@@ -3,8 +3,8 @@
 from pathlib import Path
 
 import pytest
-
 from opencollab.adapters.storage import SessionStore
+
 from opencollab_eval.commands import swebench_loop_monitor as monitor
 from tests.orchestration.test_swebench_loop_journal import TEXT, _args
 
