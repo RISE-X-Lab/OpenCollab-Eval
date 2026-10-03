@@ -25,6 +25,8 @@
 
 [evaluation-runtime.md](evaluation-runtime.md) 说明已安装命令与运行时层级之间的对应关系，并解释哪些入口会生成候选结果，哪些入口会给出官方判定。[final-report.md](final-report.md) 是 `oc-eval final-report` 的完整输入与证据契约。
 
+[Terminal 容器运行](terminal-container-runtime.md)介绍前台命令的生命周期与完整容器候选采纳。
+
 [Duo 文件证据](g22-file-evidence.md)介绍完整候选证据文件与 v3 裁决角色的只读工具。
 
 [ICLR 整合系列](iclr-integration.md)记录研究代码的合入顺序、源码覆盖情况与已验证的 Git 祖先关系。
