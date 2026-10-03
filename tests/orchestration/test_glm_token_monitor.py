@@ -6,8 +6,10 @@ import os
 import subprocess
 import sys
 from contextlib import contextmanager
+from types import SimpleNamespace
 
 import pytest
+from opencollab.adapters.llm.responses_usage import parse_responses_usage
 
 from opencollab_eval.commands import glm_token_monitor as monitor
 
@@ -358,3 +360,47 @@ def test_known_cache_creation_is_reported_and_priced(tmp_path, monkeypatch, caps
     totals = monitor.collect(tmp_path, "glm-5.2")
     assert totals["cache_creation_tokens"] == 500
     assert totals["uncached_input_tokens"] == 200
+
+
+@pytest.mark.xfail(strict=True, reason="P2-18 unknown optional cache counters are treated as known zero")
+@pytest.mark.parametrize("cached_tokens", [300, None])
+def test_responses_unknown_cache_is_kept_in_cost_estimate(tmp_path, monkeypatch, capsys, cached_tokens):
+    details = {} if cached_tokens is None else {"cached_tokens": cached_tokens}
+    usage = parse_responses_usage(SimpleNamespace(usage={
+        "input_tokens": 1000, "output_tokens": 100, "input_tokens_details": details,
+    }), [], "ok", [])
+    assert usage.cache_creation_tokens is None
+    (tmp_path / "run.jsonl").write_text(json.dumps({
+        "type": "llm_call", "payload": {"model": "glm-5.2", "usage": {
+            "input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens,
+            "total_tokens": usage.total_tokens, "cache_read_tokens": usage.cache_read_tokens,
+            "cache_creation_tokens": usage.cache_creation_tokens, "uncached_input_tokens": None,
+            "estimated": usage.estimated, "raw_usage": usage.raw_usage,
+        }},
+    }) + "\n")
+    residual = 1000 - (cached_tokens or 0)
+    totals = monitor.collect(tmp_path, "glm-5.2")
+    assert totals["unknown_cache_calls"] == 1
+    assert totals["unknown_cache_input_tokens"] == residual
+    assert totals["uncached_input_tokens"] == residual
+    monkeypatch.setattr(sys, "argv", ["monitor", "--trajectories-dir", str(tmp_path),
+        "--input-price-per-mtok", "1.4", "--cached-input-price-per-mtok", "0.26",
+        "--output-price-per-mtok", "4.4"])
+    assert monitor.main() == 0
+    output = capsys.readouterr().out
+    expected = residual / 1_000_000 * 1.4 + (cached_tokens or 0) / 1_000_000 * .26 + .00044
+    assert f"cost_usd_estimate: ${expected:.6f}" in output
+    assert "cost_usd_from_logged_usage" not in output
+
+
+def test_explicit_zero_cache_counters_are_known(tmp_path):
+    (tmp_path / "run.jsonl").write_text(json.dumps({
+        "type": "llm_call", "payload": {"model": "glm-5.2", "usage": {
+            "input_tokens": 1000, "uncached_input_tokens": 1000, "cache_read_tokens": 0,
+            "cache_creation_tokens": 0, "output_tokens": 100,
+        }},
+    }) + "\n")
+    totals = monitor.collect(tmp_path, "glm-5.2")
+    assert totals["unknown_cache_calls"] == 0
+    assert totals["unknown_cache_input_tokens"] == 0
+    assert totals["uncached_input_tokens"] == 1000
