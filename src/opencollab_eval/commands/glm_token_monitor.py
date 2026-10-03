@@ -238,6 +238,7 @@ def collect(trajectories_dir: Path, model_filter: str | None) -> dict:
         "input_tokens": 0,
         "uncached_input_tokens": 0,
         "cached_input_tokens": 0,
+        "cache_creation_tokens": 0,
         "output_tokens": 0,
         "split_total_tokens": 0,
         "unknown_split_tokens": 0,
@@ -302,12 +303,13 @@ def collect(trajectories_dir: Path, model_filter: str | None) -> dict:
                 else:
                     total_tokens = _nonnegative_int(raw_total_tokens)
                 cached_input_tokens = _nonnegative_int(usage.get("cache_read_tokens"))
+                cache_creation_tokens = _nonnegative_int(usage.get("cache_creation_tokens"))
                 if "uncached_input_tokens" in usage:
                     uncached_input_tokens = _nonnegative_int(
                         usage.get("uncached_input_tokens")
                     )
                 else:
-                    uncached_input_tokens = max(input_tokens - cached_input_tokens, 0)
+                    uncached_input_tokens = max(input_tokens - cached_input_tokens - cache_creation_tokens, 0)
                 has_cache_accounting = (
                     "cache_read_tokens" in usage
                     or "cache_creation_tokens" in usage
@@ -320,6 +322,7 @@ def collect(trajectories_dir: Path, model_filter: str | None) -> dict:
                 totals["input_tokens"] += input_tokens
                 totals["uncached_input_tokens"] += uncached_input_tokens
                 totals["cached_input_tokens"] += cached_input_tokens
+                totals["cache_creation_tokens"] += cache_creation_tokens
                 totals["output_tokens"] += output_tokens
                 totals["latency_s"] += _nonnegative_float(metrics.get("latency_s"))
                 if usage.get("estimated"):
@@ -349,18 +352,24 @@ def estimate_cost(
     input_price_per_mtok: float | None,
     cached_input_price_per_mtok: float | None,
     output_price_per_mtok: float | None,
+    cache_creation_price_per_mtok: float | None = None,
 ) -> tuple[float | None, str]:
     split_cost = 0.0
     has_split_price = (
         input_price_per_mtok is not None
         or cached_input_price_per_mtok is not None
         or output_price_per_mtok is not None
+        or cache_creation_price_per_mtok is not None
     )
     if has_split_price:
         if totals["cached_input_tokens"] and cached_input_price_per_mtok is None:
             return None, "missing_cached_price"
         split_cost += totals["uncached_input_tokens"] / 1_000_000 * (input_price_per_mtok or 0.0)
         split_cost += totals["cached_input_tokens"] / 1_000_000 * (cached_input_price_per_mtok or 0.0)
+        creation_price = input_price_per_mtok if cache_creation_price_per_mtok is None else cache_creation_price_per_mtok
+        if totals["cache_creation_tokens"] and creation_price is None:
+            return None, "missing_cache_creation_price"
+        split_cost += totals["cache_creation_tokens"] / 1_000_000 * (creation_price or 0.0)
         split_cost += totals["output_tokens"] / 1_000_000 * (output_price_per_mtok or 0.0)
 
     unknown_tokens = totals["unknown_split_tokens"]
@@ -385,6 +394,7 @@ def print_report(args: argparse.Namespace) -> bool:
         args.input_price_per_mtok,
         args.cached_input_price_per_mtok,
         args.output_price_per_mtok,
+        args.cache_creation_price_per_mtok,
     )
 
     print(f"model_filter: {args.model or '(all)'}")
@@ -394,6 +404,7 @@ def print_report(args: argparse.Namespace) -> bool:
         f"input={totals['input_tokens']} "
         f"uncached_input={totals['uncached_input_tokens']} "
         f"cached_input={totals['cached_input_tokens']} "
+        f"cache_creation={totals['cache_creation_tokens']} "
         f"output={totals['output_tokens']} "
         f"unknown_split={totals['unknown_split_tokens']} "
         f"total={total_tokens}"
@@ -410,6 +421,8 @@ def print_report(args: argparse.Namespace) -> bool:
     if cost is None:
         if mode == "missing_cached_price":
             print("cost_usd: unknown because cached input tokens were logged but no cached-input price was provided.")
+        elif mode == "missing_cache_creation_price":
+            print("cost_usd: unknown because cache creation tokens have no cache-creation or input price.")
         elif mode == "unknown_split":
             print(
                 "cost_usd: unknown because older logs only contain total tokens; "
@@ -454,6 +467,12 @@ def main() -> int:
         "--cached-input-price-per-mtok",
         type=_nonnegative_float_arg,
         default=_float_env("GLM_CACHED_INPUT_USD_PER_MTOK", DEFAULT_GLM52_CACHED_INPUT_USD_PER_MTOK),
+    )
+    parser.add_argument(
+        "--cache-creation-price-per-mtok",
+        type=_nonnegative_float_arg,
+        default=_float_env("GLM_CACHE_CREATION_USD_PER_MTOK"),
+        help="Cache creation price in USD per MTok; defaults to the input price",
     )
     parser.add_argument(
         "--output-price-per-mtok",

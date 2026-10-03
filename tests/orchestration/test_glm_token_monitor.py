@@ -337,7 +337,6 @@ def test_glm_monitor_cli_returns_nonzero_for_incomplete_input(tmp_path):
     assert "input_status: incomplete" in result.stdout
 
 
-@pytest.mark.xfail(strict=True, reason="P2-17 monitor omits known cache creation tokens")
 @pytest.mark.parametrize("creation_price", [None, 2.0])
 def test_known_cache_creation_is_reported_and_priced(tmp_path, monkeypatch, capsys, creation_price):
     (tmp_path / "run.jsonl").write_text(json.dumps({
