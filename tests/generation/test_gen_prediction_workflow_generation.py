@@ -419,7 +419,7 @@ def test_generate_persists_completed_patch_only_after_container_cleanup(monkeypa
     assert json.loads(metrics_output.read_text(encoding="utf-8"))["workflow_status"] == "done"
 
 
-def test_generate_output_symlink_race_cleans_active_container(monkeypatch, tmp_path):
+def test_generate_output_symlink_race_preserves_completed_candidate(monkeypatch, tmp_path):
     async def fake_run_eval_task(task, **kwargs):
         return EvalResult(
             task_id=task.task_id,
@@ -491,10 +491,11 @@ def test_generate_output_symlink_race_cleans_active_container(monkeypatch, tmp_p
             )
         )
 
-    assert removed == ["cid"]
+    assert removed == []
+    assert gpw._retained_candidates_for_test[0]["reason"] == "candidate_record_unwritten"
     assert victim.read_text(encoding="utf-8") == "unchanged\n"
     assert not list((tmp_path / ".opencollab" / "pending_outputs").glob("*.json"))
-    assert not list((tmp_path / ".opencollab" / "container_owners").glob("*.json"))
+    assert len(list((tmp_path / ".opencollab" / "container_owners").glob("*.json"))) == 1
 
 
 def test_generate_cleanup_failure_does_not_publish_done(monkeypatch, tmp_path):
