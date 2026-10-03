@@ -401,6 +401,7 @@ def _direct_eval_plan_status(
     statuses: list[int] = []
     outcomes: list[bool] = []
     unknown_batches: list[int] = []
+    skip_allowed = tests_status.get("pass_to_pass_skips_allowed", False) is True
     for index, item in enumerate(evidence, 1):
         if not isinstance(item, dict):
             return None
@@ -418,7 +419,7 @@ def _direct_eval_plan_status(
             unknown_batches.append(index)
             statuses.append(status)
             continue
-        outcome = target_evidence_passed(item)
+        outcome = target_evidence_passed(item, allow_skipped=prefix == "pass_to_pass" and skip_allowed)
         if outcome is None:
             unknown_batches.append(index)
             statuses.append(status)
@@ -429,9 +430,7 @@ def _direct_eval_plan_status(
     if isinstance(reported_status, bool) or not isinstance(reported_status, int):
         return None
     if unknown_batches:
-        if not outcomes or all(outcomes):
-            return None
-        return 1
+        return None if not outcomes or all(outcomes) else 1
     expected_status = next((status for status in statuses if status != 0), 0)
     if reported_status != expected_status:
         return None

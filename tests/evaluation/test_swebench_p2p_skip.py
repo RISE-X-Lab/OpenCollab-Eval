@@ -11,7 +11,7 @@ import sys
 
 import pytest
 
-from opencollab_eval.engine.swe_eval_outcome import derive_eval_verdict
+from opencollab_eval.engine.swe_eval_outcome import classify_evaluation, derive_eval_verdict
 from opencollab_eval.engine.swe_eval_records import _direct_eval_plan_status
 from opencollab_eval.engine.swe_v1_remote_artifacts import _read_plan_evidence
 from opencollab_eval.engine.swe_v1_remote_pytest_proof import prolite_pytest_proof_plugin_source
@@ -51,7 +51,6 @@ def _execute_target(root, prefix, targets):
     return plan, evidence
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="P2-07: P2P skip is treated as an F2P failure")
 @pytest.mark.parametrize("mixed", [False, True])
 def test_executed_p2p_skip_matches_official_resolution_and_report_consumer(tmp_path, mixed):
     pytest.importorskip("swebench")
@@ -87,7 +86,28 @@ def test_executed_p2p_skip_matches_official_resolution_and_report_consumer(tmp_p
     assert verdict["resolved"] is True
     assert verdict["outcome"] == "resolved"
     tests_status = {
+        "pass_to_pass_skips_allowed": True,
         "fail_to_pass_plan": f2p_plan, "fail_to_pass_evidence": f2p_evidence, "fail_to_pass_status": 0,
         "pass_to_pass_plan": p2p_plan, "pass_to_pass_evidence": p2p_evidence, "pass_to_pass_status": 0,
     }
     assert _direct_eval_plan_status(tests_status, "pass_to_pass", p2p_plan, require_commands=True) == 0
+    strict = derive_eval_verdict(
+        artifacts, docker_exit=0, cleanup_quiesced=True, container_cleanup={"ok": True},
+        pass_to_pass_skips_allowed=False,
+    )
+    assert strict["outcome"] == "unresolved"
+    tests_status["pass_to_pass_skips_allowed"] = False
+    assert _direct_eval_plan_status(tests_status, "pass_to_pass", p2p_plan, require_commands=True) == 1
+    assert classify_evaluation(evidence=p2p_evidence).outcome.value == "unresolved"
+    unknown = [{**item, "target_skip_proof_matches_plan": False} for item in p2p_evidence]
+    unknown_verdict = classify_evaluation(evidence=f2p_evidence, pass_to_pass_evidence=unknown)
+    assert unknown_verdict.outcome.value == "technical_failure"
+    assert classify_evaluation(evidence=[], pass_to_pass_evidence=p2p_evidence).outcome.value == "technical_failure"
+    invalid_skip = [{**item, "status": 5} for item in p2p_evidence]
+    invalid_verdict = classify_evaluation(evidence=f2p_evidence, pass_to_pass_evidence=invalid_skip)
+    assert invalid_verdict.outcome.value == "technical_failure"
+    tests_status.pop("pass_to_pass_skips_allowed")
+    assert _direct_eval_plan_status(tests_status, "pass_to_pass", p2p_plan, require_commands=True) == 1
+    empty_plan = {**f2p_plan, "commands": [], "declared_targets": [], "target_batches": [], "proofs": []}
+    empty_status = {"fail_to_pass_plan": empty_plan, "fail_to_pass_evidence": [], "fail_to_pass_status": 0}
+    assert _direct_eval_plan_status(empty_status, "fail_to_pass", empty_plan, require_commands=True) is None

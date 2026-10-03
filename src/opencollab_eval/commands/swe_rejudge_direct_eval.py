@@ -171,6 +171,7 @@ def _updated_tests_status(source: dict, artifacts: dict, f2p_plan: dict, p2p_pla
     tests = dict(previous) if isinstance(previous, dict) else {}
     tests.update(
         {
+            "pass_to_pass_skips_allowed": tests.get("pass_to_pass_skips_allowed", False) is True,
             "base_commit_status": artifacts["base_commit_status"],
             "service_bootstrap_status": artifacts["service_status"],
             "before_repo_status": artifacts["before_status"],
@@ -324,6 +325,7 @@ def rejudge(
         docker_exit=int(source.get("docker_exit")),
         cleanup_quiesced=source.get("cleanup_quiesced") is True,
         container_cleanup=source.get("container_cleanup") or {},
+        pass_to_pass_skips_allowed=previous_tests.get("pass_to_pass_skips_allowed", False) is True,
     )
     if verdict["technical_error"]:
         raise RuntimeError(
