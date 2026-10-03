@@ -1,106 +1,87 @@
-"""Message reports preserve line endings from real scheduler queue envelopes."""
+"""Public team messages preserve exact line endings in persisted send evidence."""
 
 from __future__ import annotations
 
-import asyncio
 import json
+import re
 from pathlib import Path
-from types import SimpleNamespace
 
+import httpx
 import pytest
-from opencollab.adapters.tools.message import MessageAgentTool
-from opencollab.adapters.trace import Tracer
-from opencollab.adapters.worktree_pool import WorktreePool
-from opencollab.application.event_bus import EventBus
-from opencollab.application.scheduler import Scheduler
-from opencollab.application.session import Session
-from opencollab.application.tool_execution import ToolRuntime
-from opencollab.domain.scheduler import SessionControlBlock
-from opencollab.domain.session import SessionState
+from opencollab import OpenCollab
 
 from opencollab_eval.experiment.cell_report_messaging import received_events
 from opencollab_eval.experiment.cell_report_rows import run_rows
 
 
-async def _sink(event):
-    pass
-
-
-class LocalSession:
-    def __init__(self, role):
-        self.state = SessionState(messages=[])
-        self.agent = SimpleNamespace(name=role)
-        self.used_tokens = 0
-        self._turn_lock = asyncio.Lock()
-        self._loop_checkpoint_step = 0
-        self._loop_checkpoint_results = []
-        self._loop_checkpoint_prefix = []
-        self.runner = SimpleNamespace(pending_cleanup_tasks=(), reset_runtime_for_user_turn=lambda: None)
-        self.event_bus = EventBus(_sink)
-
-    async def add_user_message(self, content):
-        await Session.add_user_message(self, content)
-
-    async def run_loop(self):
-        self.state.consume_queued_external_user_turn()
-        self.state.append_message({"role": "assistant", "content": "received"})
-        self.state.mark_done()
-        return "received"
-
-    def snapshot(self):
-        messages, meta = Session._snapshot_for_save(self)
-        return dict(meta, messages=messages)
-
-
 @pytest.mark.parametrize("ending", ["\r\n", "\r"])
 @pytest.mark.parametrize("state", ["queued", "delivered", "recovered"])
-async def test_scheduler_line_endings_preserve_send_count(tmp_path: Path, ending: str, state: str):
+async def test_scheduler_line_endings_preserve_send_count(tmp_path: Path, monkeypatch, ending: str, state: str):
     runtime = tmp_path / "logs-team/case-a/trajectories/task-local/runtime-local"
-    runtime.mkdir(parents=True)
-    tracer = Tracer(run_id="line-endings", output_dir=str(runtime), filename="trajectory.jsonl")
-    scheduler = Scheduler(
-        session_factory=SimpleNamespace(),
-        worktree_pool=WorktreePool(str(tmp_path), use_worktrees=False),
-        event_sink=EventBus(_sink), tracer=tracer, roles=("lead", "coder"),
+    team = tmp_path / "team.yaml"
+    team.write_text(
+        "entry: lead\nroles:\n  lead:\n    tools: [message_agent]\n    prompt: LINE_ENDING_LEAD\n"
+        "  coder:\n    tools: [file_read]\n    prompt: LINE_ENDING_CODER\n"
+        "topology:\n  lead: [coder]\n  coder: []\n"
     )
-    lead, child = LocalSession("lead"), LocalSession("coder")
-    scheduler.register_lead(lead)
-    child.state.aid = 1
-    scheduler.table.add(SessionControlBlock(aid=1, parent_aid=0, agent=child.agent, state=child.state))
-    scheduler._sessions[1] = child
-    blocker = asyncio.get_running_loop().create_future()
-    scheduler._tasks[1] = blocker
     bodies = [f"line1{ending}first", f"line1{ending}other"]
-    try:
-        for index, body in enumerate(bodies):
-            arguments = {"to_role": "coder", "summary": "handoff", "content": body}
-            call_id = f"call-{index}"
-            lead.state.append_message({"role": "assistant", "tool_calls": [{
-                "id": call_id, "function": {"name": "message_agent", "arguments": json.dumps(arguments)},
-            }]})
-            receipt = await MessageAgentTool(scheduler).execute_with_runtime(
-                arguments, ToolRuntime(environment=None, safety_policy=None, permission_policy=None,
-                                       aid=0, tool_call_id=call_id),
-            )
-            lead.state.append_message({"role": "tool", "tool_call_id": call_id, "content": receipt})
-        if state == "delivered":
-            blocker.cancel()
-            await scheduler._drain_message_inbox(1)
-            await scheduler.wait_until_terminal(1)
-        tracer.flush()
-        if state == "recovered":
-            lead.state.messages.clear()
-            lead.state.message_timestamps.clear()
-            (runtime / "trajectory.jsonl").write_text('{"type":"message_sent","payload":')
-        for aid, session, role in [(0, lead, "lead"), (1, child, "coder")]:
-            (runtime / f"agent_{aid}_{role}.json").write_text(json.dumps(session.snapshot()))
-        (tmp_path / "metrics.jsonl").write_text(json.dumps({
-            "instance_id": "case-a", "trajectory_path": str(runtime / "trajectory.jsonl"),
-            "run_summary": {"status": "completed"},
-        }) + "\n")
-        rows = run_rows(tmp_path, "team")
-        assert rows[0].seats["0"].msg_agent_sent == 2
-        assert [event["content"] for event, _queued in received_events(child.snapshot())] == bodies
-    finally:
-        blocker.cancel()
-        tracer.close()
+
+    async def send(client, request, **kwargs):
+        payload = json.loads(request.content)
+        lead = any("LINE_ENDING_LEAD" in str(msg.get("content")) for msg in payload["messages"])
+        first = lead and not any(msg.get("role") == "tool" for msg in payload["messages"])
+        message = {"role": "assistant", "content": "received"}
+        if first:
+            message = {"role": "assistant", "content": None, "tool_calls": [{
+                "id": f"call-{index}", "type": "function", "function": {
+                    "name": "message_agent", "arguments": json.dumps({
+                        "to_role": "coder", "summary": "handoff", "content": body,
+                    }),
+                },
+            } for index, body in enumerate(bodies)]}
+        return httpx.Response(200, request=request, json={
+            "id": "chatcmpl-offline", "object": "chat.completion", "created": 1, "model": "offline-model",
+            "choices": [{"index": 0, "message": message, "finish_reason": "tool_calls" if first else "stop"}],
+            "usage": {"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30},
+        })
+
+    monkeypatch.setattr(httpx.AsyncClient, "send", send)
+    client = OpenCollab(tmp_path, provider="openai", model="offline-model", api_key="offline-fixture", config={
+        "wire_protocol": "chat_completions", "llm_stream_chat": False, "llm_max_retries": 0,
+    })
+    result = await client.team("Send both handoffs", config=team, artifacts=runtime, use_worktrees=False,
+                               prebuild_team=True, serialize_turns=True, budget=100000, max_steps=4, timeout=5)
+    assert result.status == "completed"
+    lead = next(runtime.glob("agent_0_*.json"))
+    receiver = next(runtime.glob("agent_1_*.json"))
+    snapshot = OpenCollab.read_session_snapshot(receiver)
+    events = received_events(snapshot)
+    assert [event["content"] for event, _queued in events] == bodies
+    if state != "delivered":
+        # Preserve the producer's envelopes in the supported pending-queue shape.
+        envelopes = [msg for msg in snapshot["messages"] if msg.get("role") == "user"
+                     and "<teammate-message" in str(msg.get("content"))]
+        envelope_xml = [xml for msg in envelopes for xml in re.findall(
+            r"<teammate-message\b[^>]*>[\s\S]*?</teammate-message>", msg["content"],
+        )]
+        assert len(envelope_xml) == 2
+        snapshot["messages"] = [{"role": "user", "content": "task"}]
+        snapshot["pending_messages"] = [{
+            **event, "role": "user", "message_content": event["content"],
+            "content": next(xml for xml in envelope_xml if event["message_id"] in xml),
+        } for event, _queued in events]
+        receiver.write_text(json.dumps(snapshot))
+        Path(f"{receiver}.journal").unlink(missing_ok=True)
+        assert OpenCollab.read_session_snapshot(receiver)["pending_messages"] == snapshot["pending_messages"]
+    if state == "recovered":
+        lead_snapshot = OpenCollab.read_session_snapshot(lead)
+        lead_snapshot["messages"] = [{"role": "user", "content": "task"}]
+        lead.write_text(json.dumps(lead_snapshot))
+        Path(f"{lead}.journal").unlink(missing_ok=True)
+        (runtime / "trajectory.jsonl").write_text('{"type":"message_sent","payload":')
+    (tmp_path / "metrics.jsonl").write_text(json.dumps({
+        "instance_id": "case-a", "trajectory_path": str(runtime / "trajectory.jsonl"),
+        "run_summary": {"status": "completed"},
+    }) + "\n")
+    rows = run_rows(tmp_path, "team")
+    assert rows[0].seats["0"].msg_agent_sent == 2
