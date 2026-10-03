@@ -5,10 +5,10 @@ import sys
 
 import pytest
 
-from experiment.analysis import merged_preds
 from opencollab_eval.commands import batch as batch_cli
 from tests.experiment import batch_support as launcher
 from tests.experiment.test_cell_report_attempt_seats import _identified_attempt
+from tests.experiment.test_research_integration import _merged_preds_module
 
 _oc_repo = pytest.fixture(name="oc_repo")(launcher.oc_repo.__wrapped__)
 _experiment = pytest.fixture(name="experiment")(launcher.experiment.__wrapped__)
@@ -20,6 +20,7 @@ _experiment = pytest.fixture(name="experiment")(launcher.experiment.__wrapped__)
 ])
 def test_merged_cli_counts_actual_adopted_attempt(experiment, tmp_path, monkeypatch, capsys,
                                                 status, later_count, selected):
+    merged_preds = _merged_preds_module()
     original_spec = experiment["spec"]
     text = original_spec.read_text().replace("rows: {start: 1, stop: 2}", "rows: {start: 1, stop: 1}")
     original_spec.write_text(text)
