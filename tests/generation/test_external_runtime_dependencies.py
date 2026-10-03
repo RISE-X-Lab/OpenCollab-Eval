@@ -20,7 +20,6 @@ from opencollab_eval.generation.generation_runtime_dependencies import (
 )
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="P2-03: external snapshot removes image dependencies")
 def test_external_solver_reuses_ignored_runtime_dependencies_before_trusted_capture(monkeypatch, tmp_path):
     node = shutil.which("node")
     if node is None:

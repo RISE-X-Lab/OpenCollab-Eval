@@ -3,10 +3,20 @@
 from __future__ import annotations
 
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 
 from opencollab_eval.generation import gen_prediction_openhands as gpo
+
+
+@pytest.fixture(autouse=True)
+def isolated_external_runtime_dependencies(monkeypatch):
+    """Keep unit-test container doubles independent of Docker dependency I/O."""
+    runtime = SimpleNamespace(store="/tmp/fixture-runtime", roots=())
+    monkeypatch.setattr(gpo.gp, "stash_solver_runtime_dependencies", lambda *a, **k: runtime)
+    monkeypatch.setattr(gpo.gp, "restore_solver_runtime_dependencies", lambda *a, **k: None)
+    monkeypatch.setattr(gpo.gp, "remove_solver_runtime_dependencies", lambda *a, **k: None)
 
 
 def install_fake_openhands_process(

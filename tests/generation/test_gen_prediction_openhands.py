@@ -21,6 +21,9 @@ from opencollab_eval.generation.gen_prediction_snapshot import SolverGitSnapshot
 from tests.support.gen_prediction_openhands_support import (
     install_fake_openhands_process as _install_fake_openhands_process,
 )
+from tests.support.gen_prediction_openhands_support import (
+    isolated_external_runtime_dependencies as _isolated_external_runtime_dependencies,  # noqa: F401
+)
 from tests.support.paths import SOURCE_ROOT
 
 

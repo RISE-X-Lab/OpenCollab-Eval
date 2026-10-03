@@ -10,6 +10,9 @@ import pytest
 from opencollab_eval.generation import gen_prediction_openhands as gpo
 from opencollab_eval.generation.gen_prediction_snapshot import SolverGitSnapshot
 from tests.support.gen_prediction_openhands_support import install_fake_openhands_process
+from tests.support.gen_prediction_openhands_support import (
+    isolated_external_runtime_dependencies as _isolated_external_runtime_dependencies,  # noqa: F401
+)
 
 
 def test_main_persists_delayed_cleanup_failure(
