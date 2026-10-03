@@ -250,7 +250,6 @@ def test_openhands_finalization_returns_cleanup_error_after_attempting_all_steps
     assert any("container finalization failed" in note for note in notes)
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="P2-05: evidence copy failure deletes its source")
 def test_openhands_evidence_copy_failure_keeps_original_attempt(monkeypatch, tmp_path):
     source = tmp_path / "attempt"
     source.mkdir()
