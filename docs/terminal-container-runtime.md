@@ -65,3 +65,5 @@ process exit, then adopt the same selected candidate. They also cover successful
 and nonzero exits, unresolved output, active-command rejection, candidate identity,
 and container state. The tests run without model requests or a Docker daemon.
 
+
+[Terminal verifier preparation](terminal-verifier-preparation.md) provides the scoring entry point for task-provided login checks and fresh output isolation.

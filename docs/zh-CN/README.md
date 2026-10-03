@@ -38,3 +38,5 @@
 [可信候选构造](design/trusted-candidate-construction.md)介绍已经实现的、由控制器持有 Git 状态的投影机制。[确定性 SWE 端到端测试](testing/deterministic-swe-e2e.md)介绍基于已安装 wheel 的测试。该测试使用临时 SSH、伪模型服务、Docker、候选提取以及官方目标执行。
 
 设计记录解释实现决策，测试记录说明可执行的验证方法。具体命令见快速入门、Pro-Lite、CLI 与故障排查指南。
+
+[Terminal评分准备](terminal-verifier-preparation.md)说明任务环境前提、新输出隔离和原评分时限。

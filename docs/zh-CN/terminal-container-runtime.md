@@ -42,3 +42,5 @@ Docker 命令包装需要 Linux、Bash、`setsid`、GNU `env` 及其 `--default-
 ## 回归覆盖
 
 命令生命周期测试使用真实本地子进程，并替换 Docker 传输。测试复现取消传输失败后进程延迟退出的情况，随后采纳同一个选中候选。测试还覆盖成功与非零退出、未解决输出、活动命令拒绝、候选身份和容器状态。测试运行无需模型请求或 Docker daemon。
+
+[Terminal评分准备](terminal-verifier-preparation.md)提供题面登录检查与新输出隔离的评分入口。
