@@ -245,3 +245,56 @@ def test_openhands_finalization_returns_cleanup_error_after_attempting_all_steps
     notes = getattr(baseline_error, "__notes__", [])
     assert any("evidence copy failed" in note for note in notes)
     assert any("container finalization failed" in note for note in notes)
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason="P2-05: evidence copy failure deletes its source")
+def test_openhands_evidence_copy_failure_keeps_original_attempt(monkeypatch, tmp_path):
+    source = tmp_path / "attempt"
+    source.mkdir()
+    transcript = source / "trajectory.jsonl"
+    transcript.write_text('{"event":"completed"}\n')
+    destination = tmp_path / "evidence" / "attempt"
+    generation_error = RuntimeError("generation failed")
+    metrics = {}
+    finalizations = []
+
+    def partial_copy(*args, **kwargs):
+        destination.mkdir(parents=True)
+        (destination / "partial.log").write_text("incomplete")
+        raise OSError("destination out of space")
+
+    monkeypatch.setattr(gpo.shutil, "copytree", partial_copy)
+    monkeypatch.setattr(gpo.gp, "output_staging_requires_container_preservation", lambda *a, **k: False)
+    monkeypatch.setattr(gpo.gp, "finalize_container_ownership", lambda **kwargs: finalizations.append(kwargs))
+    returned = gpo._cleanup_openhands_attempt(
+        trusted_baseline=None, evidence_dir=destination, openhands_dir=source, run_dir=tmp_path,
+        cid="container-123", name="oc-oh-test", pending_required=False, pending_path=None,
+        metrics=metrics, patch="", generation_error=generation_error, keep_container=False,
+    )
+
+    assert returned is generation_error
+    assert len(finalizations) == 1
+    assert source.exists()
+    assert transcript.read_text() == '{"event":"completed"}\n'
+    assert metrics["openhands_evidence_recovery_path"] == str(source)
+    assert any(str(source) in note for note in getattr(generation_error, "__notes__", []))
+
+
+def test_openhands_successful_evidence_copy_removes_original_attempt(monkeypatch, tmp_path):
+    source = tmp_path / "attempt"
+    source.mkdir()
+    (source / "trajectory.jsonl").write_text('{"event":"completed"}\n')
+    destination = tmp_path / "evidence" / "attempt"
+    monkeypatch.setattr(gpo.gp, "output_staging_requires_container_preservation", lambda *a, **k: False)
+    monkeypatch.setattr(gpo.gp, "finalize_container_ownership", lambda **kwargs: None)
+    monkeypatch.setattr(gpo.gp, "metrics_have_completed_identity", lambda *args: True)
+
+    returned = gpo._cleanup_openhands_attempt(
+        trusted_baseline=None, evidence_dir=destination, openhands_dir=source, run_dir=tmp_path,
+        cid="container-123", name="oc-oh-test", pending_required=False, pending_path=None,
+        metrics={}, patch="", generation_error=None, keep_container=False,
+    )
+
+    assert returned is None
+    assert not source.exists()
+    assert (destination / "trajectory.jsonl").read_text() == '{"event":"completed"}\n'
