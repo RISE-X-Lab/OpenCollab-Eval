@@ -9,9 +9,7 @@ from tests.experiment.cell_report_support import _seat_file, _write_metrics
 
 
 @pytest.mark.parametrize("location", ["local", "pulled"])
-@pytest.mark.parametrize("shape", ["directory", pytest.param("file", marks=pytest.mark.xfail(
-    strict=True, reason="P2-16 trajectory files are mistaken for snapshot directories",
-))])
+@pytest.mark.parametrize("shape", ["directory", "file"])
 def test_single_snapshot_paths(tmp_path: Path, location: str, shape: str):
     cell = tmp_path / "cell"
     directory = cell / "agent-first"
