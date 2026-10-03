@@ -123,7 +123,9 @@ def test_agent_delegates_to_public_runtime_with_bound_configuration(
     assert call["budget"] == 4321
     assert call["max_steps"] == 9
     assert call["profile"] == "single2"
-    assert {"tools", "system_prompt", "name"}.isdisjoint(call)
+    assert call["tools"] == [sentinel_tool]
+    assert isinstance(call["system_prompt"], str)
+    assert "name" not in call
     assert 0 < call["timeout"] <= 600
     assert call["trace"] is True
     assert Path(call["artifacts"]).parent == tmp_path / "trajectories" / "public-agent"
@@ -134,6 +136,38 @@ def test_agent_delegates_to_public_runtime_with_bound_configuration(
     assert result.patch == env.diff
     assert result.submission_eligible is True
     assert env.cleaned_up is True
+
+
+@pytest.mark.parametrize("with_tool", [False, True])
+def test_public_agent_preserves_explicit_prompt_and_exact_caller_tools(monkeypatch, tmp_path, with_tool):
+    calls = []
+    requested_prompt = "Use inventory terminology and keep the caller's instructions."
+    requested_tools = [object()] if with_tool else []
+
+    class Client:
+        async def agent(self, description, **kwargs):
+            calls.append((description, kwargs))
+            return RunResult(output="done", status="completed", metrics={"session_quiesced": True})
+
+    _install_client(monkeypatch, Client)
+
+    async def env_factory(task):
+        return FakeEnv()
+
+    result = run(run_eval_task(
+        EvalTask(task_id="explicit-options", description="Repair inventory parser",
+                 extras={"fail_to_pass": ["hidden/test_inventory.py::test_private"]}),
+        output_dir=str(tmp_path), prompt=requested_prompt, tools_factory=lambda: requested_tools,
+        env_factory=env_factory, agent_profile="single2",
+    ))
+
+    assert result.error is None
+    description, options = calls[0]
+    assert description == "Repair inventory parser"
+    assert options.get("tools") == requested_tools
+    assert options.get("system_prompt", "").startswith(requested_prompt)
+    assert "test_private" not in options["system_prompt"]
+    assert options["profile"] == "single2"
 
 
 @pytest.mark.parametrize(

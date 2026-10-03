@@ -53,7 +53,7 @@ def single_candidate(tmp_path, monkeypatch):
         return True
 
     monkeypatch.setattr(sys, "argv", ["generator", "--instance-file", str(instance), "--output", str(output)])
-    monkeypatch.setattr(gp, "get_config", lambda _root: {"model": "model", "provider": "provider"})
+    monkeypatch.setattr(gp, "get_config", lambda _root, **_kwargs: {"model": "model", "provider": "provider"})
     monkeypatch.setattr(gp, "start_container_with_marker", start)
     monkeypatch.setattr(gp, "container_image_id", lambda _cid: "sha256:" + "8" * 64)
     monkeypatch.setattr(gp, "prepare_testbed_environment", lambda _cid: None)

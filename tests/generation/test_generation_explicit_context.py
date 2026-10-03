@@ -63,7 +63,7 @@ def test_single_agent_metrics_keep_explicit_context(monkeypatch, tmp_path):
     config = resolve_runtime_config(tmp_path, overrides={
         "model": "unknown-model", "provider": "openai", "context_window": 1_048_576,
     })
-    monkeypatch.setattr(gp, "get_config", lambda *_: config)
+    monkeypatch.setattr(gp, "get_config", lambda *_, **_kwargs: config)
     monkeypatch.setattr(gp, "start_container_with_marker", lambda *a, **kw: "unused-container")
     monkeypatch.setattr(gp, "prepare_testbed_environment", lambda *_: None)
     monkeypatch.setattr(gp, "stash_solver_runtime_dependencies", lambda *_: None)

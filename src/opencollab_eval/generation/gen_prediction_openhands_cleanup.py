@@ -62,11 +62,13 @@ def cleanup_openhands_attempt(
         evidence_dir.parent.mkdir(parents=True, exist_ok=True)
         shutil_module.copytree(openhands_dir, evidence_dir)
     except BaseException as exc:
-        record("OpenHands evidence copy", exc)
-    try:
-        shutil_module.rmtree(openhands_dir, ignore_errors=True)
-    except BaseException as exc:
-        record("OpenHands temporary directory cleanup", exc)
+        metrics["openhands_evidence_recovery_path"] = str(openhands_dir)
+        record(f"OpenHands evidence copy (source retained at {openhands_dir})", exc)
+    else:
+        try:
+            shutil_module.rmtree(openhands_dir, ignore_errors=True)
+        except BaseException as exc:
+            record("OpenHands temporary directory cleanup", exc)
 
     preserve = False
     try:

@@ -519,7 +519,14 @@ async def generate(
         raise
     finally:
         cleanup_failures = ()
-        retention_required = trusted_baseline is not None and metrics.get("patch_extraction_succeeded") is not True
+        staged_owner = gp._read_owner(gp.container_owner_path(run_dir, name)) if pending_required else None
+        staging_protected = staged_owner is not None and staged_owner["state"] in {
+            "candidate_staged", "preservation_required",
+        }
+        retention_required = trusted_baseline is not None and (
+            metrics.get("patch_extraction_succeeded") is not True
+            or generation_error is not None and pending_path is None and not staging_protected
+        )
         if retention_required:
             try:
                 retain_failed_candidate(
@@ -536,6 +543,8 @@ async def generate(
                     workflow_log_dir=workflow_log_dir,
                     task_id=getattr(task, "task_id", None),
                     trajectory_path=getattr(result, "trajectory_path", None),
+                    reason="candidate_record_unwritten" if metrics.get("patch_extraction_succeeded") is True
+                    else "trusted_patch_extraction_incomplete",
                 )
             except BaseException as retention_error:
                 if generation_error is None:
@@ -699,11 +708,9 @@ def main() -> None:
         workflow_fn, wf_label = generate_review_fix, "generate_review_fix"
     args.blind_validation = _resolve_blind_validation(workflow_fn, args.blind_validation, wf_label)
 
-    cfg = get_config(str(_REPO_ROOT))
-    if args.model:
-        cfg["model"] = args.model
-    if args.provider:
-        cfg["provider"] = args.provider
+    cfg = get_config(
+        str(_REPO_ROOT), overrides={"model": args.model, "provider": args.provider},
+    )
     if args.temperature is not None:
         if not 0.0 <= args.temperature <= 2.0:
             ap.error("--temperature must be between 0 and 2")

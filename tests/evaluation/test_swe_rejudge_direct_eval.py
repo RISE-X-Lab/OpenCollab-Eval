@@ -30,6 +30,7 @@ from tests.support.swe_v1_prolite_runner_test_support import controller_proof_te
 
 def _assert_resolved_verdict(verdict: dict) -> None:
     assert verdict == {
+        "pass_to_pass_skips_allowed": True,
         "outcome": "resolved",
         "outcome_basis": ["all_declared_targets_passed"],
         "technical_reasons": [], "technical_error": False,
@@ -560,6 +561,7 @@ def test_log_text_alone_cannot_assign_infrastructure_failure(tmp_path: Path) -> 
     [
         "permission",
         "evidence",
+        "strict_p2p_policy",
         "attempt_eval_patch_mismatch",
         "attempt_image_mismatch",
         "source_identity_missing",
@@ -570,7 +572,7 @@ def test_log_text_alone_cannot_assign_infrastructure_failure(tmp_path: Path) -> 
     ],
 )
 def test_rejudge_writes_derived_summary_without_mutating_evidence(
-    tmp_path: Path, case: str
+    tmp_path: Path, case: str, monkeypatch
 ) -> None:
     task = "task-1"
     record_id = "record-1"
@@ -634,6 +636,17 @@ def test_rejudge_writes_derived_summary_without_mutating_evidence(
             "pass_to_pass_plan": p2p_plan,
         },
     }
+    if case == "strict_p2p_policy":
+        from opencollab_eval.commands import swe_rejudge_direct_eval as command
+
+        source["tests_status"]["pass_to_pass_skips_allowed"] = False
+        original_verdict = command.derive_eval_verdict
+
+        def strict_verdict(*args, **kwargs):
+            assert kwargs["pass_to_pass_skips_allowed"] is False
+            return original_verdict(*args, **kwargs)
+
+        monkeypatch.setattr(command, "derive_eval_verdict", strict_verdict)
     attempt = {
         "phase": "eval_attempt_started",
         "task": task,
@@ -684,6 +697,7 @@ def test_rejudge_writes_derived_summary_without_mutating_evidence(
     derived = rejudge(eval_dir, output_dir)
 
     assert derived["status"] == "done"
+    assert derived["tests_status"]["pass_to_pass_skips_allowed"] is False
     assert derived["resolved"] is False
     assert derived["technical_reasons"] == []
     assert derived["output_artifact_errors"] == []

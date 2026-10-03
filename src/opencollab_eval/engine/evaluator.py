@@ -537,8 +537,18 @@ async def run_eval_batch(
     workers = [asyncio.create_task(run_one(task)) for task in tasks]
     try:
         return await asyncio.gather(*workers)
-    except BaseException:
-        await _cancel_and_wait_eval_workers(workers)
+    except BaseException as original:
+        await await_owned_operation(_cancel_and_wait_eval_workers(workers))
+        completed = [worker.result() for worker in workers if not worker.cancelled() and worker.exception() is None]
+        if completed:
+            try:
+                save_results(completed, os.path.join(kwargs.get("output_dir", "eval_results"), "results.jsonl"))
+            except BaseException as persistence_error:
+                add_exception_note(
+                    original,
+                    "completed batch results could not be saved: "
+                    f"{type(persistence_error).__name__}: {persistence_error}",
+                )
         raise
 
 

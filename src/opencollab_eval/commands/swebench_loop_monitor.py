@@ -15,11 +15,11 @@ from pathlib import Path
 from typing import Any, BinaryIO
 
 from opencollab_eval.commands import swebench_loop_analysis as loop_analysis
+from opencollab_eval.commands.swebench_loop_snapshots import native_snapshot_inputs, read_native_snapshot
 from opencollab_eval.safe_files import (
     directory_handle_matches_path,
     ensure_directory_no_symlinks,
     open_directory_no_symlinks,
-    regular_path_identity,
     write_regular_bytes_atomic,
 )
 
@@ -319,7 +319,7 @@ def _event_paths_status(
 
 
 def _session_paths_status(session_root: Path) -> tuple[list[Path], list[str]]:
-    paths: list[Path] = []
+    paths: set[Path] = set()
     errors: list[str] = []
     pending = [session_root]
     scanned = 0
@@ -347,9 +347,13 @@ def _session_paths_status(session_root: Path) -> tuple[list[Path], list[str]]:
                         f"{entry.path}: {type(exc).__name__}: {exc}"
                     )
                     continue
-                if not fnmatch.fnmatch(entry.name, "agent_*.json"):
+                # A base snapshot and its journal identify the same session.
+                name = entry.name.removesuffix(".journal")
+                if not any(fnmatch.fnmatch(name, pattern) for pattern in (
+                    "agent.json", "agent_*.json", "[0-9][0-9][0-9]_*.json",
+                )):
                     continue
-                paths.append(Path(entry.path))
+                paths.add(directory / name)
                 if len(paths) > MAX_SESSION_FILES:
                     raise ValueError(
                         f"session files exceed limit of {MAX_SESSION_FILES}"
@@ -423,14 +427,11 @@ def _session_messages_status(
     total_bytes = 0
     for path in paths:
         try:
-            _dev, _ino, file_bytes, _mtime, _ctime = regular_path_identity(path)
-            total_bytes += file_bytes
+            identities = native_snapshot_inputs(path)
+            total_bytes += sum(identity[2] for identity in identities.values() if identity is not None)
             if total_bytes > MAX_SESSION_TOTAL_BYTES:
-                raise ValueError(
-                    "session inputs exceed total byte limit of "
-                    f"{MAX_SESSION_TOTAL_BYTES}"
-                )
-            obj = _load_json_strict(path, expected_size=file_bytes)
+                raise ValueError(f"session inputs exceed total byte limit of {MAX_SESSION_TOTAL_BYTES}")
+            obj = read_native_snapshot(path, identities=identities, max_file_bytes=MAX_SESSION_JSON_BYTES)
         except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
             errors.append(f"{path}: {type(exc).__name__}: {exc}")
             continue
@@ -438,7 +439,7 @@ def _session_messages_status(
             errors.append(f"{path}: session JSON is not an object")
             continue
         role = str(obj.get("role") or "")[:500]
-        aid = str(obj.get("aid") or "")[:500]
+        aid = str(obj["aid"] if obj.get("aid") is not None else "")[:500]
         raw_messages = obj.get("messages")
         if not isinstance(raw_messages, list):
             errors.append(f"{path}: session messages is not a list")
@@ -544,7 +545,7 @@ def _discover_event_analysis(
                 saw_event = True
                 etype = _event_type(event)
                 data = _event_data(event)
-                aid = str(data.get("aid") or "")[:500]
+                aid = str(data["aid"] if data.get("aid") is not None else "")[:500]
                 if etype == "loop_detected":
                     loop_count += 1
                     tool = str(data.get("tool") or "unknown")[:500]

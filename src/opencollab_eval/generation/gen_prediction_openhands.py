@@ -475,9 +475,11 @@ def main() -> None:
     print(f"Container: {cid}")
     try:
         generation_image_id = container_guard.container_image_id(cid)
+        solver_runtime = gp.stash_solver_runtime_dependencies(cid, instance["base_commit"])
         snapshot_evidence = prepare_solver_git_snapshot(cid, instance["base_commit"])
         snapshot_prepared = True
         trusted_baseline = prepare_trusted_patch_baseline(cid, snapshot_evidence)
+        gp.restore_solver_runtime_dependencies(cid, solver_runtime)
         prompt_file = openhands_dir / "prompt.md"
         openhands_dir.mkdir(parents=True, exist_ok=True)
         solver_instance_file = openhands_dir / "solver_instance.json"
@@ -562,6 +564,7 @@ def main() -> None:
             process_quiesced = _openhands_patch_extraction_allowed(metrics)
             if process_quiesced:
                 try:
+                    gp.remove_solver_runtime_dependencies(cid, solver_runtime)
                     (
                         patch,
                         removed_validation_artifacts,
@@ -658,6 +661,7 @@ def main() -> None:
                         else "technical_failure"
                     ),
                 )
+            metrics["solver_runtime_dependencies"] = list(solver_runtime.roots)
             if removed_validation_artifacts:
                 metrics["validation_artifacts_removed"] = removed_validation_artifacts
         metrics.update(
@@ -709,12 +713,8 @@ def main() -> None:
                 },
                 "budget": args.budget,
                 "max_steps": args.max_steps,
-                "empty_patch_rejections": max(
-                    0, args.empty_patch_rejections
-                ),
-                "openhands_empty_patch_rejections": max(
-                    0, args.empty_patch_rejections
-                ),
+                "empty_patch_rejections": max(0, args.empty_patch_rejections),
+                "openhands_empty_patch_rejections": max(0, args.empty_patch_rejections),
                 "openhands_command_sha256": hashlib.sha256(
                     args.command.encode("utf-8")
                 ).hexdigest(),

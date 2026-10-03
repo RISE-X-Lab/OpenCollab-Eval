@@ -253,8 +253,14 @@ def build_summary(
     roots = [Path(path) for path in run_dirs]
     api_usage = collect_api_usage(roots, model_filter=model_filter)
     workflow = collect_workflow_usage(roots)
-    source = "api_usage" if api_usage["calls"] else "workflow_log"
-    total_tokens = api_usage["total_tokens"] if api_usage["calls"] else workflow["total_tokens"]
+    if api_usage["calls"]:
+        source, total_tokens = "api_usage", api_usage["total_tokens"]
+    elif model_filter:
+        # Workflow summaries carry no model identity, so they cannot establish
+        # usage for a requested model with no matching API records.
+        source, total_tokens = "no_matching_api_usage", 0
+    else:
+        source, total_tokens = "workflow_log", workflow["total_tokens"]
     cost_usd = api_usage["cost_usd"] if api_usage.get("cost_usd_complete") else None
     billable: dict[str, Any] = {
         "source": source,
@@ -274,7 +280,13 @@ def build_summary(
         "api_covers_workflow": bool(api_usage["calls"])
         and api_usage["total_tokens"] >= workflow["total_tokens"],
     }
-    if workflow_delta > 0:
+    if model_filter:
+        consistency = {
+            "api_minus_workflow_tokens": None,
+            "api_covers_workflow": None,
+            "note": "workflow totals are unfiltered and cannot be compared with model-filtered API usage",
+        }
+    elif workflow_delta > 0:
         consistency["note"] = (
             "api_usage includes successful model calls that did not form a complete workflow record"
         )

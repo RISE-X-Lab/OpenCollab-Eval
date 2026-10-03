@@ -6,8 +6,10 @@ import os
 import subprocess
 import sys
 from contextlib import contextmanager
+from types import SimpleNamespace
 
 import pytest
+from opencollab import OpenCollab
 
 from opencollab_eval.commands import glm_token_monitor as monitor
 
@@ -335,3 +337,77 @@ def test_glm_monitor_cli_returns_nonzero_for_incomplete_input(tmp_path):
 
     assert result.returncode == 2
     assert "input_status: incomplete" in result.stdout
+
+
+@pytest.mark.parametrize("creation_price", [None, 2.0])
+def test_known_cache_creation_is_reported_and_priced(tmp_path, monkeypatch, capsys, creation_price):
+    (tmp_path / "run.jsonl").write_text(json.dumps({
+        "type": "llm_call", "payload": {"model": "glm-5.2", "usage": {
+            "input_tokens": 1000, "uncached_input_tokens": 200, "cache_read_tokens": 300,
+            "cache_creation_tokens": 500, "output_tokens": 100, "total_tokens": 1100,
+        }},
+    }) + "\n")
+    args = ["monitor", "--trajectories-dir", str(tmp_path), "--input-price-per-mtok", "1.4",
+            "--cached-input-price-per-mtok", "0.26", "--output-price-per-mtok", "4.4"]
+    if creation_price is not None:
+        args.extend(["--cache-creation-price-per-mtok", str(creation_price)])
+    monkeypatch.setattr(sys, "argv", args)
+    assert monitor.main() == 0
+    output = capsys.readouterr().out
+    assert "cache_creation=500" in output
+    expected = 0.001498 if creation_price is None else 0.001798
+    assert f"cost_usd_from_logged_usage: ${expected:.6f}" in output
+    totals = monitor.collect(tmp_path, "glm-5.2")
+    assert totals["cache_creation_tokens"] == 500
+    assert totals["uncached_input_tokens"] == 200
+
+
+@pytest.mark.parametrize("cached_tokens", [300, None])
+async def test_responses_unknown_cache_is_kept_in_cost_estimate(tmp_path, monkeypatch, capsys, cached_tokens):
+    details = {} if cached_tokens is None else {"cached_tokens": cached_tokens}
+    raw_usage = {"input_tokens": 1000, "output_tokens": 100, "input_tokens_details": details}
+    class Model:
+        model = "glm-5.2"
+
+        def context_window(self):
+            return 400000
+
+        async def complete(self, *args, **kwargs):
+            return SimpleNamespace(
+                content="done", tool_calls=[], finish_reason="stop", reasoning=None,
+                provider_items=[], provider_state=None,
+                usage=SimpleNamespace(input_tokens=1000, output_tokens=100, total_tokens=1100,
+                                      cache_read_tokens=cached_tokens, cache_creation_tokens=None,
+                                      estimated=False, raw_usage=raw_usage),
+            )
+
+    client = OpenCollab(tmp_path, provider="openai", model="glm-5.2", api_key="offline-fixture")
+    result = await client.agent("task", tools=[], llm=Model(), artifacts=tmp_path / "native",
+                                budget=10000, max_steps=1, timeout=2)
+    assert result.status == "completed"
+    residual = 1000 - (cached_tokens or 0)
+    totals = monitor.collect(tmp_path, "glm-5.2")
+    assert totals["unknown_cache_calls"] == 1
+    assert totals["unknown_cache_input_tokens"] == residual
+    assert totals["uncached_input_tokens"] == residual
+    monkeypatch.setattr(sys, "argv", ["monitor", "--trajectories-dir", str(tmp_path),
+        "--input-price-per-mtok", "1.4", "--cached-input-price-per-mtok", "0.26",
+        "--output-price-per-mtok", "4.4"])
+    assert monitor.main() == 0
+    output = capsys.readouterr().out
+    expected = residual / 1_000_000 * 1.4 + (cached_tokens or 0) / 1_000_000 * .26 + .00044
+    assert f"cost_usd_estimate: ${expected:.6f}" in output
+    assert "cost_usd_from_logged_usage" not in output
+
+
+def test_explicit_zero_cache_counters_are_known(tmp_path):
+    (tmp_path / "run.jsonl").write_text(json.dumps({
+        "type": "llm_call", "payload": {"model": "glm-5.2", "usage": {
+            "input_tokens": 1000, "uncached_input_tokens": 1000, "cache_read_tokens": 0,
+            "cache_creation_tokens": 0, "output_tokens": 100,
+        }},
+    }) + "\n")
+    totals = monitor.collect(tmp_path, "glm-5.2")
+    assert totals["unknown_cache_calls"] == 0
+    assert totals["unknown_cache_input_tokens"] == 0
+    assert totals["uncached_input_tokens"] == 1000

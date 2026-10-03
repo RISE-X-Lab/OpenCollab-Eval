@@ -98,12 +98,9 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="print which out-dir each instance is taken from and stop")
     arguments = parser.parse_args()
     lines, table = build(arguments.spec, arguments.experiment_dir)
-    # An instance that was re-run has more than one attempt. Asking instead
-    # whether the chosen attempt is the *last* one answers "yes" for every row
-    # -- the rule picks the last attempt that ran -- and so reports a merged
-    # file as if nothing had been merged. That predicate was written here once
-    # and printed "0 taken from a later attempt" for a cell with seven.
-    superseded = [t for t in table if t[3] > 1]
+    # Count adopted later attempts. A failed retry can retain the original
+    # valid prediction even though the instance has multiple attempts.
+    superseded = [t for t in table if t[2] > 1]
     print(f"{len(lines)} predictions; {len(superseded)} taken from a later attempt")
     for instance_id, source, attempt, attempts, status in table:
         if attempts > 1 or arguments.check:

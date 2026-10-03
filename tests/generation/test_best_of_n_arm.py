@@ -425,7 +425,7 @@ def _run_main(monkeypatch, tmp_path, patches: dict[str, str]) -> Path:
     monkeypatch.setattr(
         bon,
         "get_config",
-        lambda root: {"model": "model", "provider": "provider"},
+        lambda root, **_kwargs: {"model": "model", "provider": "provider"},
     )
 
     async def fake_run_agent(task, cid, cfg, max_steps, budget, timeout, **kwargs):

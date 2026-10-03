@@ -19,6 +19,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -223,9 +224,13 @@ class _DirectResponse:
         self,
         response: http.client.HTTPResponse,
         connection: http.client.HTTPConnection,
+        upstream_socket: socket.socket | None = None,
     ) -> None:
         self._response = response
         self._connection = connection
+        self._socket = upstream_socket if upstream_socket is not None else getattr(connection, "sock", None)
+        self._close_lock = threading.Lock()
+        self._closed = False
         self.status = response.status
         self.headers = response.headers
 
@@ -236,8 +241,21 @@ class _DirectResponse:
         self.close()
 
     def close(self) -> None:
-        self._response.close()
-        self._connection.close()
+        with self._close_lock:
+            if self._closed:
+                return
+            self._closed = True
+            # Wake a body read before waiting for the response's buffered I/O
+            # lock. Keep the request lease owned until this close completes.
+            if self._socket is not None:
+                try:
+                    self._socket.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+            try:
+                self._response.close()
+            finally:
+                self._connection.close()
 
     def read(self, size: int = -1) -> bytes:
         return self._response.read(size)
@@ -267,6 +285,32 @@ def _abort_connection(connection: http.client.HTTPConnection) -> None:
         except OSError:
             pass
     connection.close()
+
+
+@contextmanager
+def _watch_response_disconnect(response, client, *, enabled):
+    """Close a cancellable response even while the owning handler is reading."""
+    if not enabled:
+        yield
+        return
+    stopped = threading.Event()
+
+    def watch():
+        while not stopped.wait(UPSTREAM_OPEN_POLL_SECONDS):
+            if _client_disconnected(client):
+                try:
+                    response.close()
+                except OSError:
+                    pass
+                return
+
+    worker = threading.Thread(target=watch, daemon=True)
+    worker.start()
+    try:
+        yield
+    finally:
+        stopped.set()
+        worker.join()
 
 
 def _configured_http_proxy(target: urllib.parse.SplitResult) -> urllib.parse.SplitResult | None:
@@ -334,7 +378,8 @@ def _open_direct_upstream(
                 body=request.data,
                 headers=dict(request.header_items()),
             )
-            result.put((_DirectResponse(connection.getresponse(), connection), None))
+            upstream_socket = connection.sock
+            result.put((_DirectResponse(connection.getresponse(), connection, upstream_socket), None))
         except BaseException as exc:
             result.put((None, exc))
 
@@ -529,7 +574,7 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                 )
                 self._json(502, {"error": "upstream_request_failed"})
                 return
-            with response:
+            with response, _watch_response_disconnect(response, self.connection, enabled=config.direct_upstream):
                 if aggregate_stream and int(response.status) < 400:
                     if "text/event-stream" not in response.headers.get("Content-Type", ""):
                         self._json(502, {"error": "invalid_upstream_stream"})
