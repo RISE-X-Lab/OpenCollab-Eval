@@ -25,9 +25,11 @@ async def test_scheduler_line_endings_preserve_send_count(tmp_path: Path, monkey
         "topology:\n  lead: [coder]\n  coder: []\n"
     )
     bodies = [f"line1{ending}first", f"line1{ending}other"]
+    requests = []
 
     async def send(client, request, **kwargs):
         payload = json.loads(request.content)
+        requests.append({"keys": list(payload), "stream": payload.get("stream"), "path": request.url.path})
         lead = any("LINE_ENDING_LEAD" in str(msg.get("content")) for msg in payload["messages"])
         first = lead and not any(msg.get("role") == "tool" for msg in payload["messages"])
         message = {"role": "assistant", "content": "received"}
@@ -51,7 +53,7 @@ async def test_scheduler_line_endings_preserve_send_count(tmp_path: Path, monkey
     })
     result = await client.team("Send both handoffs", config=team, artifacts=runtime, use_worktrees=False,
                                prebuild_team=True, serialize_turns=True, budget=100000, max_steps=4, timeout=5)
-    assert result.status == "completed"
+    assert result.status == "completed", f"{result}; requests={requests}"
     lead = next(runtime.glob("agent_0_*.json"))
     receiver = next(runtime.glob("agent_1_*.json"))
     snapshot = OpenCollab.read_session_snapshot(receiver)
