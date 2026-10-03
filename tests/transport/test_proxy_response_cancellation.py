@@ -16,7 +16,9 @@ from opencollab_eval.commands.provider_limits import install
 def _handler(config, streaming=False, aggregate=False):
     handler_type = proxy.make_handler(config)
     handler = handler_type.__new__(handler_type)
-    body = json.dumps({"model": "fixture", "input": "ordinary request", "stream": streaming}).encode()
+    payload = {"model": "fixture", "stream": streaming}
+    payload.update({"messages": []} if aggregate else {"input": "ordinary request"})
+    body = json.dumps(payload).encode()
     handler.path = "/v1/chat/completions" if aggregate else "/v1/responses"
     handler.headers = {"Authorization": "Bearer fixture-client", "Content-Length": str(len(body))}
     handler.rfile = io.BytesIO(body)
@@ -28,7 +30,7 @@ def _handler(config, streaming=False, aggregate=False):
     return handler
 
 
-def _limited_response(monkeypatch, tmp_path, response, cancelled):
+def _limited_response(monkeypatch, tmp_path, response, cancelled, aggregate=False):
     connection = SimpleNamespace(sock=None, close=lambda: None)
     transport = proxy._DirectResponse(response, connection)
     monkeypatch.setattr(proxy, "_open_direct_upstream", lambda *a, **k: transport)
@@ -45,20 +47,22 @@ def _limited_response(monkeypatch, tmp_path, response, cancelled):
     config = proxy.ProxyConfig(
         client_token="fixture-client", upstream_api_key="test-key",
         upstream_base_url="https://fixture.invalid/v1", timeout=5, direct_upstream=True,
+        aggregate_chat_stream=aggregate,
     )
     return limiter, config, transport
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="P2-12: quiet response read ignores caller cancellation")
-@pytest.mark.parametrize("streaming", [False, True])
-def test_after_header_cancellation_closes_response_before_releasing_physical_lease(monkeypatch, tmp_path, streaming):
+@pytest.mark.parametrize(("streaming", "aggregate"), [(False, False), (True, False), (False, True)])
+def test_after_header_cancellation_closes_response_before_releasing_physical_lease(
+    monkeypatch, tmp_path, streaming, aggregate,
+):
     entered, close_started, closed = threading.Event(), threading.Event(), threading.Event()
     allow_close, cancel = threading.Event(), threading.Event()
     errors = []
 
     class Response:
         status = 200
-        headers = {"Content-Type": "text/event-stream" if streaming else "application/json"}
+        headers = {"Content-Type": "text/event-stream" if streaming or aggregate else "application/json"}
 
         def read(self, size=-1):
             entered.set()
@@ -66,14 +70,15 @@ def test_after_header_cancellation_closes_response_before_releasing_physical_lea
             return b""
 
         read1 = read
+        readline = read
 
         def close(self):
             close_started.set()
             assert allow_close.wait(3)
             closed.set()
 
-    limiter, config, transport = _limited_response(monkeypatch, tmp_path, Response(), cancel)
-    handler = _handler(config, streaming)
+    limiter, config, transport = _limited_response(monkeypatch, tmp_path, Response(), cancel, aggregate)
+    handler = _handler(config, streaming, aggregate)
 
     def run():
         try:
@@ -101,6 +106,17 @@ def test_after_header_cancellation_closes_response_before_releasing_physical_lea
         worker.join(4)
         transport.close()
         monkeypatch.delattr(proxy, "_upstream_provider_limits", raising=False)
+
+
+def test_direct_response_shutdown_precedes_idempotent_close_even_after_connection_drops_socket():
+    calls = []
+    upstream_socket = SimpleNamespace(shutdown=lambda how: calls.append("shutdown"))
+    response = SimpleNamespace(status=200, headers={}, close=lambda: calls.append("response close"))
+    connection = SimpleNamespace(sock=None, close=lambda: calls.append("connection close"))
+    direct = proxy._DirectResponse(response, connection, upstream_socket)
+    direct.close()
+    direct.close()
+    assert calls == ["shutdown", "response close", "connection close"]
 
 
 @pytest.mark.parametrize("streaming", [False, True])
