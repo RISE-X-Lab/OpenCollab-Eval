@@ -3,10 +3,9 @@
 from pathlib import Path
 
 import pytest
-from opencollab.adapters.storage import SessionStore
 
 from opencollab_eval.commands import swebench_loop_monitor as monitor
-from tests.orchestration.test_swebench_loop_journal import TEXT, _args
+from tests.orchestration.test_swebench_loop_journal import TEXT, _args, _write_journal, _write_snapshot
 
 
 @pytest.mark.parametrize("filename", ["agent.json", "000_analyst.json", "001_coder-r1.json"])
@@ -15,12 +14,11 @@ def test_public_snapshot_layouts_are_discovered(tmp_path: Path, filename: str, j
     path = tmp_path / "artifacts" / filename
     path.parent.mkdir()
     messages = [{"role": "assistant", "content": TEXT} for _ in range(4)]
-    store = SessionStore()
     if journal_only:
-        store.append_snapshot_delta(str(path), sequence=1, replace_from=0, messages=messages,
+        _write_journal(path, replace_from=0, messages=messages,
                                     meta={"aid": -1, "role": "swe_agent"})
     else:
-        store.save(str(path), messages, meta={"aid": -1, "role": "swe_agent"})
+        _write_snapshot(path, messages, {"aid": -1, "role": "swe_agent"})
     report = monitor.build_report(_args(tmp_path))
     assert report["input_complete"] is True
     assert report["session_files_discovered"] == 1
@@ -31,9 +29,8 @@ def test_public_snapshot_layouts_are_discovered(tmp_path: Path, filename: str, j
 
 def test_team_snapshot_and_journal_are_discovered_once(tmp_path: Path):
     path = tmp_path / "agent_1_coder.json"
-    store = SessionStore()
-    store.save(str(path), [{"role": "user", "content": "task"}], meta={"aid": 1, "role": "coder"})
-    store.append_snapshot_delta(str(path), sequence=1, replace_from=1,
+    _write_snapshot(path, [{"role": "user", "content": "task"}], {"aid": 1, "role": "coder"})
+    _write_journal(path, replace_from=1,
                                 messages=[{"role": "assistant", "content": TEXT}],
                                 meta={"aid": 1, "role": "coder"})
     (tmp_path / "team.json").write_text('{}')
