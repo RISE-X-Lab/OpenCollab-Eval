@@ -56,6 +56,8 @@ async def test_late_exit_after_failed_cancel_allows_selected_candidate_adoption(
         candidates.leases["B"] = lease
         candidate = SimpleNamespace(label="B", diff=lease.captured_diff)
         with pytest.raises(RuntimeError, match="active foreground"):
+            await lease.diff()
+        with pytest.raises(RuntimeError, match="active foreground"):
             await lease.cleanup()
         with pytest.raises(RuntimeError, match="foreground"):
             await candidates.adopt_run(candidate)
@@ -185,4 +187,3 @@ async def test_adoption_rejects_mismatched_identity_and_stopped_container(tmp_pa
     with pytest.raises(RuntimeError, match="not running"):
         await candidates.adopt_run(SimpleNamespace(label="B", diff="original"))
     assert candidates.selected is None
-

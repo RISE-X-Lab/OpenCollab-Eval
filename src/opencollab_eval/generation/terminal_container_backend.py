@@ -428,6 +428,7 @@ class CandidateLease:
         self.environment._capture = self.diff
 
     async def diff(self):
+        await self.environment.ensure_quiescent()
         return await asyncio.to_thread(self._capture)
 
     def _capture(self):
