@@ -3,7 +3,10 @@ from __future__ import annotations
 import importlib
 import json
 import subprocess
+import sys
 from types import SimpleNamespace
+
+import pytest
 
 from opencollab_eval.engine.token_cost import build_summary, collect_workflow_usage, to_markdown
 
@@ -223,3 +226,28 @@ def test_remote_summary_timeout_error_includes_context(monkeypatch):
     assert "timed out after 5s" in message
     assert "stdout details" in message
     assert "stderr details" in message
+
+
+@pytest.mark.xfail(strict=True, reason="P2-10 zero-match filter falls back to unfiltered workflow usage")
+@pytest.mark.parametrize("has_ledger", [True, False])
+def test_model_filter_zero_matches_remains_empty_in_cli(tmp_path, monkeypatch, capsys, has_ledger):
+    if has_ledger:
+        _write_jsonl(tmp_path / "api_usage.jsonl", [{
+            "schema": "opencollab.api_usage.v1", "model": "model-b", "status": "success",
+            "usage": {"total_tokens": 120, "cost_usd": 0.03},
+        }])
+    (tmp_path / "case.outer.log").write_text("workflow: tokens=120 steps=1 duration=2s error=None\n")
+    monkeypatch.setattr(sys, "argv", ["summary", "--run-dir", str(tmp_path), "--model", "model-a"])
+    assert _load_cli_module().main() == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["model_filter"] == "model-a"
+    assert summary["api_usage"]["calls"] == 0
+    assert summary["billable"]["source"] == "no_matching_api_usage"
+    assert summary["billable"]["total_tokens"] == 0
+    assert summary["billable"]["cost_usd"] is None
+    assert summary["consistency"]["api_minus_workflow_tokens"] is None
+    assert summary["workflow"]["total_tokens"] == 120
+    unfiltered = build_summary([tmp_path])
+    assert unfiltered["billable"]["total_tokens"] == 120
+    if has_ledger:
+        assert build_summary([tmp_path], model_filter="model-b")["billable"]["total_tokens"] == 120
