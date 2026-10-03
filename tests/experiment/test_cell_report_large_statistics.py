@@ -22,7 +22,6 @@ def _decimal_cdf(k, n, p):
         return float(total)
 
 
-@pytest.mark.xfail(strict=True, reason="P2-09 binomial coefficients overflow float conversion")
 @pytest.mark.parametrize("n", [1100, 1782])
 def test_large_balanced_interval_matches_independent_decimal_tails(n):
     k = n // 2
@@ -35,9 +34,7 @@ def test_large_balanced_interval_matches_independent_decimal_tails(n):
     assert _decimal_cdf(k, n, high) == pytest.approx(0.025, abs=1e-10)
 
 
-@pytest.mark.parametrize("n", [20, pytest.param(1782, marks=pytest.mark.xfail(
-    strict=True, reason="P2-09 large boundary coefficients also overflow"
-))])
+@pytest.mark.parametrize("n", [20, 1782])
 def test_binomial_boundary_probabilities(n):
     assert binom_cdf(0, n, 0.0) == 1.0
     assert binom_cdf(n - 1, n, 1.0) == 0.0

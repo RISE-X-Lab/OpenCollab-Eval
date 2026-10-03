@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import csv
 from collections.abc import Sequence
-from math import comb
+from math import exp, fsum, lgamma, log, log1p
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +12,20 @@ from opencollab_eval.experiment.cell_report_rows import RunRow
 
 
 def binom_cdf(k: int, n: int, p: float) -> float:
-    return sum(comb(n, i) * p**i * (1 - p) ** (n - i) for i in range(0, k + 1))
+    if k < 0:
+        return 0.0
+    if k >= n or p == 0.0:
+        return 1.0
+    if p == 1.0:
+        return 0.0
+    # Compute each probability in log space before summing. Individual
+    # coefficients can exceed float range at ordinary benchmark sizes.
+    log_factorial_n = lgamma(n + 1)
+    log_p, log_q = log(p), log1p(-p)
+    return min(1.0, fsum(
+        exp(log_factorial_n - lgamma(i + 1) - lgamma(n - i + 1) + i * log_p + (n - i) * log_q)
+        for i in range(k + 1)
+    ))
 
 
 def clopper_pearson(k: int, n: int, alpha: float = 0.05) -> tuple[float, float]:
