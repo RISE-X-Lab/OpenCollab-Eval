@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import errno
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 from opencollab_eval.generation import candidate_environment_lean as candidate_environment
 from opencollab_eval.generation import candidate_runtime, gen_prediction_config, gen_prediction_snapshot
@@ -96,6 +100,60 @@ def test_candidate_runtime_copies_ignored_root_across_mounts(tmp_path, monkeypat
     status = subprocess.run(["git", "-C", str(candidate), "status", "--porcelain"],
                             check=True, capture_output=True, text=True)
     assert status.stdout == ""
+
+
+def _candidate_dependencies(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    _git(source, "init")
+    (source / ".gitignore").write_text("node_modules/\nvendor/\n")
+    _git(source, "add", ".gitignore")
+    _git(source, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+         "commit", "-m", "fixture")
+    for root in ("node_modules", "vendor"):
+        (source / root).mkdir()
+        (source / root / "dependency.txt").write_text(root)
+    store = tmp_path / "runtime"
+    candidate_runtime.prepare(source, ["node_modules", "vendor"], store, candidate_count=1)
+    candidate = tmp_path / "candidate"
+    _git(source, "worktree", "add", "--detach", str(candidate), "HEAD")
+    return store, candidate
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason="P2-04: failed hydration leaves an exhausted claim")
+@pytest.mark.parametrize("failed_root", ["node_modules", "vendor"])
+def test_candidate_runtime_returns_fully_rolled_back_claim_for_retry(tmp_path, monkeypatch, failed_root):
+    store, candidate = _candidate_dependencies(tmp_path)
+    original_rename = Path.rename
+    fault_pending = True
+
+    def transient_failure(path, target):
+        nonlocal fault_pending
+        if fault_pending and path.name == failed_root and path.parent.parent.name == "claims":
+            fault_pending = False
+            raise OSError(errno.EIO, "transient dependency I/O failure")
+        return original_rename(path, target)
+
+    monkeypatch.setattr(Path, "rename", transient_failure)
+    with pytest.raises(OSError, match="transient dependency I/O failure"):
+        candidate_runtime.hydrate(store, candidate)
+    assert not list((store / "claims").iterdir())
+    assert len(list((store / "ready").iterdir())) == 1
+    assert not any((candidate / root).exists() for root in ("node_modules", "vendor"))
+    assert candidate_runtime.hydrate(store, candidate) is True
+    for root in ("node_modules", "vendor"):
+        assert (candidate / root / "dependency.txt").read_text() == root
+
+
+def test_candidate_runtime_keeps_one_writer_for_simultaneous_hydration(tmp_path):
+    store, candidate = _candidate_dependencies(tmp_path)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(candidate_runtime.hydrate, store, candidate) for _ in range(2)]
+        assert sorted(future.result(timeout=5) for future in futures) == [False, True]
+    assert len(list((store / "claims").iterdir())) == 1
+    assert (store / "state" / "candidate.json").exists()
+    for root in ("node_modules", "vendor"):
+        assert (candidate / root / "dependency.txt").read_text() == root
 
 
 def test_candidate_environment_reuses_prepare_python_for_hydration(monkeypatch) -> None:
