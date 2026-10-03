@@ -123,7 +123,9 @@ def test_agent_delegates_to_public_runtime_with_bound_configuration(
     assert call["budget"] == 4321
     assert call["max_steps"] == 9
     assert call["profile"] == "single2"
-    assert {"tools", "system_prompt", "name"}.isdisjoint(call)
+    assert call["tools"] == [sentinel_tool]
+    assert isinstance(call["system_prompt"], str)
+    assert "name" not in call
     assert 0 < call["timeout"] <= 600
     assert call["trace"] is True
     assert Path(call["artifacts"]).parent == tmp_path / "trajectories" / "public-agent"
@@ -136,7 +138,6 @@ def test_agent_delegates_to_public_runtime_with_bound_configuration(
     assert env.cleaned_up is True
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="P2-06: public agent discards caller prompt and tools")
 @pytest.mark.parametrize("with_tool", [False, True])
 def test_public_agent_preserves_explicit_prompt_and_exact_caller_tools(monkeypatch, tmp_path, with_tool):
     calls = []

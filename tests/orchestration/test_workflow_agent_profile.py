@@ -114,7 +114,9 @@ def test_evaluator_single_session_uses_native_single2_arguments(monkeypatch, tmp
     prompt, kwargs = calls[0]
     assert prompt == "repair public behavior"
     assert kwargs["profile"] == "single2"
-    assert {"system_prompt", "tools", "name"}.isdisjoint(kwargs)
+    assert kwargs["tools"] == []
+    assert isinstance(kwargs["system_prompt"], str)
+    assert "name" not in kwargs
     assert kwargs["budget"] == 1_000_000
     assert result.error is None
 
