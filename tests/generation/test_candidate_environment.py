@@ -120,7 +120,6 @@ def _candidate_dependencies(tmp_path):
     return store, candidate
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="P2-04: failed hydration leaves an exhausted claim")
 @pytest.mark.parametrize("failed_root", ["node_modules", "vendor"])
 def test_candidate_runtime_returns_fully_rolled_back_claim_for_retry(tmp_path, monkeypatch, failed_root):
     store, candidate = _candidate_dependencies(tmp_path)
@@ -154,6 +153,28 @@ def test_candidate_runtime_keeps_one_writer_for_simultaneous_hydration(tmp_path)
     assert (store / "state" / "candidate.json").exists()
     for root in ("node_modules", "vendor"):
         assert (candidate / root / "dependency.txt").read_text() == root
+
+
+def test_candidate_runtime_marker_write_failure_returns_claim_after_rollback(tmp_path, monkeypatch):
+    store, candidate = _candidate_dependencies(tmp_path)
+    marker = store / "state" / "candidate.json"
+    original_write = Path.write_text
+    fault_pending = True
+
+    def partial_marker_failure(path, *args, **kwargs):
+        nonlocal fault_pending
+        if path == marker and fault_pending:
+            fault_pending = False
+            original_write(path, "partial marker")
+            raise OSError(errno.EIO, "transient marker I/O failure")
+        return original_write(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", partial_marker_failure)
+    with pytest.raises(OSError, match="transient marker I/O failure"):
+        candidate_runtime.hydrate(store, candidate)
+    assert not marker.exists()
+    assert not list((store / "claims").iterdir())
+    assert candidate_runtime.hydrate(store, candidate) is True
 
 
 def test_candidate_environment_reuses_prepare_python_for_hydration(monkeypatch) -> None:
