@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
-from opencollab.adapters.llm.responses_usage import parse_responses_usage
+from opencollab import OpenCollab
 
 from opencollab_eval.commands import glm_token_monitor as monitor
 
@@ -363,20 +363,28 @@ def test_known_cache_creation_is_reported_and_priced(tmp_path, monkeypatch, caps
 
 
 @pytest.mark.parametrize("cached_tokens", [300, None])
-def test_responses_unknown_cache_is_kept_in_cost_estimate(tmp_path, monkeypatch, capsys, cached_tokens):
+async def test_responses_unknown_cache_is_kept_in_cost_estimate(tmp_path, monkeypatch, capsys, cached_tokens):
     details = {} if cached_tokens is None else {"cached_tokens": cached_tokens}
-    usage = parse_responses_usage(SimpleNamespace(usage={
-        "input_tokens": 1000, "output_tokens": 100, "input_tokens_details": details,
-    }), [], "ok", [])
-    assert usage.cache_creation_tokens is None
-    (tmp_path / "run.jsonl").write_text(json.dumps({
-        "type": "llm_call", "payload": {"model": "glm-5.2", "usage": {
-            "input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens,
-            "total_tokens": usage.total_tokens, "cache_read_tokens": usage.cache_read_tokens,
-            "cache_creation_tokens": usage.cache_creation_tokens, "uncached_input_tokens": None,
-            "estimated": usage.estimated, "raw_usage": usage.raw_usage,
-        }},
-    }) + "\n")
+    raw_usage = {"input_tokens": 1000, "output_tokens": 100, "input_tokens_details": details}
+    class Model:
+        model = "glm-5.2"
+
+        def context_window(self):
+            return 400000
+
+        async def complete(self, *args, **kwargs):
+            return SimpleNamespace(
+                content="done", tool_calls=[], finish_reason="stop", reasoning=None,
+                provider_items=[], provider_state=None,
+                usage=SimpleNamespace(input_tokens=1000, output_tokens=100, total_tokens=1100,
+                                      cache_read_tokens=cached_tokens, cache_creation_tokens=None,
+                                      estimated=False, raw_usage=raw_usage),
+            )
+
+    client = OpenCollab(tmp_path, provider="openai", model="glm-5.2", api_key="offline-fixture")
+    result = await client.agent("task", tools=[], llm=Model(), artifacts=tmp_path / "native",
+                                budget=10000, max_steps=1, timeout=2)
+    assert result.status == "completed"
     residual = 1000 - (cached_tokens or 0)
     totals = monitor.collect(tmp_path, "glm-5.2")
     assert totals["unknown_cache_calls"] == 1
