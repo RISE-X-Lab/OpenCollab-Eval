@@ -15,9 +15,7 @@ _experiment = pytest.fixture(name="experiment")(launcher.experiment.__wrapped__)
 
 
 @pytest.mark.parametrize("status,later_count,selected", [
-    pytest.param("failed", 0, "original", marks=pytest.mark.xfail(
-        strict=True, reason="P3-10 failed retries are counted as adopted later attempts",
-    )),
+    ("failed", 0, "original"),
     ("completed", 1, "retry"),
 ])
 def test_merged_cli_counts_actual_adopted_attempt(experiment, tmp_path, monkeypatch, capsys,
