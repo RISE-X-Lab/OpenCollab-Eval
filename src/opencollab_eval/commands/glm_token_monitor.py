@@ -364,7 +364,9 @@ def estimate_cost(
             return None, "missing_cached_price"
         split_cost += totals["uncached_input_tokens"] / 1_000_000 * (input_price_per_mtok or 0.0)
         split_cost += totals["cached_input_tokens"] / 1_000_000 * (cached_input_price_per_mtok or 0.0)
-        creation_price = input_price_per_mtok if cache_creation_price_per_mtok is None else cache_creation_price_per_mtok
+        creation_price = (
+            input_price_per_mtok if cache_creation_price_per_mtok is None else cache_creation_price_per_mtok
+        )
         if totals["cache_creation_tokens"] and creation_price is None:
             return None, "missing_cache_creation_price"
         split_cost += totals["cache_creation_tokens"] / 1_000_000 * (creation_price or 0.0)
