@@ -228,7 +228,6 @@ def test_remote_summary_timeout_error_includes_context(monkeypatch):
     assert "stderr details" in message
 
 
-@pytest.mark.xfail(strict=True, reason="P2-10 zero-match filter falls back to unfiltered workflow usage")
 @pytest.mark.parametrize("has_ledger", [True, False])
 def test_model_filter_zero_matches_remains_empty_in_cli(tmp_path, monkeypatch, capsys, has_ledger):
     if has_ledger:
