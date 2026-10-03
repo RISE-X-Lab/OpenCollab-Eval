@@ -15,11 +15,11 @@ from pathlib import Path
 from typing import Any, BinaryIO
 
 from opencollab_eval.commands import swebench_loop_analysis as loop_analysis
+from opencollab_eval.commands.swebench_loop_snapshots import native_snapshot_inputs, read_native_snapshot
 from opencollab_eval.safe_files import (
     directory_handle_matches_path,
     ensure_directory_no_symlinks,
     open_directory_no_symlinks,
-    regular_path_identity,
     write_regular_bytes_atomic,
 )
 
@@ -423,14 +423,11 @@ def _session_messages_status(
     total_bytes = 0
     for path in paths:
         try:
-            _dev, _ino, file_bytes, _mtime, _ctime = regular_path_identity(path)
-            total_bytes += file_bytes
+            identities = native_snapshot_inputs(path)
+            total_bytes += sum(identity[2] for identity in identities.values() if identity is not None)
             if total_bytes > MAX_SESSION_TOTAL_BYTES:
-                raise ValueError(
-                    "session inputs exceed total byte limit of "
-                    f"{MAX_SESSION_TOTAL_BYTES}"
-                )
-            obj = _load_json_strict(path, expected_size=file_bytes)
+                raise ValueError(f"session inputs exceed total byte limit of {MAX_SESSION_TOTAL_BYTES}")
+            obj = read_native_snapshot(path, identities=identities, max_file_bytes=MAX_SESSION_JSON_BYTES)
         except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
             errors.append(f"{path}: {type(exc).__name__}: {exc}")
             continue

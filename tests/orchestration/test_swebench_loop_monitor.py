@@ -145,8 +145,8 @@ def test_loop_monitor_bounds_retained_messages_and_message_content(
                         "role": "assistant",
                         "content": "third-message-long",
                         "tool_calls": [
-                            {"id": "old", "function": {"name": "x", "arguments": "a"}},
-                            {"id": "new", "function": {"name": "y", "arguments": "b"}},
+                            {"id": "old", "type": "function", "function": {"name": "x", "arguments": "a"}},
+                            {"id": "new", "type": "function", "function": {"name": "y", "arguments": "b"}},
                         ],
                     },
                 ],

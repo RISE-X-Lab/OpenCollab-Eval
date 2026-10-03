@@ -36,7 +36,6 @@ def _native_journal(root: Path):
     return path, first + latest
 
 
-@pytest.mark.xfail(strict=True, reason="P2-19 monitor reads base snapshots without native journal replay")
 def test_loop_monitor_uses_latest_native_journal_state(tmp_path):
     path, messages = _native_journal(tmp_path)
     assert len(json.loads(path.read_text())["messages"]) == 1
@@ -48,7 +47,6 @@ def test_loop_monitor_uses_latest_native_journal_state(tmp_path):
     assert report["last_successful_write"]["tool"] == "file_write"
 
 
-@pytest.mark.xfail(strict=True, reason="P2-19 journals must share existing session input protections")
 @pytest.mark.parametrize("kind", ["malformed", "symlink", "oversized", "fifo"])
 def test_loop_monitor_journal_failure_is_visible(tmp_path, monkeypatch, kind):
     path, _messages = _native_journal(tmp_path)
