@@ -8,7 +8,6 @@ from opencollab_eval.commands import swebench_loop_monitor as monitor
 from tests.orchestration.test_swebench_loop_journal import TEXT, _args, _native_journal
 
 
-@pytest.mark.xfail(strict=True, reason="P3-09 aid zero is converted to an empty string")
 @pytest.mark.parametrize("source", ["snapshot", "events"])
 def test_entry_agent_zero_survives_report_json(tmp_path, source):
     if source == "snapshot":

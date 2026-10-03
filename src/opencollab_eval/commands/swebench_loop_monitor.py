@@ -439,7 +439,7 @@ def _session_messages_status(
             errors.append(f"{path}: session JSON is not an object")
             continue
         role = str(obj.get("role") or "")[:500]
-        aid = str(obj.get("aid") or "")[:500]
+        aid = str(obj["aid"] if obj.get("aid") is not None else "")[:500]
         raw_messages = obj.get("messages")
         if not isinstance(raw_messages, list):
             errors.append(f"{path}: session messages is not a list")
@@ -545,7 +545,7 @@ def _discover_event_analysis(
                 saw_event = True
                 etype = _event_type(event)
                 data = _event_data(event)
-                aid = str(data.get("aid") or "")[:500]
+                aid = str(data["aid"] if data.get("aid") is not None else "")[:500]
                 if etype == "loop_detected":
                     loop_count += 1
                     tool = str(data.get("tool") or "unknown")[:500]
