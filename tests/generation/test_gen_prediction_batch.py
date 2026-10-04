@@ -222,7 +222,7 @@ def _args(tmp_path: Path, **overrides: object) -> argparse.Namespace:
 
 
 def _completed_run(predictions: Path, iid: str, returncode: int):
-    def fake_run(*, command, log_dir, stop):
+    def fake_run(*, command, log_dir, stop, run_id=None):
         predictions.parent.mkdir(parents=True, exist_ok=True)
         with predictions.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps({"instance_id": iid, "model_patch": "diff"}) + "\n")
@@ -389,7 +389,7 @@ def test_runs_go_out_in_the_planned_order_so_whole_tasks_are_in_flight(
     )
     submitted: list[tuple[str, str]] = []
 
-    def fake_run_one(*, command, log_dir, stop):
+    def fake_run_one(*, command, log_dir, stop, run_id=None):
         submitted.append((Path(log_dir).parent.name, Path(log_dir).name))
         return 0, 0.1
 

@@ -146,6 +146,11 @@ def bind_llm_transport(metrics: dict) -> None:
         value = os.environ.get(env_key, "").strip()
         if value:
             metrics[metric_key] = value
+    # The id the batch driver gave this run and wrote into its manifest row; the
+    # remote runner's ``OPENCOLLAB_EVAL_RUN_ID`` names a whole batch and wins.
+    driver_run_id = os.environ.get("OPENCOLLAB_RUN_ID", "").strip()
+    if driver_run_id:
+        metrics.setdefault("run_id", driver_run_id)
     base_url_sha256 = os.environ.get("OPENCOLLAB_EVAL_LLM_BASE_URL_SHA256", "").strip()
     if base_url_sha256:
         if re.fullmatch(r"[0-9a-f]{64}", base_url_sha256) is None:

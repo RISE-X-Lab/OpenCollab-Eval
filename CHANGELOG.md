@@ -2,6 +2,15 @@
 
 All notable changes to OpenCollab-Eval are recorded in this file.
 
+## [Unreleased]
+
+The batch driver gives every (instance, arm) run an id, writes it into the run's
+`manifest.jsonl` row, and passes it to the generator as `OPENCOLLAB_RUN_ID`. The
+evaluator hands it to OpenCollab's `run_id=` when the installed runtime accepts
+it, and the metrics row records it, so the manifest row, the trajectory and the
+metrics row join on one id. With OpenCollab 0.9.0 the run proceeds and its
+trajectory keeps the runtime's own id.
+
 ## [0.9.0] - 2026-10-02
 
 Paired with OpenCollab 0.9.0. Installation requirements, remote runtime
