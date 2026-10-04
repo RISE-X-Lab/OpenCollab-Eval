@@ -66,7 +66,7 @@ def test_coder_tools_off_is_exact_reference_list_and_order():
     ]
     assert _names(coder()) == _names(coder(OFF))  # default arg is off
     # off file_write keeps reference create behavior.
-    off_fw = [t for t in coder(OFF) if type(t).__name__ == "FileWriteTool"][0]
+    off_fw = [t for t in coder(OFF) if _names([t]) == ["FileWriteTool"]][0]
     assert off_fw.allow_create is True
 
 
@@ -78,7 +78,7 @@ def test_coder_tools_on_drops_bash_and_disables_create():
     # The tester role handles native command execution.
     for required in ("FileReadTool", "GrepTool", "FileWriteTool", "ApplyPatchTool"):
         assert required in names, required
-    on_fw = [t for t in tools if type(t).__name__ == "FileWriteTool"][0]
+    on_fw = [t for t in tools if _names([t]) == ["FileWriteTool"]][0]
     assert on_fw.allow_create is False
 
 
