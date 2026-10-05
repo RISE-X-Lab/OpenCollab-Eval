@@ -53,7 +53,9 @@ The adjudicator reads complete saved evidence through its read-only tool.
 alias. Model settings, budgets, timeouts and evaluation options use the
 existing parallel runner.
 
-The wrapper defaults to local transport, row 1, one worker, and `base` roles resolved to `single2`. It writes reports under `<config-directory>/results/<run-id>`. `--output-dir` overrides that directory. Keep a fixed `--run-id` for continuation. The JSON keys use the parallel parser's names with underscores. `workflow_env` accepts an object or a list of `KEY=VALUE` strings. A CLI override takes precedence over the same JSON setting.
+The wrapper defaults to local transport, row 1, one worker, and `base` roles resolved to `single2`. It writes reports under `<config-directory>/results/<run-id>`. `--output-dir` overrides that directory. Keep the same `--run-id` to reuse completed reports and dispatch tasks that have not started. See [Recovery](swe-prolite-operations.md#resume-and-evaluation-only-maintenance) for interrupted tasks. The JSON keys use the parallel parser's names with underscores. `workflow_env` accepts an object or a list of `KEY=VALUE` strings. A CLI override takes precedence over the same JSON setting.
+
+Duo returns 0 when its final status is `done` or `--dry-run` succeeds. Other final statuses return 1, including technical failures and infrastructure stops. Argument or configuration errors and reported runtime errors return 2. KeyboardInterrupt returns 130.
 
 ### `oc-eval run`
 
@@ -71,7 +73,11 @@ SWE resolved verdicts come from the Pro-Lite evaluation commands.
 
 The defaults are `--output eval_results`, `--concurrency 4`, `--max-tokens 1000000`, `--timeout 600`, and `--temperature 0.2`. Supply `--model` and `--provider`, or set `OPENCOLLAB_MODEL` and `OPENCOLLAB_PROVIDER`. `OPENCOLLAB_API_KEY` and `OPENCOLLAB_BASE_URL` supply the credential and endpoint. Each task can override its token budget and timeout. Choose an external absolute output directory for real runs.
 
-The summary fields are `tasks`, `eligible_patches`, and `ineligible`. Read each saved row's `patch_produced`, `submission_eligible`, `error`, and `execution_quiesced` before handing its patch to an evaluator. [Task formats](task-formats.md#generic-evaluator-task-jsonl) shows how to create the input file.
+A local Git repository selected by `repo_path` needs at least one commit and a clean worktree with no untracked files. [Getting started](getting-started.md#run-a-local-repository-task) shows the read-only Git checks. Commit your intended changes or use a separate clean checkout.
+
+For the `openai` provider, this command uses Chat Completions and requires a base URL that supports this API. `OPENCOLLAB_WIRE_PROTOCOL` does not switch this command to Responses. The [Duo tutorial](swe-prolite-operations.md#run-duo-on-one-linux-worker) supplies a separate Responses configuration.
+
+The summary fields are `tasks`, `eligible_patches`, and `ineligible`. The command can exit with code 0 after a task fails. Read each saved row's `patch_produced`, `submission_eligible`, `error`, and `execution_quiesced` before handing its patch to an evaluator. [Task formats](task-formats.md#generic-evaluator-task-jsonl) shows how to create the input file.
 
 `--no-progress-timeout` selects actual progress supervision. Completed native
 model rounds, actual model content or tool argument increments, and completed

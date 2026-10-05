@@ -51,7 +51,14 @@ The generic task file and benchmark dataset have different fields. Choose their 
 
 ## Run a local repository task
 
-Replace `/work/calculator` with the absolute path of your Git repository and describe the change you want. Create the input file outside that repository.
+Use a Git repository with at least one commit and a clean worktree. Replace `/work/calculator` with its absolute path and describe the change you want. Confirm that the first check prints a commit ID and the second prints nothing. The status check includes untracked files. Commit your intended changes or use a separate clean checkout.
+
+```bash
+git -C /work/calculator rev-parse --verify HEAD
+git -C /work/calculator status --short --untracked-files=all
+```
+
+Create the input file outside that repository.
 
 ```bash
 export EVAL_ROOT="$HOME/oc-evaluation/eval-data"
@@ -62,7 +69,7 @@ cat > "$EVAL_ROOT/tasks.jsonl" <<'TASKS'
 TASKS
 ```
 
-Save the file as `$HOME/oc-evaluation/eval-data/tasks.jsonl`. Set your model and provider, then enter the API key at the prompt. A custom endpoint can be selected with `OPENCOLLAB_BASE_URL`.
+Save the file as `$HOME/oc-evaluation/eval-data/tasks.jsonl`. Set your model and provider, then enter the API key at the prompt. For the `openai` provider, `oc-eval run` uses Chat Completions. Set `OPENCOLLAB_BASE_URL` to a base URL that supports this API. `OPENCOLLAB_WIRE_PROTOCOL` does not switch this command to Responses. The [Duo tutorial](docs/swe-prolite-operations.md#run-duo-on-one-linux-worker) supplies a separate Responses configuration.
 
 ```bash
 export OPENCOLLAB_MODEL=your-model
@@ -73,7 +80,7 @@ oc-eval run "$EVAL_ROOT/tasks.jsonl" \
   --concurrency 1 --timeout 600
 ```
 
-Read `results.jsonl` in the selected output directory. `patch_produced` tells you whether a patch was captured, and `submission_eligible` tells you whether it can proceed to evaluation. Official pass or failure requires the benchmark's target tests to execute against that patch. [Getting started](docs/getting-started.md) explains the result fields and dataset inspection.
+Read `results.jsonl` in the selected output directory. `patch_produced` tells you whether a patch was captured, and `submission_eligible` tells you whether it can proceed to evaluation. The command can exit with code 0 after a task fails, so check these fields and read `error` for the cause. Official pass or failure requires the benchmark's target tests to execute against that patch. [Getting started](docs/getting-started.md) explains the result fields and dataset inspection.
 
 <a id="run-duo"></a>
 
@@ -160,7 +167,14 @@ oc-eval --help
 
 ## 运行本地仓库任务
 
-将 `/work/calculator` 换成自己 Git 仓库的绝对路径，并写清想完成的修改。下面在目标仓库之外创建输入文件。
+使用已有提交且工作区干净的 Git 仓库。将 `/work/calculator` 换成其绝对路径，并写清想完成的修改。确认第一条检查输出提交 ID，第二条没有输出。状态检查包含未跟踪文件。将自己的改动提交，或使用另一份干净的 checkout。
+
+```bash
+git -C /work/calculator rev-parse --verify HEAD
+git -C /work/calculator status --short --untracked-files=all
+```
+
+下面在目标仓库之外创建输入文件。
 
 ```bash
 export EVAL_ROOT="$HOME/oc-evaluation/eval-data"
@@ -171,7 +185,7 @@ cat > "$EVAL_ROOT/tasks.jsonl" <<'TASKS'
 TASKS
 ```
 
-文件保存为 `$HOME/oc-evaluation/eval-data/tasks.jsonl`。设置模型与 provider 后，在提示处输入 API key。自定义接口地址通过 `OPENCOLLAB_BASE_URL` 设置。
+文件保存为 `$HOME/oc-evaluation/eval-data/tasks.jsonl`。设置模型与 provider 后，在提示处输入 API key。使用 `openai` provider 时，`oc-eval run` 采用 Chat Completions。将 `OPENCOLLAB_BASE_URL` 设为支持这一 API 的 base URL。`OPENCOLLAB_WIRE_PROTOCOL` 无法将此命令切换为 Responses。[Duo 教程](docs/zh-CN/swe-prolite-operations.md#在一台-linux-工作机上运行-duo)提供另一套 Responses 配置。
 
 ```bash
 export OPENCOLLAB_MODEL=your-model
@@ -182,7 +196,7 @@ oc-eval run "$EVAL_ROOT/tasks.jsonl" \
   --concurrency 1 --timeout 600
 ```
 
-打开所选输出目录中的 `results.jsonl`。`patch_produced` 表示是否提取到了补丁，`submission_eligible` 表示候选是否可以继续评测。官方通过或失败判定来自对这份补丁实际执行的基准目标测试。[快速入门](docs/zh-CN/getting-started.md)介绍结果字段和数据集检查。
+打开所选输出目录中的 `results.jsonl`。`patch_produced` 表示是否提取到了补丁，`submission_eligible` 表示候选是否可以继续评测。任务失败后，命令也可能以退出码 0 结束，因此应检查这些字段，并通过 `error` 查看原因。官方通过或失败判定来自对这份补丁实际执行的基准目标测试。[快速入门](docs/zh-CN/getting-started.md)介绍结果字段和数据集检查。
 
 <a id="运行-duo"></a>
 

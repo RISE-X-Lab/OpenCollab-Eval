@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -11,6 +12,7 @@ from urllib.parse import unquote
 import pytest
 
 from opencollab_eval import cli
+from opencollab_eval.commands import swe_rejudge_queue
 from opencollab_eval.engine.solver_backend import DEFAULT_WORKFLOW_SOLVERS
 from tests.support.paths import SOURCE_ROOT
 
@@ -236,6 +238,39 @@ def test_coordinator_example_uses_only_forwarded_options() -> None:
     section = operations.split("## Run through the Solver coordinator", 1)[1]
     example = section.split("```bash", 1)[1].split("```", 1)[0]
     assert "--remote-python /srv/opencollab-eval/venv/bin/python" in example
+
+
+@pytest.mark.parametrize("language_dir", ("", "zh-CN"))
+def test_documented_rejudge_plan_uses_an_isolated_output(
+    tmp_path: Path, language_dir: str,
+) -> None:
+    text = (DOCS / language_dir / "swe-prolite-operations.md").read_text(encoding="utf-8")
+    plans = [
+        json.loads(block)
+        for block in FENCED_CODE.findall(text)
+        if '"schema": "opencollab.eval_only_queue.v1"' in block
+    ]
+    assert len(plans) == 1
+    plan = plans[0]
+    job = plan["jobs"][0]
+    job.update(
+        parent_output_dir=str(tmp_path),
+        task="example-task",
+        record_id="example-record",
+        source_patch_sha256="a" * 64,
+        eval_patch_sha256="a" * 64,
+    )
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    loaded = swe_rejudge_queue._read_plan(plan_path)
+    argv, _, _ = swe_rejudge_queue._child_argv(
+        loaded, loaded["jobs"][0], queue_id="example", output_dir=tmp_path,
+    )
+    source = Path(argv[argv.index("--eval-only-source-base-run-dir") + 1])
+    target = Path(argv[argv.index("--base-run-dir") + 1])
+    assert source != target
+    assert source == Path(job["source_base_run_dir"])
+    assert target == Path(job["base_run_dir"])
 
 
 def test_documented_k3_coordinator_has_complete_identity() -> None:

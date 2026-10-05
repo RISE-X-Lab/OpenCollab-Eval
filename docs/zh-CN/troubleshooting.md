@@ -39,6 +39,14 @@ Pro-Lite 需要 worker 根目录、镜像仓库、模型名称及 ID、提供商
 
 对于反向代理传输，请验证本地认证中继、SSH 隧道、远程中继健康端点、上游 URL 哈希和受保护的 token 文件。对于直接传输，请验证工作节点 DNS、HTTPS 连通性、凭据文件权限模式和精确的模型响应身份。
 
+## 本地中断任务重启失败
+
+继续批次前，检查 `parallel_summary.json` 与各题报告。从未启动的题目可以继续调度，已完成且证据相符的题目会复用报告。local runner 启动后中断的题目会在 worker 题目目录留下 `runner.pid` 或 `summary.json`。在该目录再次启动会抛出 `RemoteRunnerUnavailable`，保存的拥有者状态为 `dead` 时也会如此。
+
+确认原拥有进程退出后，同时使用已保存捕获回执的 `recovery_environment` 与 `recovery_argv` 恢复保留的候选。已有的已验证候选通过[仅评测队列](swe-prolite-operations.md#准备仅评测队列)评分，将 `source_base_run_dir` 设为原题目目录，将 `base_run_dir` 设为新的独立评测目录。worker 错误 `eval-only source and target base run directories must differ` 表明计划中的两个路径相同。准备修正计划时保留原始报告与轨迹。
+
+保存证据无法确认可信候选且 Solver 启动额度已耗尽时，将该次尝试保留为技术失败。实验协议允许再次生成后，使用新的 run ID 和输出目录。
+
 ## 运行时同步失败
 
 运行器会为同步的 OpenCollab 公开模块、OpenCollab-Eval 模块和打包资源创建清单。出现不匹配意味着工作节点执行的源代码树与控制器不同。

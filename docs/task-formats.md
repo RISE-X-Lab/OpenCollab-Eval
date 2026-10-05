@@ -85,10 +85,14 @@ selected output directory.
 This command reports candidate production and submission eligibility. It does
 not load the sealed SWE judge contract or create an official resolved verdict.
 
-Replace the repository path with an existing Git repository. Put each object on one physical line when saving JSONL. The following command writes that file outside the checkout and generates a candidate. Set the provider credential and endpoint through `OPENCOLLAB_API_KEY` and `OPENCOLLAB_BASE_URL`, and set `OPENCOLLAB_MODEL` to your model before running it.
+Replace the repository path with a Git repository that has at least one commit and a clean worktree. The first Git check below must print a commit ID. The status check includes untracked files and must print nothing. Commit your intended changes or use a separate clean checkout. Put each object on one physical line when saving JSONL. The following command writes that file outside the checkout and generates a candidate. Set the provider credential and endpoint through `OPENCOLLAB_API_KEY` and `OPENCOLLAB_BASE_URL`, and set `OPENCOLLAB_MODEL` to your model before running it.
+
+For the `openai` provider, `oc-eval run` uses Chat Completions and requires a base URL that supports this API. `OPENCOLLAB_WIRE_PROTOCOL` does not switch this command to Responses. The [Duo tutorial](swe-prolite-operations.md#run-duo-on-one-linux-worker) supplies a separate Responses configuration.
 
 ```bash
 export TASK_REPOSITORY=/absolute/path/to/calculator
+git -C "$TASK_REPOSITORY" rev-parse --verify HEAD
+git -C "$TASK_REPOSITORY" status --short --untracked-files=all
 export TASK_OUTPUT="$HOME/oc-evaluation/local-task-001"
 mkdir -p "$TASK_OUTPUT"
 python - "$TASK_OUTPUT/tasks.jsonl" <<'PY_TASK'
@@ -110,7 +114,7 @@ oc-eval run "$TASK_OUTPUT/tasks.jsonl" \
   --output "$TASK_OUTPUT/results" --concurrency 1
 ```
 
-Read the resulting candidate rows in `results/results.jsonl`. Solver tests recorded during generation describe its work. Official benchmark outcomes come from the benchmark runner and its bound target execution.
+Read the resulting candidate rows in `results/results.jsonl`. The command can exit with code 0 after a task fails, so check `patch_produced`, `submission_eligible`, and `error`. Solver tests recorded during generation describe its work. Official benchmark outcomes come from the benchmark runner and its bound target execution.
 
 ## Generated records
 

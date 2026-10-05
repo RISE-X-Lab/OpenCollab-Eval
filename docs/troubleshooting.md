@@ -52,6 +52,14 @@ remote relay health endpoint, upstream URL hash, and protected token file.
 For direct transport, verify worker DNS, HTTPS connectivity, credential-file
 mode, and exact model response identity.
 
+## A local interrupted task fails to restart
+
+Inspect `parallel_summary.json` and the per-task report before continuing a batch. Tasks that have never started remain schedulable. Completed tasks with matching evidence reuse their reports. A task interrupted after its local runner started retains `runner.pid` or `summary.json` in the worker task directory. A repeated launch in that directory raises `RemoteRunnerUnavailable`, including when the saved owner state is `dead`.
+
+Use the saved capture receipt's `recovery_environment` and `recovery_argv` to recover a retained candidate after the original owner has exited. Evaluate an existing verified candidate through the [evaluation-only queue](swe-prolite-operations.md#prepare-an-evaluation-only-queue), setting `source_base_run_dir` to the original task directory and `base_run_dir` to a fresh isolated evaluation directory. The worker error `eval-only source and target base run directories must differ` identifies a plan that uses the same path for both. Preserve the original reports and trajectories while preparing the corrected plan.
+
+When the saved evidence cannot establish a trusted candidate and the Solver-start allowance is exhausted, retain that attempt as a technical failure. Any new generation allowed by the experiment protocol uses a fresh run ID and output directory.
+
 ## Runtime synchronization fails
 
 The runner creates a manifest over the synchronized OpenCollab public modules,

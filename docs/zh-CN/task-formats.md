@@ -69,10 +69,14 @@ oc-eval inspect /data/swe-batch-pro.jsonl \
 
 此命令报告候选生成情况与提交资格。密封的 SWE 裁判契约和官方 resolved 判定由后续评测命令处理。
 
-把仓库路径改为已存在的 Git 仓库。保存 JSONL 时，每个对象占一个物理行。以下命令在 checkout 外写入该文件并生成候选。执行前通过 `OPENCOLLAB_API_KEY` 与 `OPENCOLLAB_BASE_URL` 设置凭据和入口，并把 `OPENCOLLAB_MODEL` 设为实际模型。
+把仓库路径改为已有提交且工作区干净的 Git 仓库。下方第一条 Git 检查应输出提交 ID。第二条检查包含未跟踪文件，应没有输出。将自己的改动提交，或使用另一份干净的 checkout。保存 JSONL 时，每个对象占一个物理行。以下命令在 checkout 外写入该文件并生成候选。执行前通过 `OPENCOLLAB_API_KEY` 与 `OPENCOLLAB_BASE_URL` 设置凭据和入口，并把 `OPENCOLLAB_MODEL` 设为实际模型。
+
+使用 `openai` provider 时，`oc-eval run` 采用 Chat Completions，base URL 需要支持这一 API。`OPENCOLLAB_WIRE_PROTOCOL` 无法将此命令切换为 Responses。[Duo 教程](swe-prolite-operations.md#在一台-linux-工作机上运行-duo)提供另一套 Responses 配置。
 
 ```bash
 export TASK_REPOSITORY=/absolute/path/to/calculator
+git -C "$TASK_REPOSITORY" rev-parse --verify HEAD
+git -C "$TASK_REPOSITORY" status --short --untracked-files=all
 export TASK_OUTPUT="$HOME/oc-evaluation/local-task-001"
 mkdir -p "$TASK_OUTPUT"
 python - "$TASK_OUTPUT/tasks.jsonl" <<'PY_TASK'
@@ -94,7 +98,7 @@ oc-eval run "$TASK_OUTPUT/tasks.jsonl" \
   --output "$TASK_OUTPUT/results" --concurrency 1
 ```
 
-候选记录在 `results/results.jsonl` 中。生成阶段记录的 Solver 测试描述其实际工作。正式基准结果由基准 runner 和绑定候选的目标执行给出。
+候选记录在 `results/results.jsonl` 中。任务失败后，命令也可能以退出码 0 结束，因此应检查 `patch_produced`、`submission_eligible` 和 `error`。生成阶段记录的 Solver 测试描述其实际工作。正式基准结果由基准 runner 和绑定候选的目标执行给出。
 
 ## 生成的记录
 

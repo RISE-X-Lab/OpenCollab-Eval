@@ -276,14 +276,16 @@ SSH worker 需要在配置中设置 `runner_transport`、`host` 与对应 worker
 
 ### 继续中断的运行
 
-确认前一个控制器已经退出后，用相同配置、选题范围、run ID 和输出目录再次执行。已完成且证据相符的题目报告会被复用。其余任务继续遵守已记录的 Solver 启动次数与正式评测次数限制。更换模型或实验设置时，使用新的 run ID 和输出目录。
+确认前一个控制器已经退出后，检查 `parallel_summary.json` 与各题报告。从未启动的题目可以继续调度，已完成且证据相符的题目会复用保存报告。选中的题目处于这两种状态时，用相同配置、run ID 和输出目录再次执行下面的命令。处理其他选题范围时，将 `--indices` 设为准备继续处理的已完成或从未启动题号。
 
 ```bash
 oc-eval duo --config "$EVAL_ROOT/duo.json" \
   --indices 2-50 --workers 4 --run-id duo-batch-001
 ```
 
-这里会根据已保存结果继续调度批次。原生角色恢复按[评测套件](evaluation-suite.md#恢复与结果)介绍的已保存回执执行。已有补丁的复评使用[仅评测维护](#恢复运行与仅评测维护)。两种操作都保留原始报告与轨迹。
+runner 启动后中断的题目会在 worker 题目目录留下所有权记录或 summary。即使原拥有进程已经退出，local transport 仍会拒绝在该目录再次启动。按照[评测套件](evaluation-suite.md#恢复与结果)中的说明，同时使用已保存回执的 `recovery_environment` 与 `recovery_argv` 恢复保留的候选。已经验证的候选通过[仅评测维护](#恢复运行与仅评测维护)评分，将原题目目录设为 `source_base_run_dir`，将新的独立目录设为 `base_run_dir`。
+
+保存证据无法确认可信候选且 Solver 启动额度已耗尽时，将该次尝试保留为技术失败。实验协议允许再次生成后，使用新的 run ID 和输出目录。更换模型或实验设置时，也使用新的 run ID 和输出目录。恢复过程中保留原始报告与轨迹。
 
 ## 高级 worker 拓扑
 
@@ -456,7 +458,7 @@ OpenHands 需要 Python 3.12 与打包的 `run_openhands_cli.sh` 资源。Claude
 
 修复评分环境后，保留已经生成的候选，再执行此维护操作。计划存放在源码仓库外，将示例路径和身份占位值替换成原始任务报告中的实际值。`runner_args` 沿用原模型和传输设置，这些设置描述已有运行，队列会关闭每个子进程的模型生成。
 
-计划中的 `index` 是原始的从 1 开始的题号。`parent_output_dir` 指向已有控制器报告，`base_run_dir` 是 worker 题目目录，`remote_runtime_repo` 指向所选源码运行目录。`task`、`record_id`、`source_patch_sha256` 与 `eval_patch_sha256` 绑定已保存候选。复评记录使用新的 `run_id` 与 `eval_dir_name`。可选 `source_base_run_dir` 可以让保留的原题目目录复制到独立的 `base_run_dir`。
+计划中的 `index` 是原始的从 1 开始的题号。`parent_output_dir` 指向已有控制器报告。将 `source_base_run_dir` 设为原 worker 题目目录，将 `base_run_dir` 设为此次评测使用的全新独立目录，两者必须不同。运行器将绑定的候选记录从原目录复制到新的评测目录。`remote_runtime_repo` 指向所选源码运行目录。`task`、`record_id`、`source_patch_sha256` 与 `eval_patch_sha256` 绑定已保存候选。复评记录使用新的 `run_id` 与 `eval_dir_name`。
 
 ```json
 {
@@ -479,7 +481,8 @@ OpenHands 需要 Python 3.12 与打包的 `run_openhands_cli.sh` 资源。Claude
     {
       "index": 1,
       "parent_output_dir": "/srv/oc-evaluation/eval-data/results/duo-smoke-001",
-      "base_run_dir": "/srv/oc-evaluation/eval-data/runs/duo-smoke-001/task_1",
+      "source_base_run_dir": "/srv/oc-evaluation/eval-data/runs/duo-smoke-001/task_1",
+      "base_run_dir": "/srv/oc-evaluation/eval-data/runs/duo-rejudge-001/task_1",
       "remote_runtime_repo": "/srv/oc-evaluation/eval-data/runs/duo-smoke-001/_runtime/repo",
       "run_id": "duo-rejudge-001",
       "eval_dir_name": "official_eval_rejudge_001",
@@ -499,7 +502,7 @@ oc-eval rejudge-queue \
   --workers 1
 ```
 
-队列状态保存在输出目录的 `rejudge_queue_<queue-id>.json` 中，记录每项任务的状态、子报告、日志和启动次数。中断后使用同一计划和输出目录再次执行。已经验证的终态报告会被复用，候选冲突与次数耗尽需要先处理已记录的原因。父 `final_eval_layer_report.json` 根据已接受结果自动更新。
+队列状态文件是输出目录下的 `rejudge_queue_<queue-id>.json`，记录每项任务的状态、子报告、日志与启动次数。沿用相同计划和输出目录再次执行时，已验证终态报告会被复用，从未启动的任务会继续调度。已启动后中断的 local 子进程会留下 worker 所有权记录。实验协议允许再次正式评测时，创建新计划并使用新的独立 `base_run_dir` 与 `run_id`，保留原候选来源和之前的队列状态。候选冲突与尝试额度耗尽需要依据记录处理对应原因。父级 `final_eval_layer_report.json` 会依据接受的结果刷新。
 
 ## 完成条件
 

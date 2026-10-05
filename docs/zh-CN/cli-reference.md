@@ -47,7 +47,9 @@ oc-eval duo --config CONFIG [--indices INDICES] [--workers COUNT]
 `--dry-run` 输出有效配置，`oc-eval g22` 保留为命令别名。
 模型参数、预算、超时与评测选项沿用已有并行 runner。
 
-入口默认使用本机传输、第 1 行、一个 worker 和解析为 `single2` 的 `base` 角色。报告写入 `<config-directory>/results/<run-id>`，`--output-dir` 可以更换目录。继续同一运行时保留固定 `--run-id`。JSON 键名使用并行 parser 参数名并以英文下划线连接。`workflow_env` 接受对象或 `KEY=VALUE` 字符串列表。CLI 覆盖值优先于同名 JSON 设置。
+入口默认使用本机传输、第 1 行、一个 worker 和解析为 `single2` 的 `base` 角色。报告写入 `<config-directory>/results/<run-id>`，`--output-dir` 可以更换目录。保留同一 `--run-id` 可以复用已完成报告，并继续派发尚未启动的任务。已中断的任务按[恢复指南](swe-prolite-operations.md#恢复运行与仅评测维护)处理。JSON 键名使用并行 parser 参数名并以英文下划线连接。`workflow_env` 接受对象或 `KEY=VALUE` 字符串列表。CLI 覆盖值优先于同名 JSON 设置。
+
+Duo 最终状态为 `done` 或 `--dry-run` 成功时，退出码为 0。其他最终状态返回 1，包括技术失败与设施停止。参数、配置错误和已报告的运行异常返回 2。KeyboardInterrupt 返回 130。
 
 ### `oc-eval run`
 
@@ -63,7 +65,11 @@ oc-eval run TASKS_FILE --model MODEL --provider PROVIDER
 
 默认值为 `--output eval_results`、`--concurrency 4`、`--max-tokens 1000000`、`--timeout 600` 与 `--temperature 0.2`。通过 `--model` 与 `--provider` 指定模型和适配器，或设置 `OPENCOLLAB_MODEL` 与 `OPENCOLLAB_PROVIDER`。`OPENCOLLAB_API_KEY` 与 `OPENCOLLAB_BASE_URL` 提供凭据和入口。每道题可以覆盖 token 预算与超时。真实运行选择仓库外的绝对输出目录。
 
-摘要字段为 `tasks`、`eligible_patches` 与 `ineligible`。向评测器提交补丁前，逐行读取 `patch_produced`、`submission_eligible`、`error` 与 `execution_quiesced`。[任务格式](task-formats.md#通用评测器任务-jsonl)介绍输入文件的创建方法。
+通过 `repo_path` 选择本地 Git 仓库时，仓库应已有提交，工作区干净且没有未跟踪文件。[快速入门](getting-started.md#运行本地仓库任务)给出只读 Git 检查。将自己的改动提交，或使用另一份干净的 checkout。
+
+使用 `openai` provider 时，此命令采用 Chat Completions，base URL 需要支持这一 API。`OPENCOLLAB_WIRE_PROTOCOL` 无法将此命令切换为 Responses。[Duo 教程](swe-prolite-operations.md#在一台-linux-工作机上运行-duo)提供另一套 Responses 配置。
+
+摘要字段为 `tasks`、`eligible_patches` 与 `ineligible`。任务失败后，命令也可能以退出码 0 结束。向评测器提交补丁前，逐行读取 `patch_produced`、`submission_eligible`、`error` 与 `execution_quiesced`。[任务格式](task-formats.md#通用评测器任务-jsonl)介绍输入文件的创建方法。
 
 `--no-progress-timeout` 启用真实进展监督。完整的原生模型回合、模型内容或工具参数的实际增量，以及工具完成事件都会更新闲置计时。HTTP 成功、响应创建、保活、日志增长和快照修改时间维持原有计时。独立单 Agent 生成器与工作流生成器也接受这两个选项。
 

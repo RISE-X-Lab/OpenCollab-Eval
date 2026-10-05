@@ -49,7 +49,14 @@ The [task format reference](task-formats.md) describes both JSONL formats. Task 
 
 ## Run a local repository task
 
-Prepare an existing Git repository with the source and tests the model needs. Replace `/work/calculator` with its absolute path, and replace the description with your task. Omitting `repo_path` selects the evaluator's current working directory, so set it explicitly.
+Prepare a Git repository with at least one commit, a clean worktree, and the source and tests the model needs. Replace `/work/calculator` with its absolute path, and replace the description with your task. Omitting `repo_path` selects the evaluator's current working directory, so set it explicitly.
+
+```bash
+git -C /work/calculator rev-parse --verify HEAD
+git -C /work/calculator status --short --untracked-files=all
+```
+
+The first check must print a commit ID. The status check includes untracked files and must print nothing. Commit your intended changes or use a separate clean checkout before running.
 
 ```bash
 export EVAL_ROOT="$HOME/oc-evaluation/eval-data"
@@ -70,7 +77,7 @@ export OPENCOLLAB_PROVIDER=openai
 export OPENCOLLAB_API_KEY="$(python -c 'import getpass; print(getpass.getpass("API key > "))')"
 ```
 
-For a custom provider endpoint, set its API base URL before running. Replace the example address with your endpoint.
+With the `openai` provider, `oc-eval run` uses Chat Completions. For a custom endpoint, set a base URL that supports this API before running. Replace the example address with your endpoint. `OPENCOLLAB_WIRE_PROTOCOL` does not switch this command to Responses. The [Duo tutorial](swe-prolite-operations.md#run-duo-on-one-linux-worker) supplies a separate Responses configuration.
 
 ```bash
 export OPENCOLLAB_BASE_URL='https://api.example.com/v1'
@@ -96,7 +103,7 @@ from pathlib import Path
 for line in Path(sys.argv[1]).read_text().splitlines():
     if line.strip():
         row = json.loads(line)
-        print(row["task_id"], row["patch_produced"], row["submission_eligible"])
+        print(row["task_id"], row["patch_produced"], row["submission_eligible"], row.get("error"))
 PY_RESULTS
 ```
 
@@ -108,7 +115,7 @@ PY_RESULTS
 | `patch` | Captured patch text |
 | `error` | Recorded execution or capture error |
 
-The printed command summary contains `tasks`, `eligible_patches`, and `ineligible`. An eligible patch can proceed to evaluation. Official success is established by running the benchmark's actual target tests against the matching candidate. The [evaluation integrity guide](evaluation-integrity.md) explains those requirements, and [Troubleshooting](troubleshooting.md) explains execution and capture failures.
+The printed command summary contains `tasks`, `eligible_patches`, and `ineligible`. The command can exit with code 0 after a task fails. Check `patch_produced` and `submission_eligible`, and read `error` for the cause. An eligible patch can proceed to evaluation. Official success is established by running the benchmark's actual target tests against the matching candidate. The [evaluation integrity guide](evaluation-integrity.md) explains those requirements, and [Troubleshooting](troubleshooting.md) explains execution and capture failures.
 
 ## Inspect a benchmark dataset
 

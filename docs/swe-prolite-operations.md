@@ -310,14 +310,16 @@ published interface needs a registered test-fixture adaptation.
 
 ### Continue an interrupted run
 
-After the previous controller has exited, repeat the same configuration, indices, run ID, and output directory. Matching completed task reports are reused. Remaining work stays within the recorded Solver-start and official-evaluation limits. Changing model or experiment settings calls for a new run ID and output directory.
+After the previous controller has exited, inspect `parallel_summary.json` and the per-task reports. Tasks that have never started remain available for scheduling. Completed tasks with matching evidence reuse their saved reports. Repeat the command below when the selected rows have those states, using the same configuration, run ID, and output directory. For another selection, set `--indices` to the completed or never-started rows you intend to continue.
 
 ```bash
 oc-eval duo --config "$EVAL_ROOT/duo.json" \
   --indices 2-50 --workers 4 --run-id duo-batch-001
 ```
 
-This continues batch scheduling from saved results. Native role recovery follows its saved receipt as described in [the evaluation suite](evaluation-suite.md#recovery-and-results). Existing patch re-evaluation uses [evaluation-only maintenance](#resume-and-evaluation-only-maintenance). Keep the original reports and trajectories with either recovery.
+A task interrupted after its runner started retains an ownership or summary record in its worker task directory. Local transport rejects another launch in that directory even after the previous owner has exited. Recover a retained candidate using the saved receipt's `recovery_environment` and `recovery_argv` as described in [the evaluation suite](evaluation-suite.md#recovery-and-results). Evaluate a verified saved candidate through [evaluation-only maintenance](#resume-and-evaluation-only-maintenance), using the original task directory as `source_base_run_dir` and a fresh isolated directory as `base_run_dir`.
+
+When the saved evidence cannot establish a trusted candidate and the Solver-start allowance is exhausted, retain that attempt as a technical failure. A new generation allowed by the experiment protocol uses a fresh run ID and output directory. Changing model or experiment settings also calls for a new run ID and output directory. Preserve the original reports and trajectories throughout recovery.
 
 ## Advanced worker topology
 
@@ -572,7 +574,7 @@ reports automatically.
 
 Use this maintenance operation after repairing a scoring environment while preserving the generated candidate. Save the plan outside the source repository and replace the example paths and identity placeholders with values from the original task report. Keep the original model and transport settings in `runner_args`. Those settings describe the existing run, and the queue disables model generation for every child.
 
-The plan's `index` is the original one-based row. `parent_output_dir` points to existing controller reports. `base_run_dir` is the worker task directory, and `remote_runtime_repo` identifies the selected source runtime. `task`, `record_id`, `source_patch_sha256`, and `eval_patch_sha256` bind the saved candidate. Use a fresh `run_id` and `eval_dir_name` for the re-evaluation record. The optional `source_base_run_dir` allows a preserved source task directory to be copied into an isolated `base_run_dir`.
+The plan's `index` is the original one-based row. `parent_output_dir` points to existing controller reports. Set `source_base_run_dir` to the original worker task directory and `base_run_dir` to a fresh isolated directory for this evaluation. These directories must differ. The runner copies the bound candidate records from the source into the new evaluation directory. `remote_runtime_repo` identifies the selected source runtime. `task`, `record_id`, `source_patch_sha256`, and `eval_patch_sha256` bind the saved candidate. Use a fresh `run_id` and `eval_dir_name` for the re-evaluation record.
 
 ```json
 {
@@ -595,7 +597,8 @@ The plan's `index` is the original one-based row. `parent_output_dir` points to 
     {
       "index": 1,
       "parent_output_dir": "/srv/oc-evaluation/eval-data/results/duo-smoke-001",
-      "base_run_dir": "/srv/oc-evaluation/eval-data/runs/duo-smoke-001/task_1",
+      "source_base_run_dir": "/srv/oc-evaluation/eval-data/runs/duo-smoke-001/task_1",
+      "base_run_dir": "/srv/oc-evaluation/eval-data/runs/duo-rejudge-001/task_1",
       "remote_runtime_repo": "/srv/oc-evaluation/eval-data/runs/duo-smoke-001/_runtime/repo",
       "run_id": "duo-rejudge-001",
       "eval_dir_name": "official_eval_rejudge_001",
@@ -615,7 +618,7 @@ oc-eval rejudge-queue \
   --workers 1
 ```
 
-The queue state is `rejudge_queue_<queue-id>.json` below its output directory. It records each job's status, child reports, log, and launch count. Repeat the same plan and output directory after interruption. Verified terminal reports are reused, while candidate conflicts and exhausted attempt budgets require resolving their recorded cause. The parent `final_eval_layer_report.json` is refreshed from accepted outcomes.
+The queue state is `rejudge_queue_<queue-id>.json` below its output directory. It records each job's status, child reports, log, and launch count. Repeating the same plan and output directory reuses verified terminal reports and schedules jobs that have never launched. An interrupted local child retains its worker ownership record. For another official-evaluation attempt allowed by the experiment protocol, prepare a new plan with a fresh isolated `base_run_dir` and `run_id`, retaining the original candidate source and previous queue state. Resolve candidate conflicts and exhausted attempt budgets from their recorded cause. The parent `final_eval_layer_report.json` is refreshed from accepted outcomes.
 
 ## Completion criteria
 

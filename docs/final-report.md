@@ -13,6 +13,8 @@ Read each run's `final_eval_layer_report.json` before using this command. This p
 
 Each method also needs an evaluator-owned clean-run audit manifest and the evidence files described below. Keep the source reports and all referenced artifacts available at their recorded paths. The command validates those files and the official execution proofs before rendering.
 
+The runner writes the fact report and execution artifacts. The evaluator then reviews the trajectories, candidate identities, and network-isolation evidence and prepares `clean_run_manifest.json` and its structured evidence files using the formats below. Set each audit field from the reviewed artifacts. Obtain the canonical dataset file from the original run archive so it matches the snapshot used by both methods. Once these inputs are ready, run the publication command below.
+
 Install the selected LaTeX engine on the machine that executes publication. `--latex-engine` defaults to `xelatex`, and `--latex-timeout` defaults to 120 seconds for each compiler invocation. Optional label and narrative files can be omitted. Method names should identify the actual runs being compared.
 
 ## Command

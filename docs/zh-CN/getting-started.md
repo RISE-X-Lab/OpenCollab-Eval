@@ -49,7 +49,14 @@ python -m pip install -e './OpenCollab-Eval[openhands]'
 
 ## 运行本地仓库任务
 
-准备一个已有的 Git 仓库，里面放好模型需要的源码与测试。将 `/work/calculator` 换成仓库绝对路径，并换成自己的任务描述。省略 `repo_path` 会选择评测器当前的工作目录，因此应显式设置。
+准备一个已有提交且工作区干净的 Git 仓库，里面放好模型需要的源码与测试。将 `/work/calculator` 换成仓库绝对路径，并换成自己的任务描述。省略 `repo_path` 会选择评测器当前的工作目录，因此应显式设置。
+
+```bash
+git -C /work/calculator rev-parse --verify HEAD
+git -C /work/calculator status --short --untracked-files=all
+```
+
+第一条检查应输出提交 ID。第二条检查包含未跟踪文件，应没有输出。运行前将自己的改动提交，或使用另一份干净的 checkout。
 
 ```bash
 export EVAL_ROOT="$HOME/oc-evaluation/eval-data"
@@ -70,7 +77,7 @@ export OPENCOLLAB_PROVIDER=openai
 export OPENCOLLAB_API_KEY="$(python -c 'import getpass; print(getpass.getpass("API key > "))')"
 ```
 
-使用自定义 provider 接口时，运行前设置 API base URL，将示例地址换成自己的接口地址。
+使用 `openai` provider 时，`oc-eval run` 采用 Chat Completions。使用自定义接口时，运行前设置支持这一 API 的 base URL，并将示例地址换成自己的接口地址。`OPENCOLLAB_WIRE_PROTOCOL` 无法将此命令切换为 Responses。[Duo 教程](swe-prolite-operations.md#在一台-linux-工作机上运行-duo)提供另一套 Responses 配置。
 
 ```bash
 export OPENCOLLAB_BASE_URL='https://api.example.com/v1'
@@ -96,7 +103,7 @@ from pathlib import Path
 for line in Path(sys.argv[1]).read_text().splitlines():
     if line.strip():
         row = json.loads(line)
-        print(row["task_id"], row["patch_produced"], row["submission_eligible"])
+        print(row["task_id"], row["patch_produced"], row["submission_eligible"], row.get("error"))
 PY_RESULTS
 ```
 
@@ -108,7 +115,7 @@ PY_RESULTS
 | `patch` | 提取的补丁文本 |
 | `error` | 记录的执行或提取错误 |
 
-命令打印的摘要包含 `tasks`、`eligible_patches` 和 `ineligible`。满足提交要求的补丁可以继续评测。官方成功判定来自对匹配候选实际执行的基准目标测试。[评测完整性](evaluation-integrity.md)介绍相关要求，[故障排查](troubleshooting.md)介绍执行与提取失败的处理方法。
+命令打印的摘要包含 `tasks`、`eligible_patches` 和 `ineligible`。任务失败后，命令也可能以退出码 0 结束。检查 `patch_produced` 与 `submission_eligible`，并通过 `error` 查看原因。满足提交要求的补丁可以继续评测。官方成功判定来自对匹配候选实际执行的基准目标测试。[评测完整性](evaluation-integrity.md)介绍相关要求，[故障排查](troubleshooting.md)介绍执行与提取失败的处理方法。
 
 ## 检查基准数据集
 

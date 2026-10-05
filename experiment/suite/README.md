@@ -31,7 +31,8 @@ no arm can be scored there. Its replacement is `ordered_draw` row 101,
 row of the draw that no cell has run. The reserve rows are in no `suite-*.csv`
 file; a batch addresses this one as row 282 of `frame-ordered.csv`. Nothing in
 this directory was rewritten: the replacement lives in the batch specs
-(`experiment/batches/README.md`, *Replacements*).
+(see [Resume and recover](../batches/README.md#resume-and-recover) and the
+[recorded replacement spec](../batches/cmdbare40-r2-repl-scikit-learn__scikit-learn-26323.yaml)).
 
 Create a suite in a new directory:
 

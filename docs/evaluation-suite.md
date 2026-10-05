@@ -123,7 +123,9 @@ Completed trajectories are verified incrementally. Total file size can exceed 16
 
 The evaluator binds the actual trajectory directory before invoking the public workflow. Available exception chains are saved with credential redaction. Completed model events provide a known token and turn lower bound after a failed return. Started calls with missing responses remain visible as incomplete usage.
 
-A failed capture retains its owned container and trusted base for recovery. The saved receipt provides the installed-module command. Recovery verifies the selected runtime and the original owner's exit, then uses the existing quiescent extraction path. A saved candidate is evaluated through the eval-only entry with its original instance, record, and patch identity. Healthy sessions and already accepted results keep their existing attempts.
+A failed capture retains its owned container and trusted base for recovery. Use the saved receipt's `recovery_environment` with `recovery_argv` to run the installed recovery module. Recovery verifies the selected runtime and the original owner's exit, then uses the existing quiescent extraction path. Evaluate a verified saved candidate through the [evaluation-only queue](swe-prolite-operations.md#prepare-an-evaluation-only-queue) with its original instance, record, and patch identity. Set `source_base_run_dir` to the original task directory and `base_run_dir` to a fresh isolated evaluation directory. Healthy sessions and already accepted results keep their existing attempts.
+
+After a controller interruption, tasks that have never started remain schedulable and completed tasks with matching evidence reuse their reports. A local task interrupted after its runner started retains an ownership or summary record, which blocks another launch in that task directory even after the owner exits. Recover the candidate from its saved receipt or evaluate an existing verified candidate in an isolated directory. When the saved evidence cannot establish a trusted candidate and the Solver-start allowance is exhausted, retain the attempt as a technical failure. Any new generation allowed by the experiment protocol uses a fresh run ID and output directory.
 
 Final outcomes are determined pass, determined capability failure, and evaluation failure. A trusted candidate passing the official targets counts as a pass. A valid completed attempt or a proven intrinsic solver failure can establish capability failure. External interruptions and insufficient evidence remain evaluation failures. Running and queued tasks are execution states. A completed review of an existing candidate contributes to completed progress once, without another generation attempt. Inherited earlier-configuration passes are reported separately from newly measured passes.
 
@@ -133,7 +135,7 @@ SWE-bench `PASS_AND_FAIL` grading treats an executed, parser-proven P2P skip as 
 
 The package contains regression tests for public task secrecy, candidate identity and workspace isolation, successful and failed Conda activation, artifact recovery, official target parsing, request cancellation, and shared provider capacity. The provider tests use three real local processes to hold 45 and 30 slots, exercise a 100-slot provider, and verify release on cancellation, metadata failure, response closure, and process exit. These tests use no model requests. Run `ruff check .` and `pytest -q` in each repository with `OPENCOLLAB_SOURCE_ROOT` pointing to the paired OC checkout.
 
-Use the receipt recovery_environment with recovery_argv so the interpreter loads the selected runtime. Active gateway slots cover connection establishment and response reading; supplier-side processing concurrency is recorded separately.
+Use the receipt `recovery_environment` with `recovery_argv` so the interpreter loads the selected runtime. Active gateway slots cover connection establishment and response reading. Supplier-side processing concurrency is recorded separately.
 
 For a server-side egress proxy, set HTTPS_PROXY and omit the direct-upstream option. Shared request limits cover that route as well.
 
@@ -147,9 +149,10 @@ remains an alias. `OPENCOLLAB_VALIDATION_COUNCIL_MAX_CODER_ROUNDS` changes the
 repair-round allowance while retaining the default of three. Provider recovery
 time is added to the outer role wait without extending normal model-call time.
 
-An eval-only queue job may set `source_base_run_dir` separately from
-`base_run_dir`; omission preserves the original same-directory behavior. The
-queue owns the source option and forwards it to the single-instance runner.
+A queue job sets `source_base_run_dir` to the preserved candidate's original
+task directory and `base_run_dir` to a fresh isolated evaluation directory.
+The two paths must differ. The queue owns the source option and forwards it to
+the single-instance runner, which copies the bound candidate records.
 Read-only health checks and repeated transfer of one runtime archive can retry
 transport timeouts within their existing attempt and overall time bounds.
 
