@@ -58,3 +58,14 @@ def test_remote_transport_binding_retains_digest_validation(monkeypatch, value):
 
     with pytest.raises(ValueError, match="SHA-256 digest"):
         bind_llm_transport(llm_transport_metrics({}))
+
+
+def test_the_metrics_row_carries_the_driver_run_id(monkeypatch):
+    """The batch manifest row and this metrics row join on this field."""
+    monkeypatch.delenv("OPENCOLLAB_EVAL_RUN_ID", raising=False)
+    monkeypatch.setenv("OPENCOLLAB_RUN_ID", "single-abc")
+    metrics = llm_transport_metrics({})
+
+    bind_llm_transport(metrics)
+
+    assert metrics["run_id"] == "single-abc"

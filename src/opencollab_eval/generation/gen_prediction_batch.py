@@ -51,6 +51,7 @@ import json
 import os
 import sys
 import time
+import uuid
 from collections.abc import Iterable, Sequence
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime, timezone
@@ -193,7 +194,7 @@ def _arm_module(arm: str) -> str:
 ARM_SAMPLING_TEMPERATURE = "1.0"
 
 
-def generator_environment(log_dir: Path) -> dict[str, str]:
+def generator_environment(log_dir: Path, run_id: str | None = None) -> dict[str, str]:
     """The environment one ``(instance, arm)`` generator process is started with.
 
     A function rather than a literal at the call site because it is also the
@@ -203,11 +204,16 @@ def generator_environment(log_dir: Path) -> dict[str, str]:
     cross-arm alignment audit resolves the configuration under exactly this
     mapping.
     """
-    return {
+    environment = {
         **os.environ,
         "OPENCOLLAB_EVAL_WORKFLOW_LOG_DIR": str(log_dir),
         "OPENCOLLAB_TEMPERATURE": ARM_SAMPLING_TEMPERATURE,
     }
+    if run_id is not None:
+        # The id this run's manifest row records; the run writes it onto its
+        # trajectory and metrics row, so the three files join on it.
+        environment["OPENCOLLAB_RUN_ID"] = run_id
+    return environment
 
 
 def _now() -> str:
@@ -470,6 +476,7 @@ def _run_one(
     command: Sequence[str],
     log_dir: Path,
     stop: BatchStop,
+    run_id: str | None = None,
 ) -> tuple[int | None, float]:
     """Run one (instance, arm) and return its return code and wall time.
 
@@ -480,7 +487,7 @@ def _run_one(
     """
     started = time.monotonic()
     with (log_dir / "driver.log").open("wb") as sink:
-        returncode = run_generator(list(command), sink, generator_environment(log_dir), stop)
+        returncode = run_generator(list(command), sink, generator_environment(log_dir, run_id), stop)
     return returncode, round(time.monotonic() - started, 1)
 
 
@@ -552,15 +559,15 @@ def _run_batch_locked(args: argparse.Namespace) -> int:
             image=instance.get("image") or args.image,
             extra=args.pass_through,
         )
-        jobs.append((index, iid, arm, log_dir, command))
+        jobs.append((index, iid, arm, log_dir, command, f"{arm}-{uuid.uuid4().hex}"))
 
     if args.dry_run:
-        for index, iid, arm, _log_dir, command in jobs:
+        for index, iid, arm, _log_dir, command, _run_id in jobs:
             print(f"[{index}/{len(work)}] {arm} {iid}")
             print("  " + " ".join(command))
         return 0
 
-    def record(index, iid, arm, log_dir, command, returncode, elapsed) -> None:
+    def record(index, iid, arm, log_dir, command, run_id, returncode, elapsed) -> None:
         nonlocal failures
         failures += 0 if returncode == 0 else 1
         with manifest.open("a", encoding="utf-8") as handle:
@@ -569,6 +576,7 @@ def _run_batch_locked(args: argparse.Namespace) -> int:
                     {
                         "instance_id": iid,
                         "arm": arm,
+                        "run_id": run_id,
                         "returncode": returncode,
                         "seconds": elapsed,
                         "finished_at": _now(),
@@ -582,13 +590,13 @@ def _run_batch_locked(args: argparse.Namespace) -> int:
 
     with BatchStop() as stop:
         if args.concurrency == 1:
-            for index, iid, arm, log_dir, command in jobs:
+            for index, iid, arm, log_dir, command, run_id in jobs:
                 if stop.event.is_set():
                     break
                 print(f"[{index}/{len(work)}] {arm} {iid}", flush=True)
-                returncode, elapsed = _run_one(command=command, log_dir=log_dir, stop=stop)
+                returncode, elapsed = _run_one(command=command, log_dir=log_dir, stop=stop, run_id=run_id)
                 if returncode is not None:
-                    record(index, iid, arm, log_dir, command, returncode, elapsed)
+                    record(index, iid, arm, log_dir, command, run_id, returncode, elapsed)
         else:
             print(f"running {args.concurrency} at a time", flush=True)
             pool = ThreadPoolExecutor(max_workers=args.concurrency)
@@ -598,7 +606,7 @@ def _run_batch_locked(args: argparse.Namespace) -> int:
             def submit_next() -> None:
                 job = next(pending_jobs, None)
                 if job is not None and not stop.event.is_set():
-                    futures[pool.submit(_run_one, command=job[4], log_dir=job[3], stop=stop)] = job
+                    futures[pool.submit(_run_one, command=job[4], log_dir=job[3], stop=stop, run_id=job[5])] = job
 
             try:
                 for _ in range(args.concurrency):

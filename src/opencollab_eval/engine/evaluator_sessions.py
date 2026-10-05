@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import os
 import uuid
 from collections.abc import Sequence
@@ -54,6 +55,22 @@ def _is_controlled_stop_reason(reason: object) -> bool:
         return False
     normalized = reason.strip().lower()
     return normalized in _CONTROLLED_STOP_REASONS or normalized.startswith(_CONTROLLED_STOP_REASON_PREFIXES)
+
+
+def _driver_run_id(method: Any) -> dict[str, str]:
+    """The batch driver's id for this run, for the SDK to write on its files.
+
+    Absent, the SDK chooses one. A runtime older than ``run_id=`` is passed
+    nothing, so it still runs and only its trajectory keeps its own id.
+    """
+    run_id = os.environ.get("OPENCOLLAB_RUN_ID", "").strip()
+    if not run_id:
+        return {}
+    parameters = inspect.signature(method).parameters
+    accepts = "run_id" in parameters or any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
+    )
+    return {"run_id": run_id} if accepts else {}
 
 
 def _workflow_concurrency() -> int:
@@ -290,6 +307,7 @@ async def _run_single_session(
         timeout=generation_wall_timeout(task.timeout),
         artifacts=artifacts,
         trace=True,
+        **_driver_run_id(client.agent),
     )
     if timeout_seconds() is not None:
         configured_root = os.environ.get("OPENCOLLAB_EVAL_WORKFLOW_LOG_DIR")
@@ -344,7 +362,7 @@ async def _run_workflow_mode(
         progress_root = Path(configured_root).parent if configured_root else Path(save_dir or artifacts)
         workflow = guarded_workflow(workflow, progress_root, orchestration_path=artifacts / "orchestration.jsonl")
     profile_options = {"agent_profile": agent_profile} if agent_profile is not None else {"system_prompt": prompt}
-    result = await _client(
+    client = _client(
         env=env,
         model=model,
         provider=provider,
@@ -362,7 +380,8 @@ async def _run_workflow_mode(
         llm_connect_timeout=llm_connect_timeout,
         llm_first_event_timeout=llm_first_event_timeout,
         llm_stream_idle_timeout=llm_stream_idle_timeout,
-    ).workflow(
+    )
+    result = await client.workflow(
         workflow,
         args,
         budget=task.max_tokens,
@@ -372,6 +391,7 @@ async def _run_workflow_mode(
         **profile_options,
         artifacts=artifacts,
         trace=True,
+        **_driver_run_id(client.workflow),
     )
     return _EvalRunRecord(result, workflow=True, agent_profile=agent_profile)
 
@@ -404,7 +424,7 @@ async def _run_team_mode(
 ) -> _EvalRunRecord:
     """Run a prebuilt team with isolated worktrees and serialized turns."""
     artifacts = _reserve_artifacts(save_dir)
-    result = await _client(
+    client = _client(
         env=env,
         model=model,
         provider=provider,
@@ -422,7 +442,8 @@ async def _run_team_mode(
         llm_connect_timeout=llm_connect_timeout,
         llm_first_event_timeout=llm_first_event_timeout,
         llm_stream_idle_timeout=llm_stream_idle_timeout,
-    ).team(
+    )
+    result = await client.team(
         task.description,
         config=team_config,
         budget=task.max_tokens,
@@ -441,6 +462,7 @@ async def _run_team_mode(
         # the arm produces a patch nobody can attribute, which is the one
         # quantity the comparison against a scripted twin is for.
         record_delivery_tree=True,
+        **_driver_run_id(client.team),
     )
     if artifacts is not None:
         tracer.bind_artifacts(artifacts, filename=TRAJECTORY_FILENAME)
