@@ -11,6 +11,31 @@ it, and the metrics row records it, so the manifest row, the trajectory and the
 metrics row join on one id. With OpenCollab 0.9.0 the run proceeds and its
 trajectory keeps the runtime's own id.
 
+## [0.9.1] - 2026-10-05
+
+Paired with OpenCollab 0.9.1. The supported runtime dependency remains
+`opencollab>=0.9,<0.10`.
+
+Generation and evaluation preserve structured facility failures separately
+from valid solver outcomes. Observation storage failures retain healthy
+execution, failed candidate persistence retains recovery resources, and batch
+cancellation saves completed results. Duo fallback candidates retain their
+official scoring eligibility when completed discarded roles only fail during
+cleanup. SWE-bench pass-to-pass tests follow the official allowed-skip rules.
+
+The Terminal container backend tracks foreground command completion and process
+group cancellation before candidate delivery. Task-specific verifier preparation
+runs in an isolated scoring copy, preserves recovery evidence, and shares the
+existing task timeout with the official verifier. Preparation failures retain a
+score-only retry path, including cancellation receipts across Python versions.
+
+External solvers preserve preinstalled runtime dependencies, and failed evidence
+copies retain their source directories. Provider diagnostics use the effective
+configuration. Monitoring reads native journals and discovers agent and workflow
+snapshots. Usage reports retain unknown cache fields, include cache write costs,
+and calculate stable confidence intervals. Prediction summaries use the attempts
+actually selected for export.
+
 ## [0.9.0] - 2026-10-02
 
 Paired with OpenCollab 0.9.0. Installation requirements, remote runtime
@@ -159,3 +184,5 @@ truncated, or mismatched execution output.
 [0.7.0]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.5.1...v0.7.0
 
 [0.9.0]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.8.3...v0.9.0
+
+[0.9.1]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.9.0...v0.9.1
