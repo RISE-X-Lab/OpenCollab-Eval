@@ -6,9 +6,12 @@ OpenCollab-Eval 的贡献范围包括基准适配器和评测代码。后者把 
 
 ## 开发环境配置
 
-请使用 Python 3.10 或更高版本。OpenHands 集成要求 Python 3.12。
+在评测器仓库中执行下面的命令，旁边应有配套的 OpenCollab 仓库。建议使用 Python 3.12，这与完整 CI 和 OpenHands 环境一致。核心 CI 也覆盖 Python 3.10 和 3.11。虚拟环境放在源码仓库之外。
 
 ```bash
+python3.12 -m venv ../oce-dev-venv
+. ../oce-dev-venv/bin/activate
+python -m pip install --upgrade pip
 python -m pip install -e ../OpenCollab
 python -m pip install -e '.[dev,swebench]'
 ruff check .
@@ -27,8 +30,8 @@ wheel_root="$(mktemp -d)"
 python -m build --wheel --outdir "$wheel_root/opencollab" ../OpenCollab
 python -m build --wheel --outdir "$wheel_root/eval" .
 scripts/verify_wheel_contract.sh \
-  "$wheel_root"/opencollab/opencollab-0.5*.whl \
-  "$wheel_root"/eval/opencollab_eval-0.5.1*.whl
+  "$wheel_root"/opencollab/opencollab-0.9.1*.whl \
+  "$wheel_root"/eval/opencollab_eval-0.9.1*.whl
 ```
 
 确定性 SWE E2E 要求安装 Docker、`sshd`、`ssh`、`ssh-keygen` 和 `rsync`。其中的模型请求发往本地伪服务，因此无需提供方凭据。

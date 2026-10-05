@@ -260,7 +260,13 @@ error count, test count, and command identity must all agree.
 
 ## Candidate and run identity
 
-Generation and evaluation records bind the following identities.
+Generation and evaluation records bind the following identities. The batch
+driver passes its `run_id` through `OPENCOLLAB_RUN_ID` to public OpenCollab
+calls that support it. OpenCollab 0.9.1 retains the runtime identity in result
+metrics and artifact manifests with tracing enabled or disabled. Earlier 0.9.x
+runtimes retain their own generated identity when their public call omits this
+parameter. Existing reports remain readable through the recorded identity
+fields and prediction-to-metric pairing.
 
 | Identity | Binding |
 | --- | --- |
@@ -285,9 +291,9 @@ replace `record_id` and full SHA-256 pairing.
 
 | Terminal result | Required facts |
 | --- | --- |
-| Resolved | Eligible patch, verified projection and cleanup, safe artifacts, and passing target evidence |
-| Unresolved | Bound evidence proves a declared target failure, skip, candidate-caused pre-test failure, or source rejection before an expected candidate tree exists |
-| Technical failure | Candidate identity or evaluation state is insufficient to decide correctness |
+| P / Resolved | Eligible patch, verified projection and quiescence, safe artifacts, and passing target evidence |
+| F / Unresolved | Bound evidence proves a declared target failure, skip, candidate-caused pre-test failure, or source rejection before an expected candidate tree exists |
+| E / Technical failure | Candidate identity or evaluation state is insufficient to decide correctness |
 
 The evaluator derives its verdict from a durable artifact snapshot. Technical
 reasons include unsafe or missing identity evidence, an unsupported plan, an
@@ -323,10 +329,20 @@ is a technical projection inconsistency.
 | `eval_done` | A matching official report completed and contains a resolved or unresolved verdict |
 | `technical_eval_failed` | Official evaluation ended without trustworthy terminal evidence |
 
-Generation statuses such as timeout, context overflow, cancellation, budget
-exhaustion, and patch guard failure remain generation failures. Evaluation
-statuses such as missing image, missing specification, empty filtered patch,
-driver failure, and failed evidence remain technical evaluation failures.
+A non-empty candidate with `done` or `done_with_timeout_patch` can enter
+official evaluation when its submission evidence is valid and generation has
+stopped. An explicitly adopted candidate is judged by official scoring even
+when its internal council reports incomplete or blocked work. The retained
+metric must prove completed runtime execution, adoption, candidate bytes, and
+submission integrity. Older reports with this evidence can expose a corrected
+scoring view while retaining their original diagnostics.
+
+Terminal timeout, context overflow, cancellation, budget exhaustion, and patch
+guard failure statuses remain generation failures when they have no eligible
+delivery. Missing image, missing specification, empty filtered patch, driver
+failure, and failed execution evidence remain technical evaluation failures.
+Legacy metrics remain readable through the existing compatibility path. Modern
+metrics with missing or false required integrity fields are ineligible.
 
 ## Failure scope
 

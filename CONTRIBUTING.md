@@ -7,9 +7,12 @@ code that turns Solver changes into evidence-backed official results.
 
 ## Development setup
 
-Use Python 3.10 or newer. OpenHands integrations require Python 3.12.
+Run these commands from the evaluator checkout, with a compatible OpenCollab checkout beside it. Python 3.12 matches the complete CI and OpenHands setup. The core CI also covers Python 3.10 and 3.11. Keep the virtual environment outside the source checkout.
 
 ```bash
+python3.12 -m venv ../oce-dev-venv
+. ../oce-dev-venv/bin/activate
+python -m pip install --upgrade pip
 python -m pip install -e ../OpenCollab
 python -m pip install -e '.[dev,swebench]'
 ruff check .
@@ -31,8 +34,8 @@ wheel_root="$(mktemp -d)"
 python -m build --wheel --outdir "$wheel_root/opencollab" ../OpenCollab
 python -m build --wheel --outdir "$wheel_root/eval" .
 scripts/verify_wheel_contract.sh \
-  "$wheel_root"/opencollab/opencollab-0.5*.whl \
-  "$wheel_root"/eval/opencollab_eval-0.5.1*.whl
+  "$wheel_root"/opencollab/opencollab-0.9.1*.whl \
+  "$wheel_root"/eval/opencollab_eval-0.9.1*.whl
 ```
 
 The deterministic SWE E2E requires Docker, `sshd`, `ssh`, `ssh-keygen`, and

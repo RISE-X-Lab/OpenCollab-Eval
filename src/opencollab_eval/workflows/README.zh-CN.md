@@ -5,7 +5,7 @@
 该包提供评测工作流，以及 OpenCollab 内置工作流的兼容导入。Duo 的候选编排与
 选择由 OpenCollab 提供，Eval 负责公开题面、基准隔离工作区、隐藏测试分离与正式评分。
 Python 代码定义控制流程，其中包括智能体
-分支和修复轮次。验证门禁与停止条件也由 Python 代码管理，模型在这套控制流内
+分支和修复轮次。执行证据要求与停止条件也由 Python 代码管理，模型在这套控制流内
 分析并修改仓库。
 
 该包依赖 OpenCollab 0.9.0 或更高 0.9.x 版本中的工作流编写接口。
@@ -25,6 +25,7 @@ from opencollab.workflows import WorkflowContext, workflow
 | --- | --- |
 | `duo` | OpenCollab 内置双 coder，按公开要求选择候选 |
 | `base-team` | 分析员先给出简报，随后进入有界的编码与测试循环 |
+| `base-team-single-pass-v1` | 分析员、编码员和验证员各执行一次会话 |
 | `self-collab` | 按阶段执行，并审查计划和各阶段结果 |
 | `self-collaboration` | 三个预算座位依次执行 Analyst 分析、Coder 实现、Tester 验证和 Analyst 裁决 |
 | `self-collaboration-reading-analyst` | 保持同一脚本流程，初始 Analyst 阶段使用读取工具 |
@@ -32,16 +33,22 @@ from opencollab.workflows import WorkflowContext, workflow
 | `scout-solve` | 并行只读勘察，随后进行一轮修复 |
 | `analyst-solve` | 由分析员组织勘察、分阶段修复和最终验证 |
 | `team-pro` | `analyst-solve` 的稳定调优别名 |
-| `candidate-tournament-council-v1` | 两份独立补丁候选、一个集成角色和一个公共测试执行角色 |
 | `validation-council-solve` | 面向 SWE 任务的盲审契约与验证委员会 |
+| `validation-council-dual-coder-contract-v1` | 两套隔离编码策略，按公开要求选择候选 |
+| `validation-council-triple-coder-contract-v1` | 三套隔离编码策略，按公开要求选择候选 |
+| `validation-council-lean-official-v1` | 精简委员会在 OpenCollab 候选工作区中运行，随后明确采用候选 |
 | `swe-committee-v2` | 带有明确证据和测试门禁的委员会工作流 |
 
-生产 Solver 协调器将 `g11` 和 `g1.1` 映射到
-`validation-council-solve`，将 `g20-exp2` 映射到
-`candidate-tournament-council-v1`，将 `baseTeam` 映射到 `base-team`，将
-`TeamPro` 映射到 `team-pro`。`openhands` 和 `claude-code` 是通过共享
-生成与候选路径接入的外部 Solver 配置。其余工作流函数是库级构件，可由单实例
-工作流生成器选择。
+上表列出单实例工作流生成器接受的名称。Solver 协调器将 `g11` 和 `g1.1`
+映射到 `validation-council-solve`，将 `baseTeam` 映射到 `base-team`，将
+`TeamPro` 映射到 `team-pro`。历史实验组声明也保留在 Solver 注册表中。
+`g20-exp1` 对应 `evidence-action-council-v1`，`g20-exp2` 对应
+`candidate-tournament-council-v1`，`g11-wired` 对应
+`validation-council-wired-v1`。这三个工作流名称保留为历史映射，位于当前生成器
+注册表之外。记录下来的实验条件与分析参见[实验集合](../../../experiment/README.md)。
+
+`openhands` 和 `claude-code` 是通过共享生成与候选路径接入的外部 Solver
+配置。安装后的调用方也可以从公开评测包导入上表中的工作流函数。
 
 盲审 SWE 工作流接收问题文本、仓库内容、公开测试和公开文档。隐藏的评分断言
 留在评测器中，最终任务结果由外部官方评测决定。
@@ -49,7 +56,7 @@ from opencollab.workflows import WorkflowContext, workflow
 ## 编写契约
 
 工作流是由 `@workflow` 装饰的异步函数。角色工具来自 `builtin_tools`。它会
-返回适合无界面环境的全新实例，并禁用模型提供的测试命令覆盖值。
+返回适合无界面环境的全新实例。执行验证证据来自原生 Shell 命令。
 
 ```python
 from typing import Any
@@ -97,8 +104,7 @@ Shell 命令运行，差异审查使用 `git_diff`。向 `builtin_tools` 传入
 
 模型可见工具均采用当前 OC 原生定义。OpenCollab 观察 Bash 的实际执行，保存命令、退出码
 和对应测试输出，供工作流判断使用。命令选择、参数、等待时间、审批、执行及模型
-看到的输出沿用原生 Bash 行为。专用测试工具、自动选择运行器、命令改写和工具
-GREEN／RED 报告已经移除。
+看到的输出沿用原生 Bash 行为。验证使用该次执行记录的命令和目标输出。
 
 需要精确 pytest 目标证据时，命令可使用 `-rA` 输出实际执行的节点。Go 可使用
 `-json`，Django 源码测试可使用原生详细输出。记录保留完整目标路径，空执行、
@@ -133,7 +139,8 @@ python -m opencollab_eval.generation.gen_prediction_workflow \
 可以直接通过 OpenCollab 调用 Duo。评测调用方使用
 `opencollab_eval.workflows.duo`，它引用同一个公开函数。
 `oc-eval duo` 默认选择统一的 `duo` 和 `agent_profile="base"`，解析后记录为 `single2`，
-裁决者始终通过文件读取完整证据。`oc-eval g22` 调用同一评测器。
+裁决者始终通过文件读取完整证据。`oc-eval g22` 是同一评测器的兼容别名。
+[Duo 文件证据](../../../docs/zh-CN/duo-file-evidence.md)说明保留的文件和分页读取方式。
 
 `self-collaboration` 的多个会话共用三个角色座位各自的预算，并允许一轮修复。
 读取变体在初始 Analyst 阶段采用读取工具集合。两者都在工作流结果中保存阶段

@@ -35,12 +35,31 @@ async def create_candidate(label):
 candidates = ContainerCandidates(source_container_id, create_candidate, candidate_artifacts)
 ```
 
-通过 OpenCollab 的公开环境与候选工作区参数传入 `environment` 和 `candidates`。原有工具包装、评测来源保护、题目配置和评分入口继续由调用方持有。升级已有运行器时，让新 worker 使用包内实现。
+将 `environment` 传入公开 OpenCollab 构造器的执行环境参数，将 `candidates`
+传入工作流调用的候选工作区参数。
 
-Docker 命令包装需要 Linux、Bash、`setsid`、GNU `env` 及其 `--default-signal` 支持 和 Docker CLI。重置 INT 与 QUIT 可以在包装层使用后台进程时保留前台信号行为。终止操作继续针对自身持有的进程组。
+```python
+from opencollab import OpenCollab
+from opencollab.builtin_workflows import duo
+
+client = OpenCollab(workspace=workspace, environment=environment)
+result = await client.workflow(duo, task_inputs, candidate_workspace=candidates)
+selected = candidates.selected
+```
+
+采用候选后，`selected.environment.container` 标识保留的候选容器。调用方记录
+这个身份，创建独立副本评分，并在保存结果后删除自己持有的容器。原有工具包装、评测来源保护、题目配置和评分入口继续由调用方持有。升级已有运行器时，让新 worker 使用包内实现。
+
+宿主机需要 Docker CLI。任务容器需要 Linux、Bash、`setsid` 和支持
+`--default-signal` 的 GNU `env`。重置 INT 与 QUIT 可以在包装层使用后台进程时保留前台信号行为。终止操作继续针对自身持有的进程组。
 
 ## 回归覆盖
 
-命令生命周期测试使用真实本地子进程，并替换 Docker 传输。测试复现取消传输失败后进程延迟退出的情况，随后采纳同一个选中候选。测试还覆盖成功与非零退出、未解决输出、活动命令拒绝、候选身份和容器状态。测试运行无需模型请求或 Docker daemon。
+命令生命周期测试使用真实本地子进程，并替换 Docker 传输。测试复现取消传输失败后进程延迟退出的情况，随后采纳同一个选中候选。测试还覆盖成功与非零退出、未解决输出、活动命令拒绝、候选身份和容器状态。
+
+```bash
+pytest -q tests/generation/test_terminal_command_lifecycle.py \
+  tests/generation/test_terminal_candidate_delivery.py
+```
 
 [Terminal评分准备](terminal-verifier-preparation.md)提供题面登录检查与新输出隔离的评分入口。

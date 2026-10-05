@@ -2,8 +2,8 @@
 
 **English** | [简体中文](../zh-CN/testing/deterministic-swe-e2e.md)
 
-The deterministic E2E proves the installed evaluation path without contacting
-a real model provider. It exercises built OpenCollab and OpenCollab-Eval wheels,
+The deterministic E2E proves the installed evaluation path through a local
+scripted model service. It exercises built OpenCollab and OpenCollab-Eval wheels,
 ephemeral SSH, real `rsync`, a local OpenAI-compatible service, a disposable
 Git task, Docker, trusted candidate extraction, official target execution,
 terminal reporting, and owned-resource cleanup.
@@ -28,15 +28,16 @@ pre-Solver sanitization. A separate integrity smoke exercises recoverable
 residue, task-scoped image rejection, concurrent task isolation, and a
 background writer that cannot reach quiescence.
 
-## Fake model contract
+## Scripted model service
 
 The local service implements model listing and Chat Completions. It accepts a
 fixed synthetic token and the `kimi-for-coding` identity used by this test
 fixture. It validates a 262144-token context, temperature 1, top-p 0.95,
 maximum output 32768, and retained thinking history.
 
-This identity belongs to the deterministic fixture. It does not select or
-validate every production provider profile.
+The fixture pins this identity so request validation can detect a wrong model
+or sampling configuration. Production provider configuration is supplied by
+the caller for each evaluation run.
 
 Requests are written to a redacted run-scoped transcript. Unknown routes,
 wrong identity, wrong sampling configuration, malformed requests, and early
@@ -44,8 +45,11 @@ service exit fail the run.
 
 ## Run locally
 
-The host needs Docker, `sshd`, `ssh`, `ssh-keygen`, and `rsync`. Provide the
-OpenCollab source root when it is not the sibling `../OpenCollab` checkout.
+The host needs a running Docker daemon, Python 3, `sshd`, `ssh`, `ssh-keygen`,
+and `rsync`. The script uses `uv` to build wheels unless both wheel paths are
+supplied through its environment. The Linux CI job provides the complete
+reference environment. Provide the OpenCollab source root when it is outside
+the sibling `../OpenCollab` checkout.
 
 ```bash
 export OPENCOLLAB_SOURCE_ROOT=/path/to/OpenCollab
@@ -71,7 +75,7 @@ directories carrying the current run ID. The final record proves that the fake
 model stopped, owned containers and images were removed, temporary work
 disappeared, and real provider variables were absent.
 
-## Local Duo migration smoke
+## Local Duo smoke
 
 The local Duo smoke exercises the single `duo` workflow through the installed
 OpenCollab-Eval `run_eval_task` entry. Scripted HTTP responses drive actual
@@ -86,8 +90,10 @@ The test checks that the hidden filename and target stay outside model input.
 pytest -q tests/evaluation/test_duo_evaluator_smoke.py
 ```
 
-The Docker E2E above covers privileged controller proof, official harness
-execution, and container cleanup in the production evaluation environment.
+The local Duo smoke exercises workflow integration and patch scoring in local
+Git workspaces. The Docker E2E above extends that execution through privileged
+controller proof, the official harness, and container cleanup. Choose it when
+validating production container and SSH changes.
 
 ## CI
 

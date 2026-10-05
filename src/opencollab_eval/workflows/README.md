@@ -7,7 +7,7 @@ OpenCollab built-in workflows. Duo candidate orchestration and selection are
 owned by OpenCollab. Eval supplies public task inputs, isolated benchmark
 workspaces, hidden-test separation, and official scoring.
 Python code defines the control flow, including agent fan-out and repair rounds.
-It also owns the verification gates and stop conditions. Models inspect and
+It also owns evidence requirements and stop conditions. Models inspect and
 edit the repository within that control flow.
 
 The package depends on the workflow-authoring surface in OpenCollab 0.9.0 or a
@@ -29,6 +29,7 @@ services, bootstrap internals, domain modules, harness code, and the retired
 | --- | --- |
 | `duo` | OpenCollab built-in dual coder with public requirement selection |
 | `base-team` | Analyst brief followed by a bounded coder and tester loop |
+| `base-team-single-pass-v1` | One analyst, one coder, and one verifier session |
 | `self-collab` | Sequential phases with plan review and per-phase verification |
 | `self-collaboration` | Three budget seats with Analyst analysis, Coder implementation, Tester verification, and Analyst adjudication |
 | `self-collaboration-reading-analyst` | The same scripted run with reading tools for the initial Analyst phase |
@@ -36,17 +37,25 @@ services, bootstrap internals, domain modules, harness code, and the retired
 | `scout-solve` | Parallel read-only reconnaissance followed by one repair loop |
 | `analyst-solve` | Analyst-led reconnaissance, phased repair, and final verification |
 | `team-pro` | Stable tuned alias for `analyst-solve` |
-| `candidate-tournament-council-v1` | Two independent patch candidates, one integrator, and one public test owner |
 | `validation-council-solve` | Blind contract and validation council for SWE tasks |
+| `validation-council-dual-coder-contract-v1` | Two isolated coder strategies with public requirement selection |
+| `validation-council-triple-coder-contract-v1` | Three isolated coder strategies with public requirement selection |
+| `validation-council-lean-official-v1` | Lean council in an OpenCollab candidate workspace followed by explicit adoption |
 | `swe-committee-v2` | Committee workflow with explicit evidence and test gates |
 
-The production Solver coordinator maps `g11` and `g1.1` to
-`validation-council-solve`, `g20-exp2` to `candidate-tournament-council-v1`,
-`baseTeam` to `base-team`, and `TeamPro` to `team-pro`. `openhands` and
-`claude-code` are external Solver configurations
-that enter through the shared generation and candidate path. The remaining
-workflow functions are library-level building blocks and can be selected by
-the single-instance workflow generator.
+These are the names accepted by the single-instance workflow generator. The
+Solver coordinator maps `g11` and `g1.1` to `validation-council-solve`,
+`baseTeam` to `base-team`, and `TeamPro` to `team-pro`. Historical experiment
+arm declarations also remain in the solver registry. `g20-exp1` names
+`evidence-action-council-v1`, `g20-exp2` names `candidate-tournament-council-v1`,
+and `g11-wired` names `validation-council-wired-v1`. Those three workflow names
+remain historical mappings outside the current generator registry. Their recorded
+conditions and analysis are described in
+[the experiment collection](../../../experiment/README.md).
+
+`openhands` and `claude-code` are external Solver configurations that enter
+through the shared generation and candidate path. The listed workflow functions
+can also be imported by installed consumers from the public evaluation package.
 
 Blind SWE workflows receive issue text, repository contents, public tests, and
 public documentation. Hidden grader assertions remain with the evaluator, and
@@ -55,8 +64,8 @@ the external official evaluation determines final task resolution.
 ## Authoring contract
 
 A workflow is an async function decorated with `@workflow`. Role tools come
-from `builtin_tools`, which returns fresh headless-safe instances and disables
-model-supplied test command overrides.
+from `builtin_tools`, which returns fresh headless-safe instances. Native shell
+commands provide the executable verification evidence.
 
 ```python
 from typing import Any
@@ -107,8 +116,8 @@ Diff auditors use `git_diff`. Passing `allow_file_creation=False` to
 All model-facing tools use the current OC built-in schemas. OpenCollab observes Bash
 execution to retain the actual command, exit status and matching test output for
 workflow decisions. Command selection, flags, timeouts, approval, execution and
-model-visible output remain native Bash behavior. There is no dedicated test
-tool, automatic runner selection, command rewriting or test-tool verdict.
+model-visible output retain native Bash behavior. Verification uses the
+recorded command and target output from that execution.
 
 For exact pytest target evidence, use `-rA` to include executed node IDs. Go
 commands can use `-json`, and Django source tests can use verbose native output.
@@ -147,7 +156,9 @@ Duo can be called through OpenCollab directly. Evaluation callers can use
 `opencollab_eval.workflows.duo`, which references the same public function.
 `oc-eval duo` uses the single `duo` workflow with `agent_profile="base"`
 by default, resolves it to `single2`, and records the resolved name. It always supplies complete file evidence to the adjudicator.
-The `oc-eval g22` command invokes that same evaluator.
+The `oc-eval g22` command is a compatibility alias for that same evaluator.
+[Duo file evidence](../../../docs/duo-file-evidence.md) explains the retained
+files and paged reads.
 
 The `self-collaboration` workflows keep three seat budgets across repeated
 sessions and allow one repair round. The reading variant restricts the first

@@ -205,12 +205,13 @@ def test_chinese_internal_links_prefer_available_chinese_documents(
     }
 
 
-def test_readme_names_installed_commands_and_solver_profiles() -> None:
+def test_readme_names_commands_and_cli_reference_lists_solver_profiles() -> None:
     readme = ROOT_README.read_text(encoding="utf-8")
     for command in ("inspect", "run", "swe-v1-prolite", "final-report"):
         assert f"`oc-eval {command}`" in readme
+    catalog = (DOCS / "cli-reference.md").read_text(encoding="utf-8")
     for solver in DEFAULT_WORKFLOW_SOLVERS:
-        assert f"`{solver}`" in readme
+        assert f"`{solver}`" in catalog
 
 
 def test_documented_kimi_slice_has_complete_identity() -> None:
@@ -223,7 +224,6 @@ def test_documented_kimi_slice_has_complete_identity() -> None:
         '"thinking":{"type":"enabled","keep":"all"}',
     )
     for relative in (
-        "README.md",
         "docs/swe-prolite-operations.md",
         "docs/zh-CN/swe-prolite-operations.md",
     ):
@@ -248,7 +248,6 @@ def test_documented_k3_coordinator_has_complete_identity() -> None:
         "reasoning_effort=high",
     )
     for relative in (
-        "README.md",
         "docs/swe-prolite-operations.md",
         "docs/zh-CN/swe-prolite-operations.md",
     ):

@@ -2,10 +2,10 @@
 
 [English](../../testing/deterministic-swe-e2e.md) | **简体中文**
 
-确定性 E2E 在不联系真实模型服务商的情况下验证安装后的完整评测路径。它会
-真实使用构建后的 OpenCollab 和 OpenCollab-Eval wheel、临时 SSH、`rsync`、
-本地 OpenAI-compatible 服务、一次性 Git 任务、Docker、可信候选提取、
-official target execution、终态报告和自有资源清理。
+确定性 E2E 通过本地脚本化模型服务验证安装后的完整评测路径，使用构建后的
+OpenCollab 与 OpenCollab-Eval wheel、临时 SSH、`rsync`、本地兼容 OpenAI
+接口的服务、一次性 Git 任务、Docker、可信候选提取、正式目标执行、终态报告
+和自有资源清理。
 
 ## 测试证明的事实
 
@@ -13,33 +13,33 @@ official target execution、终态报告和自有资源清理。
 基线上失败。假模型发出确定性的工具调用，检查源码，将减法改为加法，运行
 目标测试，然后结束。
 
-生产 runner 通过 SSH 同步两个已安装的源码树，并记录相同的本地和远端 tree
-身份。候选路径提取一个非空 patch，并将其 SHA-256 与 run identity 和
-record identity 绑定。official SWE-bench harness 在新工作区中应用同一
-patch，收集一个目标，使该目标通过，并报告一个 resolved 任务和零项
-technical failure。
+生产运行器通过 SSH 同步两个已安装的源码树，记录一致的本地与远端源码树
+身份。候选提取产生一个非空补丁，将其 SHA-256 与运行和记录身份绑定。正式
+SWE-bench 评测框架在新工作区应用同一补丁，收集一个目标并通过，报告一个
+已解决任务与零项技术失败。
 
-镜像中包含基线文件 mode、失效链接、被 ignore 的缓存、未跟踪残留、嵌套
-仓库和未来 Git 状态，用于验证 Solver 启动前的净化。另一个完整性 smoke
-测试覆盖可恢复残留、task-scoped 镜像拒绝、并发任务隔离，以及无法达到静止
-状态的后台写入者。
+镜像中包含基线文件模式、失效链接、忽略的缓存、未跟踪残留、嵌套仓库与未来
+Git 状态，用于验证 Solver 启动前的净化。另一项完整性实跑覆盖可恢复残留、
+任务范围内的镜像拒绝、并发任务隔离，以及持续写入的后台进程。
 
-## 假模型契约
+## 脚本化模型服务
 
-本地服务实现 model listing 和 Chat Completions。它接受固定的合成 token
-以及测试 fixture 使用的 `kimi-for-coding` 身份。它验证 262144-token
-context、temperature 1、top-p 0.95、maximum output 32768 和保留的
-thinking history。
+本地服务实现模型列表与 Chat Completions，接受固定的合成令牌和测试使用的
+`kimi-for-coding` 身份。它验证 262144 token 上下文、temperature 1、
+top-p 0.95、最大输出 32768，以及保留的思考历史。
 
-该身份属于确定性测试 fixture。它不负责选择或验证所有生产服务商 profile。
+测试固定这个身份，使请求检查能够发现错误的模型或采样配置。生产评测的服务商
+配置由调用者为每次运行提供。
 
-请求会写入经过脱敏且限定于当前 run 的 transcript。未知路由、错误身份、
-错误 sampling 配置、畸形请求和服务提前退出都会使运行失败。
+请求写入当前运行的脱敏记录。未知路由、错误身份、错误采样配置、请求格式错误
+和服务提前退出都会使运行失败。
 
 ## 本地运行
 
-宿主机需要 Docker、`sshd`、`ssh`、`ssh-keygen` 和 `rsync`。当 OpenCollab
-源码根目录不是相邻的 `../OpenCollab` checkout 时，需要显式提供它。
+宿主机需要正在运行的 Docker daemon、Python 3、`sshd`、`ssh`、
+`ssh-keygen` 和 `rsync`。脚本通过 `uv` 构建 wheel，也支持在环境中同时
+提供两个 wheel 路径。Linux CI 任务提供完整的参考环境。OpenCollab 源码检出
+位于相邻的 `../OpenCollab` 之外时，需要显式提供源码根目录。
 
 ```bash
 export OPENCOLLAB_SOURCE_ROOT=/path/to/OpenCollab
@@ -53,17 +53,15 @@ scripts/run_deterministic_swe_e2e.sh \
 
 ## 证据与清理
 
-每次运行都会记录 runtime synchronization、model transcript、prediction、
-generation metrics、candidate identity、production report、independent
-official proof、validation summary 和 cleanup result。成功要求 patch hash
-一致，`resolved=1`、`unresolved=0`、`technical_failed=0`，恰好收集一个
+每次运行记录运行时同步、模型记录、预测、生成指标、候选身份、生产报告、
+独立正式执行证据、验证摘要和清理结果。成功要求补丁哈希一致，`resolved=1`、`unresolved=0`、`technical_failed=0`，恰好收集一个
 目标，并完成全部清理。
 
 清理范围限制为带有当前 run ID 的进程、容器、镜像、密钥、端口和目录。最终
 记录证明假模型已经停止，自有容器和镜像已经删除，临时工作目录已经消失，
 真实服务商变量没有进入测试。
 
-## 本地 Duo 迁移实跑
+## 本地 Duo 实跑
 
 本地 Duo 测试通过已安装 OpenCollab-Eval 的 `run_eval_task` 入口，
 运行统一的 `duo`。脚本化 HTTP 响应驱动真实文件工具、原生公开
@@ -76,15 +74,15 @@ pytest 命令、隔离候选工作区、裁决采用与评测器补丁捕获。�
 pytest -q tests/evaluation/test_duo_evaluator_smoke.py
 ```
 
-上方 Docker E2E 在生产评测环境中验证具有独立权限的 controller 证据、
-正式 harness 执行和容器清理。
+本地 Duo 实跑验证工作流集成与本地 Git 工作区中的补丁评分。上方 Docker E2E
+进一步覆盖独立权限控制器的执行证据、正式评测框架和容器清理。验证生产容器
+与 SSH 相关改动时，应运行该测试。
 
 ## CI
 
-`deterministic-e2e` GitHub Actions job 构建两个 wheel，安装 SSH 和
-`rsync`，并在十分钟 job timeout 下运行一次。失败产物保留十四天。本地发布
-验证可以连续运行三次。
+`deterministic-e2e` GitHub Actions 任务构建两个 wheel，安装 SSH 与
+`rsync`，在十分钟时限内运行一次。失败产物保留十四天，本地发布验证可以
+连续运行三次。
 
-聚焦单元测试覆盖模型启动前的 runtime digest mismatch、错误 model
-identity、patch digest mismatch、错误 context identity、zero collected
-tests、服务提前退出和资源残留。
+聚焦单元测试覆盖模型启动前的运行时摘要不匹配、模型身份错误、补丁摘要
+不匹配、上下文身份错误、零测试收集、服务提前退出和资源残留。

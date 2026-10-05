@@ -20,7 +20,9 @@ workflow decisions, runner scheduling, budgets, and command entry points.
 synchronization. `packaging/` covers public imports, repository documentation,
 release metadata, and installed wheels.
 
-`e2e/` contains the deterministic SWE scenario and its local fake service.
+`e2e/` contains fast tests for the deterministic SWE scenario and its local
+scripted service. These tests use local or substituted container transports.
+The Docker and SSH scenario runs through the dedicated E2E script.
 `support/` contains shared preparation used by multiple test modules.
 `fixtures/` holds reusable fixture assets. Place tests beside the behavior they
 exercise and import shared preparation through `tests.support`.
@@ -35,6 +37,18 @@ usual sibling locations. The installed-wheel command is
 The development setup and paired-wheel commands are in
 [CONTRIBUTING.md](../CONTRIBUTING.md). The Docker-backed deterministic scenario
 is documented in [the SWE E2E guide](../docs/testing/deterministic-swe-e2e.md).
+The local Duo integration test uses scripted HTTP responses, real file tools,
+isolated Git candidates, and a hidden scoring test.
+
+```bash
+pytest -q tests/evaluation/test_duo_evaluator_smoke.py
+pytest -q tests/packaging/test_documentation_contract.py
+```
+
+Linux signal tests execute the actual Terminal shell wrappers and report an
+explicit skip on systems lacking their Linux utilities. Tests that require the
+optional SWE-bench package also report their dependency skip. Read the skip
+summary when assessing the scope of a local run.
 
 ## Source archives and outputs
 

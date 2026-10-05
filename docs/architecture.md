@@ -22,19 +22,20 @@ opencollab_eval
 documented OpenCollab public API
 ```
 
-OpenCollab-Eval currently imports the following public OpenCollab surfaces.
+OpenCollab-Eval uses the following public OpenCollab surfaces. The model audit
+imports its query inside the explicitly selected inspection subprocess.
 
 | Public module | Current production imports |
 | --- | --- |
 | `opencollab` | `OpenCollab` and `RunResult` |
-| `opencollab.environments` | `Environment`, `attach_container`, `docker_environment`, and `worktree_environment` |
-| `opencollab.tools` | `BuiltinToolName`, `Tool`, `builtin_tools`, and `evidence_tools` |
+| `opencollab.environments` | `Environment`, `attach_container`, `build_repo_map_via_env`, `docker_environment`, and `worktree_environment` |
+| `opencollab.tools` | `BashEvidence`, `BuiltinToolName`, `Tool`, `builtin_tools`, `evidence_tools`, `has_pass_evidence`, and `profile_tool_names` |
 | `opencollab.builtin_workflows` | `duo`, `get_builtin_workflows`, and `run_dual_coder` |
 | `opencollab.patches` | Generic Git diff blocks and paths |
-| `opencollab.profiles` | `BASE_PROFILE` and `resolve_profile_name` |
+| `opencollab.profiles` | `resolve_profile_name` |
 | `opencollab.models` | Offline `inspect_model_runtime` queries |
-| `opencollab.teams` | `declared_role_names`, `declared_role_tools`, `declared_role_prompt_digests`, `declared_role_profiles` |
-| `opencollab.workflows` | `workflow` |
+| `opencollab.teams` | `declared_role_names`, `declared_role_tools`, and `declared_role_prompt_digests` |
+| `opencollab.workflows` | `CandidateRun` and `workflow` |
 
 The retired `opencollab.sdk` package and OpenCollab implementation layers such
 as `adapters`, `application`, `bootstrap`, `domain`, and `harness` stay outside
@@ -43,7 +44,7 @@ accepted from production code and tests, then checks those public names against
 the installed OpenCollab package.
 
 This boundary gives OpenCollab-Eval a versioned runtime dependency through
-`opencollab>=0.8,<0.9`. A change to OpenCollab internals remains invisible here
+`opencollab>=0.9,<0.10`. A change to OpenCollab internals remains invisible here
 as long as the documented public API remains compatible.
 
 ## Package map
@@ -98,7 +99,7 @@ The installed `oc-eval` command provides the following user-facing surfaces.
 | Command | Purpose |
 | --- | --- |
 | `oc-eval duo` | Run OpenCollab Duo with Single2 and official scoring |
-| `oc-eval inspect` | Validate and summarize a SWE-Batch Pro JSONL dataset through the sealed task boundary |
+| `oc-eval inspect` | Validate and summarize a SWE-bench Pro JSONL dataset through the sealed task boundary |
 | `oc-eval run` | Run the local headless evaluation engine over task JSONL |
 | `oc-eval swe-v1-prolite` | Run a bounded remote Pro-Lite slice with synchronized runtime and direct evaluation |
 | `oc-eval final-report` | Validate two complete terminal fact reports and render a bound comparison publication |
@@ -159,7 +160,12 @@ can bind later task runs to the same runtime tree. This prevents a partial or
 stale remote installation from silently evaluating a candidate.
 
 Each generation attempt receives its own run identity, artifact directory,
-container ownership record, and disposable repository state. The solver sees a
+container ownership record, and disposable repository state. The batch generator
+writes that identity into its manifest and passes it as `OPENCOLLAB_RUN_ID`. The
+evaluator forwards it to the public agent, workflow, or team call when that
+runtime accepts `run_id`. Otherwise, OpenCollab chooses its own identity. With
+OpenCollab 0.9.1, artifact manifests and result metrics retain that identity even
+when tracing is disabled. The solver sees a
 normal one-commit Git repository for familiar development tools. A separate Git
 directory owned by the evaluation controller records the trusted baseline and
 never enters the solver-visible mount.
@@ -180,13 +186,15 @@ Target tests start only after these tree identities agree.
 
 Duo orchestration lives under OpenCollab's `opencollab.builtin_workflows`. Its
 single `duo` name uses task-oriented prompts and paged file evidence.
-The `oc-eval g22` command invokes that same workflow.
+The `oc-eval duo` command selects it for evaluation, and `oc-eval g22` remains
+a compatibility alias. See [Duo file evidence](duo-file-evidence.md) for
+retention and paged reads.
 Evaluation-owned workflows live under `opencollab_eval.workflows`. They use
 OpenCollab workflow decorators and tool factories while keeping benchmark
 secrets outside workflow arguments.
 
-The built-in workflow solver registry currently names G1.1, BaseTeam, TeamPro,
-OpenHands, and Claude Code configurations. A workflow solver delegates agent
+The solver registry includes G1.1, its wired variant, G20 experiment arms,
+BaseTeam, TeamPro, OpenHands, and Claude Code configurations. A workflow solver delegates agent
 lifecycle management to OpenCollab. External solver adapters launch their
 tools in the disposable container and return sidecar usage and candidate
 evidence to the same generation path.
@@ -232,10 +240,12 @@ only when its submission integrity evidence is valid. Empty patches, incomplete
 metrics, identity pairing failures, and failed generation remain distinct task
 states.
 
-Official evaluation produces `eval_done` after a technically complete run.
-Within that state, `resolved` records whether every declared target has passing
-execution proof. Infrastructure, artifact, cleanup, projection, or evidence
-failures produce `technical_eval_failed`.
+Official evaluation produces `eval_done` when bound evidence determines the
+candidate outcome. Within that state, `resolved` records whether every declared
+target has passing execution proof. A bound target failure determines an
+unresolved outcome. Missing identity, unsafe artifacts, non-quiescent processes,
+or an unproven projection produce `technical_eval_failed`. A container removal
+error after proven quiescence remains an operational warning.
 
 Reports join the task identity, generation record, patch SHA-256, runtime tree,
 candidate projection, test plan, parser evidence, container cleanup, and final
@@ -265,8 +275,13 @@ A new report field should derive from durable bounded artifacts and retain the
 identity fields needed to join it to the same task, run, candidate, and
 evaluation attempt.
 
-## ICLR research capabilities in the integration branch
+## Retained research capabilities
 
-The integration branch retains batch specifications, historical run conditions, sampling lists, and offline analysis tools. Callers explicitly select the host configuration used by a batch. Model behavior inspection uses `opencollab.models.inspect_model_runtime`; static source inspection reads the explicitly selected package directory.
+The repository retains batch specifications, historical run conditions,
+sampling lists, and offline analysis tools. Their source mapping and historical
+interpretation are in [the experiment collection](../experiment/README.md).
+Callers explicitly select the host configuration used by a batch. Model
+behavior inspection uses `opencollab.models.inspect_model_runtime`. Static
+source inspection reads the explicitly selected package directory.
 
 The grading extension uses SWE-bench 5.0.2, which retains skipped F2P nodes in the failure denominator. Existing result identity and official-test evidence checks continue to govern result acceptance.

@@ -4,6 +4,19 @@
 
 常见操作使用已安装命令，仓库操作人员与测试还可以使用高级模块入口。对已安装的版本运行 `--help` 可以查看完整选项。
 
+## 选择命令
+
+| 目标 | 入口 | 结果位置 |
+| --- | --- | --- |
+| 运行推荐工作流并执行正式测试 | `oc-eval duo` | `parallel_summary.json` 与 `task_<index>_report.json` |
+| 为已准备的本地任务生成补丁 | `oc-eval run` | `results.jsonl` |
+| 检查可信基准题目行 | `oc-eval inspect` | 标准输出中的 JSON |
+| 再次评分已保存候选 | `oc-eval rejudge-queue` | 队列状态与更新后的父任务报告 |
+| 将已安装源码复制到 worker | `oc-eval package-runtime` | `runtime-manifest.json` |
+| 发布完成的 100 题对比 | `oc-eval final-report` | 发布目录 |
+
+新的正式评测从 [Duo 教程](swe-prolite-operations.md#在一台-linux-工作机上运行-duo)开始。已有实验仍可使用底层切片 runner 与 Solver 协调器。
+
 ## 已安装命令
 
 以下两种形式会调用同一软件包。
@@ -34,6 +47,8 @@ oc-eval duo --config CONFIG [--indices INDICES] [--workers COUNT]
 `--dry-run` 输出有效配置，`oc-eval g22` 保留为命令别名。
 模型参数、预算、超时与评测选项沿用已有并行 runner。
 
+入口默认使用本机传输、第 1 行、一个 worker 和解析为 `single2` 的 `base` 角色。报告写入 `<config-directory>/results/<run-id>`，`--output-dir` 可以更换目录。继续同一运行时保留固定 `--run-id`。JSON 键名使用并行 parser 参数名并以英文下划线连接。`workflow_env` 接受对象或 `KEY=VALUE` 字符串列表。CLI 覆盖值优先于同名 JSON 设置。
+
 ### `oc-eval run`
 
 ```text
@@ -45,6 +60,10 @@ oc-eval run TASKS_FILE --model MODEL --provider PROVIDER
 ```
 
 此命令运行通用评测器并写入 `results.jsonl`。摘要包含任务数、具备资格的候选数和不具备资格的候选数。官方 SWE resolved 判定由 Pro-Lite 评测命令给出。
+
+默认值为 `--output eval_results`、`--concurrency 4`、`--max-tokens 1000000`、`--timeout 600` 与 `--temperature 0.2`。通过 `--model` 与 `--provider` 指定模型和适配器，或设置 `OPENCOLLAB_MODEL` 与 `OPENCOLLAB_PROVIDER`。`OPENCOLLAB_API_KEY` 与 `OPENCOLLAB_BASE_URL` 提供凭据和入口。每道题可以覆盖 token 预算与超时。真实运行选择仓库外的绝对输出目录。
+
+摘要字段为 `tasks`、`eligible_patches` 与 `ineligible`。向评测器提交补丁前，逐行读取 `patch_produced`、`submission_eligible`、`error` 与 `execution_quiesced`。[任务格式](task-formats.md#通用评测器任务-jsonl)介绍输入文件的创建方法。
 
 `--no-progress-timeout` 启用真实进展监督。完整的原生模型回合、模型内容或工具参数的实际增量，以及工具完成事件都会更新闲置计时。HTTP 成功、响应创建、保活、日志增长和快照修改时间维持原有计时。独立单 Agent 生成器与工作流生成器也接受这两个选项。
 
@@ -79,6 +98,8 @@ runtime 打包方式与回执字段。
 的时长。默认值为 30 秒，可配置范围为 1 至 300 秒。该设置属于官方评测
 运行身份。使用不同数值生成的报告不会被复用。
 
+底层默认选择 `--start-index 26` 与 `--limit 10`，工作流为 `validation-council-solve`。显式填写实际选题范围。数值默认值为每题 16000000 token、60 步、生成 14400 秒、整题 15300 秒、正式评测 7200 秒、单次模型请求 900 秒。`--max-task-starts` 默认 3，`--max-eval-attempts` 默认 2。可信宿主机提取当前要求 `--checkpoint-interval 0`。报告路径显式设置到仓库外。
+
 构建自动化前，请先运行已安装命令的帮助。
 
 `--agent-profile single2` 为所选 OpenCollab 工作流的每个 Agent 角色启用 Single2 运行时。工作流分别选择，G21 使用 `--workflow validation-council-dual-coder-contract-v1`。工作流生成器与并行运行器都接受这两个参数。工作流省略 profile 时沿用原角色配置。显式的 `base`、`default` 和 `single` 都选择 Base，当前解析为 `single2`。单 Agent 生成器默认使用 Base，调用 `OpenCollab.agent(profile="single2")`。配置、metrics 与候选复用身份记录解析后的名称。历史记录中缺失的 profile 与新 Base 运行分别识别。
@@ -86,6 +107,14 @@ runtime 打包方式与回执字段。
 ```bash
 oc-eval swe-v1-prolite --help
 ```
+
+### `oc-eval package-runtime`
+
+```bash
+oc-eval package-runtime --output /results/runtime-001
+```
+
+目标目录需要尚未存在。命令复制已安装的 OpenCollab 与 Eval 源码模块和配套资源，写入既有运行包清单，并输出目录和文件数。运行依赖、Docker 镜像、数据集和 provider 文件需要在 worker 上分别准备。具体见[评测套件](evaluation-suite.md#安装与打包)。
 
 ### `oc-eval final-report`
 
@@ -118,6 +147,8 @@ oc-eval rejudge-queue \
 
 只有任务、记录 ID、源补丁 SHA-256、评测补丁 SHA-256、候选投影和直接测试执行证据都匹配时，队列才会跳过已有终态报告。互相冲突的结论会直接失败。其余任务在配置的并发限制内运行，继续遵守父运行的评测次数预算，并自动刷新父事实报告。状态文件会在每次状态变化后更新，因此中断后可以使用同一计划再次启动。
 
+队列默认使用两个 worker。[仅评测维护](swe-prolite-operations.md#准备仅评测队列)给出计划结构与字段来源。
+
 ## Solver 协调器
 
 ```bash
@@ -129,6 +160,24 @@ python -m opencollab_eval.commands.swe_eval_run --help
 分离进程模式是通过 `launchd` 实现的 macOS 操作便利功能。直接提供商传输可以在受支持的平台上以前台方式运行。其他提供商传输默认使用持久化 `launchd` 中继。CI 与 Linux 自动化应传入 `--no-persistent-proxy`，并提供已经妥善管理的中继和隧道。
 
 并行运行器还会读取控制器宿主机上的 `OPENCOLLAB_EVAL_CAPACITY_CONTROL_FILE`。外部 JSON 文件用 `generation_workers` 指定并行运行的任务 worker 数，每个 worker 在解题期间可以发起多次提供商请求。有效范围为 1 到 `--max-workers`，超过上限的正整数按上限执行。指定控制文件后，初始并发数为 `--min-workers`，普通任务和技术恢复任务运行期间每秒刷新一次。无效读取继续使用上次有效值，降低并发后在途任务继续完成。
+
+## 高级 Solver 名称
+
+Duo 使用独立的顶层配置命令。协调器的历史 Solver 目录包含以下名称。已注册工作流与配置好的外部适配仍可使用。历史映射缺少当前生成器目标时，需要原实验运行环境。新的运行选择 Duo 或已注册工作流。
+
+| Solver 名称 | 工作流或适配 | 当前状态 |
+| --- | --- | --- |
+| `g11` | `validation-council-solve` | 已注册工作流 |
+| `g1.1` | `validation-council-solve` | G11 别名 |
+| `g20-exp1` | `evidence-action-council-v1` | 历史映射，当前生成器登记表缺少目标 |
+| `g20-exp2` | `candidate-tournament-council-v1` | 历史映射，当前生成器登记表缺少目标 |
+| `g11-wired` | `validation-council-wired-v1` | 历史映射，当前生成器登记表缺少目标 |
+| `baseTeam` | `base-team` | 已注册工作流 |
+| `TeamPro` | `team-pro` | 已注册工作流 |
+| `openhands` | `openhands-external` | 外部适配，需要 OpenHands 运行环境 |
+| `claude-code` | `openhands-external` | 外部适配，使用 Claude Code 命令模板 |
+
+[工作流参考](../../src/opencollab_eval/workflows/README.zh-CN.md)列出当前已注册工作流。工作流与 Agent profile 分别选择，复现实验时保留原设置。
 
 ## 高级模块入口
 
@@ -158,4 +207,4 @@ python -m opencollab_eval.generation.gen_prediction_workflow --help
 
 参数错误或验证错误使用非零退出状态。已完成的命令也可能写入任务级技术失败。生成的 JSON 记录每项任务的结果，进程退出码表示整条命令的状态。
 
-`resolved`、`unresolved` 与 `technical_failed` 是接受官方评测后相互排斥的终态分类。`oc-eval run` 给出的候选资格属于生成分类，不在这组终态分类中。
+题目行使用 `task_result.status`，终态为 `resolved`、`unresolved` 与 `technical_failure`。汇总计数使用 `technical_failed` 记录技术失败总数。结合该状态阅读生成与正式评测字段。`oc-eval run` 的候选资格描述生成结果是否具备提交条件。

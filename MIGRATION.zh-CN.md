@@ -1,29 +1,39 @@
-# OpenCollab 兼容性与仓库归属
+# 版本配套与升级
 
 [English](MIGRATION.md) | **简体中文**
 
-OpenCollab-Eval 负责基准与评测代码，其中包括 Solver 工作流和远程评测。候选构造在隔离的进程环境中运行，其输出保留执行证据。OpenCollab 负责智能体框架、公开 Python API 和框架测试。
+OpenCollab 负责让智能体做题。OpenCollab-Eval 负责准备题目、保存生成的补丁、运行官方测试和整理结果。选择配套版本或升级现有安装时，可以从这页开始。
 
-## 软件包归属
+## 各部分由谁负责
 
-| 归属方 | 软件包 |
+| 工作 | 负责模块 |
 | --- | --- |
-| 公开与密封任务契约 | `opencollab_eval.contracts` |
-| 基准规范化 | `opencollab_eval.benchmarks` |
-| 评测器与证据引擎 | `opencollab_eval.engine` |
-| 生成与进程隔离 | `opencollab_eval.generation` |
-| 批次、报告与远程命令 | `opencollab_eval.commands` |
-| Solver 工作流 | `opencollab_eval.workflows` |
-| Shell 与配置资源 | `opencollab_eval.resources`, `opencollab_eval.configs` |
+| 智能体会话和内置 Duo 工作流 | OpenCollab 公开 API |
+| 公开题面与私有评分输入 | `opencollab_eval.contracts` |
+| 基准数据转换 | `opencollab_eval.benchmarks` |
+| 候选生成与进程隔离 | `opencollab_eval.generation` |
+| 官方评分与结果依据 | `opencollab_eval.engine` |
+| 批量命令与报告 | `opencollab_eval.commands` |
+| 评测器自带的研究工作流 | `opencollab_eval.workflows` |
+| 随包提供的 Shell 脚本与配置 | `opencollab_eval.resources`, `opencollab_eval.configs` |
 
-评测器采用 `src` 软件包布局。安装后的命令通过 `python -m` 或 `oc-eval` 控制台脚本启动模块。远程执行会同步声明的 OpenCollab 公开软件包和 OpenCollab-Eval 运行时，验证其源码树身份，再从同步后的软件包根目录执行导入。
+评测器使用 `src` 软件包布局。安装后的入口是 `oc-eval` 和 `python -m opencollab_eval`。准备运行环境时，会先打包或同步指定的框架与评测器源码，再让执行机器导入它们。
 
-## OpenCollab 版本边界
+## 选择配套版本
 
-OpenCollab-Eval 0.5.1 要求使用 OpenCollab 0.5.0。本补丁版本保持 0.5.0 配套关系，同时修正旧版结果与受控停止处理。这组配套版本提供当前评测器使用的 Responses 传输、运行时身份检查与公开测试契约。软件包根目录提供 `OpenCollab`、`RunResult`、`RunError` 和 `workflow`。可选的公开契约与组合辅助工具位于 `opencollab.environments`、`opencollab.tools` 和 `opencollab.workflows`。
+当前评测器版本为 0.9.1，依赖范围为 `opencollab>=0.9,<0.10`，CI 使用 OpenCollab 0.9.1 验证。实际验证的框架提交写在 `.github/workflows/ci.yml`。
 
-生产代码和测试禁止导入已弃用的 `opencollab.sdk` 命名空间，以及内部的 `opencollab.adapters`、`opencollab.application`、`opencollab.bootstrap`、`opencollab.domain` 和 `opencollab.harness` 命名空间。边界测试会对源码和已安装的 wheel 强制执行这项规则。
+按照[入门指南](docs/zh-CN/getting-started.md)安装发布的 wheel 或源码。开始运行前，先确认当前环境实际加载的两个包版本。
 
-评测程序、基准数据、模型输出、预测、补丁、报告和集成测试归 OpenCollab-Eval 所有。框架行为和公开 API 测试归 OpenCollab 所有。
+```bash
+oc-eval --version
+python -c 'from importlib.metadata import version; print("OC", version("opencollab")); print("OCE", version("opencollab-eval"))'
+```
 
-当前数据流见 [架构指南](docs/zh-CN/architecture.md)，兼容性验证见 [wheel 契约](CONTRIBUTING.zh-CN.md)。
+框架的公开入口包括 `OpenCollab`、`RunResult`、`RunError` 和 `workflow`。评测集成还会使用已有文档说明的 `opencollab.builtin_workflows`、`opencollab.environments`、`opencollab.patches`、`opencollab.profiles`、`opencollab.models`、`opencollab.teams`、`opencollab.tools` 和 `opencollab.workflows`。已有源码和安装包检查会拒绝导入框架内部实现，以及已退休的 `opencollab.sdk` 命名空间。
+
+## 让已有结果仍然能够解释清楚
+
+升级时另建环境，保留已完成运行的原配置和输出。升级软件包会改变之后生成候选所用的运行环境。已有候选重新评分时，继续按[评测完整性](docs/zh-CN/evaluation-integrity.md)中的规则核对候选与测试。
+
+历史版本变化保留在 [CHANGELOG.md](CHANGELOG.md)。已完成的研究代码整合记录在[源码覆盖表](docs/iclr-source-coverage.json)和[历史实验材料](experiment/README.md)中。当前开发与发布要求见 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)和 [RELEASING.md](RELEASING.md)。

@@ -6,12 +6,30 @@ Start with the generated JSON report. It contains the structured reason,
 candidate identity, target proof, and cleanup evidence. Console output supplies
 additional diagnostic context.
 
+## Locate the failing stage
+
+For Duo, controller reports default to `<config-directory>/results/<run-id>`. Start with `parallel_summary.json`, then open `task_<index>_report.json` for the affected index. `generation` describes the Solver attempt. `eval` describes official scoring and gives its exact report path. `task_result.status` gives the task classification. The task's stdout and stderr logs sit beside these reports.
+
+The command below reads the tutorial's single-task report. Keep the original run directory intact while investigating.
+
+```bash
+python - "$EVAL_ROOT/results/duo-smoke-001/task_1_report.json" <<'PY_DIAGNOSE'
+import json
+import sys
+from pathlib import Path
+report = json.loads(Path(sys.argv[1]).read_text())
+print("run", report.get("run_id"), "status", report.get("status"))
+for row in report.get("rows", []):
+    print("index", row.get("index"), "result", row.get("task_result"))
+    print("generation", row.get("generation"))
+    print("evaluation", row.get("eval"))
+PY_DIAGNOSE
+```
+
 ## Configuration fails before a task starts
 
-Run the same command with `--dry-run` and check every required value. Production
-Pro-Lite runs need a host, remote root, image repository, model name, model ID,
-provider, remote model endpoint, session prefix, and one complete credential
-transport. Paths that are required to be absolute are rejected before SSH.
+For `oc-eval duo` or `oc-eval swe-v1-prolite`, add `--dry-run` to check required configuration values. Generic `oc-eval run` reads its own task schema and arguments.
+Pro-Lite needs a worker root, image repository, model name and ID, provider, model endpoint, and complete credential transport. SSH transport also needs a host. Duo derives its session prefix from the run ID. Paths that are required to be absolute are rejected before SSH.
 
 For direct Kimi coding mode, use one validated G11 profile. `kimi-for-coding`
 uses a 262144-token context with retained thinking history. `k3` uses a
@@ -87,12 +105,12 @@ The following conditions remain technical failures.
 | Empty or unsupported target plan | No executable statement of required work |
 | Zero collected tests | No target execution occurred |
 | Import or collection failure without bound candidate attribution | Target outcome is unknown |
-| Bound source rejection before an expected candidate tree exists | Candidate is unresolved |
 | Projection or official-worktree application failure | Evaluation state is inconsistent |
 | Patch SHA mismatch | Generation and evaluation refer to different candidates |
 | Missing or unsafe log | The target proof cannot be verified |
-| Container removal failure after quiescence | Operational warning |
 | Non-quiescent cleanup | Repository state can still change |
+
+A container removal failure after proven quiescence is recorded as an operational warning. Source rejection classification depends on the bound candidate and expected tree evidence described below.
 
 A candidate becomes unresolved when structured evidence proves an exact target
 failure or skip, a candidate-caused build, setup, import, or dependency

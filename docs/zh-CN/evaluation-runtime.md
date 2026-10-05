@@ -8,9 +8,16 @@ OpenCollab-Eval 提供多个执行层级。下表给出不同结果对应的入�
 | --- | --- | --- | --- |
 | `oc-eval inspect` | SWE-Batch Pro 数据集与身份密钥 | 匿名任务清单 | 否 |
 | `oc-eval run` | 通用评测器任务 JSONL | 候选资格记录 | 否 |
+| `oc-eval duo` | Duo JSON 配置与选中数据行 | 候选与正式测试报告 | 是 |
+| `oc-eval rejudge-queue` | 已验证候选与队列计划 | 新正式报告与队列状态 | 是 |
+| `oc-eval package-runtime` | 已安装 OC 与 OCE 源码 | worker 源码包与清单 | 否 |
 | `oc-eval swe-v1-prolite` | 一个有界远程 Pro-Lite 切片 | 生成报告与官方报告 | 是 |
 | `opencollab_eval.commands.swe_eval_run` | Solver 名称与任务索引 | 协调执行的 Pro-Lite 批次 | 是 |
 | `oc-eval final-report` | 两份终态事实报告与审计清单 | 经过验证的发布文件集 | 使用已有判定 |
+
+两种传输使用相同 worker 阶段。本机传输直接在持有 Docker 与基准存储的 Linux 机器上启动。SSH 传输从单独控制机启动这些阶段。本机配置仍沿用带 `remote_` 前缀的 worker 参数名。
+
+完整运行步骤见 [Duo 操作教程](swe-prolite-operations.md#在一台-linux-工作机上运行-duo)。`oc-eval run` 使用已准备的通用任务，并保存候选资格。正式基准入口还会读取评测器持有的目标规格，并建立独立评分工作区。
 
 远程生产运行器会同步 OpenCollab 公开软件包与 OpenCollab-Eval 的完整声明源代码树。它会写入运行时清单，验证本地与远程代码树的 SHA-256，探测所选远程 Python 解释器，并在生成开始前再次检查身份。
 
@@ -28,6 +35,6 @@ python -m opencollab_eval.generation.gen_prediction_workflow --help
 python -m opencollab_eval.generation.gen_prediction_openhands --help
 ```
 
-打包的 `run_team_batch.sh` 与 `start_team_run.sh` 资源属于旧版门禁。它们会在 Solver 启动前返回技术状态 125，因为其历史挂载设计无法提供当前要求的隔离与可信候选证据。请使用 `oc-eval swe-v1-prolite` 或 Solver 协调器。
+打包的 `run_team_batch.sh` 与 `start_team_run.sh` 资源属于旧版门禁。它们会在 Solver 启动前返回技术状态 125，因为其历史挂载设计无法提供当前要求的隔离与可信候选证据。请使用 `oc-eval duo`、`oc-eval swe-v1-prolite` 或 Solver 协调器。
 
 可执行命令请参阅 [SWE Pro-Lite 操作指南](swe-prolite-operations.md)，命令选择请参阅 [CLI 参考](cli-reference.md)，结果语义请参阅[评测完整性](evaluation-integrity.md)。

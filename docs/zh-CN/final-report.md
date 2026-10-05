@@ -4,25 +4,41 @@
 
 `oc-eval final-report` 对比两次已经完成且各含 100 项任务的 SWE-bench Pro-Lite 运行。所有输出格式都来自同一个经过验证的 JSON 模型。PDF 与源文件以原子方式发布且发布清单进入 `final` 状态后，命令成功退出。
 
+## 准备可发布的对比
+
+执行前先读每次运行的 `final_eval_layer_report.json`。发布器要求使用已记录的规范 100 题 Pro-Lite 快照，两种方法都在同一快照上完成。单题 smoke 或其他选集从普通题目报告和批次报告读取结果。最新下载的 V1 导出文件需要另行满足这里要求的固定数据字节。
+
+每种方法还需要由评测方持有的干净运行审计清单与下文介绍的证据文件。源报告及其引用产物保留在记录的路径，命令会先验证文件和正式执行证据，再生成报告。
+
+在执行发布的机器上安装所选 LaTeX 引擎。`--latex-engine` 默认使用 `xelatex`，`--latex-timeout` 默认为每次编译调用 120 秒。标签文件与说明文件为可选项。方法名填写实际比较的运行名称。
+
 ## 命令
 
 ```bash
 oc-eval final-report \
-  --method-a-report /sealed/runs/g11/final_report.json \
+  --method-a-report /sealed/runs/g11/final_eval_layer_report.json \
   --method-a-audit-manifest /sealed/runs/g11/clean_run_manifest.json \
   --method-a-name G1.1 \
-  --method-b-report /sealed/runs/openhands/final_report.json \
+  --method-b-report /sealed/runs/openhands/final_eval_layer_report.json \
   --method-b-audit-manifest /sealed/runs/openhands/clean_run_manifest.json \
   --method-b-name OpenHands \
   --dataset-file /sealed/datasets/swe-batch-pro-lite.jsonl \
   --meeting-date 2026-07-15 \
   --author "Evaluation Team" \
-  --labels-json /sealed/report_labels.json \
-  --narrative-json /sealed/report_notes.json \
   --output-dir /sealed/publication
 ```
 
 所有输出文件使用根据日期生成的同一前缀。其中包括经过验证的 JSON 对比模型、Markdown、TeX、编译后的 PDF 和发布清单。前缀尚无清单时，验证或 LaTeX 构建失败会写入 `failed` 状态，命令返回非零退出码。完整的 `final` 发布存在后，后续失败尝试会保留五份已发布文件及其哈希。同一前缀每次只允许一个写入者。发布器会在替换前检查各项目标并备份原文件集，随后验证新文件的哈希。替换或清单写入失败时，备份会完整恢复。
+
+使用 `--meeting-date 2026-07-15` 时，默认前缀为 `g11_openhands_prolite_1_100_final_comparison_20260715`。`--output-prefix` 可以更改文件名前缀。命令成功后读取清单中的 `status`，再打开 Markdown 或 PDF 查看呈现的对比。
+
+| 输出 | 文件后缀 |
+| --- | --- |
+| 已验证对比模型 | `.json` |
+| 可读报告 | `.md` |
+| LaTeX 源码 | `.tex` |
+| 编译后报告 | `.pdf` |
+| 发布状态与产物身份 | `.manifest.json` |
 
 ## 事实报告契约
 

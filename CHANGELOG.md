@@ -4,6 +4,12 @@ All notable changes to OpenCollab-Eval are recorded in this file.
 
 ## [Unreleased]
 
+Documentation now starts with installation, input selection, a local task, and
+reading its result. The English and Chinese guides use the current 0.9.x API,
+keep the full Duo worker tutorial in one place, and explicitly select the V1
+SWE-bench Pro dataset for the V1 image runner. Completed integration instructions
+and machine-specific batch directions have been removed from current usage.
+
 The batch driver gives every (instance, arm) run an id, writes it into the run's
 `manifest.jsonl` row, and passes it to the generator as `OPENCOLLAB_RUN_ID`. The
 evaluator hands it to OpenCollab's `run_id=` when the installed runtime accepts

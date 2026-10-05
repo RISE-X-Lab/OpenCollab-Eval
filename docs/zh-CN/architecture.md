@@ -20,26 +20,27 @@ opencollab_eval
 documented OpenCollab public API
 ```
 
-OpenCollab-Eval 使用以下 OpenCollab 公开接口。
+OpenCollab-Eval 使用以下 OpenCollab 公开接口。模型审计在调用者选择的检查子进程中
+导入查询函数。
 
 | Public module | 使用的能力 |
 | --- | --- |
 | `opencollab` | `OpenCollab` 和 `RunResult` |
-| `opencollab.environments` | `Environment`、`attach_container`、`docker_environment` 和 `worktree_environment` |
-| `opencollab.tools` | `BuiltinToolName`、`Tool`、`builtin_tools` 和 `evidence_tools` |
+| `opencollab.environments` | `Environment`、`attach_container`、`build_repo_map_via_env`、`docker_environment` 和 `worktree_environment` |
+| `opencollab.tools` | `BashEvidence`、`BuiltinToolName`、`Tool`、`builtin_tools`、`evidence_tools`、`has_pass_evidence` 和 `profile_tool_names` |
 | `opencollab.builtin_workflows` | `duo`、`get_builtin_workflows` 和 `run_dual_coder` |
 | `opencollab.patches` | 通用 Git diff 分块与路径解析 |
-| `opencollab.profiles` | `BASE_PROFILE` 和 `resolve_profile_name` |
+| `opencollab.profiles` | `resolve_profile_name` |
 | `opencollab.models` | 离线 `inspect_model_runtime` 查询 |
-| `opencollab.teams` | `declared_role_names`, `declared_role_tools`, `declared_role_prompt_digests`, `declared_role_profiles` |
-| `opencollab.workflows` | `workflow` |
+| `opencollab.teams` | `declared_role_names`、`declared_role_tools` 和 `declared_role_prompt_digests` |
+| `opencollab.workflows` | `CandidateRun` 和 `workflow` |
 
 已退役的 `opencollab.sdk` 包以及 OpenCollab 的 `adapters`、`application`、
 `bootstrap`、`domain` 和 `harness` 等实现层均位于该依赖边界之外。
 `tests/packaging/test_boundaries.py` 规定生产代码与测试可以使用哪些导入，并根据已安装的
 OpenCollab 包检查这些公开名称。
 
-OpenCollab-Eval 通过 `opencollab>=0.8,<0.9` 声明运行时依赖的版本范围。
+OpenCollab-Eval 通过 `opencollab>=0.9,<0.10` 声明运行时依赖的版本范围。
 OpenCollab 的公开 API 保持兼容时，其内部实现变化不会影响这里。
 
 ## 包结构
@@ -89,7 +90,7 @@ dataset row
 | Command | 用途 |
 | --- | --- |
 | `oc-eval duo` | 使用 Single2 运行 OpenCollab Duo 并进行正式评分 |
-| `oc-eval inspect` | 通过密封任务边界验证并汇总 SWE-Batch Pro JSONL 数据集 |
+| `oc-eval inspect` | 通过密封任务边界验证并汇总 SWE-bench Pro JSONL 数据集 |
 | `oc-eval run` | 根据任务 JSONL 运行本地无界面评测引擎 |
 | `oc-eval swe-v1-prolite` | 使用已同步运行时和直接评测运行有界的远程 Pro-Lite 切片 |
 | `oc-eval final-report` | 验证两份完整终态事实报告并生成绑定后的对比发布物 |
@@ -147,6 +148,10 @@ identity-bound terminal report
 同一棵运行时源码树，部分同步或过期的远端安装因此无法悄然参与评测。
 
 每次生成尝试都有自己的运行身份、产物目录、容器所有权记录和一次性仓库状态。
+批次生成器将运行身份写入清单，并通过 `OPENCOLLAB_RUN_ID` 传给生成进程。
+运行时接受 `run_id` 时，评测器将它传入公开的智能体、工作流或团队调用。其他
+兼容运行时由 OpenCollab 生成身份。OpenCollab 0.9.1 在关闭轨迹记录后仍将该
+身份保存到产物清单和结果指标中。
 Solver 看到普通的单提交 Git 仓库，可以继续使用常见开发工具。评测控制器另行
 持有一个记录可信基线的 Git 目录，该目录始终位于 Solver 可见挂载之外。
 
@@ -162,12 +167,13 @@ Solver 关闭后，控制器检查进程是否静止，并冻结工作区的最�
 
 Duo 编排位于 OpenCollab 的 `opencollab.builtin_workflows`。
 统一的 `duo` 名称使用通用任务提示和文件证据分页读取。
-`oc-eval g22` 命令调用同一工作流。
+`oc-eval duo` 命令使用该工作流进行评测，`oc-eval g22` 保留为兼容别名。证据
+保存和分页读取参见 [Duo 文件证据](duo-file-evidence.md)。
 评测工作流位于 `opencollab_eval.workflows`。它们使用 OpenCollab 的工作流
 装饰器与工具工厂，同时把基准秘密留在工作流参数之外。
 
-内置 Solver 注册表当前包含 G1.1、BaseTeam、TeamPro、OpenHands 和 Claude
-Code 配置。工作流 Solver 把智能体生命周期交给 OpenCollab 管理。外部 Solver
+Solver 注册表包含 G1.1、接线变体、G20 实验组、BaseTeam、TeamPro、
+OpenHands 和 Claude Code 配置。工作流 Solver 把智能体生命周期交给 OpenCollab 管理。外部 Solver
 适配器在一次性容器中启动对应工具，并把 sidecar 用量和候选证据送入同一条生成
 路径。
 
@@ -197,9 +203,10 @@ Solver 容器持有当前任务工作区和临时 Solver 产物。它接收公�
 完整性证据检查才能进入官方评测。空补丁、指标不完整、身份配对失败和生成失败
 会保留为不同的任务状态。
 
-技术流程完整结束后，官方评测产生 `eval_done`。在该状态内，`resolved` 记录
-每个指定目标是否都有通过的执行证据。基础设施、产物、清理、投影或证据故障会
-产生 `technical_eval_failed`。
+绑定证据足以判定候选结果后，官方评测产生 `eval_done`。在该状态内，
+`resolved` 记录每个指定目标是否都有通过的执行证据。绑定的目标失败可确定
+未解决结果。身份缺失、产物不安全、进程未静止或候选投影缺少证明时，状态为
+`technical_eval_failed`。已证明进程静止后的容器删除错误保留为运行告警。
 
 报告把任务身份、生成记录、补丁 SHA-256、运行时源码树、候选投影、测试计划、
 解析器证据、容器清理和最终判定关联起来。汇总报告分别统计 resolved、
@@ -224,8 +231,8 @@ sidecar 负责报告用量与 Solver 身份，补丁内容仍由候选构造器�
 新增报告字段应从持久且大小受限的产物推导，并保留将其关联到同一任务、运行、
 候选与评测尝试所需的身份字段。
 
-## ICLR 整合中的研究能力
+## 保留的研究能力
 
-整合分支保留批次定义、历史运行条件、抽样清单与离线分析工具。运行所需的主机配置由调用者显式选择。新增的模型行为查询通过 `opencollab.models.inspect_model_runtime` 执行，静态源代码分析从明确给定的包目录读取源码。
+仓库保留批次定义、历史运行条件、抽样清单与离线分析工具。源码映射和历史结果解释参见[实验集合](../../experiment/README.md)。运行所需的主机配置由调用者显式选择。新增的模型行为查询通过 `opencollab.models.inspect_model_runtime` 执行，静态源代码分析从明确给定的包目录读取源码。
 
 评分扩展使用 SWE-bench 5.0.2，F2P 中的跳过节点保留在失败分母中。原有结果身份与正式测试证据检查继续用于结果接收。

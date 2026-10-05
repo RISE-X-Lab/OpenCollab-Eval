@@ -2,140 +2,150 @@
 
 **English** | [简体中文](zh-CN/getting-started.md)
 
-This guide covers installation and the first run of the generic candidate
-engine, including dataset validation. Official resolved or unresolved verdicts
-use the [SWE Pro-Lite operations guide](swe-prolite-operations.md).
+Start by choosing what you want to run. A task for your own repository uses generic task JSONL and produces a candidate patch. A SWE benchmark run uses an ordered benchmark dataset, task images, and official tests. This guide shows the local candidate path first and links to the complete benchmark setup.
 
-## Requirements
+## Install the package
 
-The core package supports Python 3.10 through 3.12 and requires OpenCollab
-0.9.x (`opencollab>=0.9,<0.10`). Docker is required for container-backed tasks and official SWE-bench
-evaluation. The OpenHands extra is available only on Python 3.12.
-
-The evaluator and the framework should come from compatible releases or from
-source checkouts at revisions tested together. The repository CI builds both
-wheels and verifies the installed boundary.
-
-## Install released or local wheels
+The current evaluator is 0.9.1 and requires OpenCollab 0.9.x (`opencollab>=0.9,<0.10`). Use Python 3.10 through 3.12 on Linux or macOS. The commands below use Python 3.12 and keep the environment beside the two source checkouts.
 
 ```bash
-python -m venv .venv
+mkdir -p "$HOME/oc-evaluation"
+cd "$HOME/oc-evaluation"
+git clone https://github.com/RISE-X-Lab/OpenCollab.git
+git clone https://github.com/RISE-X-Lab/OpenCollab-Eval.git
+python3.12 -m venv .venv
 . .venv/bin/activate
-python -m pip install /path/to/opencollab-0.9.1-py3-none-any.whl
-python -m pip install /path/to/opencollab_eval-0.9.1-py3-none-any.whl
+python -m pip install -e ./OpenCollab
+python -m pip install -e ./OpenCollab-Eval
 oc-eval --version
 oc-eval --help
 ```
 
-Install official SWE-bench support with the package extra.
+The version command should print 0.9.1 for the evaluator. For installation from built wheels, activate an environment and install both compatible packages.
 
 ```bash
-python -m pip install '/path/to/opencollab_eval-0.9.1-py3-none-any.whl[swebench]'
+python -m pip install /path/to/opencollab-0.9.1-py3-none-any.whl
+python -m pip install /path/to/opencollab_eval-0.9.1-py3-none-any.whl
 ```
 
-Install OpenHands support in a Python 3.12 environment.
+Official SWE-bench support requires the corresponding extra and Docker on the Linux worker. OpenHands support uses its own extra in Python 3.12. From the source installation directory, install the extra needed by your run.
 
 ```bash
-python -m pip install '/path/to/opencollab_eval-0.9.1-py3-none-any.whl[openhands]'
+python -m pip install -e './OpenCollab-Eval[swebench]'
+# For OpenHands, use Python 3.12.
+python -m pip install -e './OpenCollab-Eval[openhands]'
 ```
 
-## Install source checkouts
+## Choose the input
 
-```bash
-git clone https://github.com/RISE-X-Lab/OpenCollab.git
-git clone https://github.com/RISE-X-Lab/OpenCollab-Eval.git
-cd OpenCollab-Eval
-python -m venv .venv
-. .venv/bin/activate
-python -m pip install -e ../OpenCollab
-python -m pip install -e '.[dev,swebench]'
-ruff check .
-pytest -q
-```
-
-An editable OpenCollab checkout is suitable for development. Release and CI
-verification should use built wheels, which expose missing package files that
-an editable repository path could conceal.
-
-## Inspect a SWE-Batch Pro dataset
-
-`oc-eval inspect` accepts bounded JSONL data. It separates public Solver data
-from sealed judge data and replaces every instance ID with a keyed anonymous
-identifier.
-
-Create one raw 32-byte identity key in protected evaluator state.
-
-```bash
-install -d -m 700 /sealed/opencollab-eval
-python -c 'import os,secrets,sys; fd=os.open(sys.argv[1],os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.write(fd,secrets.token_bytes(32)); os.close(fd)' \
-  /sealed/opencollab-eval/identity.key
-```
-
-Inspect the dataset.
-
-```bash
-oc-eval inspect /data/swe-batch-pro.jsonl \
-  --identity-key-file /sealed/opencollab-eval/identity.key \
-  --image-repository registry.example/swe
-```
-
-Inspection requires an instance identity, repository, and problem statement.
-It normalizes any supplied base commit, image, target, and test-patch fields
-and keeps them sealed. The smaller inspection contract is sufficient here.
-The production runner verifies the full task specification, baseline, image,
-and test plan. The image repository option is required when a row contains
-only `dockerhub_tag`. The command prints a JSON object with the row count and
-anonymous task IDs.
-
-Keep the same key for retries of one experiment. A new experiment may use a new
-key. The key, original dataset, and sealed judge fields stay outside Solver
-workspaces and source control.
-
-## Run the generic candidate engine
-
-`oc-eval run` accepts an evaluator task JSONL file. This format is separate from
-the SWE-Batch Pro dataset format.
-
-```json
-{"task_id":"calculator-1","description":"Fix calculator.add and run its tests","repo_path":"/work/calculator","timeout":600,"max_tokens":100000}
-```
-
-Supported row fields are shown below.
-
-| Field | Required | Meaning |
+| Intended run | Input | Command |
 | --- | --- | --- |
-| `task_id` | Yes | Run-scoped safe task identity |
-| `description` | Yes | Goal shown to the Solver |
-| `repo_path` | No | Local source repository |
-| `docker_image` | No | Container environment |
-| `timeout` | No | Per-task wall timeout in seconds |
-| `max_tokens` | No | Per-task token budget |
-| `extras` | No | Evaluator-owned structured extensions |
+| Work on your own Git repository | Generic task JSONL | `oc-eval run` |
+| Inspect a SWE-Batch Pro dataset | Benchmark JSONL and a private identity key | `oc-eval inspect` |
+| Generate and officially evaluate Duo patches | Ordered benchmark JSONL, images, and Duo JSON configuration | `oc-eval duo` |
+| Run a bounded remote benchmark slice | Prepared worker and benchmark settings | `oc-eval swe-v1-prolite` |
 
-Use an absolute `repo_path` for every real local task. When the field is
-omitted, the evaluator intentionally uses its current working directory,
-which can otherwise make the source checkout itself the Solver target.
+The [task format reference](task-formats.md) describes both JSONL formats. Task inputs, credentials, and results belong outside the source checkout and the repository the Solver will edit.
 
-Configure the OpenCollab model through environment variables and keep the
-credential out of shell history.
+## Run a local repository task
+
+Prepare an existing Git repository with the source and tests the model needs. Replace `/work/calculator` with its absolute path, and replace the description with your task. Omitting `repo_path` selects the evaluator's current working directory, so set it explicitly.
 
 ```bash
-export OPENCOLLAB_MODEL=example-model
-export OPENCOLLAB_PROVIDER=openai
-read -r OPENCOLLAB_API_KEY < /run/secrets/model-api-key
-export OPENCOLLAB_API_KEY
-oc-eval run /data/eval-tasks.jsonl \
-  --output /results/candidate-run \
-  --concurrency 1 \
-  --timeout 600
+export EVAL_ROOT="$HOME/oc-evaluation/eval-data"
+umask 077
+mkdir -p "$EVAL_ROOT"
+cat > "$EVAL_ROOT/tasks.jsonl" <<'TASKS'
+{"task_id":"calculator-1","description":"Fix calculator.add and run its tests","repo_path":"/work/calculator","timeout":600,"max_tokens":100000}
+TASKS
 ```
 
-The command writes `/results/candidate-run/results.jsonl` and prints candidate
-eligibility counts. An eligible candidate still requires an official
-evaluation before it can be called resolved or unresolved.
+Each nonempty line is one task. `task_id` and `description` are required. The example gives that task a 600-second timeout and a 100000-token budget. Optional `docker_image` and `extras` fields are described in [Task formats](task-formats.md).
 
-## Next steps
+Set a model and provider supported by your OpenCollab installation. Enter the API key at the prompt.
 
-Production remote runs continue in [SWE Pro-Lite operations](swe-prolite-operations.md).
-[Evaluation integrity](evaluation-integrity.md) explains result states and
-required proof. For a technical failure, follow [Troubleshooting](troubleshooting.md).
+```bash
+export OPENCOLLAB_MODEL=your-model
+export OPENCOLLAB_PROVIDER=openai
+export OPENCOLLAB_API_KEY="$(python -c 'import getpass; print(getpass.getpass("API key > "))')"
+```
+
+For a custom provider endpoint, set its API base URL before running. Replace the example address with your endpoint.
+
+```bash
+export OPENCOLLAB_BASE_URL='https://api.example.com/v1'
+```
+
+Run one task at a time for the first execution.
+
+```bash
+oc-eval run "$EVAL_ROOT/tasks.jsonl" \
+  --output "$EVAL_ROOT/candidate-run" \
+  --concurrency 1 --timeout 600
+```
+
+## Read the candidate result
+
+The output directory contains `results.jsonl`. Read each task's patch and eligibility fields.
+
+```bash
+python - "$EVAL_ROOT/candidate-run/results.jsonl" <<'PY_RESULTS'
+import json
+import sys
+from pathlib import Path
+for line in Path(sys.argv[1]).read_text().splitlines():
+    if line.strip():
+        row = json.loads(line)
+        print(row["task_id"], row["patch_produced"], row["submission_eligible"])
+PY_RESULTS
+```
+
+| Field | Meaning |
+| --- | --- |
+| `task_id` | Input task identity |
+| `patch_produced` | A candidate patch was captured |
+| `submission_eligible` | The captured candidate satisfies the requirements for submission |
+| `patch` | Captured patch text |
+| `error` | Recorded execution or capture error |
+
+The printed command summary contains `tasks`, `eligible_patches`, and `ineligible`. An eligible patch can proceed to evaluation. Official success is established by running the benchmark's actual target tests against the matching candidate. The [evaluation integrity guide](evaluation-integrity.md) explains those requirements, and [Troubleshooting](troubleshooting.md) explains execution and capture failures.
+
+## Inspect a benchmark dataset
+
+Use an existing ordered benchmark JSONL file. Its original IDs and judge fields remain in evaluator storage. Inspection prints anonymous task IDs and a row count.
+
+Create a raw 32-byte identity key once for the experiment.
+
+```bash
+mkdir -p "$EVAL_ROOT/secrets"
+chmod 700 "$EVAL_ROOT/secrets"
+python - "$EVAL_ROOT/secrets/identity.key" <<'PY_KEY'
+import os
+import secrets
+import sys
+with open(sys.argv[1], "xb") as stream:
+    os.chmod(sys.argv[1], 0o600)
+    stream.write(secrets.token_bytes(32))
+PY_KEY
+```
+
+Reuse that key when inspecting the same experiment again. The exclusive file creation above preserves an existing key. Run inspection with the matching image repository. The example repository is for SWE-bench Pro v1 images.
+
+```bash
+oc-eval inspect /path/to/instances.jsonl \
+  --identity-key-file "$EVAL_ROOT/secrets/identity.key" \
+  --image-repository jefzda/sweap-images
+```
+
+Rows must include an instance identity, repository, and problem statement. A row carrying an image tag without a repository prefix needs the image repository option. Inspection reads and normalizes the dataset. The official runner subsequently prepares the task image and executes the full benchmark test plan. Keep the key, original dataset, and sealed judge fields outside the Solver workspace and source control.
+
+## Run official benchmark tests
+
+For Duo, follow [Duo on one Linux worker](swe-prolite-operations.md#run-duo-on-one-linux-worker). It prepares the dataset and images, starts the model relay, and creates the configuration used below. Once that setup is complete, execute one task.
+
+```bash
+oc-eval duo --config "$EVAL_ROOT/duo.json" \
+  --indices 1 --workers 1 --run-id duo-smoke-001
+```
+
+Read the resulting task report and its linked official report before expanding to a batch. [Operations](swe-prolite-operations.md) covers remote slices, other solvers, batch outputs, and saved-candidate recovery. [Evaluation suite](evaluation-suite.md) covers server operation. [CLI reference](cli-reference.md) lists command options.

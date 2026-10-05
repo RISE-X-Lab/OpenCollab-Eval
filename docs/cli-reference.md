@@ -6,6 +6,19 @@ The installed commands cover common operations. Advanced module entrypoints
 are available for repository operators and tests. Run `--help` on the installed
 revision for its complete option list.
 
+## Choose a command
+
+| Goal | Entry | Where to read the result |
+| --- | --- | --- |
+| Run the recommended workflow and official tests | `oc-eval duo` | `parallel_summary.json` and `task_<index>_report.json` |
+| Generate patches for prepared local tasks | `oc-eval run` | `results.jsonl` |
+| Inspect trusted benchmark rows | `oc-eval inspect` | JSON printed to standard output |
+| Score saved candidates again | `oc-eval rejudge-queue` | Queue state and refreshed parent task reports |
+| Copy the installed sources for a worker | `oc-eval package-runtime` | `runtime-manifest.json` |
+| Publish a completed 100-task comparison | `oc-eval final-report` | Publication directory |
+
+Start a new official evaluation with the [Duo tutorial](swe-prolite-operations.md#run-duo-on-one-linux-worker). The lower-level slice runner and Solver coordinator remain available for existing experiments.
+
 ## Installed command
 
 Both forms below invoke the same package.
@@ -40,6 +53,8 @@ The adjudicator reads complete saved evidence through its read-only tool.
 alias. Model settings, budgets, timeouts and evaluation options use the
 existing parallel runner.
 
+The wrapper defaults to local transport, row 1, one worker, and `base` roles resolved to `single2`. It writes reports under `<config-directory>/results/<run-id>`. `--output-dir` overrides that directory. Keep a fixed `--run-id` for continuation. The JSON keys use the parallel parser's names with underscores. `workflow_env` accepts an object or a list of `KEY=VALUE` strings. A CLI override takes precedence over the same JSON setting.
+
 ### `oc-eval run`
 
 ```text
@@ -53,6 +68,10 @@ oc-eval run TASKS_FILE --model MODEL --provider PROVIDER
 This command runs the generic evaluator and writes `results.jsonl`. Its summary
 contains task count, eligible candidate count, and ineligible count. Official
 SWE resolved verdicts come from the Pro-Lite evaluation commands.
+
+The defaults are `--output eval_results`, `--concurrency 4`, `--max-tokens 1000000`, `--timeout 600`, and `--temperature 0.2`. Supply `--model` and `--provider`, or set `OPENCOLLAB_MODEL` and `OPENCOLLAB_PROVIDER`. `OPENCOLLAB_API_KEY` and `OPENCOLLAB_BASE_URL` supply the credential and endpoint. Each task can override its token budget and timeout. Choose an external absolute output directory for real runs.
+
+The summary fields are `tasks`, `eligible_patches`, and `ineligible`. Read each saved row's `patch_produced`, `submission_eligible`, `error`, and `execution_quiesced` before handing its patch to an evaluator. [Task formats](task-formats.md#generic-evaluator-task-jsonl) shows how to create the input file.
 
 `--no-progress-timeout` selects actual progress supervision. Completed native
 model rounds, actual model content or tool argument increments, and completed
@@ -115,6 +134,8 @@ accepted values range from 1 through 300 seconds. The setting is part of the
 official-evaluation run identity, so a report created with another value is not
 reused.
 
+The low-level defaults select `--start-index 26` and `--limit 10`, with workflow `validation-council-solve`. Pass the intended selection explicitly. Numeric defaults are 16000000 task tokens, 60 steps, 14400 seconds for generation, 15300 seconds per task, 7200 seconds for official evaluation, and 900 seconds per model request. `--max-task-starts` defaults to 3 and `--max-eval-attempts` to 2. Trusted host extraction currently requires `--checkpoint-interval 0`. Choose explicit external report paths.
+
 Run the installed help before constructing automation.
 
 `--agent-profile single2` selects the Single2 runtime for every agent role of the chosen OpenCollab workflow. Workflow selection remains independent. G21 uses `--workflow validation-council-dual-coder-contract-v1`. The workflow generator and parallel runner accept the same pair of options. Omitting the profile preserves workflow role configuration. Explicit `base`, `default`, and `single` select Base, currently `single2`. Standalone single-agent generation defaults to Base and uses `OpenCollab.agent(profile="single2")`. Configuration, metrics, and candidate reuse identity record the resolved name. Historical rows with no profile remain distinct from new Base runs.
@@ -122,6 +143,14 @@ Run the installed help before constructing automation.
 ```bash
 oc-eval swe-v1-prolite --help
 ```
+
+### `oc-eval package-runtime`
+
+```bash
+oc-eval package-runtime --output /results/runtime-001
+```
+
+The destination must be fresh. This command copies installed OpenCollab and Eval source modules and packaged resources, records the existing runtime manifest, and prints its output path and file count. Runtime dependencies, Docker images, datasets, and provider files are prepared separately on the worker. See [the evaluation suite](evaluation-suite.md#install-and-package).
 
 ### `oc-eval final-report`
 
@@ -165,6 +194,8 @@ attempt budget, and refresh each parent fact report. Its state file is updated
 after every transition, so interrupted queues can be started again with the
 same plan.
 
+The default queue concurrency is two workers. [Evaluation-only maintenance](swe-prolite-operations.md#prepare-an-evaluation-only-queue) gives the plan schema and source fields.
+
 ## Solver coordinator
 
 ```bash
@@ -191,6 +222,24 @@ positive integers capped at that maximum. A configured control file makes
 the initial worker count `--min-workers` and enables one-second updates while
 normal or technical recovery tasks are in flight. Invalid reads keep the last
 valid value. Active tasks finish after a reduction.
+
+## Advanced Solver names
+
+Duo uses its dedicated top-level configuration command. The coordinator's historical Solver catalog contains the following names. Registered workflows and configured external adapters remain usable. A historical mapping whose target is absent from the installed generator registry needs its original experiment runtime. Choose Duo or a registered workflow for a new run.
+
+| Solver name | Workflow or adapter | Current status |
+| --- | --- | --- |
+| `g11` | `validation-council-solve` | Registered workflow |
+| `g1.1` | `validation-council-solve` | Alias for G11 |
+| `g20-exp1` | `evidence-action-council-v1` | Historical mapping, absent from the current generator registry |
+| `g20-exp2` | `candidate-tournament-council-v1` | Historical mapping, absent from the current generator registry |
+| `g11-wired` | `validation-council-wired-v1` | Historical mapping, absent from the current generator registry |
+| `baseTeam` | `base-team` | Registered workflow |
+| `TeamPro` | `team-pro` | Registered workflow |
+| `openhands` | `openhands-external` | External adapter, requires OpenHands runtime |
+| `claude-code` | `openhands-external` | External adapter with Claude Code command template |
+
+The [workflow reference](../src/opencollab_eval/workflows/README.md) lists the current registered workflows. Choose a workflow and agent profile independently. Preserve the original choice when reproducing existing results.
 
 ## Advanced module entrypoints
 
@@ -227,6 +276,4 @@ Argument or validation errors use a nonzero exit. A completed command can also
 write task-level technical failures. The generated JSON records each task
 outcome, while the process exit code describes the command as a whole.
 
-`resolved`, `unresolved`, and `technical_failed` are mutually exclusive
-terminal classifications for an officially evaluated task. Candidate
-eligibility from `oc-eval run` is a separate generation classification.
+Task rows use `task_result.status` with terminal values `resolved`, `unresolved`, and `technical_failure`. Aggregate counts use `technical_failed` for the technical-failure total. Read generation and official evaluation fields beside that status. Candidate eligibility from `oc-eval run` describes generation readiness.

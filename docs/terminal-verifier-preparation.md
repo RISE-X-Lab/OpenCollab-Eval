@@ -24,8 +24,9 @@ For `configure-git-webserver`, the caller supplies a trusted `login_probe` shell
 command that performs the login promised by the task. An absent probe or failed
 login produces a preparation error before official scoring. Task provisioning
 supplies the ordinary account and its authentication before generation. This
-helper checks that setup; it does not install packages, alter groups, grant
-repository permissions, or deploy candidate content.
+helper checks that setup. Task provisioning owns package installation, account
+groups, and repository permissions. Candidate deployment remains with the
+solver and task runner.
 
 Configure probes in the trusted task runner. Use the task's configured SSH
 identity file or agent rather than embedding a password or key in command text.
@@ -97,20 +98,24 @@ if task.name == "configure-git-webserver":
 
 Supply a fresh `preparation_receipt` dictionary per call to retain backup and
 isolation paths as preparation proceeds. External cancellation propagates the
-standard `asyncio.CancelledError`; the caller can still read and persist this
-dictionary in its cancellation handler. Receipt ownership is independent of
+standard `asyncio.CancelledError`. The caller reads and persists this dictionary
+in its cancellation handler. Receipt ownership is independent of
 cancellation exception identity across Python 3.10, 3.11, and 3.12.
 
-The returned `status` is `normal` for a usable original-verifier result. Its
-`reward` preserves the official 0 or 1, and `verifier` retains the raw result.
-A semantic failure remains reward 0 even after preparation succeeds.
+The returned `status` is `normal` when the original verifier supplies a numeric
+0 or 1 reward, an integer exit code, a false timeout flag, and no error. Reward
+1 also requires exit code 0. Its `reward` preserves the official result, and
+`verifier` retains the raw record. A usable reward 1 is P. A usable reward 0 is F,
+including after preparation succeeds.
 
-Preparation failures return `status="facility_error"`, `reward=None`, and
-`retry_kind="score_only"`. The official callback has not run. Keep the candidate
-and preparation artifacts, inspect the task environment, and restore only the
-provided prerequisites before scoring the same candidate in a fresh copy.
-A failed probe requests inspection; it does not establish whether the image,
-startup configuration, or candidate caused the missing service.
+Preparation failures and unusable verifier results return E with
+`status="facility_error"`, `reward=None`, and `retry_kind="score_only"`. The
+`failure_phase` distinguishes preparation from scoring, and `reason` retains
+the specific failure. A preparation failure occurs before the official callback.
+Keep the candidate and preparation artifacts, inspect the task environment, and
+restore the provided prerequisites before scoring the same candidate in a fresh
+copy. Use the original evidence to determine whether a missing service arose
+from the image, startup configuration, or candidate.
 
 If preparation consumes two seconds of a 900-second budget, scoring receives at
 most the remaining 898 seconds. Timeout or cancellation invokes the environment's
@@ -118,9 +123,9 @@ abort path. A failed abort remains visible and disables an automatic score-only
 retry until the existing environment has been inspected. Raw verifier errors and
 unusable results remain available in the returned record.
 
-The library does not overwrite an earlier result or try another candidate. A
-campaign controller retains the original score and links any recovered result to
-the same candidate and task attempt.
+A campaign controller retains the original score and links each recovered result
+to the same candidate and task attempt. This helper returns one attempt record
+to that controller.
 
 ## Regression coverage
 
@@ -134,3 +139,9 @@ Preparation tests cover old and absent frames, archive failure, changed files,
 unsupported file types, failed login, and unaffected tasks. Scoring tests verify
 that a preparation error skips the official callback, a real failing result
 remains F, and preparation shares the original verifier budget.
+
+```bash
+pytest -q tests/generation/test_terminal_verifier_preparation.py \
+  tests/generation/test_terminal_verifier.py \
+  tests/generation/test_terminal_command_signals.py
+```

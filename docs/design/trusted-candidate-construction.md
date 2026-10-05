@@ -61,7 +61,9 @@ SHA-256 and candidate tree, and requires them to match generation evidence.
 The terminal record binds task identity, record ID, run identity, dataset base,
 anonymous base, base tree, candidate tree, source patch SHA, evaluated patch
 SHA, runtime tree, image ID, target plan, execution proof, and cleanup result.
-Tests can prove only this bound candidate.
+The evaluated result belongs to this bound candidate. See the verdict and state
+tables in [Evaluation integrity](../evaluation-integrity.md) when connecting
+candidate construction to P, F, and E reporting.
 
 ## Failure scope
 

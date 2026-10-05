@@ -1,9 +1,6 @@
-# Frozen task suite
+# Historical task suite
 
-The task lists the main grid is run on. These files are pre-registration
-artifacts, not caches: a run cites the file it drew its tasks from, so a
-different seed or a different frame is a new pre-registration rather than an
-update to this one. Nothing here is regenerated after a paid run exists.
+These task lists describe the recorded ICLR study. Keep their original order with the results that used them. For a new experiment, write a new suite to a separate directory. The commands below create task selections from an explicitly supplied frame and image list.
 
 | File | What it is |
 |---|---|
@@ -36,22 +33,22 @@ file; a batch addresses this one as row 282 of `frame-ordered.csv`. Nothing in
 this directory was rewritten: the replacement lives in the batch specs
 (`experiment/batches/README.md`, *Replacements*).
 
-Regenerate (only when no run has been paid for yet):
+Create a suite in a new directory:
 
 ```
 python -m opencollab_eval.commands.draw_task_suite \
   --frame experiment/suite/frame-verified-500.csv \
-  --out-dir experiment/suite --seed <seed> \
+  --out-dir /path/to/new-experiment/suite --seed <seed> \
   --images <file of docker image references> --images-host <host>
 ```
 
 The rule itself lives in `src/opencollab_eval/experiment/task_sampling.py`.
 
-Order the whole frame (only when no frame-wide run has been paid for yet):
+Order a frame in a new directory:
 
 ```
 python -m opencollab_eval.commands.order_frame \
   --frame experiment/suite/frame-verified-500.csv \
-  --out-dir experiment/suite --seed <seed> \
+  --out-dir /path/to/new-experiment/suite --seed <seed> \
   --images <file of docker image references> --images-host <host>
 ```

@@ -72,16 +72,28 @@ if task.name == "configure-git-webserver":
 
 每次调用由调用方提供一个新的 `preparation_receipt` 字典，保存过程中产生的备份与隔离位置。外部取消继续传播标准的 `asyncio.CancelledError`，调用方仍可从这个字典读取并持久保存恢复证据。回执独立于取消异常对象，因此适用于 Python 3.10、3.11 和 3.12 的任务取消行为。
 
-可用的原评分结果返回的 `status` 为 `normal`，`reward` 保留官方 0 或 1，`verifier` 保留原结果。准备成功后，真实功能失败仍为 reward 0。
+原评分器返回数值 0 或 1 的奖励、整数退出码、false 超时标记且错误为空时，
+结果的 `status` 为 `normal`。奖励 1 还要求退出码为 0。`reward` 保留官方
+结果，`verifier` 保留原始记录。可用的奖励 1 判为 P，可用的奖励 0 判为 F，
+准备成功后的失败也按此处理。
 
-准备失败返回 `status="facility_error"`、`reward=None` 与 `retry_kind="score_only"`，此时尚未调用官方评分。保留候选与准备证据，检查任务环境，恢复题面已提供的前提后，在新的同候选副本上评分。探针失败意味着需要检查，镜像、启动配置或候选均可能造成服务缺失，具体原因由原始证据确定。
+准备失败和不可用的原评分结果返回 E，记录为 `status="facility_error"`、
+`reward=None` 与 `retry_kind="score_only"`。`failure_phase` 区分准备与评分
+阶段，`reason` 保存具体故障。准备失败时，官方评分尚未执行。保留候选与准备证据，检查任务环境，恢复题面已提供的前提后，在新的同候选副本上评分。探针失败意味着需要检查，镜像、启动配置或候选均可能造成服务缺失，具体原因由原始证据确定。
 
 若准备消耗原900秒中的2秒，评分最多获得剩余898秒。超时和取消调用环境的 abort 路径。abort 失败会保留错误，并暂停自动补评，待现有环境检查完成后继续。原评分错误和不可用结果仍保存在返回记录中。
 
-该入口保留先前结果并固定当前候选。批次控制器保存原成绩，将恢复结果关联到同一候选与任务尝试。
+批次控制器保存原成绩，将每次恢复结果关联到同一候选与任务尝试。辅助函数向
+控制器返回一次尝试的记录。
 
 ## 回归覆盖
 
 Linux 信号测试执行真实 `EXEC_WRAPPER` 和 `CANCEL_EXEC`，覆盖标准输入、进程组、SIGINT 送达、外部取消及内部超时。缺少所需 Linux 工具的平台会明确跳过。它们补充了已有的延迟退出测试，后者以直接启动 Python 替代 Docker 传输。
 
 准备测试覆盖旧帧、没有帧、归档失败、文件变动、不支持的文件类型、登录失败和其他任务。评分测试验证准备失败会跳过官方评分、真实错误保持F，以及准备与评分共享原时限。
+
+```bash
+pytest -q tests/generation/test_terminal_verifier_preparation.py \
+  tests/generation/test_terminal_verifier.py \
+  tests/generation/test_terminal_command_signals.py
+```
