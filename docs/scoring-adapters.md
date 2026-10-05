@@ -8,12 +8,20 @@ The parallel runner accepts the same option and forwards it to preflight and
 each task process. `swe_eval_run` forwards this option to the parallel runner.
 An eval-only queue can supply it in `runner_args`.
 
-```bash
-oc-eval swe-v1-prolite \
-  --runner-transport local \
-  --scoring-adapter-registry "$WORKER_SCORING_REGISTRY" \
-  ...
+For Duo, add the following property to the complete configuration created in the [operations tutorial](swe-prolite-operations.md#run-duo-on-one-linux-worker). Install the registry and its adapter module together at the worker path first. The small JSON fragment below shows the property to merge into that configuration.
+
+```json
+{
+  "scoring_adapter_registry": "/srv/scoring-adapters/registry.json"
+}
 ```
+
+```bash
+oc-eval duo --config "$EVAL_ROOT/duo.json" \
+  --indices 1 --workers 1 --run-id duo-adapter-001
+```
+
+Use a new run ID when introducing an adapter. Read `scoring_adapter` in the task and official reports and `scoring_adapter_receipt.json` in the official input directory to confirm the adapter that actually ran. A default run uses the benchmark's original scoring row.
 
 `OPENCOLLAB_EVAL_SCORING_ADAPTER_REGISTRY` supplies the host configuration
 default. The explicit CLI option takes precedence. The controller sends the
@@ -22,8 +30,8 @@ refers to a file already installed on the worker. Source packaging includes
 the generic loader and scoring entrypoints. Benchmark registry files and
 adapter modules stay in the external directory maintained by the evaluator.
 
-An installed runtime can also contain `engine/scoring_adapters/registry.json`.
-The loader uses that relative path when an explicit path and host default are
+An installed runtime can also contain `engine/registry.json` or `engine/scoring_adapters/registry.json`.
+The loader checks these relative paths in that order when an explicit path and host default are
 absent. An unconfigured public runtime preserves the original scoring row.
 An explicit unreadable registry, malformed registry, or invalid matching
 adapter raises an error before generation and scoring in the task loop.

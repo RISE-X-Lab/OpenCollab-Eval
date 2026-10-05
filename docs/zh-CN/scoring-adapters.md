@@ -7,20 +7,28 @@ Pro-Lite 运行器支持由外部登记文件配置的评测适配。通过
 同一选项，并传给准备检查及每个题目进程。`swe_eval_run` 将这一选项转交
 并行运行器。补评队列可通过 `runner_args` 提供该选项。
 
-```bash
-oc-eval swe-v1-prolite \
-  --runner-transport local \
-  --scoring-adapter-registry "$WORKER_SCORING_REGISTRY" \
-  ...
+Duo 使用[操作教程](swe-prolite-operations.md#在一台-linux-工作机上运行-duo)创建的完整配置，再加入下面的属性。先将登记文件与对应适配模块一同放到 worker 路径。以下 JSON 片段展示需要合并进配置的属性。
+
+```json
+{
+  "scoring_adapter_registry": "/srv/scoring-adapters/registry.json"
+}
 ```
+
+```bash
+oc-eval duo --config "$EVAL_ROOT/duo.json" \
+  --indices 1 --workers 1 --run-id duo-adapter-001
+```
+
+引入适配时使用新的 run ID。读取题目和正式报告中的 `scoring_adapter`，以及正式输入目录中的 `scoring_adapter_receipt.json`，确认实际执行的适配。默认运行沿用基准原始评分行。
 
 `OPENCOLLAB_EVAL_SCORING_ADAPTER_REGISTRY` 提供 host 配置默认值，显式
 CLI 选项优先。控制器通过 worker 配置向本地与 SSH 两种传输发送路径。
 路径指向 worker 上已安装的文件。源码打包会包含通用 loader 与评分入口。
 具体 benchmark 登记文件和适配模块保存在评测操作人员维护的外部目录。
 
-已安装 runtime 也可以包含 `engine/scoring_adapters/registry.json`。
-省略显式路径和 host 默认值时，loader 使用这个相对路径。未配置的公共
+已安装 runtime 也可以包含 `engine/registry.json` 或 `engine/scoring_adapters/registry.json`。
+省略显式路径和 host 默认值时，loader 按该顺序检查这两个相对路径。未配置的公共
 runtime 保留原评分内容。题目循环遇到显式配置的不可读文件、格式错误的
 登记文件或非法的匹配适配时，会在生成和评分开始前抛出错误。
 

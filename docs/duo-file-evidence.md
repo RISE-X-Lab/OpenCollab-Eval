@@ -1,6 +1,6 @@
 # Duo file evidence
 
-**English** | [简体中文](zh-CN/g22-file-evidence.md)
+**English** | [简体中文](zh-CN/duo-file-evidence.md)
 
 Duo is owned by OpenCollab and exposes one workflow named `duo`. Its
 task-oriented roles retain A/B generation, mechanical choice, validated
@@ -14,20 +14,22 @@ child directory. Without the argument, a retained system temporary directory is
 created. Its location is written to the workflow log. Archive that directory
 along with the workflow trace.
 
-Each candidate has an exact UTF-8 `candidate.diff`, a JSONL index, and its public
-command/test records and a separately labeled model result report. Index rows identify original paths, text/binary kind, and
-character ranges within the diff. Full binary patches, permission changes,
+Each candidate retains an exact UTF-8 `candidate.diff`, `index.jsonl`,
+`public-evidence.json`, and `result.json`. The public evidence file stores
+command and test records. The result file labels the model-supplied report.
+Index rows identify original paths, text/binary kind, and character ranges
+within the diff. Full binary patches, permission changes,
 deletions, and missing final newlines remain in the saved evidence. Public
 records shared by A and B have a separate file.
 
 The tool reads registered evidence on the workflow host. It works with an
 isolated judge environment without mounting either candidate into the judge.
-It has no command execution or write operation and accepts only paths published
-by this particular evidence store. Candidate-controlled filenames are index
-data, never host read paths.
+Its read-only interface accepts registered paths published by this evidence
+store. Candidate-controlled filenames remain index data, and the store owns
+the host read paths.
 
 Reads use Unicode character offsets and return content, `next_offset`, and
-`eof`. Each response is limited to 32,768 characters to keep an individual tool
+`eof`. Start at offset 0 and continue with `next_offset` until `eof` is true. Each response is limited to 32,768 characters to keep an individual tool
 message manageable, including files with enormous single lines. The judge can
 continue reading without a total-read limit. Cite original changed paths from
 the index in the decision schema, rather than artifact storage paths.

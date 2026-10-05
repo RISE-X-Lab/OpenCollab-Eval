@@ -39,10 +39,12 @@ Keep Python modules below 800 lines and new files below 500 KB.
 Generated reports, model transcripts, predictions, patches, datasets, runtime
 logs, PDFs, and local environment paths stay outside the source repository.
 
-## ICLR integration branch
+## Current and historical documentation
 
-The cumulative PR series targets `integrate/iclr-2027` and is documented in
-`docs/iclr-integration.md`. Merge it in order using merge commits to retain
-the final ICLR source ancestry for subsequent Git merges.
+Current changes target `main`. The completed ICLR integration is recorded in
+`docs/iclr-source-coverage.json` and the Git history. Research specifications
+and original analysis records under `experiment/` retain their historical
+conditions. Keep current usage instructions in `docs/` and link research
+records as historical material.
 
 Commit authorship and `Co-authored-by` trailers are reserved for human contributors.

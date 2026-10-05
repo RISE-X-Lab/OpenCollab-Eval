@@ -7,21 +7,29 @@ SWE-bench Pro-Lite runs. One validated JSON model supplies every output format.
 The command succeeds after the PDF and source files are atomically published
 and the publication manifest reaches `final`.
 
+## Prepare a publishable comparison
+
+Read each run's `final_eval_layer_report.json` before using this command. This publisher requires the recorded canonical 100-task Pro-Lite snapshot and two completed methods on that same snapshot. A one-task smoke or another subset is read from its ordinary task and batch reports. Use the exact dataset file preserved with that canonical snapshot.
+
+Each method also needs an evaluator-owned clean-run audit manifest and the evidence files described below. Keep the source reports and all referenced artifacts available at their recorded paths. The command validates those files and the official execution proofs before rendering.
+
+The runner writes the fact report and execution artifacts. The evaluator then reviews the trajectories, candidate identities, and network-isolation evidence and prepares `clean_run_manifest.json` and its structured evidence files using the formats below. Set each audit field from the reviewed artifacts. Obtain the canonical dataset file from the original run archive so it matches the snapshot used by both methods. Once these inputs are ready, run the publication command below.
+
+Install the selected LaTeX engine on the machine that executes publication. `--latex-engine` defaults to `xelatex`, and `--latex-timeout` defaults to 120 seconds for each compiler invocation. Optional label and narrative files can be omitted. Method names should identify the actual runs being compared.
+
 ## Command
 
 ```bash
 oc-eval final-report \
-  --method-a-report /sealed/runs/g11/final_report.json \
+  --method-a-report /sealed/runs/g11/final_eval_layer_report.json \
   --method-a-audit-manifest /sealed/runs/g11/clean_run_manifest.json \
   --method-a-name G1.1 \
-  --method-b-report /sealed/runs/openhands/final_report.json \
+  --method-b-report /sealed/runs/openhands/final_eval_layer_report.json \
   --method-b-audit-manifest /sealed/runs/openhands/clean_run_manifest.json \
   --method-b-name OpenHands \
   --dataset-file /sealed/datasets/swe-batch-pro-lite.jsonl \
   --meeting-date 2026-07-15 \
   --author "Evaluation Team" \
-  --labels-json /sealed/report_labels.json \
-  --narrative-json /sealed/report_notes.json \
   --output-dir /sealed/publication
 ```
 
@@ -34,6 +42,16 @@ five published files and their hashes unchanged. The publisher allows one
 writer per prefix, checks each target before replacement, and backs up the
 previous set. It verifies the new hashes and restores the backup if a
 replacement or manifest write fails.
+
+With `--meeting-date 2026-07-15`, the default prefix is `g11_openhands_prolite_1_100_final_comparison_20260715`. `--output-prefix` selects another filename prefix. Read the manifest's `status` after a successful command and open the Markdown or PDF for the rendered comparison.
+
+| Output | File suffix |
+| --- | --- |
+| Validated comparison model | `.json` |
+| Readable report | `.md` |
+| LaTeX source | `.tex` |
+| Compiled report | `.pdf` |
+| Publication status and artifact identities | `.manifest.json` |
 
 ## Fact report contract
 

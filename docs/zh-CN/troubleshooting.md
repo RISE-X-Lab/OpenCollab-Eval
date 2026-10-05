@@ -4,9 +4,30 @@
 
 请从生成的 JSON 报告开始排查。报告中记录了结构化原因、候选身份、目标证据和清理证据，控制台输出可作为补充诊断信息。
 
+## 找到失败阶段
+
+Duo 控制器报告默认写入 `<config-directory>/results/<run-id>`。先读 `parallel_summary.json`，再打开相应题号的 `task_<index>_report.json`。`generation` 描述 Solver 尝试，`eval` 描述正式评分并给出对应报告路径，`task_result.status` 给出任务分类。题目的 stdout 与 stderr 日志放在这些报告旁。
+
+下面的命令读取教程的单题报告。排查期间保留完整原始运行目录。
+
+```bash
+python - "$EVAL_ROOT/results/duo-smoke-001/task_1_report.json" <<'PY_DIAGNOSE'
+import json
+import sys
+from pathlib import Path
+report = json.loads(Path(sys.argv[1]).read_text())
+print("run", report.get("run_id"), "status", report.get("status"))
+for row in report.get("rows", []):
+    print("index", row.get("index"), "result", row.get("task_result"))
+    print("generation", row.get("generation"))
+    print("evaluation", row.get("eval"))
+PY_DIAGNOSE
+```
+
 ## 任务启动前配置失败
 
-使用相同参数加上 `--dry-run` 运行命令，并检查每一项必需值。生产 Pro-Lite 运行需要主机、远程根目录、镜像仓库、模型名称、模型 ID、提供商、远程模型端点、会话前缀以及一套完整的凭据传输方式。必须为绝对路径的路径会在 SSH 前遭到拒绝。
+对 `oc-eval duo` 或 `oc-eval swe-v1-prolite` 添加 `--dry-run`，检查必需配置。通用 `oc-eval run` 使用自己的任务结构和参数。
+Pro-Lite 需要 worker 根目录、镜像仓库、模型名称及 ID、提供商、模型入口和完整凭据传输。SSH 传输还需要主机。Duo 从 run ID 派生会话前缀。必须为绝对路径的路径会在 SSH 前遭到拒绝。
 
 直接 Kimi coding 模式应使用经过验证的 G11 配置。`kimi-for-coding` 使用 262144-token 上下文并保留完整思考历史。`k3` 使用 1048576-token 上下文与 `reasoning_effort=high`。两套配置都要求使用 `openai` 提供商、`https://api.kimi.com/coding/v1` 端点，并要求受保护的环境文件已经存在于工作节点。
 
@@ -17,6 +38,14 @@
 身份验证失败与提供商配额耗尽都属于生成技术失败。此时，候选、unresolved 判定和官方评测结果字段保持未设置。仅在实验协议允许新一次任务启动时重试。
 
 对于反向代理传输，请验证本地认证中继、SSH 隧道、远程中继健康端点、上游 URL 哈希和受保护的 token 文件。对于直接传输，请验证工作节点 DNS、HTTPS 连通性、凭据文件权限模式和精确的模型响应身份。
+
+## 本地中断任务重启失败
+
+继续批次前，检查 `parallel_summary.json` 与各题报告。从未启动的题目可以继续调度，已完成且证据相符的题目会复用报告。local runner 启动后中断的题目会在 worker 题目目录留下 `runner.pid` 或 `summary.json`。在该目录再次启动会抛出 `RemoteRunnerUnavailable`，保存的拥有者状态为 `dead` 时也会如此。
+
+确认原拥有进程退出后，同时使用已保存捕获回执的 `recovery_environment` 与 `recovery_argv` 恢复保留的候选。已有的已验证候选通过[仅评测队列](swe-prolite-operations.md#准备仅评测队列)评分，将 `source_base_run_dir` 设为原题目目录，将 `base_run_dir` 设为新的独立评测目录。worker 错误 `eval-only source and target base run directories must differ` 表明计划中的两个路径相同。准备修正计划时保留原始报告与轨迹。
+
+保存证据无法确认可信候选且 Solver 启动额度已耗尽时，将该次尝试保留为技术失败。实验协议允许再次生成后，使用新的 run ID 和输出目录。
 
 ## 运行时同步失败
 
@@ -51,12 +80,12 @@
 | 目标计划为空或不受支持 | 没有关于必要工作的可执行陈述 |
 | 收集到零项测试 | 没有执行目标 |
 | 缺少候选归因证据的导入或收集失败 | 目标结果未知 |
-| 预期候选 tree 产生前的绑定源投影拒绝 | 候选属于 unresolved |
 | 投影或 official worktree 应用失败 | 评测状态不一致 |
 | 补丁 SHA 不匹配 | 生成与评测引用不同候选 |
 | 日志缺失或不安全 | 无法验证目标证据 |
-| 进程静止后的容器删除失败 | 运行告警 |
 | 清理后仍未静止 | 仓库状态仍可能变化 |
+
+进程已证实静止后的容器删除失败记录为运维告警。源投影拒绝的分类根据绑定候选与预期 tree 的证据确定，具体见下方说明。
 
 结构化证据证明目标精确失败或跳过、候选引起构建、初始化、导入或依赖失败，或者生成阶段尚未记录预期候选 tree 时可信源投影拒绝绑定补丁，候选会被记为 unresolved。与预期 tree 冲突的源投影拒绝，以及评测准备基线上的拒绝，都属于技术失败。没有候选归因的非零命令仍属于技术失败。
 

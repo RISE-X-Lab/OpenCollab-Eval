@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -11,6 +12,7 @@ from urllib.parse import unquote
 import pytest
 
 from opencollab_eval import cli
+from opencollab_eval.commands import swe_rejudge_queue
 from opencollab_eval.engine.solver_backend import DEFAULT_WORKFLOW_SOLVERS
 from tests.support.paths import SOURCE_ROOT
 
@@ -205,12 +207,13 @@ def test_chinese_internal_links_prefer_available_chinese_documents(
     }
 
 
-def test_readme_names_installed_commands_and_solver_profiles() -> None:
+def test_readme_names_commands_and_cli_reference_lists_solver_profiles() -> None:
     readme = ROOT_README.read_text(encoding="utf-8")
     for command in ("inspect", "run", "swe-v1-prolite", "final-report"):
         assert f"`oc-eval {command}`" in readme
+    catalog = (DOCS / "cli-reference.md").read_text(encoding="utf-8")
     for solver in DEFAULT_WORKFLOW_SOLVERS:
-        assert f"`{solver}`" in readme
+        assert f"`{solver}`" in catalog
 
 
 def test_documented_kimi_slice_has_complete_identity() -> None:
@@ -223,7 +226,6 @@ def test_documented_kimi_slice_has_complete_identity() -> None:
         '"thinking":{"type":"enabled","keep":"all"}',
     )
     for relative in (
-        "README.md",
         "docs/swe-prolite-operations.md",
         "docs/zh-CN/swe-prolite-operations.md",
     ):
@@ -238,6 +240,39 @@ def test_coordinator_example_uses_only_forwarded_options() -> None:
     assert "--remote-python /srv/opencollab-eval/venv/bin/python" in example
 
 
+@pytest.mark.parametrize("language_dir", ("", "zh-CN"))
+def test_documented_rejudge_plan_uses_an_isolated_output(
+    tmp_path: Path, language_dir: str,
+) -> None:
+    text = (DOCS / language_dir / "swe-prolite-operations.md").read_text(encoding="utf-8")
+    plans = [
+        json.loads(block)
+        for block in FENCED_CODE.findall(text)
+        if '"schema": "opencollab.eval_only_queue.v1"' in block
+    ]
+    assert len(plans) == 1
+    plan = plans[0]
+    job = plan["jobs"][0]
+    job.update(
+        parent_output_dir=str(tmp_path),
+        task="example-task",
+        record_id="example-record",
+        source_patch_sha256="a" * 64,
+        eval_patch_sha256="a" * 64,
+    )
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    loaded = swe_rejudge_queue._read_plan(plan_path)
+    argv, _, _ = swe_rejudge_queue._child_argv(
+        loaded, loaded["jobs"][0], queue_id="example", output_dir=tmp_path,
+    )
+    source = Path(argv[argv.index("--eval-only-source-base-run-dir") + 1])
+    target = Path(argv[argv.index("--base-run-dir") + 1])
+    assert source != target
+    assert source == Path(job["source_base_run_dir"])
+    assert target == Path(job["base_run_dir"])
+
+
 def test_documented_k3_coordinator_has_complete_identity() -> None:
     required = (
         "--llm-model k3",
@@ -248,7 +283,6 @@ def test_documented_k3_coordinator_has_complete_identity() -> None:
         "reasoning_effort=high",
     )
     for relative in (
-        "README.md",
         "docs/swe-prolite-operations.md",
         "docs/zh-CN/swe-prolite-operations.md",
     ):

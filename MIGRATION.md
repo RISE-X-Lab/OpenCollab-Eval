@@ -1,48 +1,39 @@
-# OpenCollab compatibility and repository ownership
+# Compatibility and upgrading
 
 **English** | [简体中文](MIGRATION.zh-CN.md)
 
-OpenCollab-Eval owns the benchmark and evaluation code. This covers Solver
-workflows and remote evaluation. Candidate construction runs under process
-isolation, and its outputs retain execution evidence.
-OpenCollab owns the agent framework, its public Python API, and framework tests.
+OpenCollab runs the agents. OpenCollab-Eval prepares benchmark tasks, preserves their generated patches, runs the official tests, and reports the results. Use this page when choosing matching versions or updating an existing installation.
 
-## Package ownership
+## Package responsibilities
 
-| Owner | Package |
+| Area | Owner |
 | --- | --- |
-| Public and sealed task contracts | `opencollab_eval.contracts` |
-| Benchmark normalization | `opencollab_eval.benchmarks` |
-| Evaluator and evidence engine | `opencollab_eval.engine` |
-| Generation and process isolation | `opencollab_eval.generation` |
-| Batch, reporting, and remote commands | `opencollab_eval.commands` |
-| Solver workflows | `opencollab_eval.workflows` |
-| Shell and configuration assets | `opencollab_eval.resources`, `opencollab_eval.configs` |
+| Agent sessions and the built-in Duo workflow | OpenCollab public API |
+| Public tasks and private judge inputs | `opencollab_eval.contracts` |
+| Benchmark input conversion | `opencollab_eval.benchmarks` |
+| Candidate generation and process isolation | `opencollab_eval.generation` |
+| Official evaluation and result evidence | `opencollab_eval.engine` |
+| Batch commands and reports | `opencollab_eval.commands` |
+| Evaluator-owned research workflows | `opencollab_eval.workflows` |
+| Bundled shell scripts and configuration | `opencollab_eval.resources`, `opencollab_eval.configs` |
 
-The evaluator uses a `src` package layout. Installed commands start modules with
-`python -m` or the `oc-eval` console script. Remote execution synchronizes the
-declared OpenCollab public package and OpenCollab-Eval runtime, verifies their
-tree identity, and then imports from that synchronized package root.
+The evaluator uses a `src` package layout. Installed entry points are `oc-eval` and `python -m opencollab_eval`. Runtime preparation packages or synchronizes the declared framework and evaluator sources before a worker imports them.
 
-## OpenCollab version boundary
+## Choose compatible versions
 
-OpenCollab-Eval 0.5.1 requires OpenCollab 0.5.0. This patch release preserves
-the 0.5.0 pair while correcting legacy result and controlled-stop handling. The
-paired release provides
-the Responses transport, runtime identity checks, and public test contracts
-used by the current evaluator. The package root provides `OpenCollab`,
-`RunResult`, `RunError`, and `workflow`. Optional public contracts and
-composition helpers live in `opencollab.environments`, `opencollab.tools`, and
-`opencollab.workflows`.
+The current evaluator release is 0.9.1. Its dependency is `opencollab>=0.9,<0.10`, and CI tests it with OpenCollab 0.9.1. The exact tested framework commit is recorded in `.github/workflows/ci.yml`.
 
-Production code and tests cannot import the retired `opencollab.sdk` namespace
-or internal `opencollab.adapters`, `opencollab.application`,
-`opencollab.bootstrap`, `opencollab.domain`, and `opencollab.harness`
-namespaces. Boundary tests enforce the rule over source and installed wheels.
+Follow [Getting started](docs/getting-started.md) for release-wheel or source installation. Confirm what the active environment actually imports before starting a run.
 
-Evaluation programs, benchmark data, model outputs, predictions, patches,
-reports, and integration tests belong to OpenCollab-Eval. Framework behavior
-and public API tests belong to OpenCollab.
+```bash
+oc-eval --version
+python -c 'from importlib.metadata import version; print("OC", version("opencollab")); print("OCE", version("opencollab-eval"))'
+```
 
-See [the architecture guide](docs/architecture.md) for the current data flow
-and [the wheel contract](CONTRIBUTING.md) for compatibility verification.
+The public framework entry points include `OpenCollab`, `RunResult`, `RunError`, and `workflow`. Evaluator integrations also use the documented `opencollab.builtin_workflows`, `opencollab.environments`, `opencollab.patches`, `opencollab.profiles`, `opencollab.models`, `opencollab.teams`, `opencollab.tools`, and `opencollab.workflows` modules. Internal framework imports and the retired `opencollab.sdk` namespace are rejected by the existing source and installed-wheel checks.
+
+## Keep existing runs interpretable
+
+Create a separate environment for an upgrade and retain the original configuration and outputs of completed runs. A package upgrade changes the runtime for future generation. Reusing a saved candidate for scoring follows the candidate and test identity checks described in [Evaluation integrity](docs/evaluation-integrity.md).
+
+Historical release changes remain in [CHANGELOG.md](CHANGELOG.md). The completed research integration is recorded in [source coverage](docs/iclr-source-coverage.json) and [historical experiment materials](experiment/README.md). Current development and release checks are in [CONTRIBUTING.md](CONTRIBUTING.md) and [RELEASING.md](RELEASING.md).

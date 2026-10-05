@@ -149,184 +149,170 @@ Pro-Lite 测试计划包含 schema、适配器、指定目标、有序目标批�
 
 ## Python 证据
 
-Pytest plan 通过 official container 内的 trusted controller program 执行。
-controller 具有预留 proof file 和准备 disposable worker home 所需的权限。
-它使用不同的 unprivileged user 和新的 process session 启动 Pytest worker。
+Pytest 测试计划通过官方容器内的可信控制器程序执行。控制器具有预留证据文件和
+准备一次性工作进程主目录的权限，随后使用独立的低权限用户，在新的进程会话中
+启动 Pytest 工作进程。
 
-command identity 是精确 argument vector 的 SHA-256。controller 只接受预期
-Pytest launcher，以及从 evaluation input directory 加载的一个 trusted
-proof plugin。proof plugin 加载后，candidate source path 才会进入 worker
-import view。
+命令身份是精确参数向量的 SHA-256。控制器接受预期的 Pytest 启动器，以及从
+评测输入目录加载的一个可信证据插件。插件加载完成后，候选源码路径才会进入
+工作进程的导入范围。
 
-plugin 通过继承的 file descriptor 发送 structured JSONL event。controller
-要求一个 session start、一个 collection finish、一个 session finish、
-按顺序排列的 per-node phase report、相互一致的 process 与 Pytest exit
-status、protocol EOF，并要求不存在 surviving event writer。它记录 worker
-PID、worker 和 controller identity、command SHA-256、return code 和 event
-stream SHA-256。
+插件通过继承的文件描述符发送结构化 JSONL 事件。控制器要求会话开始、收集
+结束和会话结束事件各出现一次，各节点的阶段报告顺序正确，进程与 Pytest 的
+退出状态一致，协议到达 EOF，事件写入进程全部结束。记录包含工作进程 PID、
+工作进程与控制器身份、命令 SHA-256、返回码和事件流 SHA-256。
 
-成功的 batch 需要至少收集一个 node，并且与 declared target 匹配的每个 node
-都具有完整且 passed 的 `setup`、`call` 和 `teardown` phase。parameterized
-target 可以使用 verified parent fallback。fallback parent list 必须完全由
-declared parameterized target 推导，每个 collected node 都必须位于允许的
-exact target 或 parent 下。
+通过的测试批次至少收集一个节点，与指定目标匹配的每个节点都必须具有完整且
+通过的 `setup`、`call` 和 `teardown` 阶段。参数化目标可以使用经过验证的
+父目标回退。父目标列表必须完全由指定的参数化目标推导，每个收集到的节点都
+必须属于允许的精确目标或父目标。
 
-当 structured event stream 和 candidate-source binding 指向 declared test
-时，import 与 collection failure 可以证明 failing `FAIL_TO_PASS` target。
-它们无法证明 passing result。
+结构化事件流与候选源码绑定能够定位指定测试时，导入和收集失败可以证明
+`FAIL_TO_PASS` 目标失败。通过判定仍要求完整的执行证据。
 
 ## Go 证据
 
-Go plan 使用 `go test -count=1 -json`。写成
-`path/to/file_test.go::TestName` 的 target 会得到单独的 package command 和
-anchored `-run` expression。多个 package 仍是分离的 command，从而保留每个
-package-to-test binding。
+Go 测试计划使用 `go test -count=1 -json`。写成
+`path/to/file_test.go::TestName` 的目标会生成独立的包命令和锚定的 `-run`
+表达式。多个包分别执行，从而保留每个包与测试之间的绑定关系。
 
-只声明 test name 且不含 path 的数据集可以使用 runtime discovery。controller
-扫描 test file，为每个 package 发出 structured discovery record，然后执行
-该 package 中的 exact test。
+数据集声明测试名称但省略路径时，可以使用运行时发现。控制器扫描测试文件，
+为每个包输出结构化发现记录，随后执行该包内的精确测试。
 
-parser 消费 Go JSON event 和边界明确的 compiler diagnostic。passing proof
-要求每个 declared test 都在其 bound package 中具有 `pass` event。dynamic
-discovery 还要求每个 declared test 的 ownership 完整，并拒绝 ambiguous
-package match。
+解析器读取 Go JSON 事件和范围明确的编译器诊断。通过证据要求每个指定测试
+在其绑定包内具有 `pass` 事件。动态发现还要求每个指定测试的所属关系完整，
+包匹配存在歧义时拒绝继续。
 
-failing proof 接受 exact target `fail` event。build failure 只有在 package、
-test file diagnostic、declared target、observed command 和 planned command
-全部一致时才有效。dependency build output 和 unrelated package failure
-无法替代 target execution。
+失败证据接受精确目标的 `fail` 事件。构建失败只有在包、测试文件诊断、指定
+目标、观察到的命令和计划命令全部一致时才有效。依赖构建输出与无关包失败
+保持各自归因，目标执行证据仍需绑定到指定目标。
 
 ## JavaScript 证据
 
-JavaScript 与 TypeScript plan 为 Jest、Mocha 和 ospec 使用 parser-backed
-adapter。declared target 会映射到 dataset-selected test file 和 judge test
-patch 引入的 file。ambiguous alias、traversal path 和 unverified file mapping
-会被拒绝。
+JavaScript 和 TypeScript 测试计划为 Jest、Mocha 和 ospec 使用解析器支持的
+适配器。指定目标映射到数据集选择的测试文件和裁判测试补丁引入的文件。存在
+歧义的别名、路径越界和未经验证的文件映射会被拒绝。
 
-Jest 使用 JSON、serial execution、verbose output 和 `runTestsByPath` 执行
-显式 test file。Mocha 按 file 对 declared title 分组，构造 anchored
-selector，并要求 JSON-stream output。ospec 为其 declared suite 使用
-structured launcher。
+Jest 使用 JSON、串行执行、详细输出和 `runTestsByPath` 执行明确指定的
+测试文件。Mocha 按文件为指定标题分组，构造锚定选择器，并要求 JSON-stream
+输出。ospec 为指定测试套件使用结构化启动器。
 
-parser 对照 plan 检查 executed suite 和 target result。只有 process exit
-成功无法提供 passing authority。zero test、missing suite、unrelated
-passing test、malformed structured output 或 different command 都会让
-evidence check 失败。
+解析器对照计划检查实际执行的套件和目标结果。通过判定要求目标证据。测试数为
+零、套件缺失、无关测试通过、结构化输出格式错误或执行命令变化，都会导致证据
+检查失败。
 
-一个边界严格的 JavaScript suite-load failure 可以证明 `FAIL_TO_PASS`，条件
-是单个 declared suite 无法加载由该 suite 的 judge patch 显式 mock 的 module。
-repository namespace、suite path、missing module、runtime error count、
-test count 和 command identity 必须全部一致。
+严格绑定的 JavaScript 套件加载失败可以证明 `FAIL_TO_PASS`。条件是单个
+指定套件无法加载该套件的裁判补丁明确模拟的模块。仓库命名空间、套件路径、
+缺失模块、运行时错误数、测试数与命令身份必须全部一致。
 
 ## 候选与运行身份
 
-generation 和 evaluation record 绑定以下 identity。
+生成与评测记录绑定以下身份。批次驱动器通过 `OPENCOLLAB_RUN_ID` 将
+`run_id` 传入接受该参数的 OpenCollab 公开调用。OpenCollab 0.9.1 在开启或
+关闭轨迹记录时，均将运行身份保留到结果指标与产物清单。较早的 0.9.x 运行时
+若公开调用省略此参数，会保留其自行生成的身份。已有报告继续通过记录下来的
+身份字段和预测与指标的配对关系读取。
 
-| Identity | 绑定内容 |
+| 身份 | 绑定内容 |
 | --- | --- |
-| `instance_id` | Sealed benchmark instance |
-| `record_id` | 精确的 prediction 与 metric pair |
-| `run_identity_sha256` | Invocation、Solver、model、workflow 和 runtime identity |
-| `source_patch_sha256` | Generation 发布的 patch |
-| `eval_patch_sha256` | Official evaluation 接受的 patch |
-| `source_base_commit` | Generation 使用的 dataset commit |
-| `source_anonymous_base` | Deterministic one-commit Solver baseline |
-| `source_base_tree` | Trusted source tree |
-| `source_candidate_tree` | Generation 期间计算的 candidate tree |
-| `runtime_tree_sha256` | 已同步的 OpenCollab-Eval runtime source |
-| evaluation attempt fields | 精确的 official execution attempt |
+| `instance_id` | 密封的基准实例 |
+| `record_id` | 精确的预测与指标配对 |
+| `run_identity_sha256` | 调用、Solver、模型、工作流与运行时身份 |
+| `source_patch_sha256` | 生成阶段发布的补丁 |
+| `eval_patch_sha256` | 官方评测接受的补丁 |
+| `source_base_commit` | 生成阶段使用的数据集提交 |
+| `source_anonymous_base` | 确定性的单提交 Solver 基线 |
+| `source_base_tree` | 可信源码树 |
+| `source_candidate_tree` | 生成阶段计算的候选树 |
+| `runtime_tree_sha256` | 已同步的 OpenCollab-Eval 运行时源码 |
+| 评测尝试字段 | 精确的官方执行尝试 |
 
-generation patch、candidate proof、prediction row、workflow metric、source
-projection、prepared projection、official report 和 aggregate row 必须在
-共享 identity 上一致。latest-file lookup 和 matching task name 都无法替代
-`record_id` 与完整 SHA-256 pairing。
+生成补丁、候选证据、预测行、工作流指标、源码投影、准备后投影、官方报告和
+汇总行必须共享一致的身份。配对使用 `record_id` 与完整 SHA-256，文件更新
+时间和任务名称作为辅助查找信息。
 
-## Verdict 语义
+## 判定语义
 
-| Terminal result | 必要事实 |
+| 终态结果 | 必要事实 |
 | --- | --- |
-| Resolved | Eligible patch、verified projection 与 cleanup、safe artifact 和 passing target evidence |
-| Unresolved | 绑定证据证明 declared target 失败、跳过、候选引起测试前失败，或预期候选 tree 产生前的可信源投影拒绝 |
-| Technical failure | 候选身份或评测状态不足以判断候选是否正确 |
+| P / 已解决 | 候选可提交、投影与进程静止已验证、产物安全，且目标执行证据证明通过 |
+| F / 未解决 | 绑定证据证明指定目标失败、跳过、候选导致的测试前失败，或预期候选树产生前的可信源投影拒绝 |
+| E / 技术失败 | 候选身份或评测状态不足以判断候选是否正确 |
 
-evaluator 根据 durable artifact snapshot 推导 verdict。technical reason
-包括身份工件不安全或缺失、目标计划不受支持、目标结果未知、Docker 执行失败、
-进程未静止、基线不匹配、投影运行失败、仓库准备失败，以及经过直接探测确认的
-公共基础设施故障。日志文字本身无法判定基础设施故障。
+评测器根据持久产物快照推导判定。技术原因包括身份产物不安全或缺失、目标计划
+不受支持、目标结果未知、Docker 执行失败、进程未静止、基线不匹配、投影运行
+失败、仓库准备失败，以及直接探测确认的共享基础设施故障。基础设施归因依据
+直接探测结果。
 
-只有每个 declared F2P 与 P2P target 都具有绑定的 passing evidence，
-`resolved` 才会成为 true。一个绑定的候选失败已经足以得到 `unresolved`，
-后续 batch 没有运行也不会覆盖这一结论。若尚无其他绑定失败，未知 evidence
-仍属于技术失败。进程组已经停止且工作区已经冻结后，容器删除失败会记录为运行
-告警。进程无法静止仍属于技术失败。
-只有生成阶段尚未记录预期候选 tree 时，可信源投影拒绝才足以证明
-`unresolved`。如果源投影拒绝与已经记录的候选 tree 冲突，或补丁在评测准备
-基线上遭到拒绝，就说明投影状态不一致，应判为技术失败。
+每个指定 F2P 与 P2P 目标都具有绑定的通过证据后，`resolved` 成为 true。
+一个绑定的候选失败足以确定 `unresolved`，其余批次可以保持未执行状态。
+尚无绑定失败时，未知证据仍属于技术失败。进程组已经停止且工作区已经冻结后，
+容器删除失败记录为运行告警。进程无法静止仍属于技术失败。
+
+生成阶段尚未记录预期候选树时，可信源码投影拒绝可以证明 `unresolved`。
+源码投影拒绝与已记录候选树冲突，或补丁在准备后的评测基线上遭到拒绝，都表明
+投影状态不一致，应判为技术失败。
 
 ## 评测状态
 
-| State | 含义 |
+| 状态 | 含义 |
 | --- | --- |
-| `needs_generation` | 不存在 prediction |
-| `generation_active` | 当前 run 持有的 generation session 仍在运行 |
-| `empty_patch_invalid` | Generation 结束但没有 candidate |
-| `blocked_missing_metric` | Prediction 缺少对应的 terminal workflow metric |
-| `blocked_metric_pairing` | Prediction 与 metric identity 无法配对 |
-| `workflow_incomplete` | Workflow 尚未进入 eligible terminal state |
-| `workflow_failed` | Generation 进入 terminal failure 或将 submission 标记为 ineligible |
-| `ready_for_eval` | 非空 eligible candidate 可以进入 official evaluation |
-| `eval_active` | 匹配的 official evaluation 正在运行 |
-| `eval_done` | 匹配的 official report 已完成，并包含 resolved 或 unresolved verdict |
-| `technical_eval_failed` | Official evaluation 结束但没有 trustworthy terminal evidence |
+| `needs_generation` | 尚无预测记录 |
+| `generation_active` | 当前运行持有的生成会话仍在执行 |
+| `empty_patch_invalid` | 生成结束但候选为空 |
+| `blocked_missing_metric` | 预测缺少对应的终态工作流指标 |
+| `blocked_metric_pairing` | 预测与指标身份无法配对 |
+| `workflow_incomplete` | 工作流尚未进入可提交的终态 |
+| `workflow_failed` | 生成进入失败终态，或提交被标记为无效 |
+| `ready_for_eval` | 非空有效候选可以进入官方评测 |
+| `eval_active` | 匹配的官方评测正在执行 |
+| `eval_done` | 匹配的官方报告已完成，并包含已解决或未解决判定 |
+| `technical_eval_failed` | 官方评测结束且终态证据不足 |
 
-timeout、context overflow、cancellation、budget exhaustion 和 patch guard
-failure 等 generation status 会保留为 generation failure。missing image、
-missing specification、empty filtered patch、driver failure 和 failed evidence
-等 evaluation status 会保留为 technical evaluation failure。
+生成已停止、提交证据有效且补丁非空时，`done` 或 `done_with_timeout_patch`
+候选可以进入官方评测。工作流明确采用的候选也由正式评分判定，内部委员会仍可
+记录未完成或阻塞状态。保留的指标必须证明运行时执行完成、候选已采用、候选字节
+存在且提交完整性有效。具备这些证据的旧报告可提供修正后的评分视图，同时保留
+原始诊断。
+
+缺少有效交付时，超时、上下文溢出、取消、预算耗尽和补丁保护失败的终态仍属于
+生成失败。镜像缺失、规范缺失、过滤后补丁为空、驱动器失败和执行证据失效属于
+技术评测失败。旧指标通过已有兼容路径读取。新指标缺少必需的完整性字段，或这些
+字段记录失败时，候选不可提交。
 
 ## 故障范围
 
-| Scope | 影响 |
+| 范围 | 影响 |
 | --- | --- |
-| `none` | 继续当前 task 和 batch |
-| `task` | 当前 attempt 失败，其他 task 继续 |
-| `image` | 标记受影响的 task image 无效，无关 image 继续 |
-| `shared_infrastructure` | direct shared-service probe 失败后暂停新工作 |
+| `none` | 继续当前任务与批次 |
+| `task` | 当前尝试失败，其他任务继续 |
+| `image` | 受影响任务镜像标记为无效，无关镜像继续 |
+| `shared_infrastructure` | 共享服务直接探测失败后暂停新工作 |
 
-文本匹配无法将 failure 提升为 shared scope。task failure 后，parallel runner
-可以为 Docker、shared storage、queue state、synchronized runtime 和配置的
-model endpoint 发起 fresh probe。确认 shared probe failure 后可以暂停
-batch。repository-specific anomaly、没有 shared probe 的 provider error、
-patch failure 和 target-test failure 都会保持 local。
+任务失败后，并行运行器可以对 Docker、共享存储、队列状态、已同步运行时和
+配置的模型端点发起新探测。共享探测确认失败后，可以暂停批次。仓库异常、
+缺少共享探测的服务商错误、补丁失败和目标测试失败保持局部范围。
 
 ## 持久证据
 
-direct evaluation report 包含 base snapshot、source candidate projection、
-prepared candidate projection、generation 与 evaluation patch digest、
-record identity、evaluation specification digest、runtime dependency
-identity、exact command、parser evidence、exit status、bounded log tail、
-process quiescence 和 container cleanup。
+直接评测报告包含基线快照、源码候选投影、准备后的候选投影、生成与评测补丁
+摘要、记录身份、评测规范摘要、运行时依赖身份、精确命令、解析器证据、退出
+状态、大小受限的日志末尾、进程静止状态与容器清理记录。
 
-runner 只从它持有的 temporary directory 发布 allowlisted output name。
-missing、duplicated、oversized、non-regular、linked 或 malformed artifact
-会增加 technical reason。
+运行器从它持有的临时目录发布白名单中的输出名称。产物缺失、重复、超限、
+类型异常、链接或格式错误都会增加技术原因。
 
-aggregate report 保留三个独立计数。`resolved` 统计 proven pass。
-`unresolved` 统计技术上完整但失败的候选。`technical_failed` 统计没有有效
-semantic verdict 的 task。
+汇总报告保留三个独立计数。`resolved` 统计已证明的通过结果，`unresolved`
+统计具有有效失败证据的候选，`technical_failed` 统计缺少有效语义判定的任务。
 
-final comparison report 在渲染 JSON、Markdown、TeX 或 PDF 输出前验证
-dataset identity、task coverage、run identity、candidate SHA-256、
-projection evidence、direct execution evidence 和 terminal status。
+最终对比报告在生成 JSON、Markdown、TeX 或 PDF 输出前，验证数据集身份、
+任务覆盖、运行身份、候选 SHA-256、投影证据、直接执行证据和终态。
 
 ## 审查清单
 
-当 evaluation change 保持 solver-visible input 公开、judge field 密封、
-candidate 来自共享 controller-owned constructor，并且 official workspace
-验证 applied tree 时，它便具备 review 条件。
+评测改动具备审查条件时，Solver 可见输入保持公开，裁判字段保持密封，候选
+来自控制器持有的共享构造器，官方工作区验证应用后的树。
 
-每个新 test adapter 都需要 structural plan validator 和能够证明 declared
-target 的 independent parser。每个新 report 都需要完整 identity binding 和
-bounded artifact read。每条 cleanup path 都需要在 candidate extraction 前
-提供 observable quiescence。每个 batch-wide stop 都需要对其声明失败的
-shared dependency 进行 direct probe。
+新增测试适配器需要结构化计划验证器和能够证明指定目标的独立解析器。报告
+需要完整身份绑定与大小受限的产物读取。清理路径需要在候选提取前提供可观察的
+进程静止证据。批次暂停需要对声明失败的共享依赖进行直接探测。

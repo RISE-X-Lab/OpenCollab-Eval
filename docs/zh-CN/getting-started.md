@@ -2,114 +2,157 @@
 
 [English](../getting-started.md) | **简体中文**
 
-本指南介绍安装和通用候选引擎的首次运行，其中包括数据集验证。官方的 resolved 或 unresolved 判定按照 [SWE Pro-Lite 操作指南](swe-prolite-operations.md)执行。
+先确定要运行什么。自己的仓库任务使用通用任务 JSONL，输出候选补丁。SWE 基准评测需要有序数据集、任务镜像和正式测试。下面先介绍本地候选生成，再给出完整基准配置的入口。
 
-## 环境要求
+## 安装软件包
 
-核心软件包支持 Python 3.10 至 3.12，并要求使用 OpenCollab 0.9.x（`opencollab>=0.9,<0.10`）。容器任务和官方 SWE-bench 评测需要 Docker。OpenHands 可选依赖仅支持 Python 3.12。
-
-评测器与框架应来自彼此兼容的发行版，或来自已经共同测试过的源码修订。仓库 CI 会构建两者的 wheel，并验证安装后的边界。
-
-## 安装发行版或本地 wheel
+当前评测器版本为 0.9.1，依赖 OpenCollab 0.9.x（`opencollab>=0.9,<0.10`）。Linux 和 macOS 支持 Python 3.10 至 3.12。下面使用 Python 3.12，把环境放在两个源码目录旁边。
 
 ```bash
-python -m venv .venv
+mkdir -p "$HOME/oc-evaluation"
+cd "$HOME/oc-evaluation"
+git clone https://github.com/RISE-X-Lab/OpenCollab.git
+git clone https://github.com/RISE-X-Lab/OpenCollab-Eval.git
+python3.12 -m venv .venv
 . .venv/bin/activate
-python -m pip install /path/to/opencollab-0.9.1-py3-none-any.whl
-python -m pip install /path/to/opencollab_eval-0.9.1-py3-none-any.whl
+python -m pip install -e ./OpenCollab
+python -m pip install -e ./OpenCollab-Eval
 oc-eval --version
 oc-eval --help
 ```
 
-通过软件包的可选依赖安装官方 SWE-bench 支持。
+评测器版本命令应输出 0.9.1。使用已构建的 wheel 时，激活环境后安装两个兼容软件包。
 
 ```bash
-python -m pip install '/path/to/opencollab_eval-0.9.1-py3-none-any.whl[swebench]'
+python -m pip install /path/to/opencollab-0.9.1-py3-none-any.whl
+python -m pip install /path/to/opencollab_eval-0.9.1-py3-none-any.whl
 ```
 
-在 Python 3.12 环境中安装 OpenHands 支持。
+正式 SWE-bench 评测需要对应的可选依赖，以及 Linux 工作机上的 Docker。OpenHands 支持使用单独的可选依赖，需要 Python 3.12。在源码安装目录中，安装本次运行所需的依赖。
 
 ```bash
-python -m pip install '/path/to/opencollab_eval-0.9.1-py3-none-any.whl[openhands]'
+python -m pip install -e './OpenCollab-Eval[swebench]'
+# For OpenHands, use Python 3.12.
+python -m pip install -e './OpenCollab-Eval[openhands]'
 ```
 
-## 安装源码检出
+## 选择输入
 
-```bash
-git clone https://github.com/RISE-X-Lab/OpenCollab.git
-git clone https://github.com/RISE-X-Lab/OpenCollab-Eval.git
-cd OpenCollab-Eval
-python -m venv .venv
-. .venv/bin/activate
-python -m pip install -e ../OpenCollab
-python -m pip install -e '.[dev,swebench]'
-ruff check .
-pytest -q
-```
-
-可编辑安装的 OpenCollab 源码检出适合开发。发行验证与 CI 验证应使用已经构建的 wheel，防止仓库路径掩盖软件包文件缺失。
-
-## 检查 SWE-Batch Pro 数据集
-
-`oc-eval inspect` 接受大小受限的 JSONL 数据。它会将公开的 Solver 数据与密封的裁判数据分开，并用带密钥的匿名标识符替换每个实例 ID。
-
-在受保护的评测器状态中创建一份原始 32 字节身份密钥。
-
-```bash
-install -d -m 700 /sealed/opencollab-eval
-python -c 'import os,secrets,sys; fd=os.open(sys.argv[1],os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.write(fd,secrets.token_bytes(32)); os.close(fd)' \
-  /sealed/opencollab-eval/identity.key
-```
-
-检查数据集。
-
-```bash
-oc-eval inspect /data/swe-batch-pro.jsonl \
-  --identity-key-file /sealed/opencollab-eval/identity.key \
-  --image-repository registry.example/swe
-```
-
-检查时必须提供实例身份、仓库和问题陈述。命令会规范化已有的基准提交、镜像、目标和测试补丁字段，并将其保持为密封状态。这里使用较小的检查契约即可。生产运行器还会验证完整任务规范、基线、镜像和测试计划。当某一行仅包含 `dockerhub_tag` 时，必须提供镜像仓库选项。命令会输出一个 JSON 对象，其中包含行数和匿名任务 ID。
-
-同一实验的重试应沿用同一把密钥。新实验可以使用新密钥。密钥、原始数据集和密封的裁判字段应留在 Solver 工作区与源代码管理之外。
-
-## 运行通用候选引擎
-
-`oc-eval run` 接受评测器任务 JSONL 文件。此格式与 SWE-Batch Pro 数据集格式相互独立。
-
-```json
-{"task_id":"calculator-1","description":"Fix calculator.add and run its tests","repo_path":"/work/calculator","timeout":600,"max_tokens":100000}
-```
-
-支持的行字段如下。
-
-| 字段 | 必填 | 含义 |
+| 要做的事 | 输入 | 命令 |
 | --- | --- | --- |
-| `task_id` | 是 | 运行范围内安全的任务身份 |
-| `description` | 是 | 展示给 Solver 的目标 |
-| `repo_path` | 否 | 本地源代码仓库 |
-| `docker_image` | 否 | 容器环境 |
-| `timeout` | 否 | 每项任务的墙上时钟超时秒数 |
-| `max_tokens` | 否 | 每项任务的 token 预算 |
-| `extras` | 否 | 由评测器持有的结构化扩展 |
+| 修改自己的 Git 仓库 | 通用任务 JSONL | `oc-eval run` |
+| 检查 SWE-Batch Pro 数据集 | 基准 JSONL 和私有身份密钥 | `oc-eval inspect` |
+| 用 Duo 生成补丁并正式评测 | 有序基准 JSONL、镜像和 Duo JSON 配置 | `oc-eval duo` |
+| 运行远程基准任务子集 | 已准备的工作机与基准设置 | `oc-eval swe-v1-prolite` |
 
-每项真实本地任务都应使用绝对 `repo_path`。省略此字段时，评测器会有意使用自身的当前工作目录，这可能导致源码检出本身成为 Solver 的目标。
+[任务格式](task-formats.md)介绍两种 JSONL。任务输入、凭据和结果保存在源码目录及求解器将修改的仓库之外。
 
-通过环境变量配置 OpenCollab 模型，并避免让凭据进入 shell 历史记录。
+## 运行本地仓库任务
+
+准备一个已有提交且工作区干净的 Git 仓库，里面放好模型需要的源码与测试。将 `/work/calculator` 换成仓库绝对路径，并换成自己的任务描述。省略 `repo_path` 会选择评测器当前的工作目录，因此应显式设置。
 
 ```bash
-export OPENCOLLAB_MODEL=example-model
-export OPENCOLLAB_PROVIDER=openai
-read -r OPENCOLLAB_API_KEY < /run/secrets/model-api-key
-export OPENCOLLAB_API_KEY
-oc-eval run /data/eval-tasks.jsonl \
-  --output /results/candidate-run \
-  --concurrency 1 \
-  --timeout 600
+git -C /work/calculator rev-parse --verify HEAD
+git -C /work/calculator status --short --untracked-files=all
 ```
 
-命令会写入 `/results/candidate-run/results.jsonl` 并输出候选资格计数。具备资格的候选仍需接受官方评测，之后才能称为 resolved 或 unresolved。
+第一条检查应输出提交 ID。第二条检查包含未跟踪文件，应没有输出。运行前将自己的改动提交，或使用另一份干净的 checkout。
 
-## 后续步骤
+```bash
+export EVAL_ROOT="$HOME/oc-evaluation/eval-data"
+umask 077
+mkdir -p "$EVAL_ROOT"
+cat > "$EVAL_ROOT/tasks.jsonl" <<'TASKS'
+{"task_id":"calculator-1","description":"Fix calculator.add and run its tests","repo_path":"/work/calculator","timeout":600,"max_tokens":100000}
+TASKS
+```
 
-生产远程运行接着阅读 [SWE Pro-Lite 操作指南](swe-prolite-operations.md)。[评测完整性](evaluation-integrity.md)解释结果状态与必要证据，技术失败的处理方法见[故障排查](troubleshooting.md)。
+每个非空行代表一项任务，`task_id` 与 `description` 为必填字段。示例给这项任务设置了 600 秒超时和 100000 token 预算。可选的 `docker_image` 与 `extras` 字段见[任务格式](task-formats.md)。
+
+设置当前 OpenCollab 安装支持的模型与 provider，并在提示处输入 API key。
+
+```bash
+export OPENCOLLAB_MODEL=your-model
+export OPENCOLLAB_PROVIDER=openai
+export OPENCOLLAB_API_KEY="$(python -c 'import getpass; print(getpass.getpass("API key > "))')"
+```
+
+使用 `openai` provider 时，`oc-eval run` 采用 Chat Completions。使用自定义接口时，运行前设置支持这一 API 的 base URL，并将示例地址换成自己的接口地址。`OPENCOLLAB_WIRE_PROTOCOL` 无法将此命令切换为 Responses。[Duo 教程](swe-prolite-operations.md#在一台-linux-工作机上运行-duo)提供另一套 Responses 配置。
+
+```bash
+export OPENCOLLAB_BASE_URL='https://api.example.com/v1'
+```
+
+首次执行时，每次运行一项任务。
+
+```bash
+oc-eval run "$EVAL_ROOT/tasks.jsonl" \
+  --output "$EVAL_ROOT/candidate-run" \
+  --concurrency 1 --timeout 600
+```
+
+## 阅读候选结果
+
+输出目录中包含 `results.jsonl`。读取每项任务的补丁与提交资格字段。
+
+```bash
+python - "$EVAL_ROOT/candidate-run/results.jsonl" <<'PY_RESULTS'
+import json
+import sys
+from pathlib import Path
+for line in Path(sys.argv[1]).read_text().splitlines():
+    if line.strip():
+        row = json.loads(line)
+        print(row["task_id"], row["patch_produced"], row["submission_eligible"], row.get("error"))
+PY_RESULTS
+```
+
+| 字段 | 含义 |
+| --- | --- |
+| `task_id` | 输入任务标识 |
+| `patch_produced` | 已提取到候选补丁 |
+| `submission_eligible` | 候选满足提交要求 |
+| `patch` | 提取的补丁文本 |
+| `error` | 记录的执行或提取错误 |
+
+命令打印的摘要包含 `tasks`、`eligible_patches` 和 `ineligible`。任务失败后，命令也可能以退出码 0 结束。检查 `patch_produced` 与 `submission_eligible`，并通过 `error` 查看原因。满足提交要求的补丁可以继续评测。官方成功判定来自对匹配候选实际执行的基准目标测试。[评测完整性](evaluation-integrity.md)介绍相关要求，[故障排查](troubleshooting.md)介绍执行与提取失败的处理方法。
+
+## 检查基准数据集
+
+使用已有的有序基准 JSONL。原始 ID 和裁判字段保存在评测器存储中，检查命令输出匿名任务 ID 和行数。
+
+为实验创建一次原始 32 字节身份密钥。
+
+```bash
+mkdir -p "$EVAL_ROOT/secrets"
+chmod 700 "$EVAL_ROOT/secrets"
+python - "$EVAL_ROOT/secrets/identity.key" <<'PY_KEY'
+import os
+import secrets
+import sys
+with open(sys.argv[1], "xb") as stream:
+    os.chmod(sys.argv[1], 0o600)
+    stream.write(secrets.token_bytes(32))
+PY_KEY
+```
+
+再次检查同一实验时沿用这把密钥。上面的排他创建方式会保留已有密钥。检查时使用与镜像匹配的仓库，示例仓库对应 SWE-bench Pro v1 镜像。
+
+```bash
+oc-eval inspect /path/to/instances.jsonl \
+  --identity-key-file "$EVAL_ROOT/secrets/identity.key" \
+  --image-repository jefzda/sweap-images
+```
+
+每行必须包含实例标识、仓库和问题陈述。镜像字段只有标签、缺少仓库前缀时，需要镜像仓库选项。检查命令读取并规范化数据集，正式运行器随后准备任务镜像并执行完整的基准测试计划。密钥、原始数据集和密封裁判字段保存在求解器工作区及源代码管理之外。
+
+## 运行正式基准测试
+
+使用 Duo 时，按[在一台 Linux 工作机上运行 Duo](swe-prolite-operations.md#在一台-linux-工作机上运行-duo)准备数据集和镜像，启动模型 relay，创建下面使用的配置文件。准备完成后运行一题。
+
+```bash
+oc-eval duo --config "$EVAL_ROOT/duo.json" \
+  --indices 1 --workers 1 --run-id duo-smoke-001
+```
+
+打开生成的任务报告及其链接的正式报告，再扩大到批量任务。[操作指南](swe-prolite-operations.md)介绍远程任务子集、其他求解器、批量输出和已有候选恢复。[服务器评测指南](evaluation-suite.md)介绍服务器运行。[CLI 参考](cli-reference.md)列出命令参数。

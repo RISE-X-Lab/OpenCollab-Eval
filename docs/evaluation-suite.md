@@ -2,7 +2,9 @@
 
 **English** | [简体中文](zh-CN/evaluation-suite.md)
 
-This development package combines the running evaluation fixes with the current OC 0.6 main API. Install the paired OC and OCE development revisions together. The OC package supplies candidate workspace isolation, explicit unbounded limits, configured reasoning inheritance, request lifecycle traces, and public model and snapshot inspection. OCE owns task delivery, public dependency preparation, trusted candidate extraction, official test execution, and result interpretation.
+This guide covers worker packaging, provider capacity, research workflow settings, and saved candidate recovery for OpenCollab-Eval 0.9.1 with OpenCollab >=0.9,<0.10. Begin a new official evaluation with the [Duo tutorial](swe-prolite-operations.md#run-duo-on-one-linux-worker). The settings here support existing operator deployments and controlled experiments.
+
+OC runs the agents and workflows. OCE prepares the public task and dependencies, captures a trusted candidate, executes official tests, and records the outcome.
 
 ## Install and package
 
@@ -11,7 +13,7 @@ Run these commands in an OCE checkout with its paired OC checkout in the sibling
 ```bash
 python -m pip install -e '../OpenCollab[dev]' -e '.[dev,swebench]'
 export OPENCOLLAB_SOURCE_ROOT="$(cd ../OpenCollab && pwd)"
-export EVAL_ROOT="$(pwd)/evaluation-output"
+export EVAL_ROOT="$HOME/oc-evaluation/evaluation-output"
 export OPENCOLLAB_EVAL_OUTPUT_ROOT="$EVAL_ROOT/test-output"
 mkdir -p "$OPENCOLLAB_EVAL_OUTPUT_ROOT"
 oc-eval package-runtime --output "$EVAL_ROOT/runtime"
@@ -21,37 +23,63 @@ oc-eval package-runtime --output "$EVAL_ROOT/runtime"
 
 The included direct gateway can share request slots across multiple processes and ports. Every gateway for one upstream uses the same provider policy and lock directory. A slot remains held until the upstream response closes. Cancellation while waiting and process exit release their ownership. Slot metadata write failures also release the descriptor.
 
-`examples/evaluation-suite/provider-limits.json` illustrates separate limits of 45, 30, 100, and 100. Replace its example origins and storage directory for the deployment. Task-worker counts and actual provider request counts are separate. The expensive fourth provider is reserved for priority external solvers and Single. After those groups complete, setting its policy `enabled` to `false` prevents new requests while already open responses can finish. New remaining-group work uses the other configured endpoints.
+`examples/evaluation-suite/provider-limits.json` illustrates separate limits of 45, 30, 100, and 100. Replace its example origins and storage directory for the deployment. Task-worker counts and actual provider request counts are separate. Use limits permitted by the upstream provider. Setting a provider policy's `enabled` to `false` stops new requests while open responses finish.
 
 The environment file contains `OPENCOLLAB_UPSTREAM_BASE_URL`, `OPENCOLLAB_UPSTREAM_API_KEY`, and a separate `OPENCOLLAB_PROXY_CLIENT_TOKEN` for local clients. Start the gateway under the server's service manager with these arguments.
 
 ```bash
-python -m opencollab_eval.commands.llm_api_proxy   --env-file "$PROVIDER_ENV" --port "$PROVIDER_PORT"   --direct-upstream --timeout 46800   --provider-limits-file "$PROVIDER_LIMITS_FILE"
+python -m opencollab_eval.commands.llm_api_proxy \
+  --env-file "$PROVIDER_ENV" --port "$PROVIDER_PORT" \
+  --direct-upstream --timeout 46800 \
+  --provider-limits-file "$PROVIDER_LIMITS_FILE"
 ```
 
-## Run a server-local queue
+## Advanced server-local research queue
 
 Set `TASK_INDICES` to the intended dataset rows and choose a fresh `RUN_ID`. `BENCHMARK_ROOT` identifies the existing benchmark data and public preparation assets. `IMAGE_REPOSITORY` identifies its prepared images. `MODEL`, `CONTEXT_WINDOW`, and the provider URL describe the actual model interface. The example below starts eight independent tasks and keeps model execution on the server. A service manager or a persistent server terminal owns the command so client-machine shutdown leaves the server process running.
 
 ```bash
-python -m opencollab_eval.commands.swe_g11_parallel_runner   --runner-transport local --host localhost   --indices "$TASK_INDICES" --max-workers 8 --min-workers 8   --workflow base-team-single-pass-v1   --run-id "$RUN_ID" --session-prefix "$RUN_ID"   --output-dir "$EVAL_ROOT/$RUN_ID/controller"   --remote-base "$EVAL_ROOT/$RUN_ID/tasks"   --remote-runtime-repo "$EVAL_ROOT/runtime"   --remote-python "$(command -v python)" --remote-root "$BENCHMARK_ROOT"   --image-repository "$IMAGE_REPOSITORY"   --remote-proxy-base-url "$PROVIDER_BASE_URL"   --local-proxy-base-url "$PROVIDER_BASE_URL" --proxy-env-file "$PROVIDER_ENV"   --model-name "$MODEL" --llm-model "$MODEL" --llm-provider openai   --context-window "$CONTEXT_WINDOW" --max-output-tokens 65536   --temperature 1 --budget 1000000000000 --max-steps 1000000000000   --swe-timeout 1000000000000 --task-wall-timeout 1000000000300   --total-timeout 1000001000000 --llm-timeout 46800   --eval-container-bind-timeout 120 --max-task-starts 1   --workflow-env OPENCOLLAB_UNBOUNDED_LIMITS=true   --workflow-env OPENCOLLAB_EXTERNAL_PROVIDER_ISOLATION=1   --workflow-env OPENCOLLAB_THINKING=true   --workflow-env OPENCOLLAB_REASONING_EFFORT=max   --workflow-env OPENCOLLAB_WIRE_PROTOCOL=responses   --workflow-env OPENCOLLAB_EVAL_NO_PROGRESS_TIMEOUT=43200
+python -m opencollab_eval.commands.swe_g11_parallel_runner \
+  --runner-transport local --host localhost \
+  --indices "$TASK_INDICES" --max-workers 8 --min-workers 8 \
+  --workflow base-team-single-pass-v1 \
+  --run-id "$RUN_ID" --session-prefix "$RUN_ID" \
+  --output-dir "$EVAL_ROOT/$RUN_ID/controller" \
+  --remote-base "$EVAL_ROOT/$RUN_ID/tasks" \
+  --remote-runtime-repo "$EVAL_ROOT/runtime" \
+  --remote-python "$(command -v python)" --remote-root "$BENCHMARK_ROOT" \
+  --image-repository "$IMAGE_REPOSITORY" \
+  --remote-proxy-base-url "$PROVIDER_BASE_URL" \
+  --local-proxy-base-url "$PROVIDER_BASE_URL" --proxy-env-file "$PROVIDER_ENV" \
+  --model-name "$MODEL" --llm-model "$MODEL" --llm-provider openai \
+  --context-window "$CONTEXT_WINDOW" --max-output-tokens 65536 \
+  --temperature 1 --budget 1000000000000 --max-steps 1000000000000 \
+  --swe-timeout 1000000000000 --task-wall-timeout 1000000000300 \
+  --total-timeout 1000001000000 --llm-timeout 46800 \
+  --eval-container-bind-timeout 120 --max-task-starts 1 \
+  --workflow-env OPENCOLLAB_UNBOUNDED_LIMITS=true \
+  --workflow-env OPENCOLLAB_EXTERNAL_PROVIDER_ISOLATION=1 \
+  --workflow-env OPENCOLLAB_THINKING=true \
+  --workflow-env OPENCOLLAB_REASONING_EFFORT=max \
+  --workflow-env OPENCOLLAB_WIRE_PROTOCOL=responses \
+  --workflow-env OPENCOLLAB_EVAL_NO_PROGRESS_TIMEOUT=43200
 ```
 
 The explicit unbounded switch resolves workflow task and role token/step limits to `None`. Standalone Base selects Single2 and restores its authorized numeric budget and step limits when parsing resolves either value to `None`. The large CLI values preserve compatibility with numeric command parsers. Per-response output and context sizes remain model parameters. The no-progress interval observes completed model and tool work. A wait that reaches an operational timeout retains its original cause and is reviewed as an evaluation interruption when responsibility is external or unresolved.
 
-The standalone `single-agent` entry defaults to Base, currently Single2. It uses the public `OpenCollab.agent(profile="single2")` interface with profile-owned prompts and tools. The compatibility names `single` and `default` resolve to Base. Its public task contains the problem statement, requirements, and interface description. The named collaboration implementations are available directly through `--workflow`.
+The standalone `single-agent` entry defaults to Base, currently Single2. It uses the public `OpenCollab.agent(profile="single2")` interface with profile-owned prompts and tools. The compatibility names `single` and `default` resolve to Base. Its public task contains the problem statement, requirements, and interface description. Registered collaboration implementations are selected through `--workflow`. [CLI reference](cli-reference.md#advanced-solver-names) distinguishes current entries from historical Solver mappings.
 
-| Setting | Workflow entry |
-| --- | --- |
-| Base Team | `base-team-single-pass-v1` |
-| G11 | `validation-council-solve` |
-| G20 | `validation-council-wired-v1` |
-| G21 | `validation-council-dual-coder-contract-v1` |
-| Wired Dual G20 | `validation-council-wired-dual-g20-v1` |
-| Triple | `validation-council-triple-coder-contract-v1` |
-| Dual Contract | `validation-council-wired-dual-contract-v1` |
-| G20 + Coder Contract | `validation-council-g20-coder-contract-v1` |
-| Red-Green v2 | `validation-council-g20-coder-red-green-v2` |
+| Setting | Workflow entry | Current registry |
+| --- | --- | --- |
+| Base Team | `base-team-single-pass-v1` | Registered |
+| G11 | `validation-council-solve` | Registered |
+| G20 | `validation-council-wired-v1` | Historical entry, absent |
+| G21 | `validation-council-dual-coder-contract-v1` | Registered |
+| Wired Dual G20 | `validation-council-wired-dual-g20-v1` | Historical entry, absent |
+| Triple | `validation-council-triple-coder-contract-v1` | Registered |
+| Dual Contract | `validation-council-wired-dual-contract-v1` | Historical entry, absent |
+| G20 + Coder Contract | `validation-council-g20-coder-contract-v1` | Historical entry, absent |
+| Red-Green v2 | `validation-council-g20-coder-red-green-v2` | Historical entry, absent |
 
 Workflow selection and agent profile selection are independent. G21 with Single2 uses the existing G21 entry together with `--agent-profile single2`. The profile applies to every agent role, including the contract adjudicator. The workflow retains its role prompts, permitted tools, candidate workspaces, and selection policy. OC supplies the Single2 system prompt, context shaping, safety policy, and built-in tool defaults. OCE keeps its Bash evidence wrapper around the same native tool instance. For this profile, native Bash output uses the Single2 10,000-character limit.
 
@@ -87,7 +115,7 @@ Candidate sub-workspaces inherit the permitted runtime dependency view while kee
 
 Role handoffs retain complete public reports, structured fields, path lists, and test records. Validation decisions carry their accepted candidate specifications, including commands, setup, assertions, and contract references. The coder receives localization, requirements, test cartography, and prior findings together and can inspect definitions and run available public verification within its coding pass. The existing role graph, approval counts, and repair-round limits remain the workflow policy.
 
-G11, the G20 variants, G21, Triple, Dual Contract, G20 + Coder Contract, Red-Green, and the evidence/tournament councils use complete handoff text. Long commands remain exact when comparing candidate test evidence. Existing private-field filtering, candidate path checks, patch validation, and official scoring proofs remain active. Base Team already carries full reports and has regression coverage for that behavior. Model context capacity is handled by the configured model runtime.
+Registered G11, G21, and Triple workflows use complete handoff text. Historical G20 variants, Dual Contract, G20 + Coder Contract, Red-Green, and evidence/tournament workflow names in earlier experiment configurations refer to their original runtime revisions. Long commands remain exact when comparing candidate test evidence. Existing private-field filtering, candidate path checks, patch validation, and official scoring proofs remain active. Base Team already carries full reports and has regression coverage for that behavior. Model context capacity is handled by the configured model runtime.
 
 Completed trajectories are verified incrementally. Total file size can exceed 16 MiB while the existing per-record memory bound, stable-file checks, provider identity, reasoning configuration, and full-file digest are preserved. Historical results retain their original runtime revisions; runs using these handoff fixes identify the updated source revision.
 
@@ -95,7 +123,9 @@ Completed trajectories are verified incrementally. Total file size can exceed 16
 
 The evaluator binds the actual trajectory directory before invoking the public workflow. Available exception chains are saved with credential redaction. Completed model events provide a known token and turn lower bound after a failed return. Started calls with missing responses remain visible as incomplete usage.
 
-A failed capture retains its owned container and trusted base for recovery. The saved receipt provides the installed-module command. Recovery verifies the selected runtime and the original owner's exit, then uses the existing quiescent extraction path. A saved candidate is evaluated through the eval-only entry with its original instance, record, and patch identity. Healthy sessions and already accepted results keep their existing attempts.
+A failed capture retains its owned container and trusted base for recovery. Use the saved receipt's `recovery_environment` with `recovery_argv` to run the installed recovery module. Recovery verifies the selected runtime and the original owner's exit, then uses the existing quiescent extraction path. Evaluate a verified saved candidate through the [evaluation-only queue](swe-prolite-operations.md#prepare-an-evaluation-only-queue) with its original instance, record, and patch identity. Set `source_base_run_dir` to the original task directory and `base_run_dir` to a fresh isolated evaluation directory. Healthy sessions and already accepted results keep their existing attempts.
+
+After a controller interruption, tasks that have never started remain schedulable and completed tasks with matching evidence reuse their reports. A local task interrupted after its runner started retains an ownership or summary record, which blocks another launch in that task directory even after the owner exits. Recover the candidate from its saved receipt or evaluate an existing verified candidate in an isolated directory. When the saved evidence cannot establish a trusted candidate and the Solver-start allowance is exhausted, retain the attempt as a technical failure. Any new generation allowed by the experiment protocol uses a fresh run ID and output directory.
 
 Final outcomes are determined pass, determined capability failure, and evaluation failure. A trusted candidate passing the official targets counts as a pass. A valid completed attempt or a proven intrinsic solver failure can establish capability failure. External interruptions and insufficient evidence remain evaluation failures. Running and queued tasks are execution states. A completed review of an existing candidate contributes to completed progress once, without another generation attempt. Inherited earlier-configuration passes are reported separately from newly measured passes.
 
@@ -105,7 +135,7 @@ SWE-bench `PASS_AND_FAIL` grading treats an executed, parser-proven P2P skip as 
 
 The package contains regression tests for public task secrecy, candidate identity and workspace isolation, successful and failed Conda activation, artifact recovery, official target parsing, request cancellation, and shared provider capacity. The provider tests use three real local processes to hold 45 and 30 slots, exercise a 100-slot provider, and verify release on cancellation, metadata failure, response closure, and process exit. These tests use no model requests. Run `ruff check .` and `pytest -q` in each repository with `OPENCOLLAB_SOURCE_ROOT` pointing to the paired OC checkout.
 
-Use the receipt recovery_environment with recovery_argv so the interpreter loads the selected runtime. Active gateway slots cover connection establishment and response reading; supplier-side processing concurrency is recorded separately.
+Use the receipt `recovery_environment` with `recovery_argv` so the interpreter loads the selected runtime. Active gateway slots cover connection establishment and response reading. Supplier-side processing concurrency is recorded separately.
 
 For a server-side egress proxy, set HTTPS_PROXY and omit the direct-upstream option. Shared request limits cover that route as well.
 
@@ -119,9 +149,10 @@ remains an alias. `OPENCOLLAB_VALIDATION_COUNCIL_MAX_CODER_ROUNDS` changes the
 repair-round allowance while retaining the default of three. Provider recovery
 time is added to the outer role wait without extending normal model-call time.
 
-An eval-only queue job may set `source_base_run_dir` separately from
-`base_run_dir`; omission preserves the original same-directory behavior. The
-queue owns the source option and forwards it to the single-instance runner.
+A queue job sets `source_base_run_dir` to the preserved candidate's original
+task directory and `base_run_dir` to a fresh isolated evaluation directory.
+The two paths must differ. The queue owns the source option and forwards it to
+the single-instance runner, which copies the bound candidate records.
 Read-only health checks and repeated transfer of one runtime archive can retry
 transport timeouts within their existing attempt and overall time bounds.
 
@@ -139,6 +170,6 @@ An optional trusted test-patch digest lets offline reconciliation recover the
 same binding from saved evaluator inputs. Unbound failures remain technical.
 
 Saving, restoring, and removing prepared image dependencies, including preparing
-candidate copies, use `OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT` with its default of
+candidate copies, use `OPENCOLLAB_PUBLIC_PREPARATION_TIMEOUT_SECONDS` when set and otherwise `OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT` with its default of
 900 seconds. These operations can transfer large dependency trees. Ordinary
 Docker control operations use `OPENCOLLAB_DOCKER_TIMEOUT`.

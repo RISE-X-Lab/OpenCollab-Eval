@@ -31,29 +31,34 @@ Solver 的完整任务规格。任何生成适配器都不得静默丢弃后两�
 
 `oc-eval inspect` 最多读取 64 MiB，并要求使用一份原始 32 字节密钥。
 
+在评测存储中创建一次原始密钥。需要同一组公开任务身份时复用该密钥。把下方数据集路径替换为实际的有序 V1 文件。独占创建会在重复准备时保留已有密钥。
+
 ```bash
+export INSPECT_ROOT="$HOME/oc-evaluation/inspect-001"
+umask 077
+mkdir -p "$INSPECT_ROOT"
+python - "$INSPECT_ROOT/identity.key" <<'PY_KEY'
+import secrets
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+with path.open("xb") as stream:
+    stream.write(secrets.token_bytes(32))
+path.chmod(0o600)
+PY_KEY
 oc-eval inspect /data/swe-batch-pro.jsonl \
-  --identity-key-file /sealed/run/identity.key \
-  --image-repository registry.example/swe
+  --identity-key-file "$INSPECT_ROOT/identity.key" \
+  --image-repository jefzda/sweap-images
 ```
 
-数据集、身份密钥与生成的密封任务映射均属于评测器状态，应置于源码仓库之外。
+数据集和身份密钥保存在源码仓库外的评测存储中。命令向标准输出写入 `count` 与 `public_task_ids`。适配器先验证公开提示与密封裁判字段的隔离，再将公开提示交给 Solver。
 
 ## 通用评测器任务 JSONL
 
 `oc-eval run` 接受每个非空行一个评测器任务对象。
 
-```json
-{
-  "task_id": "calculator-1",
-  "description": "Fix calculator.add and run its tests",
-  "repo_path": "/work/calculator",
-  "timeout": 600,
-  "max_tokens": 100000,
-  "extras": {
-    "test_patch": ""
-  }
-}
+```jsonl
+{"task_id":"calculator-1","description":"Fix calculator.add and run its tests","repo_path":"/work/calculator","timeout":600,"max_tokens":100000}
 ```
 
 `task_id` 与 `description` 是必填字符串。`repo_path` 选择本地仓库。`docker_image` 选择容器环境。`timeout` 与 `max_tokens` 覆盖命令默认值。`extras` 必须是 JSON 对象，其中的 `test_patch` 值在存在时必须是字符串。
@@ -63,6 +68,37 @@ oc-eval inspect /data/swe-batch-pro.jsonl \
 读取器最多接受 64 MiB 的文件、每行 8 MiB 和 10000 行任务。文件必须是普通文件。结果将写入所选输出目录下的 `results.jsonl`。
 
 此命令报告候选生成情况与提交资格。密封的 SWE 裁判契约和官方 resolved 判定由后续评测命令处理。
+
+把仓库路径改为已有提交且工作区干净的 Git 仓库。下方第一条 Git 检查应输出提交 ID。第二条检查包含未跟踪文件，应没有输出。将自己的改动提交，或使用另一份干净的 checkout。保存 JSONL 时，每个对象占一个物理行。以下命令在 checkout 外写入该文件并生成候选。执行前通过 `OPENCOLLAB_API_KEY` 与 `OPENCOLLAB_BASE_URL` 设置凭据和入口，并把 `OPENCOLLAB_MODEL` 设为实际模型。
+
+使用 `openai` provider 时，`oc-eval run` 采用 Chat Completions，base URL 需要支持这一 API。`OPENCOLLAB_WIRE_PROTOCOL` 无法将此命令切换为 Responses。[Duo 教程](swe-prolite-operations.md#在一台-linux-工作机上运行-duo)提供另一套 Responses 配置。
+
+```bash
+export TASK_REPOSITORY=/absolute/path/to/calculator
+git -C "$TASK_REPOSITORY" rev-parse --verify HEAD
+git -C "$TASK_REPOSITORY" status --short --untracked-files=all
+export TASK_OUTPUT="$HOME/oc-evaluation/local-task-001"
+mkdir -p "$TASK_OUTPUT"
+python - "$TASK_OUTPUT/tasks.jsonl" <<'PY_TASK'
+import json
+import os
+import sys
+from pathlib import Path
+row = {
+    "task_id": "calculator-1",
+    "description": "Fix calculator.add and run its tests",
+    "repo_path": str(Path(os.environ["TASK_REPOSITORY"]).resolve()),
+    "timeout": 600,
+    "max_tokens": 100000,
+}
+Path(sys.argv[1]).write_text(json.dumps(row) + "\n", encoding="utf-8")
+PY_TASK
+oc-eval run "$TASK_OUTPUT/tasks.jsonl" \
+  --provider openai --model "$OPENCOLLAB_MODEL" \
+  --output "$TASK_OUTPUT/results" --concurrency 1
+```
+
+候选记录在 `results/results.jsonl` 中。任务失败后，命令也可能以退出码 0 结束，因此应检查 `patch_produced`、`submission_eligible` 和 `error`。生成阶段记录的 Solver 测试描述其实际工作。正式基准结果由基准 runner 和绑定候选的目标执行给出。
 
 ## 生成的记录
 

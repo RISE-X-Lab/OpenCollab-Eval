@@ -40,30 +40,34 @@ must not silently drop either of the latter two fields.
 
 `oc-eval inspect` reads at most 64 MiB and requires a raw 32-byte key.
 
+Create the raw key once in evaluator storage. Reuse that key when the same public task identities are required. Replace the dataset path below with your ordered V1 file. The exclusive file creation preserves an existing key on repeated setup.
+
 ```bash
+export INSPECT_ROOT="$HOME/oc-evaluation/inspect-001"
+umask 077
+mkdir -p "$INSPECT_ROOT"
+python - "$INSPECT_ROOT/identity.key" <<'PY_KEY'
+import secrets
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+with path.open("xb") as stream:
+    stream.write(secrets.token_bytes(32))
+path.chmod(0o600)
+PY_KEY
 oc-eval inspect /data/swe-batch-pro.jsonl \
-  --identity-key-file /sealed/run/identity.key \
-  --image-repository registry.example/swe
+  --identity-key-file "$INSPECT_ROOT/identity.key" \
+  --image-repository jefzda/sweap-images
 ```
 
-The dataset, identity key, and resulting sealed task mapping belong to
-evaluator state outside the source repository.
+The dataset and identity key belong to evaluator storage outside the source repository. The command prints `count` and `public_task_ids` to standard output. Public hints are supplied to Solver execution only after the adapter validates their separation from sealed judge fields.
 
 ## Generic evaluator task JSONL
 
 `oc-eval run` accepts one evaluator task object per nonempty line.
 
-```json
-{
-  "task_id": "calculator-1",
-  "description": "Fix calculator.add and run its tests",
-  "repo_path": "/work/calculator",
-  "timeout": 600,
-  "max_tokens": 100000,
-  "extras": {
-    "test_patch": ""
-  }
-}
+```jsonl
+{"task_id":"calculator-1","description":"Fix calculator.add and run its tests","repo_path":"/work/calculator","timeout":600,"max_tokens":100000}
 ```
 
 `task_id` and `description` are required strings. `repo_path` selects a local
@@ -80,6 +84,37 @@ selected output directory.
 
 This command reports candidate production and submission eligibility. It does
 not load the sealed SWE judge contract or create an official resolved verdict.
+
+Replace the repository path with a Git repository that has at least one commit and a clean worktree. The first Git check below must print a commit ID. The status check includes untracked files and must print nothing. Commit your intended changes or use a separate clean checkout. Put each object on one physical line when saving JSONL. The following command writes that file outside the checkout and generates a candidate. Set the provider credential and endpoint through `OPENCOLLAB_API_KEY` and `OPENCOLLAB_BASE_URL`, and set `OPENCOLLAB_MODEL` to your model before running it.
+
+For the `openai` provider, `oc-eval run` uses Chat Completions and requires a base URL that supports this API. `OPENCOLLAB_WIRE_PROTOCOL` does not switch this command to Responses. The [Duo tutorial](swe-prolite-operations.md#run-duo-on-one-linux-worker) supplies a separate Responses configuration.
+
+```bash
+export TASK_REPOSITORY=/absolute/path/to/calculator
+git -C "$TASK_REPOSITORY" rev-parse --verify HEAD
+git -C "$TASK_REPOSITORY" status --short --untracked-files=all
+export TASK_OUTPUT="$HOME/oc-evaluation/local-task-001"
+mkdir -p "$TASK_OUTPUT"
+python - "$TASK_OUTPUT/tasks.jsonl" <<'PY_TASK'
+import json
+import os
+import sys
+from pathlib import Path
+row = {
+    "task_id": "calculator-1",
+    "description": "Fix calculator.add and run its tests",
+    "repo_path": str(Path(os.environ["TASK_REPOSITORY"]).resolve()),
+    "timeout": 600,
+    "max_tokens": 100000,
+}
+Path(sys.argv[1]).write_text(json.dumps(row) + "\n", encoding="utf-8")
+PY_TASK
+oc-eval run "$TASK_OUTPUT/tasks.jsonl" \
+  --provider openai --model "$OPENCOLLAB_MODEL" \
+  --output "$TASK_OUTPUT/results" --concurrency 1
+```
+
+Read the resulting candidate rows in `results/results.jsonl`. The command can exit with code 0 after a task fails, so check `patch_produced`, `submission_eligible`, and `error`. Solver tests recorded during generation describe its work. Official benchmark outcomes come from the benchmark runner and its bound target execution.
 
 ## Generated records
 

@@ -2,11 +2,326 @@
 
 **English** | [简体中文](zh-CN/swe-prolite-operations.md)
 
-This guide runs candidate generation and official evaluation on a remote
-worker. Example commands use `evaluator@example-worker` and `/srv` or `/results`
-paths as placeholders.
+Use Duo for a new OpenCollab evaluation. The first tutorial runs the controller, relay, Docker, candidate generation, and official evaluation on one Linux worker. Later sections cover SSH workers and compatible research workflows. Example model URLs and worker paths are placeholders.
 
-## Runtime topology
+## Run Duo on one Linux worker
+
+Install matching OpenCollab 0.9.x and OpenCollab-Eval 0.9.1 packages with the SWE-bench extra following [Getting started](getting-started.md). Activate that Python environment on the Linux worker and allow the evaluation account to access Docker Engine. Use an OpenAI-compatible Responses endpoint with streamed responses, function tools, and the reasoning settings selected below. Keep the environment active throughout this tutorial.
+
+### Prepare the dataset and task images
+
+The [official release instructions](https://github.com/scaleapi/SWE-bench_Pro-os)
+retain V1 as `ScaleAI/SWE-bench_Pro` with configuration `v1` and `split="test"`, with task images in
+`jefzda/sweap-images`. Use the
+[task format reference](task-formats.md) to check the fields. The official runner reads the dataset from
+`<remote-root>/datasets/swe-batch-pro-lite/instances.jsonl`; each index refers to
+one nonempty row in that file's stable order.
+
+A complete row carries `instance_id`, `repo`, `problem_statement`,
+`requirements`, `interface`, `base_commit`, the task image tag, `test_patch`,
+`FAIL_TO_PASS`, and `PASS_TO_PASS`. Keep the evaluator's judge fields in this
+trusted file. Generation constructs the public task from the issue,
+requirements, and interface, while the official test data stays with Eval.
+
+The commands below create run storage outside the repositories. Replace the
+model and API URL placeholders. The public image repository is supplied below;
+a compatible image mirror can be configured through `IMAGE_REPOSITORY`. Set the
+context and output limits to the endpoint's actual supported values.
+
+```bash
+export EVAL_ROOT="$HOME/oc-evaluation/eval-data"
+export MODEL='your-responses-model'
+export MODEL_API_BASE='https://api.example.com/v1'
+export CONTEXT_WINDOW=200000
+export MAX_OUTPUT_TOKENS=16000
+export IMAGE_REPOSITORY='jefzda/sweap-images'
+umask 077
+mkdir -p "$EVAL_ROOT/secrets" "$EVAL_ROOT/datasets/swe-batch-pro-lite" "$EVAL_ROOT/results"
+docker info
+```
+
+The dataset default now selects V2 Harbor tasks. Select V1 explicitly for this runner and its Docker Hub images. Download the V1 test split and export its rows in order. The installed
+SWE-bench dependencies include the dataset client used by this command.
+
+```bash
+python - "$EVAL_ROOT/datasets/swe-batch-pro-lite/instances.jsonl" <<'PY_DATASET'
+import json
+import sys
+from pathlib import Path
+from datasets import load_dataset
+
+dataset = load_dataset("ScaleAI/SWE-bench_Pro", "v1", split="test")
+destination = Path(sys.argv[1])
+destination.parent.mkdir(parents=True, exist_ok=True)
+with destination.open("w", encoding="utf-8") as stream:
+    for row in dataset:
+        stream.write(json.dumps(row, ensure_ascii=False) + "\n")
+destination.chmod(0o600)
+print(len(dataset), destination)
+PY_DATASET
+```
+
+If you already have an ordered task selection, copy that JSONL instead of
+running the official export.
+
+```bash
+install -m 600 /path/to/instances.jsonl \
+  "$EVAL_ROOT/datasets/swe-batch-pro-lite/instances.jsonl"
+```
+
+Task indices follow the file you use. Rows 1 through 50 of the official test
+split are a different selection from a historical Mini B 50-task experiment.
+To reproduce a reported subset, use that experiment's original ordered file.
+
+Pull the first selected task's image for the smoke run. When rows carry only
+`dockerhub_tag`, `IMAGE_REPOSITORY` must be the matching repository prefix
+supplied with the benchmark. The official runner uses `dockerhub_tag` or
+`image_tag`, and derives a tag from `instance_id` when neither is supplied. A
+tag containing `/` is already a complete image reference. For a batch, pull
+the images for all selected rows before starting it. Keep the image's public
+language dependencies available. Official images carry the repository under
+`/app`. During container preparation, Eval recognizes `/app` and other
+supported checkout locations and creates the `/testbed` entry used by the
+Solver. It then activates the task's prepared language environment.
+
+```bash
+python - "$EVAL_ROOT/datasets/swe-batch-pro-lite/instances.jsonl" "$IMAGE_REPOSITORY" <<'PY_IMAGES'
+import json
+import subprocess
+import sys
+from pathlib import Path
+rows = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines() if line.strip()]
+row = rows[0]
+tag = row.get("dockerhub_tag") or row.get("image_tag")
+if not tag:
+    identity = row["instance_id"]
+    tag = identity.removeprefix("instance_")
+image = tag if "/" in tag else sys.argv[2].rstrip(":/") + ":" + tag
+subprocess.run(["docker", "pull", image], check=True)
+print(image)
+PY_IMAGES
+```
+
+### Configure the model and start the relay
+
+Create a protected provider file. The prompt reads the API key without echoing
+it. The relay reads the upstream credential from this file and gives the
+Solver a separate client token.
+
+```bash
+python - "$EVAL_ROOT/secrets/provider.env" <<'PY_SECRET'
+import getpass
+import os
+import secrets
+import shlex
+import sys
+from pathlib import Path
+values = {
+    "OPENCOLLAB_UPSTREAM_BASE_URL": os.environ["MODEL_API_BASE"].strip(),
+    "OPENCOLLAB_UPSTREAM_API_KEY": getpass.getpass("Provider API key > "),
+    "OPENCOLLAB_PROXY_CLIENT_TOKEN": secrets.token_urlsafe(32),
+}
+path = Path(sys.argv[1])
+path.write_text("".join(key + "=" + shlex.quote(value) + "\n" for key, value in values.items()))
+path.chmod(0o600)
+print(path)
+PY_SECRET
+```
+
+From the activated environment on the Linux worker, start the loopback relay
+in the background. Its PID and log stay in evaluator storage.
+
+```bash
+nohup python -m opencollab_eval.commands.llm_api_proxy \
+  --env-file "$EVAL_ROOT/secrets/provider.env" \
+  --host 127.0.0.1 --port 18080 \
+  --timeout 3600 --direct-upstream \
+  > "$EVAL_ROOT/relay.log" 2>&1 < /dev/null &
+printf '%s\n' "$!" > "$EVAL_ROOT/relay.pid"
+cat "$EVAL_ROOT/relay.pid"
+tail -n 20 "$EVAL_ROOT/relay.log"
+```
+
+The base URL should be the endpoint's API base, for example
+`https://api.example.com/v1`; Eval appends the Responses request path. The
+endpoint must support streamed Responses, function tools, and the selected
+reasoning effort. The relay's `--direct-upstream` forwards the standard request
+to that configured endpoint. Use your provider's request quota when choosing
+batch workers. Worker count and actual upstream request concurrency describe
+different resources.
+
+### Execute a single task and its official tests
+
+Use the same activated environment and run from the `OpenCollab-Eval`
+checkout. Keep the variables from dataset setup available. Write the run configuration
+once. Its paths point to evaluator storage outside the source checkouts.
+
+```bash
+python - "$EVAL_ROOT/duo.json" <<'PY_CONFIG'
+import json
+import os
+import sys
+from pathlib import Path
+root = Path(os.environ["EVAL_ROOT"]).expanduser().resolve()
+config = {
+    "remote_root": str(root),
+    "remote_python": sys.executable,
+    "image_repository": os.environ["IMAGE_REPOSITORY"],
+    "proxy_env_file": str(root / "secrets/provider.env"),
+    "local_proxy_base_url": "http://127.0.0.1:18080/v1",
+    "remote_proxy_base_url": "http://127.0.0.1:18080/v1",
+    "llm_model": os.environ["MODEL"],
+    "context_window": int(os.environ["CONTEXT_WINDOW"]),
+    "max_output_tokens": int(os.environ["MAX_OUTPUT_TOKENS"]),
+    "llm_timeout": 3600,
+    "agent_profile": "base",
+    "workflow_env": {
+        "OPENCOLLAB_WIRE_PROTOCOL": "responses",
+        "OPENCOLLAB_REASONING_EFFORT": "max",
+        "OPENCOLLAB_UNBOUNDED_LIMITS": "true",
+        "OPENCOLLAB_EVAL_NO_PROGRESS_TIMEOUT": "43200",
+        "OPENCOLLAB_LLM_FIRST_EVENT_TIMEOUT": "900",
+        "OPENCOLLAB_LLM_STREAM_IDLE_TIMEOUT": "900",
+    },
+}
+Path(sys.argv[1]).write_text(json.dumps(config, indent=2) + "\n")
+PY_CONFIG
+```
+
+`oc-eval duo` selects the Duo workflow, the Base role profile resolved to Single2, and the
+existing official parallel runner. The default configuration removes cumulative
+token and step caps through `OPENCOLLAB_UNBOUNDED_LIMITS=true`. The wrapper
+provides 1000000000000 token and step values as fallback settings. To enforce
+explicit ceilings, set that workflow variable to `false` and configure
+`budget` and `max_steps` in the JSON. The 43200-second no-progress policy
+observes actual model content, model completion, and tool execution. Headers
+and keepalive traffic do not extend it. Current
+runtime supervision removes the legacy cumulative generation and controller
+wall limits when this progress policy is selected. Explicit generation or
+controller wall-limit settings can enable a cumulative limit again.
+
+Run the command below to generate a real patch and execute the official
+FAIL_TO_PASS and PASS_TO_PASS targets for the adopted candidate.
+
+```bash
+oc-eval duo --config "$EVAL_ROOT/duo.json" \
+  --indices 1 --workers 1 --run-id duo-smoke-001
+```
+
+The runner packages the installed OC and OCE sources, verifies the worker
+runtime, prepares an isolated public source checkout, runs Duo, captures the
+quiet candidate, and applies it to a separate official workspace. The command
+writes the resulting JSON and Markdown reports. `--help` and `--dry-run` can
+check options or plans. A smoke result comes from this actual generation and
+official execution command.
+
+Read the official outcome and its report path.
+
+```bash
+python - "$EVAL_ROOT/results/duo-smoke-001/task_1_report.json" <<'PY_RESULT'
+import json
+import sys
+from pathlib import Path
+report = json.loads(Path(sys.argv[1]).read_text())
+for row in report.get("rows", []):
+    result = row.get("task_result", {})
+    evaluation = row.get("eval", {})
+    print(row.get("index"), result)
+    print("official report", evaluation.get("report_path"))
+PY_RESULT
+```
+
+`resolved=true` is supported by the bound official target execution.
+`oc_failure=true` identifies a Solver failure. `technical_failure=true`
+identifies missing or invalid evaluation evidence and is tracked separately.
+Read `task_result.status` first. Its terminal values are `resolved`, `unresolved`, and `technical_failure`. A false `resolved` value also appears during pending work.
+An unresolved functional result is a valid smoke outcome when the official
+execution completed correctly. Check the bound report before starting a large
+batch.
+
+### Run a batch and read results
+
+Prepare the images for rows 2 through 50 using the same ordered V1 file. Adjust the slice for another task selection.
+
+```bash
+python - "$EVAL_ROOT/datasets/swe-batch-pro-lite/instances.jsonl" "$IMAGE_REPOSITORY" <<'PY_BATCH_IMAGES'
+import json
+import subprocess
+import sys
+from pathlib import Path
+rows = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines() if line.strip()]
+for row in rows[1:50]:
+    tag = row.get("dockerhub_tag") or row.get("image_tag") or row["instance_id"].removeprefix("instance_")
+    image = tag if "/" in tag else sys.argv[2].rstrip(":/") + ":" + tag
+    subprocess.run(["docker", "pull", image], check=True)
+PY_BATCH_IMAGES
+```
+
+The same configuration can run the remaining 49 tasks through the existing
+parallel runner. Keep the smoke outcome for row 1. This example uses four
+task workers for rows 2 through 50 and starts the coordinator in the background.
+
+```bash
+nohup oc-eval duo --config "$EVAL_ROOT/duo.json" \
+  --indices 2-50 --workers 4 --run-id duo-batch-001 \
+  > "$EVAL_ROOT/results/duo-batch-001.log" 2>&1 < /dev/null &
+printf '%s\n' "$!" > "$EVAL_ROOT/results/duo-batch-001.pid"
+cat "$EVAL_ROOT/results/duo-batch-001.pid"
+tail -n 20 "$EVAL_ROOT/results/duo-batch-001.log"
+```
+
+The relay and batch coordinator run on the worker after SSH disconnects or the
+control computer shuts down. The stored PID identifies each process; logs and
+reports remain available on the worker.
+
+The smoke and batch have distinct run IDs and output directories. Keep both
+sets of reports when presenting the complete 50-task result. Each selected row
+appears once in this sequence. To start an independent full batch, select
+`--indices 1-50` with a new run ID. Use the selected dataset's actual index range
+for other sample sizes.
+
+Reports default to `<config-directory>/results/<run-id>`. `--output-dir` changes
+the report destination, and `--run-id` names an execution. Reusing a completed
+run ID refers to that existing run. For an SSH worker, configure
+`runner_transport`, `host`, and the corresponding worker paths through the
+[operations guide](#advanced-worker-topology).
+
+| Output | Use |
+| --- | --- |
+| `parallel_summary.json` | Task census, progress, terminal results, and failures |
+| `task_<index>_report.json` | Candidate generation, official evaluation, and attribution |
+| `final_eval_layer_report.json` | Completed batch fact report |
+| Task `metrics.jsonl` and `predictions.jsonl` | Model usage and adopted patch record |
+| Task `workflow_logs/` | Orchestration events and role snapshots with journals |
+| `rows[].eval.report_path` | Exact official report for the scored candidate |
+
+Preserve the complete run evidence. Reading a role snapshot includes its
+`.json.journal`. For a recovered session, retain both the original and the
+continuation traces. Cumulative usage must deduplicate copied prefixes through
+the existing event identity. The report's record ID and patch identify the
+candidate whose tests produced the outcome.
+
+`oc-eval rejudge-queue` provides official evaluation-only maintenance for
+existing verified candidates. It uses zero Solver starts and retains attempts
+and bound outcomes. An external
+[scoring adapter registry](scoring-adapters.md) may be supplied through
+`--scoring-adapter-registry /absolute/path/registry.json` when the benchmark's
+published interface needs a registered test-fixture adaptation.
+
+### Continue an interrupted run
+
+After the previous controller has exited, inspect `parallel_summary.json` and the per-task reports. Tasks that have never started remain available for scheduling. Completed tasks with matching evidence reuse their saved reports. Repeat the command below when the selected rows have those states, using the same configuration, run ID, and output directory. For another selection, set `--indices` to the completed or never-started rows you intend to continue.
+
+```bash
+oc-eval duo --config "$EVAL_ROOT/duo.json" \
+  --indices 2-50 --workers 4 --run-id duo-batch-001
+```
+
+A task interrupted after its runner started retains an ownership or summary record in its worker task directory. Local transport rejects another launch in that directory even after the previous owner has exited. Recover a retained candidate using the saved receipt's `recovery_environment` and `recovery_argv` as described in [the evaluation suite](evaluation-suite.md#recovery-and-results). Evaluate a verified saved candidate through [evaluation-only maintenance](#resume-and-evaluation-only-maintenance), using the original task directory as `source_base_run_dir` and a fresh isolated directory as `base_run_dir`.
+
+When the saved evidence cannot establish a trusted candidate and the Solver-start allowance is exhausted, retain that attempt as a technical failure. A new generation allowed by the experiment protocol uses a fresh run ID and output directory. Changing model or experiment settings also calls for a new run ID and output directory. Preserve the original reports and trajectories throughout recovery.
+
+## Advanced worker topology
 
 The operator starts OpenCollab-Eval on a control machine. The runner connects
 to a Linux worker through SSH, synchronizes the current OpenCollab public
@@ -19,8 +334,7 @@ The trusted Pro-Lite dataset must already exist at
 synchronization does not upload this evaluator-owned input. `--start-index`
 and `--limit` select rows in its stable file order.
 
-Every run should have a unique run ID, output directory, remote base directory,
-session prefix, and container ownership label. Credentials are mounted or read
+Give each independent run a fresh run ID and its own output and remote base directories. The runner derives its session prefix and container ownership from that identity. Credentials are mounted or read
 from protected files outside the synchronized source tree.
 
 ## Worker preparation
@@ -42,7 +356,7 @@ The low-level slice runner and multi-Solver coordinator accept an explicit
 dependencies. The selected interpreter is forwarded through runtime
 synchronization, health probes, generation, and official evaluation.
 
-## Run one bounded slice
+## Advanced Kimi slice
 
 The direct Kimi coding profile is the smallest complete example supported by
 the current release. The remote environment file contains `KIMI_API_KEY` or
@@ -255,6 +569,56 @@ maintenance operation. The queue runs only `--eval-only` children, fixes
 `--max-task-starts` and empty-patch retries at zero, checks the planned patch
 SHA-256 before accepting a terminal report, and refreshes cumulative parent
 reports automatically.
+
+### Prepare an evaluation-only queue
+
+Use this maintenance operation after repairing a scoring environment while preserving the generated candidate. Save the plan outside the source repository and replace the example paths and identity placeholders with values from the original task report. Keep the original model and transport settings in `runner_args`. Those settings describe the existing run, and the queue disables model generation for every child.
+
+The plan's `index` is the original one-based row. `parent_output_dir` points to existing controller reports. Set `source_base_run_dir` to the original worker task directory and `base_run_dir` to a fresh isolated directory for this evaluation. These directories must differ. The runner copies the bound candidate records from the source into the new evaluation directory. `remote_runtime_repo` identifies the selected source runtime. `task`, `record_id`, `source_patch_sha256`, and `eval_patch_sha256` bind the saved candidate. Use a fresh `run_id` and `eval_dir_name` for the re-evaluation record.
+
+```json
+{
+  "schema": "opencollab.eval_only_queue.v1",
+  "runner_args": [
+    "--runner-transport", "local",
+    "--remote-python", "/srv/oc-evaluation/.venv/bin/python",
+    "--remote-root", "/srv/oc-evaluation/eval-data",
+    "--image-repository", "jefzda/sweap-images",
+    "--model-name", "original-model",
+    "--llm-model", "original-model",
+    "--llm-provider", "openai",
+    "--session-prefix", "duo-rejudge-001",
+    "--proxy-env-file", "/srv/oc-evaluation/eval-data/secrets/provider.env",
+    "--local-proxy-base-url", "http://127.0.0.1:18080/v1",
+    "--remote-proxy-base-url", "http://127.0.0.1:18080/v1",
+    "--eval-timeout", "7200"
+  ],
+  "jobs": [
+    {
+      "index": 1,
+      "parent_output_dir": "/srv/oc-evaluation/eval-data/results/duo-smoke-001",
+      "source_base_run_dir": "/srv/oc-evaluation/eval-data/runs/duo-smoke-001/task_1",
+      "base_run_dir": "/srv/oc-evaluation/eval-data/runs/duo-rejudge-001/task_1",
+      "remote_runtime_repo": "/srv/oc-evaluation/eval-data/runs/duo-smoke-001/_runtime/repo",
+      "run_id": "duo-rejudge-001",
+      "eval_dir_name": "official_eval_rejudge_001",
+      "task": "<task from the saved report>",
+      "record_id": "<record ID from generation>",
+      "source_patch_sha256": "<full source patch SHA-256 from generation>",
+      "eval_patch_sha256": "<full evaluation patch SHA-256 from generation>"
+    }
+  ]
+}
+```
+
+```bash
+oc-eval rejudge-queue \
+  --plan /srv/oc-evaluation/eval-data/rejudge-plan.json \
+  --output-dir /srv/oc-evaluation/eval-data/rejudge-state \
+  --workers 1
+```
+
+The queue state is `rejudge_queue_<queue-id>.json` below its output directory. It records each job's status, child reports, log, and launch count. Repeating the same plan and output directory reuses verified terminal reports and schedules jobs that have never launched. An interrupted local child retains its worker ownership record. For another official-evaluation attempt allowed by the experiment protocol, prepare a new plan with a fresh isolated `base_run_dir` and `run_id`, retaining the original candidate source and previous queue state. Resolve candidate conflicts and exhausted attempt budgets from their recorded cause. The parent `final_eval_layer_report.json` is refreshed from accepted outcomes.
 
 ## Completion criteria
 

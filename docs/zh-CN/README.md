@@ -2,41 +2,39 @@
 
 [English](../README.md) | **简体中文**
 
-这份索引列出操作人员需要的命令指南和契约。架构、设计与测试记录说明这些指南背后的实现。
+按要完成的任务选择指南。仓库 [README](../../README.md#simplified-chinese)介绍 0.9.1 和常用命令。[快速入门](getting-started.md)从安装开始，带你准备输入、运行任务并打开结果文件。
 
-## 从这里开始
+## 准备与运行任务
 
-| 阅读目标 | 文档 |
+| 需要做的事 | 指南 |
 | --- | --- |
-| 复现服务器评测方案 | [评测方案](evaluation-suite.md) |
-| 安装软件包并运行第一条本地命令 | [快速入门](getting-started.md) |
-| 准备数据集或通用任务 JSONL | [任务格式](task-formats.md) |
-| 运行真实的远程 SWE Pro-Lite 任务 | [SWE Pro-Lite 操作指南](swe-prolite-operations.md) |
-| 选择正确的命令 | [CLI 参考](cli-reference.md) |
-| 了解组件与依赖关系 | [架构](architecture.md) |
-| 了解可信结果与失败状态 | [评测完整性](evaluation-integrity.md) |
-| 配置外部正式评分适配 | [评分适配](scoring-adapters.md) |
-| 诊断失败的运行 | [故障排查](troubleshooting.md) |
-| 发布经过验证的 100 任务对比结果 | [最终报告契约](final-report.md) |
+| 安装并运行本地仓库任务 | [快速入门](getting-started.md) |
+| 准备正确的 JSONL 输入 | [任务与数据集格式](task-formats.md) |
+| 在一台 Linux 工作机上运行 Duo，再扩大到批量任务 | [SWE Pro-Lite 操作指南](swe-prolite-operations.md) |
+| 运行服务器队列并管理 provider 请求容量 | [服务器评测指南](evaluation-suite.md) |
+| 查找已安装的命令与参数 | [CLI 参考](cli-reference.md) |
+| 为其他任务类型配置正式评分 | [评分适配](scoring-adapters.md) |
 
-仓库级的 [README](../../README.md#simplified-chinese) 给出了最精简的完整概览。[MIGRATION.md](../../MIGRATION.zh-CN.md) 界定 OpenCollab 与 OpenCollab-Eval 的职责归属。[CONTRIBUTING.md](../../CONTRIBUTING.zh-CN.md) 说明开发与评审要求。[SECURITY.md](../../SECURITY.zh-CN.md) 说明私下报告安全问题的流程。
+## 阅读结果与恢复运行
 
-## 操作与契约文档
+| 需要做的事 | 指南 |
+| --- | --- |
+| 理解候选提交资格与正式结果 | [评测完整性](evaluation-integrity.md) |
+| 排查报错或停滞的运行 | [故障排查](troubleshooting.md) |
+| 了解各运行阶段和证据文件 | [评测运行方式](evaluation-runtime.md) |
+| 用 `oc-eval final-report` 生成对比报告 | [最终报告指南](final-report.md) |
 
-[evaluation-runtime.md](evaluation-runtime.md) 说明已安装命令与运行时层级之间的对应关系，并解释哪些入口会生成候选结果，哪些入口会给出官方判定。[final-report.md](final-report.md) 是 `oc-eval final-report` 的完整输入与证据契约。
+## 理解与开发评测器
 
-[Terminal 容器运行](terminal-container-runtime.md)介绍前台命令的生命周期与完整容器候选采纳。
+| 需要做的事 | 指南 |
+| --- | --- |
+| 了解软件包结构与 OC 依赖 | [架构](architecture.md) |
+| 理解前台命令与容器候选采纳 | [Terminal 容器运行](terminal-container-runtime.md) |
+| 准备任务前提并保留原始评分时限 | [Terminal 评分准备](terminal-verifier-preparation.md) |
+| 阅读 Duo 候选证据与裁决工具 | [Duo 文件证据](duo-file-evidence.md) |
+| 理解由控制器持有的候选提取 | [可信候选构造](design/trusted-candidate-construction.md) |
+| 运行已安装 wheel 的 SSH 与 Docker 测试 | [确定性 SWE 端到端测试](testing/deterministic-swe-e2e.md) |
 
-[Duo 文件证据](g22-file-evidence.md)介绍完整候选证据文件与 v3 裁决角色的只读工具。
+[MIGRATION.md](../../MIGRATION.zh-CN.md)介绍 OC 与 OCE 的职责。[CONTRIBUTING.md](../../CONTRIBUTING.zh-CN.md)介绍开发与评审方式，[SECURITY.md](../../SECURITY.zh-CN.md)介绍私下报告安全问题的方式。
 
-[ICLR 整合系列](iclr-integration.md)记录研究代码的合入顺序、源码覆盖情况与已验证的 Git 祖先关系。
-
-机器可读的[完整性覆盖台账](../integrity-coverage.json)将已知完整性要求映射到负责人、实现文件、测试和精确的测试节点 ID。测试套件会验证这份台账。更新实现与回归测试时，也应同步更新相应条目。
-
-## 设计与验证记录
-
-[可信候选构造](design/trusted-candidate-construction.md)介绍已经实现的、由控制器持有 Git 状态的投影机制。[确定性 SWE 端到端测试](testing/deterministic-swe-e2e.md)介绍基于已安装 wheel 的测试。该测试使用临时 SSH、伪模型服务、Docker、候选提取以及官方目标执行。
-
-设计记录解释实现决策，测试记录说明可执行的验证方法。具体命令见快速入门、Pro-Lite、CLI 与故障排查指南。
-
-[Terminal评分准备](terminal-verifier-preparation.md)说明任务环境前提、新输出隔离和原评分时限。
+[完整性覆盖台账](../integrity-coverage.json)将评分要求对应到实现与回归测试。研究历史来源保存在[实验索引](../../experiment/README.md)和 [ICLR 源码覆盖记录](../iclr-source-coverage.json)中。

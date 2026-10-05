@@ -2,59 +2,39 @@
 
 **English** | [简体中文](zh-CN/README.md)
 
-This index points operators to command guides and contracts. Architecture,
-design, and test records document the implementation behind those guides.
+Choose a guide by the task you want to complete. The repository [README](../README.md) introduces version 0.9.1 and the main commands. [Getting started](getting-started.md) walks through installation, task input, a first run, and the result file.
 
-## Start here
+## Prepare and run tasks
 
-| Reader goal | Document |
+| What you need | Guide |
 | --- | --- |
-| Reproduce the server-local evaluation setup | [Evaluation suite](evaluation-suite.md) |
-| Install the package and run the first local command | [Getting started](getting-started.md) |
-| Prepare dataset or generic task JSONL | [Task formats](task-formats.md) |
-| Run a real remote SWE Pro-Lite task | [SWE Pro-Lite operations](swe-prolite-operations.md) |
-| Choose the correct command | [CLI reference](cli-reference.md) |
-| Understand components and dependencies | [Architecture](architecture.md) |
-| Understand trusted results and failure states | [Evaluation integrity](evaluation-integrity.md) |
-| Configure external official-scoring adapters | [Scoring adapters](scoring-adapters.md) |
-| Diagnose a failed run | [Troubleshooting](troubleshooting.md) |
-| Publish a validated 100-task comparison | [Final report contract](final-report.md) |
+| Install and run a local repository task | [Getting started](getting-started.md) |
+| Prepare the correct JSONL input | [Task and dataset formats](task-formats.md) |
+| Run Duo on one Linux worker, then expand to a batch | [SWE Pro-Lite operations](swe-prolite-operations.md) |
+| Run server queues and manage provider capacity | [Evaluation suite](evaluation-suite.md) |
+| Find installed commands and options | [CLI reference](cli-reference.md) |
+| Configure official scoring for another task family | [Scoring adapters](scoring-adapters.md) |
 
-The repository-level [README](../README.md) gives the shortest complete
-overview. [MIGRATION.md](../MIGRATION.md) defines ownership between OpenCollab
-and OpenCollab-Eval. [CONTRIBUTING.md](../CONTRIBUTING.md) describes development
-and review requirements. [SECURITY.md](../SECURITY.md) contains the private
-reporting process.
+## Read results and recover a run
 
-## Operator and contract documents
+| What you need | Guide |
+| --- | --- |
+| Interpret candidate eligibility and official outcomes | [Evaluation integrity](evaluation-integrity.md) |
+| Investigate an error or stalled run | [Troubleshooting](troubleshooting.md) |
+| Understand runtime stages and evidence files | [Evaluation runtime](evaluation-runtime.md) |
+| Produce a comparison with `oc-eval final-report` | [Final report guide](final-report.md) |
 
-[evaluation-runtime.md](evaluation-runtime.md) maps installed commands to
-runtime layers and explains which entrypoints produce candidates or official
-verdicts. [final-report.md](final-report.md) is the complete input and evidence
-contract for `oc-eval final-report`.
+## Understand and develop the evaluator
 
-[Terminal container runtime](terminal-container-runtime.md) documents foreground command ownership and complete-container candidate adoption.
-[Terminal verifier preparation](terminal-verifier-preparation.md) covers task prerequisites, fresh outputs, and the original scoring budget.
+| What you need | Guide |
+| --- | --- |
+| Follow the package structure and OC dependency | [Architecture](architecture.md) |
+| Understand foreground commands and container candidate adoption | [Terminal container runtime](terminal-container-runtime.md) |
+| Prepare task prerequisites and original scoring budgets | [Terminal verifier preparation](terminal-verifier-preparation.md) |
+| Read Duo candidate evidence and the selector's tools | [Duo file evidence](duo-file-evidence.md) |
+| Understand controller-owned candidate extraction | [Trusted candidate construction](design/trusted-candidate-construction.md) |
+| Run the installed-wheel SSH and Docker test | [Deterministic SWE E2E](testing/deterministic-swe-e2e.md) |
 
-[Duo file evidence](g22-file-evidence.md) describes complete candidate evidence
-files and the read-only v3 selector.
+[MIGRATION.md](../MIGRATION.md) explains OC and OCE ownership. [CONTRIBUTING.md](../CONTRIBUTING.md) covers development and review, and [SECURITY.md](../SECURITY.md) explains private security reporting.
 
-[ICLR integration series](iclr-integration.md) records the ordered research
-integration, source coverage, and verified Git ancestry.
-
-The machine-readable [integrity coverage ledger](integrity-coverage.json) maps
-known integrity requirements to owners, implementation files, tests, and exact
-test node IDs. It is verified by the test suite and should be updated with the
-corresponding implementation and regression test.
-
-## Design and verification records
-
-[Trusted candidate construction](design/trusted-candidate-construction.md)
-describes the implemented controller-owned Git projection. [Deterministic SWE
-E2E](testing/deterministic-swe-e2e.md) describes the installed-wheel test that
-uses ephemeral SSH, a fake model service, Docker, candidate extraction, and
-official target execution.
-
-Design records explain implementation decisions, while testing records describe
-executable verification. Runnable commands are in the getting-started,
-Pro-Lite, CLI, and troubleshooting guides.
+The [integrity coverage ledger](integrity-coverage.json) maps scoring requirements to implementation and regression tests. Historical research sources remain in the [experiment index](../experiment/README.md) and [ICLR source coverage](iclr-source-coverage.json).
