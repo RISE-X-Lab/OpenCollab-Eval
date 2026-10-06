@@ -21,7 +21,7 @@ The evaluator uses a `src` package layout. Installed entry points are `oc-eval` 
 
 ## Choose compatible versions
 
-The current evaluator release is 0.9.1. Its dependency is `opencollab>=0.9,<0.10`, and CI tests it with OpenCollab 0.9.1. The exact tested framework commit is recorded in `.github/workflows/ci.yml`.
+The current evaluator release is 0.9.2. Its dependency is `opencollab>=0.9,<0.10`, and CI tests it with OpenCollab 0.9.2. The exact tested framework commit is recorded in `.github/workflows/ci.yml`.
 
 Follow [Getting started](docs/getting-started.md) for release-wheel or source installation. Confirm what the active environment actually imports before starting a run.
 

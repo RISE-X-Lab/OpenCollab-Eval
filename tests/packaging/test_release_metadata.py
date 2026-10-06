@@ -19,7 +19,7 @@ def test_release_metadata_keeps_versions_aligned_and_includes_license() -> None:
     license_bytes = (_REPO_ROOT / "LICENSE").read_bytes()
 
     assert opencollab_eval.__version__
-    assert opencollab_eval.__version__ == "0.9.1"
+    assert opencollab_eval.__version__ == "0.9.2"
     assert 'requires = ["hatchling==1.31.0"]' in pyproject
     assert f'version = "{opencollab_eval.__version__}"' in pyproject
     assert 'dependencies = ["opencollab>=0.9,<0.10", "httpx>=0.27"]' in pyproject

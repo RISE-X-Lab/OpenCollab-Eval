@@ -8,7 +8,7 @@
 
 <p align="center"><a href="#supported-environment">Install</a> · <a href="#choose-a-command">Choose a command</a> · <a href="#run-duo">Run Duo</a></p>
 
-OpenCollab-Eval prepares tasks, runs [OpenCollab](https://github.com/RISE-X-Lab/OpenCollab) solvers, and evaluates their patches in isolated official test workspaces. The current version is **0.9.1**, paired with **OpenCollab >=0.9,<0.10**.
+OpenCollab-Eval prepares tasks, runs [OpenCollab](https://github.com/RISE-X-Lab/OpenCollab) solvers, and evaluates their patches in isolated official test workspaces. The current version is **0.9.2**, paired with **OpenCollab >=0.9,<0.10**.
 
 <a id="supported-environment"></a>
 
@@ -124,7 +124,7 @@ pytest -q
 
 <p align="center"><a href="#支持的环境">安装</a> · <a href="#选择命令">选择命令</a> · <a href="#运行-duo">运行 Duo</a></p>
 
-OpenCollab-Eval 负责准备任务、调用 [OpenCollab](https://github.com/RISE-X-Lab/OpenCollab) 求解器，并在独立的正式测试工作区中评测补丁。当前版本为 **0.9.1**，配套依赖为 **OpenCollab >=0.9,<0.10**。
+OpenCollab-Eval 负责准备任务、调用 [OpenCollab](https://github.com/RISE-X-Lab/OpenCollab) 求解器，并在独立的正式测试工作区中评测补丁。当前版本为 **0.9.2**，配套依赖为 **OpenCollab >=0.9,<0.10**。
 
 <a id="支持的环境"></a>
 

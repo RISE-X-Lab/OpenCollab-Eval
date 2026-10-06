@@ -21,7 +21,7 @@ OpenCollab 负责让智能体做题。OpenCollab-Eval 负责准备题目、保�
 
 ## 选择配套版本
 
-当前评测器版本为 0.9.1，依赖范围为 `opencollab>=0.9,<0.10`，CI 使用 OpenCollab 0.9.1 验证。实际验证的框架提交写在 `.github/workflows/ci.yml`。
+当前评测器版本为 0.9.2，依赖范围为 `opencollab>=0.9,<0.10`，CI 使用 OpenCollab 0.9.2 验证。实际验证的框架提交写在 `.github/workflows/ci.yml`。
 
 按照[入门指南](docs/zh-CN/getting-started.md)安装发布的 wheel 或源码。开始运行前，先确认当前环境实际加载的两个包版本。
 

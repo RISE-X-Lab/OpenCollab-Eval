@@ -2,7 +2,7 @@
 
 **English** | [简体中文](zh-CN/README.md)
 
-Choose a guide by the task you want to complete. The repository [README](../README.md) introduces version 0.9.1 and the main commands. [Getting started](getting-started.md) walks through installation, task input, a first run, and the result file.
+Choose a guide by the task you want to complete. The repository [README](../README.md) introduces version 0.9.2 and the main commands. [Getting started](getting-started.md) walks through installation, task input, a first run, and the result file.
 
 ## Prepare and run tasks
 

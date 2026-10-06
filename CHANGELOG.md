@@ -4,11 +4,19 @@ All notable changes to OpenCollab-Eval are recorded in this file.
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-10-06
+
+Paired with OpenCollab 0.9.2. The supported runtime dependency remains
+`opencollab>=0.9,<0.10`.
+
 Documentation now starts with installation, input selection, a local task, and
 reading its result. The English and Chinese guides use the current 0.9.x API,
 keep the full Duo worker tutorial in one place, and explicitly select the V1
 SWE-bench Pro dataset for the V1 image runner. Completed integration instructions
 and machine-specific batch directions have been removed from current usage.
+First-run examples explain Chat Completions and Responses entrypoints, and
+recovery instructions separate saved generation candidates from fresh official
+scoring workspaces.
 
 The batch driver gives every (instance, arm) run an id, writes it into the run's
 `manifest.jsonl` row, and passes it to the generator as `OPENCOLLAB_RUN_ID`. The
@@ -192,3 +200,7 @@ truncated, or mismatched execution output.
 [0.9.0]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.8.3...v0.9.0
 
 [0.9.1]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.9.0...v0.9.1
+
+[0.9.2]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.9.1...v0.9.2
+
+[Unreleased]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.9.2...HEAD

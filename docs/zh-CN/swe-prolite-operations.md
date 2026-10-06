@@ -6,7 +6,7 @@
 
 ## 在一台 Linux 工作机上运行 Duo
 
-按[快速开始](getting-started.md)安装匹配的 OpenCollab 0.9.x 与带 SWE-bench extra 的 OpenCollab-Eval 0.9.1。在 Linux worker 上激活该 Python 环境，并允许评测账号访问 Docker Engine。配置支持流式 Responses、function tools 和所选推理设置的 OpenAI 兼容入口。后续命令始终在这个已激活环境中执行。
+按[快速开始](getting-started.md)安装匹配的 OpenCollab 0.9.x 与带 SWE-bench extra 的 OpenCollab-Eval 0.9.2。在 Linux worker 上激活该 Python 环境，并允许评测账号访问 Docker Engine。配置支持流式 Responses、function tools 和所选推理设置的 OpenAI 兼容入口。后续命令始终在这个已激活环境中执行。
 
 ### 准备数据与题目镜像
 
