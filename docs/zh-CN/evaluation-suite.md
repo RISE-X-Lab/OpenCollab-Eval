@@ -2,7 +2,7 @@
 
 [English](../evaluation-suite.md) | **简体中文**
 
-本指南介绍 OpenCollab-Eval 0.9.1 与 OpenCollab >=0.9,<0.10 配套使用时的 worker 打包、API 请求容量、研究工作流设置和已保存候选恢复。新的正式评测从 [Duo 教程](swe-prolite-operations.md#在一台-linux-工作机上运行-duo)开始。这里的设置用于已有部署和受控实验。
+本指南介绍 OpenCollab-Eval 0.9.2 与 OpenCollab >=0.9,<0.10 配套使用时的 worker 打包、API 请求容量、研究工作流设置和已保存候选恢复。新的正式评测从 [Duo 教程](swe-prolite-operations.md#在一台-linux-工作机上运行-duo)开始。这里的设置用于已有部署和受控实验。
 
 OC 执行 Agent 与工作流。OCE 准备公开题面和依赖，提取可信候选，执行正式测试，并记录结果。
 

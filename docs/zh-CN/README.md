@@ -2,7 +2,7 @@
 
 [English](../README.md) | **简体中文**
 
-按要完成的任务选择指南。仓库 [README](../../README.md#simplified-chinese)介绍 0.9.1 和常用命令。[快速入门](getting-started.md)从安装开始，带你准备输入、运行任务并打开结果文件。
+按要完成的任务选择指南。仓库 [README](../../README.md#simplified-chinese)介绍 0.9.2 和常用命令。[快速入门](getting-started.md)从安装开始，带你准备输入、运行任务并打开结果文件。
 
 ## 准备与运行任务
 

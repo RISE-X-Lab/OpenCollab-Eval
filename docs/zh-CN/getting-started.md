@@ -6,7 +6,7 @@
 
 ## 安装软件包
 
-当前评测器版本为 0.9.1，依赖 OpenCollab 0.9.x（`opencollab>=0.9,<0.10`）。Linux 和 macOS 支持 Python 3.10 至 3.12。下面使用 Python 3.12，把环境放在两个源码目录旁边。
+当前评测器版本为 0.9.2，依赖 OpenCollab 0.9.x（`opencollab>=0.9,<0.10`）。Linux 和 macOS 支持 Python 3.10 至 3.12。下面使用 Python 3.12，把环境放在两个源码目录旁边。
 
 ```bash
 mkdir -p "$HOME/oc-evaluation"
@@ -21,11 +21,11 @@ oc-eval --version
 oc-eval --help
 ```
 
-评测器版本命令应输出 0.9.1。使用已构建的 wheel 时，激活环境后安装两个兼容软件包。
+评测器版本命令应输出 0.9.2。使用已构建的 wheel 时，激活环境后安装两个兼容软件包。
 
 ```bash
-python -m pip install /path/to/opencollab-0.9.1-py3-none-any.whl
-python -m pip install /path/to/opencollab_eval-0.9.1-py3-none-any.whl
+python -m pip install /path/to/opencollab-0.9.2-py3-none-any.whl
+python -m pip install /path/to/opencollab_eval-0.9.2-py3-none-any.whl
 ```
 
 正式 SWE-bench 评测需要对应的可选依赖，以及 Linux 工作机上的 Docker。OpenHands 支持使用单独的可选依赖，需要 Python 3.12。在源码安装目录中，安装本次运行所需的依赖。

@@ -30,8 +30,8 @@ wheel_root="$(mktemp -d)"
 python -m build --wheel --outdir "$wheel_root/opencollab" ../OpenCollab
 python -m build --wheel --outdir "$wheel_root/eval" .
 scripts/verify_wheel_contract.sh \
-  "$wheel_root"/opencollab/opencollab-0.9.1*.whl \
-  "$wheel_root"/eval/opencollab_eval-0.9.1*.whl
+  "$wheel_root"/opencollab/opencollab-0.9.2*.whl \
+  "$wheel_root"/eval/opencollab_eval-0.9.2*.whl
 ```
 
 确定性 SWE E2E 要求安装 Docker、`sshd`、`ssh`、`ssh-keygen` 和 `rsync`。其中的模型请求发往本地伪服务，因此无需提供方凭据。

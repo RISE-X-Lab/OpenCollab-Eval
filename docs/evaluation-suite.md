@@ -2,7 +2,7 @@
 
 **English** | [简体中文](zh-CN/evaluation-suite.md)
 
-This guide covers worker packaging, provider capacity, research workflow settings, and saved candidate recovery for OpenCollab-Eval 0.9.1 with OpenCollab >=0.9,<0.10. Begin a new official evaluation with the [Duo tutorial](swe-prolite-operations.md#run-duo-on-one-linux-worker). The settings here support existing operator deployments and controlled experiments.
+This guide covers worker packaging, provider capacity, research workflow settings, and saved candidate recovery for OpenCollab-Eval 0.9.2 with OpenCollab >=0.9,<0.10. Begin a new official evaluation with the [Duo tutorial](swe-prolite-operations.md#run-duo-on-one-linux-worker). The settings here support existing operator deployments and controlled experiments.
 
 OC runs the agents and workflows. OCE prepares the public task and dependencies, captures a trusted candidate, executes official tests, and records the outcome.
 

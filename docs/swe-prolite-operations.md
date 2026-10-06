@@ -6,7 +6,7 @@ Use Duo for a new OpenCollab evaluation. The first tutorial runs the controller,
 
 ## Run Duo on one Linux worker
 
-Install matching OpenCollab 0.9.x and OpenCollab-Eval 0.9.1 packages with the SWE-bench extra following [Getting started](getting-started.md). Activate that Python environment on the Linux worker and allow the evaluation account to access Docker Engine. Use an OpenAI-compatible Responses endpoint with streamed responses, function tools, and the reasoning settings selected below. Keep the environment active throughout this tutorial.
+Install matching OpenCollab 0.9.x and OpenCollab-Eval 0.9.2 packages with the SWE-bench extra following [Getting started](getting-started.md). Activate that Python environment on the Linux worker and allow the evaluation account to access Docker Engine. Use an OpenAI-compatible Responses endpoint with streamed responses, function tools, and the reasoning settings selected below. Keep the environment active throughout this tutorial.
 
 ### Prepare the dataset and task images
 

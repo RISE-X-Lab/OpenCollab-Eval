@@ -6,7 +6,7 @@ Start by choosing what you want to run. A task for your own repository uses gene
 
 ## Install the package
 
-The current evaluator is 0.9.1 and requires OpenCollab 0.9.x (`opencollab>=0.9,<0.10`). Use Python 3.10 through 3.12 on Linux or macOS. The commands below use Python 3.12 and keep the environment beside the two source checkouts.
+The current evaluator is 0.9.2 and requires OpenCollab 0.9.x (`opencollab>=0.9,<0.10`). Use Python 3.10 through 3.12 on Linux or macOS. The commands below use Python 3.12 and keep the environment beside the two source checkouts.
 
 ```bash
 mkdir -p "$HOME/oc-evaluation"
@@ -21,11 +21,11 @@ oc-eval --version
 oc-eval --help
 ```
 
-The version command should print 0.9.1 for the evaluator. For installation from built wheels, activate an environment and install both compatible packages.
+The version command should print 0.9.2 for the evaluator. For installation from built wheels, activate an environment and install both compatible packages.
 
 ```bash
-python -m pip install /path/to/opencollab-0.9.1-py3-none-any.whl
-python -m pip install /path/to/opencollab_eval-0.9.1-py3-none-any.whl
+python -m pip install /path/to/opencollab-0.9.2-py3-none-any.whl
+python -m pip install /path/to/opencollab_eval-0.9.2-py3-none-any.whl
 ```
 
 Official SWE-bench support requires the corresponding extra and Docker on the Linux worker. OpenHands support uses its own extra in Python 3.12. From the source installation directory, install the extra needed by your run.
