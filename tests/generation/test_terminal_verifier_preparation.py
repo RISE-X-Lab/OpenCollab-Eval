@@ -10,12 +10,13 @@ import shlex
 import shutil
 import tarfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from opencollab_eval.generation import terminal_verifier as scoring
 from opencollab_eval.generation import terminal_verifier_preparation as preparation
 from opencollab_eval.generation.terminal_container_backend import CommandResult
-from opencollab_eval.generation.terminal_verifier import run_terminal_verifier
 
 
 class ShellEnvironment:
@@ -328,19 +329,28 @@ async def test_failed_login_pipeline_cannot_be_hidden_by_a_later_success(environ
 
 
 @pytest.mark.parametrize("external_cancel", [False, True])
+@pytest.mark.parametrize("preparation_delay", [0, 0.25])
 async def test_scoring_cancellation_after_frame_move_retains_recovery_evidence(
-    environment, tmp_path, monkeypatch, external_cancel,
+    environment, tmp_path, monkeypatch, external_cancel, preparation_delay,
 ):
     environment.frame.write_bytes(b"old-frame")
     entered = asyncio.Event()
     aborted = False
+    response_cancelled = False
     original_exec = environment.exec_cmd
 
     async def delayed_response(command, timeout=120, stdin=None):
+        nonlocal response_cancelled
+        if not environment.commands:
+            await asyncio.sleep(preparation_delay)
         result = await original_exec(command, timeout=timeout, stdin=stdin)
         if command.startswith("\ndirectory="):
             entered.set()
-            await asyncio.Event().wait()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                response_cancelled = True
+                raise
         return result
 
     async def abort():
@@ -349,6 +359,24 @@ async def test_scoring_cancellation_after_frame_move_retains_recovery_evidence(
 
     async def verifier(remaining):
         pytest.fail("frame preparation has not completed")
+
+    async def timeout_after_move(awaitable, timeout):
+        execution = asyncio.create_task(awaitable)
+        try:
+            await asyncio.wait_for(entered.wait(), timeout)
+            # Exercise real wait_for cancellation once the recovery files exist.
+            # Wall-clock budget enforcement has separate verifier tests.
+            return await asyncio.wait_for(execution, 0)
+        finally:
+            execution.cancel()
+            await asyncio.gather(execution, return_exceptions=True)
+
+    if not external_cancel:
+        monkeypatch.setattr(scoring, "asyncio", SimpleNamespace(
+            wait_for=timeout_after_move,
+            TimeoutError=asyncio.TimeoutError,
+            CancelledError=asyncio.CancelledError,
+        ))
 
     monkeypatch.setattr(environment, "exec_cmd", delayed_response)
     monkeypatch.setattr(environment, "abort", abort, raising=False)
@@ -359,23 +387,28 @@ async def test_scoring_cancellation_after_frame_move_retains_recovery_evidence(
         ),
     )
     receipt = {}
-    task = asyncio.create_task(run_terminal_verifier(
+    task = asyncio.create_task(scoring.run_terminal_verifier(
         "make-doom-for-mips", environment, tmp_path / "artifacts", verifier,
-        timeout_seconds=5 if external_cancel else 0.2,
+        timeout_seconds=30,
         preparation_receipt=receipt,
     ))
-    await asyncio.wait_for(entered.wait(), 1)
-    if external_cancel:
+    try:
+        await asyncio.wait_for(entered.wait(), 10)
+        if external_cancel:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        else:
+            result = await task
+            assert result["status"] == "facility_error"
+            assert result["timed_out"] is True
+            assert result["reward"] is None
+            assert result["preparation"] is receipt
+    finally:
         task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-    else:
-        result = await task
-        assert result["status"] == "facility_error"
-        assert result["timed_out"] is True
-        assert result["reward"] is None
-        assert result["preparation"] is receipt
+        await asyncio.gather(task, return_exceptions=True)
     assert aborted
+    assert response_cancelled
     assert receipt["status"] == "error"
     assert not environment.frame.exists()
     assert environment.translated_path(receipt["quarantine_path"]).read_bytes() == b"old-frame"
