@@ -10,7 +10,7 @@ OpenCollab-Eval 0.9.2 is paired with OpenCollab 0.9.2. Releases use the verified
 - Verify every GitHub check, test, and artifact against the exact release SHA.
 - Push only the intended tag ref and never move a published tag.
 - Use a PR and merge-commit title that satisfies the repository's Conventional
-  Title checker, including its required Chinese summary text.
+  Title checker, including its English summary convention.
 - Use a signed annotated tag. When signing or tag protection is unavailable, record the maintainer's explicit waiver in the GitHub Release before completion.
 
 ## Verify the candidate

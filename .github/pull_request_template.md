@@ -1,6 +1,7 @@
 ## Change
 
-Describe the problem and the behavior after this change.
+Describe the problem and the behavior after this change. Write the PR title and
+description in English, using the existing Conventional Commit title format.
 
 ## Evaluation integrity
 

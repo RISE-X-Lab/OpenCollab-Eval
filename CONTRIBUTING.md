@@ -76,7 +76,9 @@ Chinese documentation mirrors live only in root `*.zh-CN.md` files, under
 `src/opencollab_eval/`. Keep every translation synchronized with its English
 source and preserve the same code blocks and technical identifiers. Commit
 summaries, pull request titles, pull request descriptions, and review replies
-use Chinese while retaining an English Conventional Commit type.
+use English while retaining the existing Conventional Commit format. Commit
+bodies and merge subjects also use English. The title checker rejects Chinese
+prose; authors and reviewers remain responsible for English wording.
 
 ## Contribution license
 
