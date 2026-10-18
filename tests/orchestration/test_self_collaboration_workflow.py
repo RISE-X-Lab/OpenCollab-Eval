@@ -1,7 +1,7 @@
 """Tests for ``opencollab_eval.workflows.self_collaboration``.
 
 The workflow's reason to exist is that it is the code-sequenced twin of
-``OpenCollab/configs/team.handoff.experiment.yaml``: same three roles, same six
+``experiment/framework/configs/team.handoff.primary-legacy.yaml``: same three roles, same six
 directed edges, same tool bundles, and only the sequencing differs. That claim
 is worth nothing as a comment, so the parity is read off both sides here and
 compared. Everything else is pure orchestration over ``ctx.agent``, so a

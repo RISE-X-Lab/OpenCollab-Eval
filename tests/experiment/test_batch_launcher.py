@@ -263,7 +263,7 @@ def test_a_cell_outside_the_ladder_names_its_own_team_file() -> None:
     paper already reports must resolve to the path it resolved to before this
     function existed, or the change is a silent renaming of every measured
     batch. The second is the reason it exists -- OpenCollab's
-    ``tests/test_analyst_card_assembly.py`` globs ``configs/team.handoff.*.yaml``
+    ``experiment/framework/tests/test_analyst_card_assembly.py`` globs ``configs/team.handoff.*.yaml``
     and reads the hits as one instrument, so a second roster cannot be filed
     there.
     """
@@ -273,7 +273,7 @@ def test_a_cell_outside_the_ladder_names_its_own_team_file() -> None:
     assert cell_team_file("dual-judge") == "configs/team.dual-judge.yaml"
     assert cell_team_file("s2dual-judge") == "configs/team.s2dual-judge.yaml"
     # The s2dual roster with the Adopter's tools changed is a family of its
-    # own in OpenCollab (``configs/s2tools``), filed apart from both.
+    # own under ``experiment/framework/configs/s2tools``, filed apart from both.
     assert cell_team_file("s2tools-adopt") == "configs/team.s2tools-adopt.yaml"
     # The handoff roles seated as Single2 over topologies with edges removed
     # (``configs/s2sc``) are a third family, filed apart the same way.

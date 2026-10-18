@@ -77,8 +77,8 @@ RUNG_CELLS = {
 }
 
 #: Cells whose team file is not ``configs/team.handoff.<cell>.yaml``. The
-#: handoff ladder owns that namespace, and OpenCollab's
-#: ``tests/test_analyst_card_assembly.py`` reads it as one instrument: it globs
+#: handoff ladder owns that namespace, and the instrument check in
+#: ``experiment/framework/tests/test_analyst_card_assembly.py`` globs
 #: ``configs/team.handoff.*.yaml``, reduces each file to the configuration
 #: below its header, and asserts one distinct result. A second roster filed
 #: there would either fail that test or force it to be loosened, and what it

@@ -1,6 +1,6 @@
 """self-collaboration — the handoff team's topology, sequenced by code.
 
-The code-sequenced twin of ``OpenCollab/configs/team.handoff.experiment.yaml``.
+The code-sequenced twin of ``experiment/framework/configs/team.handoff.primary-legacy.yaml``.
 That team declares three roles and six directed edges and leaves the order of
 work to the model; this workflow runs the same three roles over the same six
 edges and lets no model decide the order. The one thing that differs between
