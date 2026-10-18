@@ -179,13 +179,10 @@ the general claim.
 
 ## What is held by tests
 
-`tests/workflows/test_collab_team_config.py` covers the roster
-and six directed edges. The tests check role tool claims, the absence of
+The [framework team regressions](https://github.com/RISE-X-Lab/OpenCollab/blob/main/tests/workflows/test_collab_team_config.py)
+cover the roster and six directed edges. The tests check role tool claims, the absence of
 `spawn_agent`, loading after copying the configuration, runner call arguments,
 and the distinction between message attempts and deliveries.
-
-`scripts/run_collab_team.py` is registered in the framework-script whitelist in
-`tests/packaging/test_repository_ownership.py`.
 
 ## Known rough edges
 
