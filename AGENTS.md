@@ -39,6 +39,12 @@ Keep Python modules below 800 lines and new files below 500 KB.
 Generated reports, model transcripts, predictions, patches, datasets, runtime
 logs, PDFs, and local environment paths stay outside the source repository.
 
+Use clear names and types for self-evident code. Keep comments and docstrings
+for behavior, failures, ownership, or constraints that the code leaves unclear.
+Before changing explanatory text, check its consumers and verify affected behavior.
+Preserve runtime inputs, test fixtures, evidence, safety, and copyright instructions.
+Follow [Documentation and comments](CONTRIBUTING.md#documentation-and-comments).
+
 ## Current and historical documentation
 
 Current changes target `main`. The completed ICLR integration is recorded in

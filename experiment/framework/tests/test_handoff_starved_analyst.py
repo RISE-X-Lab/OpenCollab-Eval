@@ -1,14 +1,4 @@
-"""The capability cell: the Analyst keeps the channel and loses the edit tools.
-
-Every measured batch so far handed the Analyst the single agent's whole working
-bundle, and delegation never happened. The shipped Self-Collaboration team
-delegates on its first round, and ``bootstrap/team_config.py`` says why in its
-own words: the division of labour there is enforced by capability, not by the
-prompt. This team file is the cell between those two facts -- capability
-removed, stance left exactly where ``primary`` leaves it.
-
-What is pinned here is that only capability moved.
-"""
+"""Check that the starved Analyst retains primary's stance and collaboration channel."""
 
 from __future__ import annotations
 

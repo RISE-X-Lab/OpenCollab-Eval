@@ -690,7 +690,6 @@ def main() -> None:
     iid = instance["instance_id"]
     image = args.image or f"sweb.eval.{args.arch}.{iid}:latest"
 
-    # Resolve a named bundled workflow or use the built-in fallback.
     team_config_path = None
     if args.team_config:
         team_config_path = Path(args.team_config).expanduser().resolve()

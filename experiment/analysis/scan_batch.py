@@ -183,7 +183,6 @@ def render_text(
     )
     add("=" * 108)
 
-    # ---- Exclusion ledger ------------------------------------------------
     # Printed first and unconditionally, including the zero case: without the
     # zero line "no dead runs" is indistinguishable from "never checked".
     add("")
@@ -241,7 +240,6 @@ def render_text(
                 f"\u672c\u5e72\u5b8c\u4e86)"
             )
 
-    # ---- Alpha table with both denominators ------------------------------
     add("")
     add(
         "--- \u59d4\u6d3e\u7387 α（\u65b0\u53e3\u5f84 = \u542b budget/tru"
@@ -262,7 +260,6 @@ def render_text(
             f"  {changed}"
         )
 
-    # ---- 3. outcome denominator, stated separately -----------------------
     add("")
     add(
         "--- resolve/\u6210\u672c \u53ef\u7528\u6837\u672c（\u53f3\u622a"
@@ -286,7 +283,6 @@ def render_text(
             f"{_brief(cell['tokens_censored']):>28s}"
         )
 
-    # ---- 4. per-run detail ----------------------------------------------
     add("")
     add(
         "--- \u9010 run \u660e\u7ec6（A=\u8fdbα\u5206\u6bcd, O=\u8fdbreso"
@@ -323,7 +319,6 @@ def render_text(
                 f"patch={run['patch_chars']}{burnt_note}"
             )
 
-    # ---- 5. which seat ran out -------------------------------------------
     add("")
     add(
         "--- \u9884\u7b97\u70e7\u5149\u53d1\u751f\u5728\u54ea\u4e2a"
@@ -343,7 +338,6 @@ def render_text(
             "\u6bb5\u6ca1\u843d\u76d8，\u5c1a\u672a\u6838\u5bf9）"
         )
 
-    # ---- 6. problems -----------------------------------------------------
     add("")
     add("--- \u89e3\u6790\u95ee\u9898（\u7a7a = \u65e0）---")
     any_problem = False
@@ -422,9 +416,7 @@ def build_document(
     }
 
 
-# =============================================================================
 # DEFERRED VERIFICATION -- run this the moment gpu3 is reachable again.
-# =============================================================================
 DEFERRED_VERIFICATION = (
     "\ngpu3 was down when this scanner was written, so the validity "
     "criterion above is\nsource-derived and fixture-tested only.  No"

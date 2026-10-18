@@ -87,26 +87,16 @@ def workflow_result_metrics(result) -> dict:
         for field in fields(result)
         if field.name not in _METRICS_FLAT_DUMP_SKIPS
     }
-    # The graded tree at each seat boundary, for the arms that record them.
-    # A workflow arm carries its own equivalent inside ``workflow_result``
-    # (``self_collaboration`` writes ``tree_snapshots`` there), so a reader that
-    # wants either takes this key first and falls back to that one.
+    # Readers fall back to workflow_result.tree_snapshots for workflow arms.
     if result.tree_snapshots is not None:
         metrics["tree_snapshots"] = _json_safe(result.tree_snapshots)
-    # The same quantities again, under the names the single-agent path also
-    # writes them under. Without this the two arms' records can only be read
-    # one arm at a time; see ``gen_prediction_run_summary``.
+    # Publish the same metric names as the single-agent path.
     status = result.runtime_status
     reason = result.runtime_reason
     workflow_result = getattr(result, "workflow_result", None)
     if isinstance(workflow_result, dict) and workflow_result.get("status") == "error":
-        # A workflow that returns an error has stopped, but the runtime around
-        # it returned normally, so it reports "completed" and no reason at all.
-        # Left alone the very same stop reads as "completed" on the workflow
-        # arms and as "stopped" on the single-agent arm: an arm-varying
-        # recording rule on the field a cross-arm reader selects. Record the
-        # stop, and carry the workflow's own error string as the detail so the
-        # reason is non-empty here exactly as it is on the single-agent arm.
+        # A workflow error can accompany a normally completed outer runtime.
+        # Preserve the workflow stop and its reason in the shared summary.
         status = "stopped"
         reason = reason or str(workflow_result.get("error") or "workflow error")
     metrics[RUN_SUMMARY_KEY] = build_run_summary(

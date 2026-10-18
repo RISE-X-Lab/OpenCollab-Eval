@@ -1,46 +1,15 @@
 """Run every arm over a list of instances.
 
-The single-instance generators each solve one task with one arm. A comparison
-needs the same tasks put to every arm, and a pilot of ten or twenty tasks is
-long enough that how the batch is ordered and what it does when one task fails
-stop being details.
+Arms are interleaved within each instance so interrupted batches retain
+complete comparisons. Jobs are submitted in that order, with concurrency
+controlled by the caller and defaulting to one.
 
-Three decisions are worth stating, because each of them is a way an unattended
-batch quietly produces something that cannot be compared:
+A task failure ends only that instance-arm run. The exit status counts missing
+predictions because controlled stops can exit nonzero after writing a patch.
+Resumption skips predictions already present in each arm's output file.
 
-* **Arms are interleaved inside each instance, not run one arm at a time.**
-  The primary estimand is a *paired* difference, so a batch that stops early is
-  useful exactly as far as its complete pairs go. Finishing every single-agent
-  run first would leave a half-finished batch with no pairs at all.
-* **One task's failure does not end the batch.** A container that will not
-  start, a provider that refuses, a run that exceeds its wall clock: each ends
-  that (instance, arm) and nothing else. The manifest says which, and the exit
-  status counts the runs that produced *no prediction* rather than the runs
-  that exited non-zero -- a generator exits non-zero whenever a run did not
-  finish normally, and a run stopped at its token budget still writes the patch
-  it had made.
-* **How many run at once is the caller's decision, and one is the default.**
-  A task container is heavy and the machine running it is usually shared, so
-  the driver does not help itself to it. ``--concurrency`` raises the number in
-  flight; nothing else changes, because everything a run touches is already its
-  own -- its log directory, its container name, and a predictions file every
-  generator appends to under an exclusive lock. Jobs are submitted in the
-  planned order, so at a concurrency of three whole tasks are in flight rather
-  than one arm of three different tasks.
-* **A finished (instance, arm) is never re-run.** Resumption reads the
-  predictions file each arm already has and skips what is in it, so an
-  interrupted batch is continued by re-issuing the same command.
-* **The budget is stated per seat and the pool is computed from it.** A team
-  run is given one shared pool and caps each of its ``N`` declared roles at
-  ``1/N`` of it, so passing a team the same pool as a solo agent gives every
-  seat a third of what that agent gets alone -- and the shortfall is then read
-  off the results as something about working in a team. The driver reads ``N``
-  out of the team file and multiplies, so the two arms are equal on the axis
-  they are meant to be equal on.
-
-Runs are sequential. The task containers are heavy and the machine this runs on
-is shared; parallelism here is a decision about somebody else's machine, so it
-is not taken by default.
+Budgets are per seat. Team and workflow pools scale with their declared role
+counts. Best-of-N shares one seat's pool across its candidates.
 """
 
 from __future__ import annotations
@@ -72,7 +41,6 @@ from .gen_prediction_constants import (
 )
 from .gen_prediction_safe_output import _append_jsonl_durable, default_metrics_path, output_paths
 
-#: Which module runs an arm, and whether it needs a team configuration.
 ARM_MODULES: dict[str, str] = {
     "single": "opencollab_eval.generation.gen_prediction",
     "best-of-n": "opencollab_eval.generation.gen_prediction_best_of_n",
@@ -83,36 +51,21 @@ ARM_MODULES: dict[str, str] = {
     ),
 }
 
-#: The generator that has to be *told* which solver to open.
-#:
-#: An arm that runs through it and is listed in neither table below is started
-#: with no ``--workflow`` and no ``--team-config``, and that generator's last
-#: branch falls back to the built-in ``generate_review_fix``. The run happens,
-#: exits zero, and appends a row to ``preds-<arm>.jsonl`` that is a different
-#: arm's run; nothing in the output says so, and the arm it was meant to be is
-#: never run. That is the reason the wiring below is checked rather than
-#: remembered.
+#: An orchestrated arm without a solver flag silently runs generate_review_fix.
+#: Validate the solver tables before launching a batch.
 ORCHESTRATED_GENERATOR = "opencollab_eval.generation.gen_prediction_workflow"
 
-#: Arms whose generator is the workflow entry point and therefore takes
-#: ``--team-config``. Kept separate from ``ARM_MODULES`` so adding a workflow
-#: arm that is not the team does not silently inherit the team's configuration.
+#: Workflow-entry arms that require a team file.
 TEAM_ARMS: frozenset[str] = frozenset({"team"})
 
-#: Arms that select a bundled workflow by name instead of a team file. They
-#: share the team's generator and none of its configuration: a workflow is
-#: sequenced by its own code, so what it needs is ``--workflow``.
+#: Workflow-entry arms that select a bundled workflow by name.
 WORKFLOW_ARMS: dict[str, str] = {
     "self-collaboration": "self-collaboration",
     "self-collaboration-reading-analyst": "self-collaboration-reading-analyst",
 }
 
-#: Arms whose runs seat more than one role and therefore have a delivery rate
-#: to read. Strictly a *reporting* set: ``TEAM_ARMS`` is also what
-#: ``experiment/batch_spec`` uses to require a cell and a rung, so widening
-#: that set to cover the scripted workflows would reject every DW spec. Keep
-#: the two apart -- "this arm takes a team file" and "this arm has seats worth
-#: counting" are different questions with different answers.
+#: Reporting includes scripted workflow roles. TEAM_ARMS also controls spec
+#: requirements for team cells and rungs, so it remains the narrower set.
 DELIVERY_READABLE_ARMS: frozenset[str] = TEAM_ARMS | frozenset(WORKFLOW_ARMS)
 
 MANIFEST_NAME = "manifest.jsonl"
@@ -123,20 +76,11 @@ def validate_arm_wiring(
     team_arms: frozenset[str] | None = None,
     workflow_arms: dict[str, str] | None = None,
 ) -> None:
-    """Every arm names a solver, and only the arms that need one name it.
+    """Reject inconsistent generator, team, and workflow tables before launch.
 
-    Run at import, so a table edited in one place and not the other cannot be
-    discovered by a batch. The three tables are separate on purpose -- an arm's
-    module, its team file, its workflow name are different decisions -- and the
-    cost of that is that they can disagree. Every way they can disagree is a
-    silent one:
-
-    * an orchestrated arm in neither table is run as ``generate_review_fix``;
-    * an arm in both tables would be given a workflow *and* a team file, which
-      the generator's own mutually exclusive group rejects only at run time,
-      after a container is up;
-    * a name in one of the tables that is not an arm is a rename that was done
-      halfway, and the arm it used to configure is now configured by nothing.
+    An orchestrated arm without a solver silently falls back to review-fix.
+    Each orchestrated arm must therefore appear in exactly one solver table,
+    and every solver-table name must refer to a registered orchestrated arm.
     """
     arm_modules = ARM_MODULES if arm_modules is None else arm_modules
     team_arms = TEAM_ARMS if team_arms is None else team_arms
@@ -168,11 +112,7 @@ validate_arm_wiring()
 
 
 def _arm_module(arm: str) -> str:
-    """The module that runs ``arm``, or a refusal that names the arms there are.
-
-    ``pool_for`` used to answer for an unregistered arm by falling through to
-    the single-seat budget, which is a plausible number and the wrong one.
-    """
+    """Return the registered generator module or reject the arm."""
     try:
         return ARM_MODULES[arm]
     except KeyError:
@@ -180,29 +120,16 @@ def _arm_module(arm: str) -> str:
             f"unknown arm {arm!r}; the driver runs {sorted(ARM_MODULES)}"
         ) from None
 
-#: The sampling temperature every arm's generator process is started with.
-#:
-#: Pinned here rather than by changing OpenCollab's ``DEFAULT_TEMPERATURE``,
-#: which is a framework-wide default every other user of that library gets.
-#:
-#: 1.0 because of what the Best-of-N arm is: N independent samples of one
-#: seat, from which a fixed selector keeps one. At a temperature low enough to
-#: make the model near-deterministic those N candidates are one candidate drawn
-#: N times, and the arm would be measuring nothing but its own selector. The
-#: other arms are given the same value because a sampling difference between
-#: arms would sit exactly on the axis they are supposed to be equal on.
+#: Temperature 1.0 keeps Best-of-N samples independent. Apply the same value
+#: to every arm for comparability without changing the framework default.
 ARM_SAMPLING_TEMPERATURE = "1.0"
 
 
 def generator_environment(log_dir: Path, run_id: str | None = None) -> dict[str, str]:
-    """The environment one ``(instance, arm)`` generator process is started with.
+    """Build the environment passed to one instance-arm generator process.
 
-    A function rather than a literal at the call site because it is also the
-    honest answer to "what temperature does a run use?": the value reaches the
-    generator through the environment, so a check that reads this process's own
-    ``OPENCOLLAB_TEMPERATURE`` is reading the wrong machine's setting. The
-    cross-arm alignment audit resolves the configuration under exactly this
-    mapping.
+    Configuration audits must inspect this mapping because its temperature
+    overrides the parent process environment.
     """
     environment = {
         **os.environ,
@@ -210,8 +137,7 @@ def generator_environment(log_dir: Path, run_id: str | None = None) -> dict[str,
         "OPENCOLLAB_TEMPERATURE": ARM_SAMPLING_TEMPERATURE,
     }
     if run_id is not None:
-        # The id this run's manifest row records; the run writes it onto its
-        # trajectory and metrics row, so the three files join on it.
+        # Join the manifest, trajectory, and metrics on the same run id.
         environment["OPENCOLLAB_RUN_ID"] = run_id
     return environment
 
@@ -221,12 +147,7 @@ def _now() -> str:
 
 
 def load_instances(source: Path) -> list[dict[str, Any]]:
-    """Read instances from a directory of JSON files or from one JSONL file.
-
-    Order is the caller's: a directory is read in sorted filename order and a
-    JSONL file in file order, so the same argument always produces the same
-    batch order and a resumed batch continues where it stopped.
-    """
+    """Read JSON files in sorted filename order or JSONL records in file order."""
     if source.is_dir():
         paths = sorted(source.glob("*.json"))
         if not paths:
@@ -311,11 +232,9 @@ def recover_metric_projections(predictions: Path) -> None:
 
 
 def workflow_seats(workflow_name: str) -> int:
-    """How many seats a bundled workflow divides its pool between.
+    """Read the workflow's declared SEATS, defaulting to one.
 
-    Read off the workflow's own module rather than tabulated here, so a
-    workflow that changes how many roles it seats cannot end up funded for a
-    different number than it caps. A workflow that declares nothing seats one.
+    Using the workflow's own declaration keeps pool allocation aligned with caps.
     """
     from opencollab_eval.generation.gen_prediction_workflow import _BUNDLED_WORKFLOWS
 
@@ -330,12 +249,7 @@ def workflow_seats(workflow_name: str) -> int:
 
 
 def best_of_n_candidates() -> int:
-    """How many candidates the Best-of-N arm's generator opens.
-
-    Read off that module's own constant, the same way ``workflow_seats`` reads
-    a workflow's ``SEATS``: the number the arm runs at and the number anything
-    else states about it then cannot come apart.
-    """
+    """Read the candidate count from the Best-of-N generator."""
     from opencollab_eval.generation import gen_prediction_best_of_n
 
     candidates = gen_prediction_best_of_n.CANDIDATES
@@ -345,19 +259,10 @@ def best_of_n_candidates() -> int:
 
 
 def pool_for(arm: str, budget_per_seat: int | None, team_config: Path | None) -> int | None:
-    """The token pool one run of ``arm`` is started with.
+    """Allocate one solo-agent budget per declared team or workflow seat.
 
-    One seat, one solo agent's budget. A single-agent run has one seat and is
-    given the figure itself; a team is given it once per role its file
-    declares, because the scheduler divides the pool by that same count, and a
-    workflow arm once per seat its own module declares, for the same reason.
-
-    Best-of-N takes the figure itself, and this is the arm where getting it
-    wrong is easiest. Its N candidates are not N seats: they are N samplings of
-    one seat, and the paper's definition gives them ``1/N`` of one seat's
-    budget each. Multiplying here -- the obvious thing to do, given that it
-    opens N sessions -- would give the arm N times the compute of the arm it is
-    compared against, and the whole finding would be an allocation artifact.
+    Best-of-N shares one seat's pool across N candidates, so its pool remains
+    the single-agent budget regardless of candidate count.
     """
     _arm_module(arm)
     if budget_per_seat is None:
@@ -383,13 +288,10 @@ def build_command(
     image: str | None,
     extra: Sequence[str] = (),
 ) -> list[str]:
-    """The exact argv one (instance, arm) is run with.
+    """Build the argv for one instance-arm run.
 
-    ``--image`` is passed explicitly whenever the instance names one. The
-    generators derive ``sweb.eval.<arch>.<id>:latest`` from the instance id,
-    which is the name the official harness uses but not the name every machine
-    has: a host that pulled the images under their published ``swebench/``
-    namespace has no image under the derived name at all.
+    Pass an explicit instance image because published swebench/ names can differ
+    from the generators' derived local image names.
     """
     module = _arm_module(arm)
     command = [
@@ -416,11 +318,8 @@ def build_command(
         if team_config is None:
             raise ValueError(f"arm {arm!r} needs --team-config")
         command += ["--team-config", str(team_config)]
-    # The argv is the last place this can still be caught, and the only one
-    # that sees what was actually built: an arm added to ARM_MODULES on the
-    # orchestrated generator and to neither solver table produces a command
-    # with no solver flag, which that generator answers by running the built-in
-    # review-fix workflow under this arm's name.
+    # Catch missing solver flags in the built argv before the orchestrated
+    # generator silently runs review-fix under another arm's name.
     if (module == ORCHESTRATED_GENERATOR) != bool(
         {"--workflow", "--team-config"} & set(command)
     ):
@@ -433,15 +332,10 @@ def build_command(
 
 
 def _instance_path(instance: dict[str, Any], staging: Path) -> Path:
-    """Write the instance out so the generator reads exactly what we selected.
+    """Atomically stage the selected instance for concurrent arm generators.
 
-    Written to a temporary name and renamed into place. Two arms of the same
-    task are usually two processes sharing this directory, they stage the same
-    instance under the same name, and an instance record is tens of kilobytes:
-    a plain write truncates the file first, so the other arm's generator can
-    open it mid-write and read a record that ends in the middle of the problem
-    statement. A rename is atomic, and a reader already holding the old file
-    keeps reading it to the end.
+    Arms share the instance filename. A temporary write followed by rename keeps
+    readers from observing a truncated record.
     """
     staging.mkdir(parents=True, exist_ok=True)
     path = staging / f"{instance['instance_id']}.json"
@@ -456,12 +350,7 @@ def plan_batch(
     arms: Sequence[str],
     done: dict[str, set[str]],
 ) -> list[tuple[dict[str, Any], str]]:
-    """Instance-major order: every arm of one task before the next task.
-
-    This is what makes a stopped batch usable. The estimand is a difference
-    between arms on the same task, so the unit that has to survive an
-    interruption is the task, not the arm.
-    """
+    """Order every arm of one instance before moving to the next instance."""
     work: list[tuple[dict[str, Any], str]] = []
     for instance in instances:
         for arm in arms:
@@ -478,12 +367,10 @@ def _run_one(
     stop: BatchStop,
     run_id: str | None = None,
 ) -> tuple[int | None, float]:
-    """Run one (instance, arm) and return its return code and wall time.
+    """Run one instance-arm pair and return its exit code and wall time.
 
-    Everything a run touches is already per-run: its own log directory, its own
-    container name, and a predictions file each generator appends to under an
-    exclusive lock. That is what makes running several at once a scheduling
-    decision rather than a change to what any run does.
+    Runs use separate log directories and container names. Prediction appends
+    share an exclusive lock.
     """
     started = time.monotonic()
     with (log_dir / "driver.log").open("wb") as sink:
@@ -539,10 +426,8 @@ def _run_batch_locked(args: argparse.Namespace) -> int:
     manifest = out_dir / MANIFEST_NAME
     failures = 0
 
-    # Prepared in the planned order whether or not they are run in it: with a
-    # concurrency of N the first N jobs are submitted first, and because the
-    # order is instance-major that means whole tasks are in flight rather than
-    # one arm of many tasks. A batch stopped halfway still has complete sets.
+    # Submit complete instance-major groups first so interrupted batches
+    # retain complete comparisons.
     jobs = []
     for index, (instance, arm) in enumerate(work, start=1):
         iid = instance["instance_id"]
@@ -640,12 +525,8 @@ def _run_batch_locked(args: argparse.Namespace) -> int:
         for instance, arm in work
         if instance["instance_id"] not in completed_instance_ids(predictions[arm])
     ]
-    # Two different questions, and the second is the one that decides whether
-    # the batch has to be re-run. A generator exits non-zero whenever the run
-    # did not finish normally -- a token budget spent, a step ceiling reached --
-    # and it writes its prediction first, so a "failed" run of that kind has
-    # produced exactly what the comparison needs. What actually costs a row is
-    # a run that wrote no prediction at all.
+    # Controlled stops can write a prediction before exiting nonzero.
+    # Missing predictions determine whether the batch needs a rerun.
     if failures:
         print(f"batch finished with {failures} run(s) exiting non-zero; see {manifest}")
     if missing:

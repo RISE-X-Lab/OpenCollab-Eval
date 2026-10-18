@@ -101,16 +101,10 @@ The [documentation index](docs/README.md) groups guides by task. Use [CLI refere
 
 ## Development
 
-From the installation directory, install the development and SWE-bench extras, then run the repository checks.
-
-```bash
-python -m pip install -e './OpenCollab-Eval[dev,swebench]'
-cd OpenCollab-Eval
-ruff check .
-pytest -q
-```
-
-[CONTRIBUTING.md](CONTRIBUTING.md) covers development and review. [CHANGELOG.md](CHANGELOG.md) records releases. The license is [MulanPSL-2.0](LICENSE), with dependency notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[CONTRIBUTING.md](CONTRIBUTING.md) covers development setup, repository checks,
+paired-wheel verification, and review. [CHANGELOG.md](CHANGELOG.md) records
+releases. The license is [MulanPSL-2.0](LICENSE), with dependency notices in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ---
 
@@ -217,13 +211,4 @@ oc-eval duo --config "$EVAL_ROOT/duo.json" \
 
 ## 开发
 
-在安装目录中安装开发与 SWE-bench 可选依赖，再运行仓库检查。
-
-```bash
-python -m pip install -e './OpenCollab-Eval[dev,swebench]'
-cd OpenCollab-Eval
-ruff check .
-pytest -q
-```
-
-[CONTRIBUTING.md](CONTRIBUTING.zh-CN.md)介绍开发与评审方式。[CHANGELOG.md](CHANGELOG.md)记录版本变化。许可证为 [MulanPSL-2.0](LICENSE)，依赖声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+[CONTRIBUTING.md](CONTRIBUTING.zh-CN.md)介绍开发环境、仓库检查、配套 wheel 验证和评审方式。[CHANGELOG.md](CHANGELOG.md)记录版本变化。许可证为 [MulanPSL-2.0](LICENSE)，依赖声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

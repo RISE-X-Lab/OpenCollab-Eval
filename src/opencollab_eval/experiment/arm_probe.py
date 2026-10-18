@@ -97,7 +97,6 @@ class ArmObservation:
     facade_kwargs: dict[str, Any] = field(default_factory=dict)
 
 
-# --------------------------------------------------------------------------
 # stand-ins
 
 
@@ -273,7 +272,6 @@ class _NullTracer:
         return None
 
 
-# --------------------------------------------------------------------------
 # the probes
 
 

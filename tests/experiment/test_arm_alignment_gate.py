@@ -1,23 +1,7 @@
-"""The gate: every difference between arms is one the registry declares.
+"""Check that observed arm differences match the registry declarations.
 
-Twelve times an input to this comparison differed between arms without anyone
-having said it should, and each of the twelve landed on an outcome variable --
-the delivered patch, the token count, the step count, the resolve verdict.
-Every one was found the same way: by listing one run's inputs by hand and
-asking of each "is this the thing we are measuring, and who computed this
-value?" Keyword search never found any of them, because a drifted default reads
-exactly like an aligned one.
-
-This file turns that hand pass into a check that runs unattended. It does not
-assert that the arms are identical -- some of them differ on purpose, and those
-differences *are* the experiment. It asserts that the set of differences the
-code produces is the set the registry declares.
-
-**The controls matter more than the check.** A check that has never been seen
-to fail is not evidence that it works, so every factor below is broken on
-purpose once -- in the source the audit reads, not in the audit's own output --
-and the check is required to notice. The registry itself is mutated the same
-way: a declaration is deleted and the check must go red.
+Mutate each source factor and delete a registry declaration to verify that the
+audit detects both kinds of drift.
 """
 
 from __future__ import annotations
@@ -68,10 +52,6 @@ def _failing_factors(report: arm_audit.AlignmentReport) -> set[str]:
     return named
 
 
-# --------------------------------------------------------------------------
-# the gate
-
-
 def test_every_difference_between_the_arms_is_one_the_registry_declares() -> None:
     report = arm_audit.audit()
 
@@ -84,7 +64,6 @@ def test_the_team_arm_s_configuration_is_reachable_from_here() -> None:
     # has checked three arms and said nothing about the fourth -- and a check
     # that goes quiet exactly when the thing it guards is missing is the shape
     # this project has been bitten by three times in one day.
-    #
     # Current instruments belong to this evaluation checkout. An explicit
     # historical framework root retains the original batch layout.
     path = Path(arm_audit.default_team_config())
@@ -187,10 +166,6 @@ def test_every_factor_the_audit_evaluates_is_declared_and_the_reverse() -> None:
         assert set(per_arm) == set(ARMS), factor
 
 
-# --------------------------------------------------------------------------
-# the registry has to explain itself
-
-
 def test_every_declaration_gives_a_reason_and_somewhere_to_check_it() -> None:
     for name, factor in REGISTRY.items():
         assert len(factor.reason.split()) >= 12, name
@@ -203,7 +178,6 @@ def test_every_anchor_into_this_repository_points_at_a_file_that_is_there() -> N
     # identifier it is about. A path that no longer exists is not tolerable:
     # it means the code the reason describes was moved or deleted, and nobody
     # revisited the declaration that rests on it.
-    #
     # Only anchors into this repository are checked. The OpenCollab ones point
     # into a checkout whose commit CI pins separately, so a miss there would
     # say something about the pin rather than about this registry.
@@ -272,10 +246,6 @@ def test_the_runtime_only_list_says_where_each_quantity_is_read() -> None:
     for quantity, where in arm_registry.RUNTIME_ONLY:
         assert quantity.strip()
         assert len(where.split()) >= 5, quantity
-
-
-# --------------------------------------------------------------------------
-# mutation: remove a declaration, the check must go red
 
 
 def test_deleting_a_factor_from_the_registry_turns_the_check_red() -> None:
@@ -347,9 +317,6 @@ def test_calling_an_equal_factor_a_treatment_turns_the_check_red() -> None:
         assert name in report.vanished_differences, name
 
 
-# --------------------------------------------------------------------------
-# positive controls: break the source, the check must notice
-#
 # Each case perturbs something the audit *reads* -- a constant, a team file, a
 # function the run calls -- and never the audit's own output, so what is being
 # demonstrated is that the evaluation reaches the real thing.

@@ -1,18 +1,7 @@
-"""Every arm records how it reached the provider, in the same four keys.
+"""Record shared provider transport fields across generator paths.
 
-The workflow/team generator wrote ``wire_protocol``, ``reasoning_effort``,
-``llm_base_url_sha256`` and ``workflow_env``; the single-agent generator wrote
-none of them. Three of the arms a comparison is made between could therefore
-say which protocol, which reasoning effort, which endpoint and which switches
-they ran under, and one could not -- a difference in an input to every per-run
-analysis, on an axis the arms are supposed to be identical on, and invisible in
-the predictions themselves.
-
-``OPENCOLLAB_LLM_STREAM_CHAT`` is the switch these tests care about most. The
-reasoning body of a response cannot be retrieved from a non-streaming chat
-completion, so a batch run with it off has paid for reasoning it did not keep;
-until it was recorded, whether it had been on was not answerable from the run's
-own record.
+OPENCOLLAB_LLM_STREAM_CHAT determines whether chat reasoning can be retained,
+so its setting must be recoverable from the run record.
 """
 
 from __future__ import annotations
@@ -40,10 +29,6 @@ GENERATOR_MODULES: tuple[str, ...] = (
     "gen_prediction_best_of_n",
     "gen_prediction_workflow",
 )
-
-
-# --------------------------------------------------------------------------
-# the block itself
 
 
 def test_the_stream_switch_is_one_of_the_recorded_environment_keys() -> None:
@@ -90,10 +75,6 @@ def test_a_run_with_no_wire_settings_still_names_its_protocol() -> None:
     assert config.llm_transport_metrics({})["wire_protocol"] == "chat_completions"
 
 
-# --------------------------------------------------------------------------
-# both generators splice in the same block
-
-
 def _module_source(name: str) -> str:
     return (_SOURCE / f"{name}.py").read_text(encoding="utf-8")
 
@@ -125,7 +106,6 @@ def test_every_generator_splices_the_shared_transport_block_into_its_metrics(
     assert calls, f"{module} builds its metrics without the shared transport block"
 
 
-# --------------------------------------------------------------------------
 # and the single-agent path writes them for real
 
 

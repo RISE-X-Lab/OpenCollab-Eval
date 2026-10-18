@@ -44,13 +44,9 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 
-# =============================================================================
 # THE VALIDITY CRITERION -- the only place run disposition is hard-coded.
-# =============================================================================
-#
 # Provenance.  Every string below was read off the *writer* side in the local
 # checkouts, not inferred from output files:
-#
 #   run_summary block, key name and field set
 #     /root/git/OpenCollab-Eval/src/opencollab_eval/generation/
 #         gen_prediction_run_summary.py:30    RUN_SUMMARY_KEY = "run_summary"
@@ -60,7 +56,6 @@ SCHEMA_VERSION = 1
 #             is the run's terminal disposition as the runtime reported it
 #             ("completed" / "stopped" / "failed"), and ``reason`` is that
 #             runtime's own detail string'
-#
 #   where status/reason come from
 #     /root/git/OpenCollab/opencollab/bootstrap/programmatic.py:302-311
 #         _agent_status(): -> ("failed", terminal_reason or "agent failed")
@@ -72,7 +67,6 @@ SCHEMA_VERSION = 1
 #     /root/git/OpenCollab/opencollab/bootstrap/programmatic.py:647-649
 #         status = "stopped" if budget_stopped else "completed"
 #         reason = "budget_exceeded" if budget_stopped else None
-#
 #   every graceful-stop reason string, verbatim
 #     /root/git/OpenCollab/opencollab/application/session_run.py:563   "wind-down complete: forced commit within
 # reserve"
@@ -86,7 +80,6 @@ SCHEMA_VERSION = 1
 #     .../session_run.py:718      "output truncated: provider reached its generation limit"
 #     /root/git/OpenCollab/opencollab/application/_session_run_completion.py:619
 #                                 "context overflow: prompt exceeds the model context window even after compaction"
-#
 #   our own lifecycle faults (harness_error), by class / message
 #     /root/git/OpenCollab/opencollab/bootstrap/programmatic.py:84   ProgrammaticLifecycleError
 #     .../programmatic.py:290-299  "agent trajectory persistence failed"
@@ -96,7 +89,6 @@ SCHEMA_VERSION = 1
 #     /root/git/OpenCollab/opencollab/bootstrap/workflow_runtime.py:43,56
 #     /root/git/OpenCollab/opencollab/bootstrap/agent_runtime.py:23
 #     /root/git/OpenCollab/opencollab/application/scheduler_types.py:17,27,43,61
-#
 #   provider faults (api_error)
 #     /root/git/OpenCollab/opencollab/adapters/llm/responses_errors.py:8-36
 #     /root/git/OpenCollab/opencollab/adapters/llm/errors.py:19-27
@@ -104,7 +96,6 @@ SCHEMA_VERSION = 1
 #     not appear in the OpenCollab tree.  It reaches ``reason`` through the
 #     ``f"{type(exc).__name__}: {exc}"`` shape used at
 #     /root/git/OpenCollab/opencollab/application/self_collaboration.py:148.
-#
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 # !!! NOT YET CHECKED AGAINST REAL RECORDS.  gpu3 was unreachable when this !!!
 # !!! was written, so every pattern here is source-derived and fixture-      !!!
@@ -129,9 +120,7 @@ VALID_STATUSES = ("completed",)
 #: means "any reason with this status".  Matching is a case-insensitive search
 #: over ``reason`` and, when reason does not match, over ``error``.
 _RULES: tuple[tuple[str, str, str | None], ...] = (
-    # ---- status == "completed" -------------------------------------------
     ("completed", "completed", None),
-    # ---- status == "stopped": controlled halts, in specificity order ------
     ("budget_exhausted", "stopped", r"budget[_ ]exceeded|budget exhausted|budget reserve exhausted"),
     ("provider_truncated", "stopped", r"output truncated: provider reached its generation limit"),
     ("step_limit", "stopped", r"step limit reached"),
@@ -140,7 +129,6 @@ _RULES: tuple[tuple[str, str, str | None], ...] = (
     ("wall_clock_timeout", "stopped", r"^timeout$"),
     ("interrupted", "stopped", r"interrupted by user"),
     ("wind_down", "stopped", r"wind-down complete"),
-    # ---- status == "failed": ours first, then the provider's --------------
     (
         "harness_error",
         "failed",
@@ -165,14 +153,10 @@ _COMPILED: tuple[tuple[str, str, re.Pattern[str] | None], ...] = tuple(
     (cls, status, re.compile(pat, re.IGNORECASE) if pat else None) for cls, status, pat in _RULES
 )
 
-# ---------------------------------------------------------------------------
 # WHICH CLASSES COUNT -- and the ruling that this is decided per *quantity*,
 # not per run.  (Coordinator ruling, 2026-09-01.)
-# ---------------------------------------------------------------------------
-#
 # The same run can be a good observation for one quantity and a censored one for
 # another, so there is no single "valid run" set.  Two sets:
-#
 #   ALPHA_VALID_CLASSES -- for the delegation rate alpha.
 #       ``budget_exhausted`` counts as VALID here.  A run that burned its whole
 #       budget without ever delegating had every chance to delegate and did not:
@@ -183,13 +167,11 @@ _COMPILED: tuple[tuple[str, str, re.Pattern[str] | None], ...] = tuple(
 #       Evidence for both: today's three cap-hitting runs (two budget, one
 #       truncated) all produced a patch (1113 / 1091 / 1097 bytes), i.e. the
 #       work was substantially done; the two api_error runs produced none.
-#
 #   OUTCOME_VALID_CLASSES -- for COST ratios.  Only ``completed``.  A run
 #       stopped by its token allowance or by the wall clock is RIGHT-CENSORED on
 #       spend: its token total is a cap, not a spend, and mixing a cap into a
 #       mean silently flattens exactly the quantity being compared.  They are
 #       held out of the spend and reported as censored.
-#
 #       NOT the resolve denominator, corrected 2026-09-07.  The comment here
 #       used to say "resolve rate and cost ratios", and for resolve that is
 #       wrong about what the paper actually reports: every resolve rate in the
@@ -203,12 +185,10 @@ _COMPILED: tuple[tuple[str, str, re.Pattern[str] | None], ...] = tuple(
 #       seats and meets its budget more often -- which is the same objection
 #       that keeps budget stops inside the alpha denominator.  Do not compute a
 #       resolve rate from this set.
-#
 #   api_error / harness_error -- INVALID for every quantity.  The run died
 #       mid-flight, so the model never finished the decision process being
 #       measured.  Today's two decide-first aborts stopped at 22 and 11 steps
 #       with an empty patch.
-#
 # BEFORE REUSING THIS CLASSIFICATION FOR A NEW QUANTITY, re-read this ruling:
 # the sets above are justified by what alpha and what resolve/cost each need,
 # and a third quantity may need a third set rather than either of these.
@@ -237,7 +217,6 @@ _COMPILED: tuple[tuple[str, str, re.Pattern[str] | None], ...] = tuple(
 #       rather than counted as a failure.  Whether an equal-budget frame should
 #       instead score every budget-ended run as unresolved is a separate ruling
 #       that would move the already-reported cells, and is NOT taken here.
-#
 #   MUTATION CHECK, 2026-09-07: removing ``wall_clock_timeout`` from the set
 #       below moves qwen-cmdprimary40-r4 from 6/33 back to 5/32 and prints the
 #       run as excluded.  Run that before trusting any edit to this set; the
@@ -298,14 +277,12 @@ def classify_run(status: Any, reason: Any, error: Any = None) -> tuple[str, str]
 #: change how RUNS are classified, which is a different question with different
 #: consequences for the alpha and outcome denominators.
 _SEAT_RULES: tuple[tuple[str, str], ...] = (
-    # ---- narrow first: strings a wider rule below would also swallow ------
     # Contains "cancelled", so it must not fall through to the bare
     # ``cancelled`` rule: this names the scheduler tearing down delegated work,
     # which is evidence that delegation HAD happened, not that the seat stopped.
     ("cleanup_cancelled", r"scheduler cleanup cancelled"),
     # Contains "provider", which the wide api_error rule below also matches.
     ("provider_truncated", r"output truncated: provider reached its generation limit"),
-    # ---- graceful stops, verbatim from session_run.py --------------------
     ("budget_exhausted", r"budget[_ ]exceeded|budget exhausted|budget reserve exhausted"),
     ("step_limit", r"step limit reached"),
     ("loop_block", r"loop block limit reached"),
@@ -314,11 +291,9 @@ _SEAT_RULES: tuple[tuple[str, str], ...] = (
     # "interrupted by user", not the "...stream was interrupted" of api_error.
     ("interrupted", r"interrupted by user"),
     ("wall_clock_timeout", r"^timeout$"),
-    # ---- the seat's own lifecycle words, anchored so they stay exact ------
     ("submitted", r"^submitted$"),
     ("completed", r"^completed$"),
     ("cancelled", r"^cancelled$"),
-    # ---- provider faults, which reach the seat record verbatim -----------
     # The class names come from the upstream openai SDK via the
     # ``f"{type(exc).__name__}: {exc}"`` shape at
     # /root/git/OpenCollab/opencollab/application/self_collaboration.py:148.
@@ -342,31 +317,24 @@ _SEAT_COMPILED: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     (cls, re.compile(pat, re.IGNORECASE)) for cls, pat in _SEAT_RULES
 )
 
-# ---------------------------------------------------------------------------
 # WHICH SEAT CLASSES MAKE "THIS RUN DID NOT DELEGATE" AN UNTRUSTWORTHY READING
-# ---------------------------------------------------------------------------
-#
 # Alpha is measured by the ABSENCE of a ``message_agent`` call, and an absence
 # only means "chose not to delegate" if the seat was still free to choose.  The
 # criterion for the split below is exactly that:
-#
 #   preemptive -- the seat was cut off by something outside its own decision
 #       (its budget ran out, the provider errored, the scheduler cancelled it,
 #       the runtime gave up with a bare "error").  A zero delegation count on
 #       such a run is censored: the seat may simply never have reached the
 #       point where it would have delegated.  Counting it as a refusal to
 #       delegate biases alpha DOWNWARD by exactly the amount we are measuring.
-#
 #   natural end -- the seat reached its own terminal action ("submitted") or
 #       ran to the end of its turn budget without being cut ("completed").  It
 #       had the whole run to delegate and did not; the observation is good.
-#
 # ``loop_block`` is in NEITHER set on purpose.  A seat stopped for repeating a
 # tool call may have been looping before it ever formed the intent to delegate,
 # or after having already delegated and gone back to work.  The record does not
 # say which, so it is left undetermined rather than guessed into one of the two
 # sets.  n = 11 in the batches to date, so this costs almost nothing either way.
-#
 # ``interrupted`` and ``wall_clock_timeout`` ARE preemptive, on the same
 # criterion as budget_exhausted: both name an outside cut, not a decision. Note
 # ``interrupted`` is the third most common seat string on record (184 of 1,673,
@@ -462,6 +430,4 @@ def classify_seat_reason(reason: Any) -> str | None:
     return UNCLASSIFIED
 
 
-# =============================================================================
 # Trajectory measurements
-# =============================================================================

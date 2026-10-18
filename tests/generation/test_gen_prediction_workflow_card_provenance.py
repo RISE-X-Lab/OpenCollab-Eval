@@ -1,8 +1,4 @@
-"""Which role cards a team run records, and why the record is a digest.
-
-Split out of ``test_gen_prediction_workflow_generation`` to keep that file
-inside the repository's per-file line limit.
-"""
+"""Check the role-card digests recorded by team runs."""
 
 from __future__ import annotations
 

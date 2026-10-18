@@ -1,17 +1,7 @@
-"""The single arm can seat Single2, the agent the s2dual cells seat in every role.
+"""Check that the single arm uses the same Single2 profile as the s2dual seats.
 
-The s2dual family gives each of its three roles ``profile: single2``, so every
-seat runs OpenCollab's Single2 agent -- its own system prompt, its six tools,
-its history shaper and safety wrapper -- with the role's card appended. The
-single arm ran something else: ``client.agent`` with this repository's
-``AGENT_PROMPT`` and working bundle. A team-minus-single difference between the
-two was therefore the organization *and* the seat, and ITT/PP/CACE on the
-family could not be computed. ``profile: single2`` on a single-arm spec runs
-the same Single2 agent alone: the profile supplies the prompt and the tools,
-and the task text is the one the team arm's Adopter receives.
-
-The field is part of the batch identity only when set, so every spec written
-before it keeps its digest, and a retry of a Single2 batch must carry it too.
+The profile supplies its prompt and tools. Batch identity includes the profile
+only when set, and retries must carry it forward.
 """
 
 from __future__ import annotations

@@ -42,15 +42,9 @@ WRITE_TOOLS = frozenset({"apply_patch", "file_write"})
 #: ``assigned.topology_nodes`` row to derive them from. Every team run since
 #: that row existed derives them; this is what the runs written before it get.
 DELEGATE_ROLES = frozenset({"coder", "tester"})
-#: Arms whose delivery rate is alpha: the rate at which an agent *chose* to
-#: hand work on. Deliberately narrower than ``DELIVERY_READABLE_ARMS``, which
-#: is the wider and different question "does this arm seat more than one role
-#: worth counting" -- a scripted workflow does, and its seats are read as they
-#: were. What it does not have is a choice: ``self_collaboration.py`` sequences
-#: its edges, so a delivery rate there measures the script, and reporting one
-#: put a Clopper-Pearson interval on the wrong quantity (0.750 (0.194, 0.994)
-#: on the smoke DW batch). What varies on that arm is whether a scripted edge
-#: carried anything, which the arm records per run as ``edges_walked``.
+#: Alpha measures an agent's choice to delegate. Scripted workflow seats
+#: remain readable, but their prescribed edges measure script execution.
+#: Those arms report ``edges_walked`` instead of alpha.
 ALPHA_READABLE_ARMS = frozenset({"team"})
 # A run the model never touched: no denominator for anything.
 INVALID_STATUSES = frozenset({"failed", "error"})
@@ -77,21 +71,12 @@ GENERIC_WORKFLOW_ROLE = "workflow_agent"
 # the cap", so the ladder's capped column cannot be read off their union.
 CAP_PRECHECK_MARKER = "before model call: conservative input reservation"
 CAP_POSTCALL_MARKER = "budget exceeded after model call"
-# The runtime writes four budget stops, not two. These are the other two:
-# ``session_run.py:616`` fires the precheck on spend already made, and
-# ``session_run.py:625`` is the aggregate ceiling a whole team draws against.
-# Both matched the bare ``"budget" in terminal`` test that fills ``cap_hit``
-# and neither of the two columns that split it, so a run stopped by either was
-# counted once and attributed nowhere. Matched on the prefix, because the
-# aggregate string contains the per-session one.
+# Also distinguish prechecks on existing spend from the team's aggregate
+# ceiling. The aggregate string contains the per-session prefix.
 CAP_PRECHECK_SPENT_PREFIX = "budget exceeded: "
 CAP_AGGREGATE_PREFIX = "team budget exceeded"
-# NOT a cap, and the reason this had to be established rather than assumed: on
-# a scripted workflow every healthy seat ends with this string. It is the
-# structured-output capture -- ``workflow_structured.py:137-138`` sets a cancel
-# event when ``structured_output`` is accepted and ``session_run.py:604-606``
-# turns that into this reason at the next precheck. A seat that stopped here
-# stopped because it had answered, whatever it had left.
+# Structured-output acceptance sets cancellation and produces this terminal
+# reason on healthy workflow seats. It indicates an answer, not a budget cap.
 STRUCTURED_CAPTURE_TERMINAL = "interrupted by user"
 
 #: The run's ordered event log, written beside its seat snapshots:
@@ -159,12 +144,8 @@ class RunRow:
     # Recorded token consumption across the attempts from which this row was selected.
     attempt_tokens_total: int | None = None
     seats: dict[str, Seat] = field(default_factory=dict)
-    #: What each *role* spent, summed over every seat that held it. A scripted
-    #: workflow seats its analyst twice -- once to write the brief and once to
-    #: adjudicate -- so a per-role lookup built by role alone keeps whichever
-    #: seat it read last and silently discards the other. Reading the analyst
-    #: column off ``seats`` that way printed 48,695 on a run whose analyst
-    #: spent 1,995,025.
+    #: Sum every seat of a role. A workflow can seat its analyst twice, so
+    #: indexing by role alone would discard one session's spend.
     role_tokens: dict[str, int] = field(default_factory=dict)
     #: How many seats held each role, so a summed column says how many numbers
     #: it is the sum of.
@@ -176,13 +157,8 @@ class RunRow:
     seat_spend_recorded: dict[str, int] | None = None
     seat_spend_agrees: bool | None = None
     delivered: bool = False
-    #: Every declared delegate seat spent tokens and spoke, not merely one of
-    #: them. On the handoff roster ``delivered`` and this differ when the
-    #: Analyst used the Coder and never the Tester; on the two-candidate
-    #: roster the difference is the whole point, because a card that says "ask
-    #: the first, then write the second its own brief" is carried out only if
-    #: both Coders ran. One candidate is the failure that matters there, and
-    #: ``delivered`` reads it as adherence.
+    #: Every declared delegate spent tokens and spoke. ``delivered`` can be
+    #: true when only one delegate ran, including on a two-candidate roster.
     every_delegate: bool = False
     tree_snapshots: int = 0
     cap_hit: list[str] = field(default_factory=list)

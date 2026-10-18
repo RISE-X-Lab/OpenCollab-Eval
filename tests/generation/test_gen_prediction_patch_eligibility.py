@@ -1,8 +1,4 @@
-"""Whether a run's workspace is read must not depend on how the run stopped.
-
-Split out of ``test_gen_prediction_single_agent`` only because that file is at
-the repository's line ceiling; these belong to the same contract.
-"""
+"""Check workspace extraction across generation stop reasons."""
 
 from __future__ import annotations
 

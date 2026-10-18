@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
-"""Mutation check for scan_batch.py.
+"""Mutate scanner classification and reporting, requiring a test failure for each defect.
 
-Break the validity criterion (and the reporting that surrounds it) one way at a
-time, and require the test suite to go red each time.  A mutation that leaves
-the suite green means the corresponding test is not actually pinning anything.
-
-Run:  python3 mutate.py
+Run with python3 mutate.py.
 """
 
 from __future__ import annotations

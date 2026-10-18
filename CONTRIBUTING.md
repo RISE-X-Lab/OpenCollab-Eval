@@ -34,8 +34,8 @@ wheel_root="$(mktemp -d)"
 python -m build --wheel --outdir "$wheel_root/opencollab" ../OpenCollab
 python -m build --wheel --outdir "$wheel_root/eval" .
 scripts/verify_wheel_contract.sh \
-  "$wheel_root"/opencollab/opencollab-0.9.2*.whl \
-  "$wheel_root"/eval/opencollab_eval-0.9.2*.whl
+  "$wheel_root"/opencollab/*.whl \
+  "$wheel_root"/eval/*.whl
 ```
 
 The deterministic SWE E2E requires Docker, `sshd`, `ssh`, `ssh-keygen`, and
@@ -79,6 +79,22 @@ summaries, pull request titles, pull request descriptions, and review replies
 use English while retaining the existing Conventional Commit format. Commit
 bodies and merge subjects also use English. The title checker rejects Chinese
 prose; authors and reviewers remain responsible for English wording.
+
+## Documentation and comments
+
+Use clear names and types to express self-evident intent. Comments and docstrings
+should explain behavior, failure modes, ownership, or non-obvious constraints.
+Self-explanatory functions may omit docstrings. Describe parameters and return
+values only when their meaning goes beyond the signature.
+
+Keep short explanations beside the code and longer design reasoning in maintained
+guides, linking existing documentation. Leave change history in Git and pull
+requests. Avoid line-by-line narration, section banners, and old fix stories.
+
+Before editing text, trace CLI help, workflow descriptions, tool/schema metadata,
+prompts, and static source analysis that consume it and verify affected behavior.
+Treat consumed `__doc__` and `ast.get_docstring` text as runtime inputs. Preserve
+test fixtures and instructions that protect evidence, safety, and copyright.
 
 ## Contribution license
 

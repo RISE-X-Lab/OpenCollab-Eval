@@ -1,16 +1,4 @@
-"""The shipped experimental team: three peers that can hand work over git.
-
-``configs/team.handoff.primary-legacy.yaml`` exists to measure whether models hand
-work to each other when they are able to and nothing tells them to. That makes
-its *capabilities* the instrument: if a role loses ``message_agent``, or the
-Tester loses ``bash``, or a return edge disappears from the topology, the run
-still completes and still produces a transcript — one in which the handoff
-simply never happened. The result would read as a fact about the model and be a
-fact about this file.
-
-So the properties the measurement rests on are pinned here, by name, with the
-reason each one is load-bearing.
-"""
+"""Check the legacy handoff team's tools, six directed edges, and treatment isolation."""
 
 
 from __future__ import annotations

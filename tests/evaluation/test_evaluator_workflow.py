@@ -1,17 +1,4 @@
-"""Tests for the workflow mode of ``run_eval_task`` (phase 4).
-
-Three concerns:
-
-* When ``workflow=`` is given, ``run_eval_task`` builds a ``WorkflowContext``
-  whose factory creates sessions bound to the task env / budget, runs the
-  workflow with the task args, and aggregates tokens (and steps) across *all*
-  sessions the workflow created. Patch extraction / timeout / EvalResult shape
-  stay unchanged.
-* ``workflow=None`` is the unchanged single-session path (reuses the existing
-  evaluator fakes).
-* ``generate_review_fix`` skips its apply stage when the review verdict says no
-  changes are needed.
-"""
+"""Check workflow session binding, aggregate usage, and review-fix apply decisions."""
 
 from __future__ import annotations
 

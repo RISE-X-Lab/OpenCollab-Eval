@@ -1,15 +1,4 @@
-"""Tests for the ``opencollab_eval.workflows.split_solve`` workflow.
-
-The workflow is pure orchestration over ``ctx.agent``, so a scripted context
-stand-in (same pattern as ``test_evaluator_workflow.ScriptedCtx``) exercises
-every control-flow guarantee without touching an LLM:
-
-* analyze -> per-subtask coder/tester loop -> synthesize, in order;
-* a failed subtask never blocks the remaining ones (unlike self-collab phases);
-* retry rounds always carry the tester's findings (never-identical retries);
-* synthesis runs only when at least one subtask passed;
-* dead agents (None replies) degrade locally, never abort the workflow.
-"""
+"""Exercise split-solve ordering, local failures, retries, and synthesis with scripted replies."""
 
 from __future__ import annotations
 

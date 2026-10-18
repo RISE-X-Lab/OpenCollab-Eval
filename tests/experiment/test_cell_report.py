@@ -125,12 +125,7 @@ def test_a_team_run_s_seat_files_are_still_found(tmp_path: Path) -> None:
 
 
 def test_a_workflow_seat_takes_its_role_from_its_file_name(dw_cell: Path) -> None:
-    """The runtime stamps every workflow seat ``workflow_agent``.
-
-    Finding the files is not enough: with one generic role for all of them,
-    ``delivered`` -- a coder or tester seat that spent tokens and spoke -- is
-    false on every run whatever the run did.
-    """
+    """Derive roles from filenames because every workflow seat is stamped workflow_agent."""
     seats = _rows(dw_cell)["django__django-12262"].seats
 
     assert [seats[str(i)].role for i in range(4)] == [
@@ -163,11 +158,7 @@ def test_the_cell_summary_states_delivery_for_a_workflow_arm(dw_cell: Path) -> N
 
 
 def test_tree_snapshots_fall_back_to_the_workflow_result(dw_cell: Path) -> None:
-    """A workflow writes its boundaries under ``workflow_result``, not at the top.
-
-    Read only at the top level a DW run shows zero -- indistinguishable from an
-    arm that records no boundaries at all.
-    """
+    """Workflow snapshots are nested under workflow_result."""
     rows = _rows(dw_cell)
 
     assert rows["django__django-12262"].tree_snapshots == 2
@@ -175,14 +166,7 @@ def test_tree_snapshots_fall_back_to_the_workflow_result(dw_cell: Path) -> None:
 
 
 def test_the_analyst_writing_the_source_reaches_the_cell_report(dw_cell: Path) -> None:
-    """The probe between analyze and implement stopped at ``metrics.jsonl``.
-
-    In dw-subset50-r2 forty-nine of fifty runs recorded it true: the analyst
-    had already changed the source when the script went to call the coder. The
-    arm reads as a three-role workflow and ran as one agent fixing the task
-    with two more reviewing it. A number that has to be dug out of the raw
-    metrics by hand is a number the paper does not have.
-    """
+    """Expose source edits made before the coder runs in the cell report."""
     rows = _rows(dw_cell)
 
     assert rows["django__django-12262"].analyst_wrote_source is True
@@ -192,11 +176,7 @@ def test_the_analyst_writing_the_source_reaches_the_cell_report(dw_cell: Path) -
 def test_a_cell_that_never_probed_the_tree_is_not_summarised_as_a_clean_zero(
     dw_cell: Path,
 ) -> None:
-    """Zero runs that wrote and zero runs that were asked are the same count.
-
-    The summary carries both, so "the analyst never wrote" cannot be read off a
-    cell where nothing ever looked.
-    """
+    """Report both positive probes and probe coverage to distinguish missing measurements."""
     rows = list(_rows(dw_cell).values())
     summary = cell_report.summarize(rows, [])
 

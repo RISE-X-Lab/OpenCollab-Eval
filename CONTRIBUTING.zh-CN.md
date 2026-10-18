@@ -30,8 +30,8 @@ wheel_root="$(mktemp -d)"
 python -m build --wheel --outdir "$wheel_root/opencollab" ../OpenCollab
 python -m build --wheel --outdir "$wheel_root/eval" .
 scripts/verify_wheel_contract.sh \
-  "$wheel_root"/opencollab/opencollab-0.9.2*.whl \
-  "$wheel_root"/eval/opencollab_eval-0.9.2*.whl
+  "$wheel_root"/opencollab/*.whl \
+  "$wheel_root"/eval/*.whl
 ```
 
 确定性 SWE E2E 要求安装 Docker、`sshd`、`ssh`、`ssh-keygen` 和 `rsync`。其中的模型请求发往本地伪服务，因此无需提供方凭据。
@@ -51,6 +51,17 @@ scripts/run_deterministic_swe_e2e.sh --output /tmp/oce-e2e --runs 1
 凡是会影响命令、默认值、运行时拓扑、证据或结果语义的更改，都应同步更新操作员指南、CLI 参考、架构说明和完整性文档。文档示例必须使用外部输出路径和占位符，避免使用本地基础设施信息。
 
 公开代码、注释、测试和规范文档使用英文。根目录 `README.md` 在英文源内容之后放置同步的简体中文翻译，并使用页内语言链接。其他简体中文文档镜像仅放在根目录 `*.zh-CN.md` 文件、`docs/zh-CN/` 目录，以及 `src/opencollab_eval/` 下紧邻包 README 的 `README.zh-CN.md` 文件中。每份翻译都应与其英文源文档同步，并保留相同的代码块和技术标识。提交摘要与正文、拉取请求标题与描述、合并提交摘要和审查回复使用英文，沿用现有 Conventional Commit 格式。标题检查会拒绝中文正文，作者和审查者仍需负责英文表述。
+
+## 文档与注释
+
+用清晰的命名和类型表达自明的意图。注释和 docstring 应补充代码未表达的行为、失败方式、所有权或非显然约束。
+自明函数可以省略 docstring。参数和返回值的说明应补充签名以外的含义。
+
+简短解释放在代码旁，较长的设计解释放进持续维护的指南，并链接已有文档。变更经过留在 Git 和拉取请求中。
+避免逐行解说、章节横幅和旧修复故事。
+
+修改文字前，先查明 CLI 帮助、工作流描述、tool/schema 元数据、提示词和静态源码分析中的消费者，再验证受影响的行为。
+被消费的 `__doc__` 和 `ast.get_docstring` 文本属于运行输入。保留测试样本，以及保护证据、安全和版权的指令。
 
 ## 贡献许可
 

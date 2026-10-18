@@ -78,23 +78,13 @@ from opencollab_eval.safe_files import read_regular_bytes, read_regular_text, wr
 REPO_ROOT = Path(__file__).resolve().parents[3]
 EXPERIMENT_DIR = REPO_ROOT / "experiment"
 
-#: The fields a retry batch may differ from the batch it retries in, and
-#: nothing else. ``name`` and ``rows`` are what make it a second attempt at
-#: part of the same slice; ``concurrency`` is already outside the digest
-#: (a resume may use a different one); ``note`` and ``retry_of`` are prose and
-#: the pointer itself. Every other field is what the batch paid for, and a
-#: retry that changed one would be a different cell reported as the same one.
-#: ``replaces`` is in the list because a retry of a replacement batch is a
-#: retry and not a second replacement: it must not be found again by the
-#: replacement merge, so it carries no ``replaces`` of its own. A spec that set
-#: both is refused at load time.
+#: Only these fields may differ in a retry of the same paid cell.
+#: A retry of a replacement has no replaces pointer of its own, preventing
+#: the replacement merge from counting it again. Specs reject both pointers.
 RETRY_MAY_DIFFER = frozenset({"name", "rows", "retry_of", "replaces", "note", "concurrency"})
 
-#: The host-file fields in which two checkouts of one machine differ (``lthpc``
-#: and ``lthpc-b``): which directory holds the code. A retry may name the other
-#: checkout -- that is what the second one is for -- because the pins are still
-#: compared, so the commit that runs is the one the original ran; any other
-#: host field (workdir, python, scoring dataset) would be another instrument.
+#: Retries may use another checkout on the same host while retaining the
+#: same code pins. Other host fields define a different execution condition.
 CHECKOUT_ONLY_FIELDS = frozenset({"name", "opencollab_dir", "eval_dir"})
 
 
@@ -104,12 +94,8 @@ def same_machine(a: HostConfig, b: HostConfig) -> bool:
     return all(fa[key] == fb[key] for key in fa if key not in CHECKOUT_ONLY_FIELDS)
 
 
-#: The same list for a replacement, plus ``suite``. A replacement runs an
-#: instance the cell never drew, and the reserve row it comes from need not
-#: live in the file the cell was sliced out of -- the ordered draw is longer
-#: than the suite, and the subset is a draw of its own. Everything else is
-#: still what the batch paid for: a replacement at another budget or another
-#: card would be a different cell entering the same numbers.
+#: A replacement may draw its reserve instance from another suite file.
+#: Preserve all other paid conditions so it remains part of the same cell.
 REPLACES_MAY_DIFFER = frozenset({"name", "suite", "rows", "replaces", "note", "concurrency"})
 
 
@@ -210,9 +196,6 @@ def blob_sha256(repo: str | Path, rev: str, path: str) -> str:
     return hashlib.sha256(proc.stdout).hexdigest()
 
 
-# --- resolved batch ------------------------------------------------------------
-
-
 def original_slice(spec: BatchSpec, record_spec: dict[str, Any]) -> BatchSpec:
     """``spec`` re-pointed at the suite slice a recorded batch ran.
 
@@ -254,14 +237,10 @@ class Batch:
         self.check_replaces()
 
     def check_retry(self) -> None:
-        """Refuse a ``retry_of`` that is not a second attempt at the same cell.
+        """Require a retry to preserve the original paid cell and select its rows.
 
-        The whole point of the field is that two out-dirs are reported as one
-        cell. That is a claim about the instrument, so it is checked rather
-        than trusted: the batch named must have been planned, every paid field
-        must be the one it paid, and these rows must be rows it ran. Without
-        the check, a retry at a different budget or a different card would be
-        merged into the original's numbers with nothing saying so.
+        The referenced batch must be recorded and every paid field must match before
+        the two attempts can contribute to one cell's results.
         """
         name = self.spec.retry_of
         if name is None:
@@ -297,14 +276,10 @@ class Batch:
             )
 
     def check_replaces(self) -> None:
-        """Refuse a ``replaces`` that is not one reserve row standing in for one drawn row.
+        """Require one reserve row to replace one row the original batch ran.
 
-        A replacement is the only edit that changes *which tasks* a cell
-        reports, so each half of the claim is checked rather than trusted. The
-        instance leaving has to be one this batch actually ran; the instance
-        arriving has to be one it did not, or the cell would report the same
-        task twice; and there has to be exactly one of it, because a slice here
-        would quietly regrow the cell.
+        The incoming instance must be absent from the original slice, preserving the
+        cell size and preventing duplicate tasks.
         """
         if self.spec.replaces is None:
             return
@@ -395,18 +370,11 @@ class Batch:
         return {rel: blob_sha256(self.host.local_opencollab_dir, pin, rel) for rel in self.card_files}
 
     def declared_profiles(self) -> dict[str, str]:
-        """The agent profile each seat of this cell declares, at the pin.
+        """Read each seat's agent profile from the pinned team file.
 
-        A card digest says which words a seat was given; it cannot say which
-        agent read them. A seat declaring ``profile: single2`` runs that
-        profile's system prompt, history shaper, safety wrapper and tool output
-        caps with the card appended -- so two cells carrying the same card
-        under different profiles are two conditions, and a record holding only
-        the digests cannot tell them apart. Read from the pinned team file, the
-        same bytes pre-flight compares on the host.
-
-        ``"default"`` is OpenCollab's own agent, which is what a seat that
-        declares nothing runs as.
+        Profiles determine prompts, history shaping, safety wrappers, and tool-output
+        caps beyond the card text, so they are part of the recorded condition.
+        A seat without a declaration uses OpenCollab's default agent.
         """
         if self.spec.cell is None:
             return {}
@@ -459,9 +427,6 @@ class Batch:
         return batch_state.save_record(self, record)
 
 
-# --- subcommands ---------------------------------------------------------------
-
-
 def _print_checks(checks: list[batch_remote.Check]) -> bool:
     ok = True
     for check in checks:
@@ -508,14 +473,9 @@ def run_preflight(batch: Batch, remote: Ssh) -> tuple[bool, dict[str, Any]]:
 
 
 def cmd_sync(batch: Batch, remote: Ssh) -> int:
-    """Bring the host's two checkouts to the spec's pins, or refuse and say why.
+    """Move both host checkouts to the spec's pins.
 
-    Pre-flight reports a pin mismatch and stops there, so every batch so far has
-    been preceded by a hand-run fetch and checkout over ssh -- the step where
-    the wrong repository, the wrong sha, or a tree somebody left dirty does not
-    announce itself. Two guards run before anything is written: a live driver
-    (the checkout would move the code under a running batch) and local
-    modifications (the pin would stop naming what ran).
+    Reject live drivers and local modifications before changing either checkout.
     """
     facts = batch_remote.parse_facts(read_remote(remote, batch_remote.sync_guard_script(batch.host)))
     # A fact line can carry tabs of its own (a process command line does), so
@@ -557,10 +517,6 @@ def cmd_sync(batch: Batch, remote: Ssh) -> int:
     for fact in out:
         if fact[0].endswith("_FETCH_RETRY") and len(fact) > 1:
             tag = fact[0].split("_")[0]
-            # A retry is where a fetch that cannot reach GitHub first becomes
-            # visible, and the commonest reason on these hosts is that the
-            # proxy resolved to nothing. Say which one it used, here, rather
-            # than leaving the reader to find it by hand afterwards.
             print(f"  {tag}: fetch retry {fact[1]} (proxy {proxies.get(tag + '_PROXY', 'unknown')})")
     problems = [" ".join(f) for f in out if f[0].endswith("_MISSING") or f[0].endswith("_CHECKOUT_FAILED")]
     ok = True
@@ -576,11 +532,7 @@ def cmd_sync(batch: Batch, remote: Ssh) -> int:
 
 
 def cmd_go(batch: Batch, remote: Ssh, limit: int | None) -> int:
-    """sync, then launch. One command for the whole paid path.
-
-    Launch runs pre-flight itself, so the checks are not skipped by going
-    through here -- what is removed is the hand-run ssh between them.
-    """
+    """Sync the host checkouts, then launch with the usual pre-flight checks."""
     rc = cmd_sync(batch, remote)
     if rc != 0:
         print("RESULT: not launched")

@@ -1,10 +1,4 @@
-"""The model-fork audit has to fail on the three things it claims to catch.
-
-A checker that only ever says "fine" is indistinguishable from a checker that
-is broken, so every gate below is tested from both sides: a model that really
-does have a row in every table must pass, and a planted defect of each kind
-must make the same command exit non-zero.
-"""
+"""Exercise model-fork audit failures alongside passing model and CLI controls."""
 
 from __future__ import annotations
 
@@ -66,9 +60,6 @@ def audit(*argv: str) -> tuple[int, str]:
     return code, buffer.getvalue()
 
 
-# --- the positive control -------------------------------------------------
-
-
 def test_a_model_listed_in_every_table_passes() -> None:
     code, output = audit(FULLY_LISTED)
     assert code == 0, output
@@ -85,9 +76,6 @@ def test_the_shipped_declaration_matches_the_code_it_declares() -> None:
     declaration = SOURCE_ROOT / "experiment/model-forks/qwen3.8-flash.yaml"
     code, output = audit("qwen3.8-flash", "--declare", str(declaration))
     assert code == 0, output
-
-
-# --- failure 1: a silent fallback ----------------------------------------
 
 
 def test_an_unlisted_model_is_reported_as_a_silent_fallback() -> None:
@@ -164,9 +152,6 @@ def test_row_defaults_are_a_note_until_asked_for(tmp_path: Path) -> None:
     assert all(strict[index][0] == model_fork_audit.FAIL for index in row_defaults)
 
 
-# --- failure 2: the two repositories disagree ----------------------------
-
-
 def test_a_window_that_differs_between_the_repositories_fails(tmp_path: Path) -> None:
     """The exact defect of 2026-09-06: 131,072 enforced, 983,616 recorded."""
     source = forked_opencollab(
@@ -221,9 +206,6 @@ def test_two_repositories_that_agree_report_no_drift() -> None:
     assert all(finding.hit == "agree" for finding in cross)
 
 
-# --- failure 3: the declaration -----------------------------------------
-
-
 def test_a_declared_value_the_code_does_not_have_fails(tmp_path: Path) -> None:
     declaration = tmp_path / "declared.json"
     declaration.write_text(json.dumps({"model": FULLY_LISTED, "expect": {"history.trigger": 999}}))
@@ -254,9 +236,6 @@ def test_a_declaration_for_another_model_is_refused(tmp_path: Path) -> None:
     declaration.write_text(json.dumps({"model": "qwen3.8-flash", "expect": {}}))
     with pytest.raises(ForkResolutionError):
         audit(FULLY_LISTED, "--declare", str(declaration))
-
-
-# --- the resolver's own positive control ---------------------------------
 
 
 def test_the_resolver_stops_when_its_copy_of_the_rules_has_drifted() -> None:
@@ -294,9 +273,6 @@ def test_a_missing_opencollab_file_is_an_error_not_an_empty_table(tmp_path: Path
         OpenCollabSource(tmp_path / "not-a-checkout")
 
 
-# --- the replayed provider errors ----------------------------------------
-
-
 def test_replayed_errors_answer_in_both_directions() -> None:
     findings = {
         finding.quantity: finding.value
@@ -324,9 +300,6 @@ def test_a_samples_file_replaces_the_replayed_errors(tmp_path: Path) -> None:
     quantities = {row["quantity"] for row in json.loads(output)["findings"]}
     assert "overflow.planted" in quantities
     assert "overflow.plain-400" not in quantities
-
-
-# --- the endpoint probes (no network: a fake sender) ---------------------
 
 
 def _reply(text: str, *, status: int = 200, finish: str = "stop", tokens: int = 8) -> model_fork_probe.Response:
@@ -607,9 +580,6 @@ def test_http_error_echo_is_redacted_before_report_without_losing_diagnostics(
     assert key not in rendered
     assert other not in rendered
     assert "Bearer [REDACTED]" in rendered
-
-
-# --- the tool is read-only -----------------------------------------------
 
 
 def test_the_audit_writes_nothing_into_either_checkout() -> None:

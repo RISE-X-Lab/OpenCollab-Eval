@@ -164,11 +164,7 @@ class FakeEnv:
 
 
 class CapturingLLMClient:
-    """Fake LLM client that records every kwarg passed to ``complete``.
-
-    Accepts ``**kwargs`` so a forwarded ``top_p`` (or ``thinking`` etc.) does
-    not raise — lets a test assert the sampling knob reaches the provider call.
-    """
+    """Capture provider keyword arguments, including forwarded sampling settings."""
 
     last_kwargs: dict = {}
 
@@ -186,17 +182,10 @@ class CapturingLLMClient:
 
 
 class InjectFakeEnv:
-    """Env that faithfully models git's per-path revert of injected test files.
+    """Model per-path cleanup of injected tests before staged patch extraction.
 
-    Models the real driver's contamination surface: the submitted patch is
-    extracted with ``git add -A && git diff --cached`` (``staged_diff`` here), so
-    any injected test edit still in the tree at extraction time LEAKS. Each
-    injected path can be a tracked modification (revertible with
-    ``git checkout --``) or a brand-new untracked file (which ``git checkout``
-    canNOT remove — it errors rc=1 — and only ``git clean -fq`` deletes). A path
-    is excluded from the extracted diff only once it has been BOTH checked out and
-    cleaned per-path, matching the production exclusion. This exposes the new-file
-    leak the old always-succeeds fake hid.
+    Tracked edits require checkout and untracked files require clean. A path
+    remains in the staged diff until both per-path operations are attempted.
     """
 
     workspace = "/tmp/opencollab-test-worktree"

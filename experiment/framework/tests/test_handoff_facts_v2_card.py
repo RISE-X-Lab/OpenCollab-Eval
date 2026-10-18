@@ -1,14 +1,4 @@
-"""The rewritten shared blocks of the Analyst card, as a second axis.
-
-``configs/team.handoff.facts-v2.yaml`` exists because the primary card's shared
-text carried an untrue sentence and a one-sided account of what a handoff costs.
-It is not a fourth rung of the delegation-emphasis ladder: it keeps ``primary``'s
-``## What is yours to judge`` block byte for byte and changes what surrounds it,
-which is the opposite of what the ladder varies.
-
-What is pinned here is that the two axes stay separate, and that the sentence
-this card was written to correct does not come back.
-"""
+"""Check facts-v2's shared-text corrections while preserving primary's judge block."""
 
 from __future__ import annotations
 

@@ -240,9 +240,7 @@ class OpenCollabSource:
         return ast.literal_eval(node.args[0]), node.lineno
 
 
-# ---------------------------------------------------------------------------
 # The lookup rules, re-implemented for attribution only (see module docstring).
-# ---------------------------------------------------------------------------
 
 
 def _leaf(model: str) -> str:
@@ -271,9 +269,7 @@ def _matches_family(model: str, family: str, exact: dict[str, Any], bounded: fro
     return leaf == normalized_family or leaf.startswith(f"{normalized_family}-")
 
 
-# ---------------------------------------------------------------------------
 # Runtime probe: OpenCollab's own answers, executed out of process.
-# ---------------------------------------------------------------------------
 
 
 def eval_context_window_source(model: str) -> tuple[Any, str, str]:
@@ -328,9 +324,7 @@ def shared_table_disagreements(source: OpenCollabSource) -> dict[str, tuple[Any,
     return out
 
 
-# ---------------------------------------------------------------------------
 # Resolution: one row per fork, for one model.
-# ---------------------------------------------------------------------------
 
 
 def _capability_findings(

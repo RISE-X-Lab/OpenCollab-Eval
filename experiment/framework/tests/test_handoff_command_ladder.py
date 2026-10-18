@@ -1,17 +1,4 @@
-"""Four rungs that locate which sentence in a command carries the effect.
-
-``instructed`` reads 3/3 delegation and ``default`` reads 0/3, and the two cards
-differ by more than one thing: a prohibition on doing the work oneself, a line
-suspending the Analyst's discretion, and an explicit permission to depart. Which
-of the three carries the effect cannot be read off those two batches, and the
-answer changes the claim: that a declared topology needs the alternative
-*blocked* is a different finding from that it needs an imperative.
-
-So the four cards here are one text with three switches, and each adjacent pair
-differs by exactly one of them. What is pinned is that property -- if two rungs
-ever drift apart in a second place, a difference measured across them stops
-naming the switch it is named for.
-"""
+"""Check that adjacent command-ladder cards differ in exactly one declared switch."""
 
 from __future__ import annotations
 

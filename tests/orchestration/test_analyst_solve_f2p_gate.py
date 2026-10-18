@@ -1,12 +1,7 @@
-"""analyst-solve hard-gates the tester verdict on the real FAIL_TO_PASS tests
-(tester-real-pass).
+"""Require zero failures and every injected FAIL_TO_PASS node-id in tester evidence.
 
-A tester PASS is only trusted when it carries machine-checkable proof the named
-FAIL_TO_PASS node-ids actually ran green: ``failed_count == 0`` AND every
-required node-id present in ``tests_run``. Otherwise ``_run_phase`` overrides the
-PASS to not-passed and seeds the next round's findings — mirroring the existing
-tree-unchanged diff guard. The gate is conditional (D2): it fires only when
-FAIL_TO_PASS ids were injected; with an empty list the verdict stands as today.
+Missing evidence overrides PASS and seeds the next round's findings. An empty
+FAIL_TO_PASS list leaves the verdict unchanged.
 """
 
 from __future__ import annotations
@@ -31,12 +26,9 @@ class _ScriptedBashEvidence:
 
 
 class ScriptedCtx:
-    """WorkflowContext stand-in scripting agent() replies; tree/source are fixed.
+    """Script agent replies with independent whole-tree and source-scoped answers.
 
-    ``tree`` is the whole-tree answer (``tree_changed`` / empty-exclude
-    ``source_changed``); ``source`` is the source-scoped answer returned by
-    ``source_changed`` when an exclude list is passed (the harness path). When
-    ``source`` is left unset it mirrors ``tree`` so old tests are unchanged.
+    An omitted source answer follows the whole-tree answer.
     """
 
     def __init__(
@@ -136,7 +128,6 @@ def test_f2p_gate_rejects_negative_failed_count_and_missing_tool_evidence():
     assert _f2p_gate()(verdict, F2P, executed_tests=set(F2P)) is None
 
 
-# (a) tester verdict PASS but failed_count=1 -> _run_phase overrides + seeds findings.
 def test_pass_with_failed_count_is_overridden_and_seeds_findings():
     # Round 1: clean-looking PASS but failed_count=1 -> overridden. Round 2: a
     # genuine clean PASS stands. The phase ends "passed", but only after the gate
@@ -164,7 +155,6 @@ def test_pass_with_failed_count_is_overridden_and_seeds_findings():
     assert any("FAIL_TO_PASS proof insufficient" in m for m in ctx.logs)
 
 
-# (b) tester PASS with tests_run missing a required node-id -> overridden.
 def test_pass_missing_required_node_id_is_overridden():
     ctx = ScriptedCtx(
         replies=[
@@ -188,7 +178,6 @@ def test_pass_missing_required_node_id_is_overridden():
     assert "not shown as executed" in coder_r2
 
 
-# (b') gate persists to the final round -> phase ends "failed" with findings.
 def test_gate_failure_on_final_round_marks_phase_failed():
     # Every round returns a PASS that fails the gate (missing the node-id). After
     # MAX_ROUNDS_PER_PHASE the phase is "failed", not "passed".
@@ -214,7 +203,6 @@ def test_gate_failure_on_final_round_marks_phase_failed():
     assert "not shown as executed" in result["phases"][0]["last_findings"]
 
 
-# (c) tester PASS, failed_count=0, all node-ids present -> stands first round.
 def test_clean_pass_with_all_node_ids_stands():
     ctx = ScriptedCtx(
         replies=[
@@ -234,7 +222,6 @@ def test_clean_pass_with_all_node_ids_stands():
     assert not any("proof insufficient" in m for m in ctx.logs)
 
 
-# (d) fail_to_pass empty -> gate bypassed, today's behavior preserved.
 def test_empty_fail_to_pass_bypasses_the_gate():
     # A bare PASS (no proof fields) would FAIL the gate if it ran — but with no
     # ids injected the gate is skipped and the PASS stands on round 1.
@@ -251,7 +238,6 @@ def test_empty_fail_to_pass_bypasses_the_gate():
     assert not any("proof insufficient" in m for m in ctx.logs)
 
 
-# (e) final status: verified True only when the f2p gate passes.
 def test_final_verified_requires_f2p_gate_to_pass():
     # The phase passes cleanly, but the FINAL verify returns a PASS that fails
     # the gate (missing the node-id). verified must be False -> final_verdict is
@@ -297,21 +283,11 @@ def test_final_verified_true_when_gate_clears():
     assert result["status"] == "done"
 
 
-# --------------------------------------------------------------------------- #
-# P7: wall-clock-aware forced write — fire near the deadline regardless of tokens
-# --------------------------------------------------------------------------- #
-
-
 class _TimeLowCtx(ScriptedCtx):
-    """ScriptedCtx whose budget is healthy but the hard deadline is near.
+    """Model an imminent deadline with an unspent token budget.
 
-    Reproduces django-11564: token budget plentiful (``remaining() == inf``) yet
-    ``time_low()`` is True, so the run must bail to a forced write BEFORE the wall
-    truncates it — the old token-only ``_budget_ok`` never fired here.
-
-    ``seconds_left`` returns the small remaining head-room (default 90s, inside the
-    120s deadline margin) so the forced-write step can clamp its per-call timeout
-    to it — the P7 timing-gap hardening.
+    The default 90 seconds is inside the forced-write margin and also bounds
+    that call's timeout.
     """
 
     def __init__(self, *args: Any, seconds_left: float = 90.0, **kw: Any) -> None:
@@ -354,18 +330,10 @@ def test_deadline_near_bails_to_forced_write_despite_healthy_budget():
     )
     result = asyncio.run(_run(ctx, {"description": "fix the widget", "fail_to_pass": F2P}))
 
-    # The phase bailed for the wall, not the token budget.
     assert result["phases"][0]["status"] == "budget_low"
     assert result["forced_final_write"] is True
-    # The honest log names the deadline (not the token budget) as the reason.
     assert any("deadline near" in m for m in ctx.logs)
-    # A forced-write coder actually ran.
     assert len(_forced_prompts(ctx)) == 1
-
-
-# --------------------------------------------------------------------------- #
-# P7 timing-gap: the forced final write is thinking-off AND wall-clamped.
-# --------------------------------------------------------------------------- #
 
 
 def test_rung_c_forces_a_commit_when_coder_lands_no_edit():
@@ -385,12 +353,7 @@ def test_rung_c_forces_a_commit_when_coder_lands_no_edit():
 
 
 def test_forced_write_inherits_thinking_and_uses_seconds_left():
-    # The forced write is the LAST action and must GUARANTEE a patch lands before
-    # the wall: it runs with thinking forced OFF (so its generation is fast even
-    # when the run-wide default is thinking-on, e.g. OPENCOLLAB_THINKING=1) and
-    # its per-call timeout is clamped to whatever wall-clock time is left, so a
-    # stalled call is cancelled inside the workflow (its on-disk edits survive)
-    # rather than truncated by the outer wall (which lost django-11564).
+    # Bound the call by the remaining deadline so workflow cancellation preserves edits.
     ctx = _TimeLowCtx(
         replies=[DIMS, "scout", PLAN, "forced-write patch landed"],
         tree=True,
@@ -402,11 +365,8 @@ def test_forced_write_inherits_thinking_and_uses_seconds_left():
     forced = _forced_calls(ctx)
     assert len(forced) == 1
     call = forced[0]
-    # change #1 — reasoning forced off for the deadline-sensitive write.
     assert call["thinking"] is None
-    # change #2 — per-call timeout clamped to the remaining wall-clock head-room.
     assert call["timeout"] == 90.0
-    # still forces a tool call so the write is not skipped (unchanged behavior).
     assert call["tool_choice"] == "required"
 
 
@@ -432,11 +392,6 @@ def test_forced_write_timeout_is_unbounded_when_no_deadline_wired():
     assert len(forced) == 1
     assert forced[0]["thinking"] is None
     assert forced[0]["timeout"] == float("inf")
-
-
-# --------------------------------------------------------------------------- #
-# Bug A — the working-tree gates are SOURCE-scoped (exclude injected tests)
-# --------------------------------------------------------------------------- #
 
 
 def test_rung_c_fires_when_source_clean_despite_dirty_injected_tree():

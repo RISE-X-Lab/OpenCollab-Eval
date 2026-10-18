@@ -1,14 +1,7 @@
-"""Phase 1 — structural toolset whitelist for analyst-solve (enforcement-gated).
+"""Check enforcement toolsets and prompt suffixes at their workflow call sites.
 
-Off (the default) is reference byte-for-byte: ``_planner_tools`` / ``_coder_tools``
-return the exact current lists, and the plan/coder call sites carry no enforced
-prompt suffix. On (``needs-enforcement``) swaps to the read-only planner toolset
-and the str_replace-only coder toolset (bash dropped, file_write create disabled),
-and appends the enforced prompt suffixes — while keeping the forced-write
-``tool_choice="required"`` contract intact.
-
-Covers spec 1A (FileWriteTool allow_create) + 1B (builders) + 1C/1D (call-site
-threading + suffixes) + the off==reference parity guarantee.
+The default mode retains the reference tools and prompts. Enforcement restricts
+planner and coder tools while preserving forced-write tool_choice="required".
 """
 
 from __future__ import annotations
@@ -23,9 +16,6 @@ ON = "needs-enforcement"
 F2P = ["tests/test_widget.py::test_empty"]
 
 
-# --------------------------------------------------------------------------- #
-# Access the exact module the workflow runs in (its globals carry the helpers).
-# --------------------------------------------------------------------------- #
 def _wf_fn():
     return analyst_solve
 
@@ -38,9 +28,6 @@ def _names(tools) -> list[str]:
     return [type(getattr(t, "_delegate", t)).__name__ for t in tools]
 
 
-# --------------------------------------------------------------------------- #
-# 1B — enforcement-aware builders
-# --------------------------------------------------------------------------- #
 def test_planner_tools_off_is_reference():
     planner, read = _g("_planner_tools"), _g("_read_tools")
     # off == reference: same tool types in the same order as _read_tools().
@@ -82,9 +69,6 @@ def test_coder_tools_on_drops_bash_and_disables_create():
     assert on_fw.allow_create is False
 
 
-# --------------------------------------------------------------------------- #
-# Scripted workflow harness (capture tools=/prompt per call site)
-# --------------------------------------------------------------------------- #
 class ScriptedCtx:
     def __init__(self, replies: list[Any], *, tree: bool | None = True, time_low: bool = False) -> None:
         self._replies = list(replies)
@@ -162,9 +146,6 @@ def _run(args):
     return ctx
 
 
-# --------------------------------------------------------------------------- #
-# Parity (off == reference) at the live call sites
-# --------------------------------------------------------------------------- #
 def test_off_plan_and_coder_call_sites_use_reference_tools():
     ctx = _run({"description": "fix the widget", "fail_to_pass": F2P})  # enforcement defaults off
     read, coder = _g("_read_tools"), _g("_coder_tools")
@@ -192,9 +173,6 @@ def test_off_scope_and_tester_untouched():
     assert "FileWriteTool" not in tester_names
 
 
-# --------------------------------------------------------------------------- #
-# On-mode restrictions at the live call sites
-# --------------------------------------------------------------------------- #
 def test_on_plan_call_site_is_read_only_with_suffix():
     ctx = ScriptedCtx(_clean_pass_replies())
     asyncio.run(_wf_fn()(ctx, {"description": "fix the widget", "fail_to_pass": F2P, "enforcement_strength": ON}))
@@ -214,9 +192,6 @@ def test_on_coder_call_site_drops_bash_disables_create_with_suffix():
     assert "You have NO shell/bash and CANNOT create new files" in coder["prompt"]
 
 
-# --------------------------------------------------------------------------- #
-# Forced write keeps tool_choice="required" under both modes
-# --------------------------------------------------------------------------- #
 def _forced_call(ctx) -> dict[str, Any]:
     return _call(ctx, "coder:forced-write")
 
@@ -243,9 +218,6 @@ def test_forced_write_required_holds_on_with_restricted_tools():
     assert "You have NO shell/bash and CANNOT create new files" in forced["prompt"]
 
 
-# --------------------------------------------------------------------------- #
-# Lever 1 (recon pass-through to the coder) + Lever 2 (verify-identifier suffix)
-# --------------------------------------------------------------------------- #
 def test_recon_block_pure_on_off_and_skipped():
     rb = _g("_recon_block")
     hdr = _g("RECON_FACTS_HEADER")

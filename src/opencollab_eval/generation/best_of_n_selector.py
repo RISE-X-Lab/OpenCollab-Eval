@@ -31,9 +31,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-#: Which selector produced a selection. Written into every run's metrics, so a
-#: batch collected under one rule can be told apart from a batch collected
-#: under its replacement without going back to the commit.
+#: Persist the selector version with every run's metrics.
 SELECTOR_NAME = "lowest-tree-sha-placeholder-v1"
 
 NO_CANDIDATE = "no_eligible_candidate"
@@ -44,13 +42,9 @@ LOWEST_TREE_SHA = "lowest_tree_sha"
 
 @dataclass(frozen=True)
 class Candidate:
-    """One of the N tries, as the generator got it back.
+    """One candidate and the tree its patch projects to on the anonymous baseline.
 
-    ``tree`` is the Git tree the candidate's patch projects to when applied to
-    the run's anonymous baseline (``project_candidate_patch``). It is ``None``
-    when there is no such tree -- the candidate failed, or its patch does not
-    apply cleanly -- which is the same fact as "this candidate has nothing
-    submittable", stated once.
+    ``tree=None`` indicates that no submittable tree was produced.
     """
 
     index: int
@@ -61,14 +55,10 @@ class Candidate:
 
 @dataclass(frozen=True)
 class Selection:
-    """Which candidate was chosen, by which clause, and whether that was a coin toss.
+    """The selected candidate and the reason for the choice.
 
-    ``arbitrary`` is the field this record exists for. It is true when the
-    choice came down to the placeholder's ordering rule rather than to anything
-    about the candidates, and counting it over a batch is the evidence for
-    whether the placeholder is good enough: an arm whose choice is arbitrary in
-    most of its runs is a one-third-budget single agent plus a lottery, and the
-    paper cannot call it a fixed selector picking a best candidate.
+    ``arbitrary`` marks selection by the placeholder tree ordering, allowing a
+    batch to report how often the rule lacked a quality-based preference.
     """
 
     index: int | None
@@ -91,40 +81,12 @@ class Selection:
 
 
 def select_candidate(candidates: Sequence[Candidate]) -> Selection:
-    """Pick one candidate. **Placeholder: this is not the paper's selector yet.**
+    """Select an eligible patch using the deterministic placeholder rule.
 
-    What it does, in order:
-
-    1. Discard candidates with an empty patch and candidates whose patch does
-       not project to a tree, which is this pipeline's form of "does not apply
-       cleanly". Both are cases where there is nothing to submit, so no
-       selector of any kind should keep them.
-    2. If one survives, take it. If several survive and they all project to the
-       *same* tree, take the lowest-numbered one: those candidates are the same
-       patch, so the choice is not a choice.
-    3. Otherwise take the candidate whose tree sha is lexicographically lowest,
-       and record that as an arbitrary choice.
-
-    **Why step 3 is not good enough for the arm the paper describes.** The
-    paper's Best-of-N is "N non-communicating candidates; a fixed selector
-    picks one", and a reader takes "picks" to mean the selector has a reason to
-    prefer one candidate over another. A tree sha is a hash: ordering by it is
-    a deterministic lottery, uncorrelated with anything about the patch. Under
-    it the arm is a single agent on 1/N of the budget with N tickets, and the
-    difference between it and the single-agent arm is an allocation difference
-    plus noise -- which is a defensible thing to measure, but is not what "best
-    of N" claims. Steps 1 and 2 do carry real content and would survive into
-    any replacement.
-
-    Note that the majority vote this rule replaced is worse, not better: at
-    N=3, independently sampled at temperature 1.0, three candidates almost
-    never project to the same tree, so a majority never forms and the rule
-    degenerates to whatever its tie-break is -- while reading as though a
-    majority decided.
-
-    A replacement must be deterministic and must not read the graded tests; see
-    this module's own docstring. The evidence for when one is needed is the
-    ``arbitrary`` count over a finished batch.
+    Equivalent trees select the lowest candidate index. Distinct trees select
+    the lowest tree SHA and mark the choice arbitrary because hash order carries
+    no patch-quality evidence. Count these choices when assessing the selector.
+    Any replacement must remain deterministic and blind to graded tests.
     """
     eligible = tuple(
         candidate.index

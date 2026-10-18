@@ -183,7 +183,6 @@ def _read_plan(path: Path) -> dict[str, Any]:
             "eval_dir_name": eval_dir_name,
             "task": task,
             "record_id": record_id,
-            # Canonicalize case-insensitive SHA-256 spellings.
             "source_patch_sha256": source_patch_sha256.lower(),
             "eval_patch_sha256": eval_patch_sha256.lower(),
         }

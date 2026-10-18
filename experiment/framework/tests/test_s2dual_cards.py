@@ -1,15 +1,7 @@
-"""The Single2-seated two-candidate family, and what makes it its own instrument.
+"""Check s2dual card assembly, treatment blocks, and Single2 seating.
 
-Same roster as ``dual-candidate`` and the same five treatment blocks, byte for
-byte. One thing differs: every seat declares ``profile: single2``, so the agent
-under the card is the evaluated single agent rather than OpenCollab's own. That
-is the family's whole claim, and it is only true if four things hold at once --
-the blocks did not drift, the profile actually reaches the seat, the card is
-appended to the profile's prompt rather than replacing it, and the card says
-the things the profile's prompt gets wrong about a team seat.
-
-What is asserted here mirrors ``test_dual_candidate_cards.py`` for this roster,
-plus the profile-specific claims that file has no reason to make.
+Every role must use the profile with its card appended, including the team
+instructions that differ from the profile's solo assumptions.
 """
 
 from __future__ import annotations
@@ -85,9 +77,6 @@ def _team(name: str):
     return load_team_config(path=str(CONFIGS / VARIANTS[name].team_file))
 
 
-# --- The seat is Single2 -------------------------------------------------------
-
-
 @pytest.mark.parametrize("name", NAMES)
 def test_every_seat_declares_the_profile(name: str) -> None:
     """All three, not just the entry one: a team of one Single2 and two others
@@ -135,9 +124,6 @@ def test_the_card_corrects_what_the_profile_says_about_ending_a_run(name: str) -
     assert "`submit`" in _card_on_disk(name)
 
 
-# --- The treatment is the older family's, unchanged ----------------------------
-
-
 @pytest.mark.parametrize("block", sorted({VARIANTS[n].block for n in NAMES}))
 def test_each_block_is_the_dual_candidate_block_byte_for_byte(block: str) -> None:
     """The ladder is the same five moves. If a word drifted here, a difference
@@ -153,9 +139,6 @@ def test_the_peer_paragraph_is_the_older_familys_too() -> None:
     ours = (PROMPTS / "capabilities" / "full.md").read_text(encoding="utf-8")
     theirs = (DUAL / "capabilities" / "full.md").read_text(encoding="utf-8")
     assert ours.split("\n\n")[1] == theirs.split("\n\n")[1]
-
-
-# --- Assembly ------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("name", NAMES)
@@ -192,9 +175,6 @@ def test_this_family_has_a_body_of_its_own() -> None:
     assert S2DUAL_CARDS.directory != DUAL_CARDS.directory
 
 
-# --- Cells must not collapse into each other -----------------------------------
-
-
 def test_no_two_cells_assemble_to_the_same_card() -> None:
     cards = {name: _card_on_disk(name) for name in NAMES}
     duplicates = [
@@ -221,9 +201,6 @@ def test_each_ladder_step_is_exactly_one_contiguous_move() -> None:
             ]
             assert len(moves) == 1, f"{ladder}: {upper} -> {lower} is {len(moves)} moves"
             assert moves[0][0] in {"insert", "delete"}, f"{ladder}: {upper} -> {lower}"
-
-
-# --- Every cell seats the same team --------------------------------------------
 
 
 @pytest.mark.parametrize("name", NAMES)

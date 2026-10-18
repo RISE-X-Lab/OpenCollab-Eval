@@ -1,14 +1,6 @@
-"""The Single2-seated self-collaboration family, and what makes it one instrument.
+"""Check s2sc topology, treatment isolation, and parity with s2dual-judge seating.
 
-The handoff experiment's Analyst, Coder and Tester, seated the way ``s2dual``
-seats its roster, over two topologies with edges removed, each under two
-blocks. The cells are a claim that two cells under one block differ in one
-directed edge -- ``coder -> analyst`` -- and in the one line of every card that
-states it, and that two cells over one topology differ in the Analyst's block
-and nowhere else. That claim holds only if the edge sets really differ by that
-edge, every card states the topology the scheduler actually enforces, no card
-asks for an edge the topology lacks, everything outside the varied part is the
-same bytes, and the seat and the bundle are ``s2dual-judge``'s.
+Every card must describe the directed edges its scheduler actually permits.
 """
 
 from __future__ import annotations
@@ -129,9 +121,6 @@ def _edges_stated(text: str) -> set[tuple[str, str]]:
     return edges
 
 
-# --- The seat is Single2 -------------------------------------------------------
-
-
 def test_the_registry_is_two_blocks_over_two_topologies() -> None:
     assert NAMES == sorted(_cell(b, t) for b in BLOCKS for t in TOPOLOGY_EDGES)
     for block in BLOCKS:
@@ -172,9 +161,6 @@ def test_every_card_corrects_what_the_profile_says_about_ending_a_run(name: str)
     for role in ROLES:
         assert CORRECTION in cards[role], role
     assert "`submit`" in cards[ENTRY]
-
-
-# --- The treatment: the topology, stated truly --------------------------------
 
 
 @pytest.mark.parametrize("name", NAMES)
@@ -246,9 +232,6 @@ def test_the_topology_ladder_is_one_contiguous_deletion() -> None:
             assert moves[0][0] == "delete", f"{ladder}: {upper} -> {lower}"
 
 
-# --- Everything else is held fixed ---------------------------------------------
-
-
 def test_the_judge_block_is_s2dual_judges_byte_for_byte() -> None:
     ours = _read(PROMPTS / "blocks" / "judge.md")
     assert ours == _read(CONFIGS / "s2dual" / "blocks" / "judge.md")
@@ -314,9 +297,6 @@ def test_over_one_topology_the_cells_differ_only_in_the_analysts_block(topology:
     assert a[ENTRY].replace(bx, BLOCK_SLOT) == b[ENTRY].replace(by, BLOCK_SLOT)
 
 
-# --- Assembly ------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("name", NAMES)
 def test_every_checked_in_card_is_exactly_what_its_declaration_assembles_to(name: str) -> None:
     variant = VARIANTS[name]
@@ -369,9 +349,6 @@ def test_every_registered_slot_file_exists_and_is_used() -> None:
     assert {VARIANTS[n].capabilities for n in NAMES} == {
         p.stem for p in (PROMPTS / "capabilities").glob("*.md")
     }
-
-
-# --- Team files ------------------------------------------------------------------
 
 
 def _team_file_body(path: Path) -> str:

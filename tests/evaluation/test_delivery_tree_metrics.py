@@ -1,15 +1,7 @@
-"""The seat boundaries a team run recorded have to reach the metrics row.
+"""Keep recorded team seat boundaries in metrics.jsonl.
 
-The team arm is graded on agent 0's tree; each teammate works in a worktree cut
-somewhere else. OpenCollab records that graded tree at every seat boundary, and
-the value of doing so is entirely in whether the record survives the trip into
-``metrics.jsonl`` -- a run whose boundaries are recorded and then dropped is
-indistinguishable from one that never recorded any.
-
-The key is written only when the arm recorded boundaries. A null written for
-every other arm would say the same thing as a recorder that produced nothing,
-and the self-collaboration workflow already carries its own equivalent nested
-inside ``workflow_result``; a top-level null there would shadow it.
+Omit the key for arms that record no boundaries so it cannot shadow the
+self-collaboration workflow's nested snapshots.
 """
 
 from __future__ import annotations

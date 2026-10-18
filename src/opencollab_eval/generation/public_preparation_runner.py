@@ -38,9 +38,8 @@ class ProcessInspectionError(RuntimeError):
 class _DescendantSnapshot(set[int]):
     """A PID set carrying start identities captured by the same scan.
 
-    The public/private helper historically returned a plain ``set[int]``.
-    Keeping a set subclass preserves that contract while allowing cleanup to
-    reject a PID that has been recycled after a leader exits.
+    The set-compatible interface retains caller compatibility while identities
+    let cleanup reject recycled PIDs after leader exit.
     """
 
     def __init__(

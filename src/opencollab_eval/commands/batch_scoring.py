@@ -61,9 +61,8 @@ def cmd_score(
             facts.get("PREDS_ROWS") == str(len(ids)),
             f"{facts.get('PREDS_ROWS', '0')} rows of {len(ids)} instances",
         ),
-        # An empty patch is not an error, but it is not a scored attempt
-        # either: it resolves nothing and is indistinguishable in the report
-        # from a patch that was tried and failed.
+        # Empty patches resolve nothing and are indistinguishable in the report
+        # from unsuccessful scored attempts.
         batch_remote.Check(
             "predictions carrying a patch",
             True,
@@ -184,6 +183,3 @@ def cmd_score_report(batch: Batch, remote: Ssh) -> int:
         print("  a model report does not cover the batch validated by the gold control.")
         return 1
     return 0
-
-
-# --- entry ---------------------------------------------------------------------

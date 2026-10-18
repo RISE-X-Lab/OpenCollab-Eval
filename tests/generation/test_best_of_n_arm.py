@@ -1,12 +1,4 @@
-"""The Best-of-N arm: what it allocates, what it selects, and what it records.
-
-The arm's whole content is an allocation and a selector. Everything else is the
-single-agent arm, so what has to be pinned here is the small set of decisions
-that would turn it into a different arm without anything failing: giving each
-candidate a seat's budget instead of a share of one, letting N containers share
-one ownership marker, reporting only the winner's spend, or selecting on
-something the arm is not allowed to see.
-"""
+"""Check Best-of-N allocation, selection, container ownership, and aggregate usage."""
 
 from __future__ import annotations
 
@@ -30,10 +22,6 @@ bon = pytest.importorskip("opencollab_eval.generation.gen_prediction_best_of_n")
 
 def _candidate(index: int, patch: str, tree: str | None, **metrics) -> selector.Candidate:
     return selector.Candidate(index=index, patch=patch, tree=tree, metrics=metrics)
-
-
-# --------------------------------------------------------------------------
-# the selector
 
 
 def test_a_candidate_with_no_patch_or_no_tree_is_not_selectable() -> None:
@@ -123,10 +111,6 @@ def test_the_selector_never_reads_the_graded_tests() -> None:
         assert sealed not in body, sealed
 
 
-# --------------------------------------------------------------------------
-# the allocation
-
-
 def test_a_best_of_n_run_is_funded_as_one_seat_not_as_n() -> None:
     """The mistake that would make the whole arm an artifact.
 
@@ -210,10 +194,6 @@ def test_each_candidate_owns_its_own_container_marker_directory(tmp_path: Path) 
     assert len(set(directories)) == 3
     for directory in directories:
         assert tmp_path in directory.parents
-
-
-# --------------------------------------------------------------------------
-# what one run records
 
 
 #: The snapshot every fake extraction below is proved against. Built with the
@@ -374,10 +354,6 @@ def test_a_run_with_nothing_to_submit_is_not_reported_as_a_finished_run() -> Non
     assert metrics["submission_eligible"] is False
     assert metrics["workflow_status"] == "empty_patch_after_done"
     assert metrics["best_of_n"]["selected_index"] is None
-
-
-# --------------------------------------------------------------------------
-# end to end, with the container layer replaced
 
 
 @pytest.fixture
@@ -569,30 +545,6 @@ def test_cleanup_failure_propagates_after_candidate_generation(
     assert len(_fake_containers) == 1
     saved = bon.candidate_run_directory(tmp_path / "out", "task-1", 0) / "candidate.json"
     assert json.loads(saved.read_text())["patch"] == "diff --git a/a b/a\n+one\n"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def test_selector_skips_a_candidate_with_unproven_submission_or_runtime_error():

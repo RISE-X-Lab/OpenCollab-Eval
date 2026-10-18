@@ -1,10 +1,6 @@
-"""The run id the batch driver chose reaches the OpenCollab run it starts.
+"""Propagate OPENCOLLAB_RUN_ID from the batch manifest to each solver regime.
 
-The driver writes the id into its manifest row and hands it to the generator
-process as ``OPENCOLLAB_RUN_ID``; the evaluator passes it to whichever SDK call
-the arm makes, so the trajectory, the run's own manifest and the metrics row
-carry the same id the batch manifest does. Without the variable nothing is
-passed and OpenCollab generates its own.
+When absent, OpenCollab generates the run id.
 """
 
 from __future__ import annotations

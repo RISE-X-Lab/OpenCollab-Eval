@@ -1,17 +1,7 @@
-"""A run's seats come from the attempt its record describes.
+"""Read seat snapshots from the attempt named by trajectory_path.
 
-A resumed launch can run an instance a second time in the same out-dir, and
-then two attempt directories sit under one instance's ``trajectories`` root
-(``solver-<hex>/runtime-<hex>``, random hex). The report used to read the seat
-snapshots of both and keep, per seat, whichever file sorted last -- so every
-metrics row of that instance, whichever attempt it described, took its
-delegation columns from the attempt whose random directory name sorted last.
-That is how ``s2dual-judge-qwen38-pro36`` (resumed; 9 instances ran twice)
-printed every_delegate 11/34 where the counted attempts give 16/34.
-
-The record names its own attempt (``trajectory_path``, written on the host).
-An absent named attempt leaves the seat snapshot missing. Older records can
-use the instance directory only when it contains one task.
+Combining resumed attempts lets random directory ordering assign one attempt's
+delegation to another. Older records may fall back to a single task directory.
 """
 
 from __future__ import annotations
