@@ -83,7 +83,6 @@ def default_team_config() -> str:
     return str(root / "experiment/framework" / EXPERIMENT_TEAM_CONFIG)
 
 
-# --------------------------------------------------------------------------
 # observation
 
 
@@ -398,7 +397,6 @@ def _digest(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-# --------------------------------------------------------------------------
 # comparison
 
 

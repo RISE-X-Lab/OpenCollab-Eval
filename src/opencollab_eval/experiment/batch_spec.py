@@ -1,18 +1,7 @@
-"""One paid batch, written down before it is launched.
+"""Build a paid batch's command, instance file, and host checks from its spec.
 
-Every batch this experiment has run so far was launched by hand: an agent read
-the driver's source, rebuilt the instance file from the benchmark, looked up the
-three environment switches in a shell script on the machine, checked out two
-commits, and typed a twelve-line command. Each of those steps was rediscovered
-each time, and two of them (the shadowed import path and the unquoted ``off``)
-fail silently when missed. This module is the written-down version: a spec
-file names the cell, the frozen task list, the budget, the environment and the
-two commits; the functions here turn it into the driver's exact command line,
-the instance file byte for byte, and the pre-flight checks that refuse to
-launch when the machine does not match the spec.
-
-Nothing here is a default. A paid setting that is not in the spec is an error,
-because a default that drifted looks exactly like one that did not.
+The spec names the cell, frozen task list, budget, environment, and two commits.
+Paid settings must be explicit, and launch requires the host to match the spec.
 """
 
 from __future__ import annotations
@@ -35,55 +24,37 @@ from opencollab_eval.safe_files import read_regular_text
 
 DRIVER_MODULE = "opencollab_eval.generation.gen_prediction_batch"
 
-# The three switches that decide what a run records and what the model is told.
-# They are the batch's version identity next to the two commits, so a spec that
-# omits one is rejected rather than inheriting whatever the shell had.
+# These treatment switches are required parts of batch identity.
 REQUIRED_ENV = (
     "OPENCOLLAB_LLM_STREAM_CHAT",
     "OPENCOLLAB_REASONING_EFFORT",
     "OPENCOLLAB_WRITE_NUDGE_MODE",
 )
 
-# The paper's rung names against the team files that seat them (§5, D18). A
-# spec may name the rung, the cell, or both; both that disagree is an error,
-# because a rung's number must come from the card the paper says it comes from.
+# Paper rung names map to their team cells (§5, D18). A spec naming both must agree.
 RUNG_CELLS = {
     "primary": "facts-v2",
     "opt-out": "cmd-optout",
     "bare": "cmd-bare",
     "plain": "cmd-plain",
     "prohibit": "cmd-prohibit",
-    # Not a rung of that ladder and not poolable with it: `cmd-verify` is
-    # `cmd-plain` with the verification paragraph replaced by the return trip
-    # (commit the candidate, send the Tester the sha, treat a failing reply as
-    # unfinished work). It is named here because a team spec has no other way to
-    # name a card, and the name is the card's own so that nothing reads it as a
-    # rung. No adherence number may be taken from a batch run under it -- the
-    # card prescribes the `message_agent` call, so a delegation count there is
-    # compliance with the file rather than a choice.
+    # Separate from the ladder. The card requires committing the candidate,
+    # sending its SHA to the Tester, and fixing failures. Its prescribed
+    # delegation cannot measure adherence or be pooled with ladder runs.
     "verify": "cmd-verify",
-    # Also not a rung: `cmd-propose` asks the Coder for its own diagnosis
-    # instead of for an implementation of the Analyst's, has the Analyst write a
-    # second fix in parallel, and puts the Tester between them as the selector.
-    # Same two exclusions as `verify` -- no adherence number, not poolable with
-    # the ladder -- plus one more: it is not best-of-n, which in this project is
-    # D13's k=3 samples from one agent selected without a test.
+    # The Coder diagnoses independently, the Analyst writes a second fix,
+    # and the Tester selects. Excluded from ladder pooling and adherence.
+    # Distinct from D13 best-of-n, which selects among three single-agent
+    # samples without a test.
     "propose": "cmd-propose",
-    # `cmd-propose` with the two failures its own smoke measured repaired: the
-    # coder is asked to commit and send the sha as soon as its change runs
-    # (three of six runs had it spend 3.9M and report nothing), and the tester
-    # call is made unconditional (two of six never addressed it).
+    # Requires an immediate commit and SHA handoff after a working change,
+    # plus an unconditional Tester call.
     "propose2": "cmd-propose2",
 }
 
-#: Cells whose team file is not ``configs/team.handoff.<cell>.yaml``. The
-#: handoff ladder owns that namespace, and the instrument check in
-#: ``experiment/framework/tests/test_analyst_card_assembly.py`` globs
-#: ``configs/team.handoff.*.yaml``, reduces each file to the configuration
-#: below its header, and asserts one distinct result. A second roster filed
-#: there would either fail that test or force it to be loosened, and what it
-#: asserts is the ladder's whole claim to comparability. So a family added
-#: later names its files apart and says so here.
+#: Other rosters use a separate namespace so the handoff ladder's
+#: ``test_analyst_card_assembly.py`` check can require identical configurations
+#: below the card header across ``configs/team.handoff.*.yaml``.
 CELL_FILE_PREFIXES: tuple[tuple[str, str], ...] = (
     ("dual-", "configs/team.{cell}.yaml"),
     ("s2dual-", "configs/team.{cell}.yaml"),
@@ -463,21 +434,12 @@ def spec_identity(spec: BatchSpec) -> dict[str, Any]:
         "pins": dict(sorted(spec.pins.items())),
     }
     if spec.retry_of is not None:
-        # Present only when it is set, and for a reason that is not tidiness:
-        # this dict is the digest, and the digest is how the pre-flight decides
-        # whether an out-dir holds *this* batch. A key added unconditionally
-        # would have changed the digest of every spec already launched, so
-        # every finished batch would have read as a different batch on resume.
+        # Omit unset optional keys to preserve existing batch digests on resume.
         identity["retry_of"] = spec.retry_of
     if spec.profile is not None:
-        # Only when set, for the reason ``retry_of`` gives: an unconditional key
-        # would move the digest of every spec already launched.
         identity["profile"] = spec.profile
     if spec.replaces is not None:
-        # Written into the identity for the same two reasons ``retry_of`` is,
-        # and only when set for the same one: a replacement must never be
-        # resumed into the batch it replaces an instance of, and a key added
-        # unconditionally would move the digest of every spec already launched.
+        # A replacement must have a different identity from its original batch.
         identity["replaces"] = dict(sorted(spec.replaces.items()))
     return identity
 
@@ -486,9 +448,6 @@ def spec_digest(spec: BatchSpec) -> str:
     identity = spec_identity(spec)
     identity.pop("concurrency")  # a resume may use a different concurrency; it is not a treatment
     return hashlib.sha256(json.dumps(identity, sort_keys=True).encode("utf-8")).hexdigest()
-
-
-# --- task list ---------------------------------------------------------------
 
 
 def suite_rows(spec: BatchSpec, suite_dir: str | Path) -> list[dict[str, str]]:
@@ -557,9 +516,6 @@ def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-# --- card files --------------------------------------------------------------
-
-
 def card_file_paths(spec: BatchSpec, local_opencollab_dir: str | Path) -> list[str]:
     """Repo-relative paths of the team file and every prompt it seats.
 
@@ -581,9 +537,6 @@ def card_file_paths(spec: BatchSpec, local_opencollab_dir: str | Path) -> list[s
             raise SpecError(f"cell {spec.cell!r}: role {role!r} has no prompt_file")
         files.append(f"configs/{prompt_file}")
     return files
-
-
-# --- the command -------------------------------------------------------------
 
 
 def driver_argv(spec: BatchSpec, host: HostConfig, limit: int | None = None) -> list[str]:

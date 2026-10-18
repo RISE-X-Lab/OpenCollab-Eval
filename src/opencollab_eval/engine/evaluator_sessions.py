@@ -454,13 +454,8 @@ async def _run_team_mode(
         prebuild_team=True,
         max_steps=max_steps,
         serialize_turns=True,
-        # Fourth setting fixed rather than exposed, and for the same reason as
-        # the other three: the run records the tree it is graded on at every
-        # seat boundary. Turns are serialized, so two consecutive rows bracket
-        # one seat's working period and a line in the delivered patch can be
-        # attributed to the seat that was working when it arrived. Without it
-        # the arm produces a patch nobody can attribute, which is the one
-        # quantity the comparison against a scripted twin is for.
+        # With serialized turns, consecutive tree snapshots attribute patch
+        # changes to the seat that produced them.
         record_delivery_tree=True,
         **_driver_run_id(client.team),
     )

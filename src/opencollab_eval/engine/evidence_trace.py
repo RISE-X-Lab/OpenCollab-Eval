@@ -4,11 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# Which file a run actually writes its trace to. A workflow run and a team run
-# are both several sessions under one run folder, but they are written by
-# different parts of OpenCollab and they do not use the same name; reporting a
-# path that does not exist is worse than reporting none, so these live in one
-# place and the caller says which regime it ran.
+# Workflow and team writers use different trace filenames.
 ORCHESTRATION_FILENAME = "orchestration.jsonl"
 TRAJECTORY_FILENAME = "trajectory.jsonl"
 
