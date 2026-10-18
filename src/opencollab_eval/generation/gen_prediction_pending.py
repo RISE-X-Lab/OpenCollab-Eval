@@ -137,11 +137,9 @@ def persist_pending_output(
         _replace_owner(owner_path, current_owner, {**current_owner, "state": "kept"})
         raise
 
-    # Validate and durably create the candidate before changing the owner state.
-    # If validation, size checks, or the atomic create fail, leaving the owner
-    # ``active`` lets the normal teardown remove the container.  Marking
-    # ``preservation_required`` first used to strand a container forever when
-    # no pending record had actually been written.
+    # Durably create the validated candidate before changing owner state.
+    # On failure, an active owner permits normal teardown. Marking preservation
+    # first would strand a container without a pending record.
     _atomic_create_bytes(path, payload)
     preserving_owner = {**owner, "state": "preservation_required"}
     _replace_owner(owner_path, owner, preserving_owner)

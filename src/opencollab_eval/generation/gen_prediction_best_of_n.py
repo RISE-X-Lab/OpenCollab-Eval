@@ -84,33 +84,17 @@ from .gen_prediction_safe_output import (
 )
 from .gen_prediction_snapshot import prepare_solver_git_snapshot
 
-#: How many candidates one run of this arm opens.
-#:
-#: Frozen by preregistration at three. Read off this constant by the batch
-#: driver and by the cross-arm alignment audit rather than written down in
-#: either of them, so the number this arm runs at and the number the registry
-#: declares cannot come apart.
+#: Preregistered candidate count shared by the generator and batch audit.
 CANDIDATES = 3
 
-#: The name this arm's rows carry in the predictions file.
 WORKFLOW_NAME = "best-of-n"
 
 
 def candidate_run_directory(run_dir: Path, instance_id: str, index: int) -> Path:
-    """Where one candidate's container ownership and artifacts live.
+    """Return the stable ownership and artifact directory for one candidate.
 
-    Its own directory, and this is not tidiness. Container ownership is
-    recorded partly in flat files -- ``container.id`` and ``container.name`` --
-    directly in the run directory. N candidates sharing one directory would
-    each overwrite the previous candidate's markers: after the last one, the
-    markers name one container and the others are named by nothing, so a run
-    that dies mid-flight leaks every container but the last and the recovery
-    pass cannot find them.
-
-    Stable across attempts rather than unique to one, because
-    ``start_container_with_marker`` runs the recovery pass over this directory
-    before it creates anything: a retry of the same (instance, candidate) is
-    what cleans up what a crashed earlier attempt left running.
+    Separate directories prevent candidates from overwriting container markers.
+    Reuse the directory across attempts so startup can recover a crashed attempt.
     """
     return run_dir / ".opencollab" / WORKFLOW_NAME / instance_id / f"candidate-{index}"
 
@@ -128,27 +112,11 @@ async def run_candidate(
     runtime: Any | None = None,
     profile: str = "base",
 ) -> dict[str, Any]:
-    """Run one candidate: the single arm's own agent, in its own container.
+    """Run one candidate with the single-agent solver in its own container.
 
-    Both of this arm's allocations are applied here and nowhere else, and they
-    are divided for different reasons.
-
-    ``budget`` is the arm's whole pool -- the same figure the single-agent arm
-    is given -- and each candidate gets ``1/N`` of it. That division *is* the
-    arm: N tries on one seat's budget, not N seats.
-
-    ``timeout`` is divided too, which the token pool's reasoning does not by
-    itself require. It is divided because ``--timeout`` bounds one whole run on
-    every other arm: N candidates each given the flag in full would hand this
-    arm N times the wall clock of the arm it is compared against, on a resource
-    no arm is supposed to have more of.
-
-    ``max_steps`` is *not* divided. It is already a per-session ceiling on every
-    arm -- a team of three seats gets three times the flag as well -- so
-    dividing it here would make this the one arm whose sessions are held to a
-    different ceiling. The consequence, that this arm's run-level step ceiling
-    is N times the single arm's, is declared as a defect in the arm registry
-    rather than fixed here, because fixing it changes what a run does.
+    Divide the arm's token pool and total timeout across candidates. Keep
+    max_steps as the common per-session ceiling, giving this arm N times the
+    single-agent run's step ceiling as recorded in the arm registry.
     """
     return await run_agent(
         task,
@@ -195,19 +163,11 @@ def solve_candidate(
     keep_container: bool,
     profile: str = "base",
 ) -> Candidate:
-    """Start one container, run one candidate in it, and extract its patch.
+    """Run one candidate in its own container and extract its patch.
 
-    A candidate that fails is recorded as a failed candidate and does not end
-    the run: with N containers per run the chance of one Docker or provider
-    fault is N times a single-agent run's, and throwing away the two candidates
-    that worked would cost far more than it protects. It is not silent -- the
-    failure is written into that candidate's own metrics, the run reports how
-    many candidates completed, and a candidate with no patch is not eligible
-    for selection.
-
-    Container *cleanup* failure is different and is left to propagate: a leaked
-    container on a shared machine is somebody else's problem, and the ownership
-    marker deliberately survives to say so.
+    Record generation failures per candidate and continue with the others.
+    Candidates without patches are ineligible for selection. Cleanup failures
+    propagate and retain the ownership marker for recovery.
     """
     iid = instance["instance_id"]
     name = unique_container_name("oc-bon-", iid)
@@ -430,14 +390,10 @@ def solve_candidate(
 
 
 def _write_candidate_record(run_dir: Path, *, index: int, patch: str, metrics: dict) -> None:
-    """Keep each candidate on disk as it is produced.
+    """Persist each candidate before winner selection.
 
-    This arm cannot use the pending-output staging the other arms use: that
-    staging holds a finished prediction against a container that is still
-    alive, and this arm does not know which patch it is submitting until every
-    container has been finalised. So the durability it can offer is this --
-    a run that dies after candidate two still shows what candidates zero and
-    one produced, instead of leaving only a missing row.
+    The winner is known only after all containers are finalized. Per-candidate
+    records retain completed work if the run stops before then.
     """
     payload = {"candidate_index": index, "patch": patch, "metrics": metrics}
     write_regular_bytes_atomic(
@@ -521,20 +477,12 @@ def combine_metrics(
     pool: int | None,
     timeout: float,
 ) -> tuple[str, dict[str, Any]]:
-    """The one metric record this run writes, and the patch it submits.
+    """Build the submitted patch's metrics with totals across all candidates.
 
-    Built on the selected candidate's own record, because the proofs a
-    prediction is checked against -- the trusted extraction, the tree, the
-    integrity flags -- are proofs about *that* patch and about no other.
-
-    Three run-level quantities are then overwritten with sums across the
-    candidates: ``run_summary`` (the block every arm is compared on, whose
-    ``steps`` and ``tokens`` are documented as run totals -- on a team, the sum
-    over the agents that ran), ``used_tokens`` and ``step_count``. What this arm
-    spends is what all N candidates spent; reporting only the winner's spend
-    would make it look like the cheapest arm in the comparison by discarding
-    two thirds of its bill. The per-candidate figures stay, under
-    ``best_of_n.candidates``.
+    Extraction and integrity proofs come from the selected candidate. Sum
+    run_summary, used_tokens, and step_count across all candidates so losing
+    candidates' usage remains counted. Preserve individual metrics under
+    best_of_n.candidates.
     """
     selected = next(
         (candidate for candidate in candidates if candidate.index == selection.index),
@@ -678,11 +626,8 @@ def main() -> None:
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     run_dir = out_path.parent
-    # Sequential, because a task container is heavy and the machine a batch
-    # runs on is shared: how many containers to have up at once is a decision
-    # about somebody else's machine, and the batch driver already owns it.
-    # Candidates are independent by construction, so running them one after
-    # another changes nothing about what each one does.
+    # Run candidates sequentially so the batch driver controls container
+    # concurrency on the shared host.
     candidates = [
         solve_candidate(
             instance=instance,

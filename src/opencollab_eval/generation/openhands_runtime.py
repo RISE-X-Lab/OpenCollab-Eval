@@ -166,16 +166,12 @@ class TokenBudgetGuard:
         *,
         max_output_tokens: int | None = None,
     ) -> int:
-        """Estimate one request from the provider output cap and real usage.
+        """Estimate request usage from the output cap and observed prompt deltas.
 
-        ``max_input_tokens`` is a context-window ceiling, not a promise that
-        every request consumes that many tokens.  Reserving it before every
-        call made a 16M budget reject ordinary short conversations after only
-        a handful of calls.  The first call reserves the configured output
-        cap; subsequent calls add the largest prompt delta actually observed
-        for this LLM instance.  Actual prompt+completion usage remains
-        authoritative in :meth:`record`, so a genuinely over-budget request
-        is still rejected after it is measured.
+        The first call reserves the configured output cap. Later calls use the
+        largest measured prompt-plus-completion usage. max_input_tokens is
+        a context ceiling rather than actual request usage. Actual usage remains
+        authoritative in record, which rejects requests exceeding the total budget.
         """
         if max_output_tokens is None:
             max_output_tokens = getattr(llm, "max_output_tokens", None)
@@ -258,9 +254,8 @@ class _RuntimeBindings:
 
 
 _RUNTIME_BINDINGS = _RuntimeBindings()
-# Kept as a compatibility/debug flag for callers that inspected the old
-# module-level marker.  The wrappers themselves read ``_RUNTIME_BINDINGS`` so
-# a later task can replace the container/settings without stacking wrappers.
+# Compatibility/debug marker. Wrappers read _RUNTIME_BINDINGS dynamically
+# so later tasks can replace container and settings without stacking wrappers.
 _INSTALLED = False
 
 
@@ -393,10 +388,8 @@ def install_runtime_overrides(settings: RuntimeSettings | None = None) -> Runtim
     if not container_id:
         raise RuntimeError("OpenHands container isolation requires OPENHANDS_CONTAINER_ID")
 
-    # Update mutable bindings before the idempotence check.  The original
-    # implementation returned here and left every closure pointing at the
-    # first task's container/settings, which made subsequent in-process tasks
-    # run in the wrong workspace or use the wrong limits.
+    # Refresh bindings before the idempotence check so later in-process tasks
+    # use their own container and limits.
     bindings = _RUNTIME_BINDINGS
     bindings.container_id = container_id
     bindings.settings = settings

@@ -114,14 +114,10 @@ def _evaluator_helper_main(
 
 
 class OwnedEvaluatorProcess:
-    """Popen-like handle with a total wall-clock wait deadline.
+    """Popen-like handle with a total wall-clock deadline and group cleanup.
 
-    The old implementation represented a Python ``fork`` helper and a pipe
-    carrying child status.  That design is unsafe when the per-instance
-    driver is running in a thread pool: a macOS child can inherit locks held
-    by another thread and never report its status.  The evaluator itself is
-    now spawned directly by :class:`subprocess.Popen`; this small proxy keeps
-    the existing deadline and process-group cleanup contract for callers.
+    Native Popen spawning avoids running Python in a forked thread-pool child,
+    where inherited locks could prevent the evaluator from reporting status.
     """
 
     def __init__(self, process: subprocess.Popen, *, deadline: float) -> None:
@@ -211,22 +207,12 @@ def _spawn_owned_evaluator(
     wall_timeout: float,
     spawn_timeout: float = _runner().PROCESS_SPAWN_TIMEOUT_SECONDS,
 ) -> OwnedEvaluatorProcess:
-    """Start one evaluator in an owned process group.
+    """Start one evaluator in an owned process group through native Popen.
 
-    This function used to create a Python-level fork helper and then run code
-    in that child before spawning the evaluator.  The per-instance driver invokes it
-    from a ``ThreadPoolExecutor`` when ``--workers`` is greater than one;
-    forking a multi-threaded interpreter is unsafe on macOS (and emits a
-    Python 3.13 deprecation warning).  ``subprocess.Popen`` performs the
-    platform-native spawn path and gives the evaluator itself a fresh process
-    group, which is all the parent needs for bounded wait/termination.
-
-    ``spawn_timeout`` is retained as a post-spawn bound for API compatibility.
-    ``Popen`` itself has no constructor timeout, but its native spawn/exec
-    path does not execute Python callbacks in a forked child.  We therefore
-    check the elapsed launch time and reap the process group if the bound was
-    exceeded; the caller's bounded ``wait`` enforces the remaining execution
-    deadline.
+    This path is called from thread-pool workers, so child setup must avoid Python
+    callbacks after fork. Popen has no constructor timeout. Enforce spawn_timeout
+    after launch and reap the group if exceeded, then let bounded wait enforce
+    the remaining execution deadline.
     """
     started_at = time.monotonic()
     deadline = started_at + max(0.0, float(wall_timeout))
@@ -248,9 +234,8 @@ def _spawn_owned_evaluator(
         try:
             cleanup_ok, cleanup_messages = _terminate_process_group_owned(
                 owned,
-                # The old helper's spawn-failure cleanup used a fixed 50 ms
-                # gentle phase before SIGKILL.  Do not accidentally turn a
-                # large user-facing spawn timeout into a 30-second cleanup.
+                # Bound gentle spawn-failure cleanup to 50 ms regardless of the
+                # user-facing spawn timeout.
                 term_timeout=min(0.05, max(0.0, float(spawn_timeout))),
                 kill_timeout=_runner().PROCESS_KILL_REAP_TIMEOUT_SECONDS,
             )

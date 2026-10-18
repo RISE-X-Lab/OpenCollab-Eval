@@ -21,11 +21,9 @@ if TYPE_CHECKING:
 
 
 def batch_records(root: Path) -> list[tuple[str, str, dict[str, Any]]]:
-    """Every planned batch under ``root`` as ``(first launch time, name, spec)``.
+    """Read recorded batches under root as (first launch time, name, spec).
 
-    Read from the records rather than from a naming convention: the record is
-    what ``plan`` checked, and a directory named ``<something>-retry`` that no
-    record backs is not a second attempt at anything.
+    Use plan records to identify attempts rather than directory naming patterns.
     """
     found: list[tuple[str, str, dict[str, Any]]] = []
     for record_path in sorted(root.glob("*.launch/batch.json")):
@@ -205,13 +203,8 @@ def select_cell_rows(batch: Batch) -> CellSelection:
             stand_ins.append(row)
         replaced[gone] = arrives
         merged_replacements.append(name)
-    # A withdrawal turns the merge around. The fault that triggered the
-    # replacement was not the instance's, so the instance the cell drew goes
-    # back into every denominator and the stand-in's run -- paid for, and now
-    # counted by nothing -- takes the place in ``excluded`` the drawn run had.
-    # Both halves stay in the document: "withdrawn" is not "never happened",
-    # and that is the whole reason this is a spec field the report reads rather
-    # than an edit to a report JSON.
+    # Withdrawing a replacement restores the drawn instance to the denominators
+    # and moves the stand-in run to excluded. Retain both runs in the report.
     withdrawals = batch.spec.withdraw_replacements
     unknown = sorted(set(withdrawals) - set(replaced))
     if unknown:
@@ -269,14 +262,8 @@ def cmd_report(batch: Batch, _remote: Ssh | None, scanner: str | None, json_out:
             ).get("analyst")
         except ValueError:
             expected = None
-    # Two different questions, and they used to be one flag. ``team`` is "does
-    # this arm seat more than one role worth laying out", which is wider than
-    # the arms that take a team file: a DW run has an analyst, a coder and a
-    # tester too, and reporting it with ``team=False`` printed null delivery,
-    # null alpha and null CI for the arm the ladder compares.
-    # ``alpha_readable`` is the narrower "is this arm's delivery rate alpha",
-    # which the scripted workflow fails: its edges are sequenced by
-    # ``self_collaboration.py``, so a rate there measures the script.
+    # Scripted workflows have multiple reportable roles, but their delivery
+    # rate reflects scripted sequencing. Only team runs expose delivery alpha.
     summary = cell_report.summarize(
         ordered,
         expected,
