@@ -11,6 +11,7 @@ how recorded experiments were configured.
 | `hosts/` | Historical machine descriptions, with a configurable example replacing a private proxy address |
 | `suite/` | Task identities, their original order, sampling metadata and recorded replacements |
 | `analysis/` | Analysis commands, tests and synthetic examples |
+| [Framework experiments](framework/README.md) | Exact team cards, assembly and instrument checks moved from OpenCollab |
 | `history/` | Original source records for interpreting older reports |
 
 Keep these historical inputs together with the results they describe. For a new

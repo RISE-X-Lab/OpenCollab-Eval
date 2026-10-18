@@ -30,21 +30,8 @@ COORDINATION_TOOLS = {"message_agent", "team_status"}
 
 
 def _team_config() -> dict[str, Any]:
-    """The team this workflow mirrors, read from the OpenCollab working tree.
-
-    Reachable when OpenCollab is installed from source, which is how the
-    experiment runs; a wheel carries the package without ``configs/``, and
-    there the parity tests skip rather than fail on a missing file.
-    """
-    import opencollab
-
-    path = (
-        Path(opencollab.__file__).resolve().parent.parent
-        / "configs"
-        / "team.handoff.primary-legacy.yaml"
-    )
-    if not path.is_file():
-        pytest.skip(f"team config not reachable from this install: {path}")
+    """Read the owned instrument even when OpenCollab is installed as a wheel."""
+    path = Path(__file__).resolve().parents[2] / "experiment/framework/configs/team.handoff.primary-legacy.yaml"
     return yaml.safe_load(path.read_text())
 
 
