@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
-"""Build the synthetic fixture cells used by test_scan_batch.py.
+"""Build synthetic scanner fixtures from writer-side status and reason strings.
 
-Every ``run_summary`` status/reason pair below is copied verbatim from the
-writer-side source (see the provenance block in scan_batch.py), so the fixtures
-exercise the real string shapes rather than invented ones.  They are still
-synthetic: they prove the classifier handles these shapes, not that these are
-the shapes gpu3 actually wrote.
+The fixtures exercise classifier shapes independently of recorded batch data.
 """
 
 from __future__ import annotations
@@ -78,7 +74,6 @@ def build():
     if os.path.isdir(ROOT):
         shutil.rmtree(ROOT)
 
-    # ---------------- cell A: one of each disposition --------------------
     cell = os.path.join(ROOT, "cell-mixed")
     os.makedirs(cell, exist_ok=True)
     rows = []
@@ -318,7 +313,6 @@ def build():
         for row in rows:
             fh.write(json.dumps(row) + "\n")
 
-    # ---------------- cell B: nothing to discard -------------------------
     clean = os.path.join(ROOT, "cell-clean")
     os.makedirs(clean, exist_ok=True)
     clean_rows = [
@@ -337,7 +331,6 @@ def build():
         for row in clean_rows:
             fh.write(json.dumps(row) + "\n")
 
-    # ---------------- cell C: an unseen reason string --------------------
     weird = os.path.join(ROOT, "cell-unknown")
     os.makedirs(weird, exist_ok=True)
     weird_rows = [

@@ -1,15 +1,6 @@
-"""The two arms must state the same run-level quantities under the same names.
+"""Check shared run_summary fields and values across generator paths.
 
-The single-agent generator and the workflow/team generator build their metric
-records from different objects, and those objects name the same quantities
-differently. A cross-arm read then silently returns one arm: selecting
-``used_tokens`` gets every single-agent row and no team row, with no error
-raised and nothing in the output saying rows were dropped.
-
-These tests pin the block that fixes it -- ``run_summary``, written by both
-paths -- by asserting the two key sets are equal to each other and to the
-declared field list, and that the values come from the run rather than from a
-default.
+Per-arm metric names silently omit other arms from cross-arm reads.
 """
 
 from __future__ import annotations

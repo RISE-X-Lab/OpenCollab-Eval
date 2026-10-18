@@ -1,20 +1,7 @@
-"""The Analyst cards are assembled, and this is the evidence the assembly is lossless.
+"""Check Analyst card assembly and isolation of declared treatment changes.
 
-Every cell of the handoff experiment is a claim that two cards differ in one
-named place and nowhere else. That claim used to rest on tests that re-checked
-byte identity after each card was hand-copied, and it had already failed once:
-the shared body split into two generations, so ``analyst.md`` and
-``analyst.facts-v2.md`` are not comparable at all.
-
-``configs/handoff-experiment/`` now holds one copy of that body (``shared.md``)
-with two slots, one file per closing block (``blocks/``), one file per statement
-of the Analyst's own bundle (``capabilities/``), and one registry
-(``variants.yaml``). A card is what those assemble to.
-
-The load-bearing test in this file is
-``test_every_checked_in_card_is_exactly_what_its_declaration_assembles_to``: it
-is the whole evidence that introducing the assembly changed no card, and so
-changed nothing any measured batch was run under.
+Team files load checked-in cards, so each must equal its registry rendering.
+Legacy cards retain the text used by historical batches.
 """
 
 from __future__ import annotations
@@ -42,9 +29,7 @@ ROLES = ("analyst", "coder", "tester")
 VARIANTS, LADDERS = load_registry()
 NAMES = sorted(VARIANTS)
 
-#: The cards written before the shared body was rewritten. They are frozen:
-#: they carry the attribution of every batch measured under them, so they are
-#: not assembled, not edited, and not compared with the current generation.
+#: Historical batches depend on these legacy cards retaining their original text.
 LEGACY_TEAM_FILES = {
     "primary": "team.handoff.primary-legacy.yaml",
     "weak": "team.handoff.weak.yaml",
@@ -69,32 +54,15 @@ def _card_on_disk(name: str) -> str:
     return VARIANTS[name].card_path.read_text(encoding="utf-8")
 
 
-# --- The one that says the refactor changed nothing ----------------------------
-
-
 @pytest.mark.parametrize("name", NAMES)
 def test_every_checked_in_card_is_exactly_what_its_declaration_assembles_to(name: str) -> None:
-    """Byte for byte, or a measured batch has silently changed its treatment.
-
-    The team files load the checked-in card, not the assembly, so a card that
-    drifts from its declaration is a run that no longer matches the cell it is
-    filed under -- and nothing errors. This is also the only proof that moving
-    to an assembled card left the nine existing cards untouched.
-    """
+    """Team files load the checked-in card, so assembly drift changes the treatment."""
     assert _card_on_disk(name) == render(VARIANTS[name])
-
-
-# --- One place varies, and it is the declared one ------------------------------
 
 
 @pytest.mark.parametrize("name", NAMES)
 def test_a_card_is_the_shared_body_everywhere_outside_its_block(name: str) -> None:
-    """Substituting the block back out has to leave the shared body exactly.
-
-    This is the property the cells rest on stated directly: whatever surrounds
-    the block is not this cell's to vary. A word changed in ``shared.md`` fails
-    here for every cell at once, which is the point -- there is one copy.
-    """
+    """Removing the treatment block must recover the declared shared body."""
     variant = VARIANTS[name]
     card = _card_on_disk(name)
     block = _block(variant.block)
@@ -105,12 +73,7 @@ def test_a_card_is_the_shared_body_everywhere_outside_its_block(name: str) -> No
 
 
 def test_cells_that_share_a_bundle_are_identical_outside_their_blocks() -> None:
-    """Eight of the nine cells vary the block and nothing else at all.
-
-    ``starved`` is the exception by construction: it removes the Analyst's edit
-    tools, so the paragraph that states the bundle moves with them. Every other
-    pair of cells must reduce to one and the same text.
-    """
+    """The starved cell's changed tool bundle also changes its capabilities paragraph."""
     reduced: dict[str, set[str]] = {}
     for name in NAMES:
         variant = VARIANTS[name]
@@ -127,16 +90,8 @@ def test_every_card_ends_on_the_shared_evidence_rule(name: str) -> None:
     assert CLOSING_LINE not in _block(VARIANTS[name].block), "the closing line belongs to the shared body"
 
 
-# --- Cells must not collapse into each other ----------------------------------
-
-
 def test_no_two_cells_assemble_to_the_same_card() -> None:
-    """Two cells that say the same thing are one cell.
-
-    They would then be a duplicate of an already-measured treatment, and any
-    difference between their numbers would be run-to-run noise reported as an
-    effect -- a wrong answer with no error anywhere.
-    """
+    """Duplicate cards would present run-to-run noise as a treatment effect."""
     cards = {name: _card_on_disk(name) for name in NAMES}
     duplicates = [
         (a, b) for a, b in itertools.combinations(NAMES, 2) if cards[a] == cards[b]
@@ -167,8 +122,6 @@ def test_every_registered_block_and_bundle_file_exists_and_is_used() -> None:
     used_capabilities = {VARIANTS[name].capabilities for name in NAMES}
     assert used_capabilities == {p.stem for p in (PROMPTS / "capabilities").glob("*.md")}
 
-
-# --- Capability and wording are one declaration -------------------------------
 
 #: Each sentence in a ``capabilities/`` file that claims the Analyst holds a
 #: given tool, and the sentence that claims it holds none of the edit tools.
@@ -209,9 +162,6 @@ def test_the_card_states_the_bundle_the_team_file_actually_grants(name: str) -> 
     assert (NO_WRITE_DISCLAIMER in stated) == (not edits), name
 
 
-# --- Every cell seats the same team -------------------------------------------
-
-
 @pytest.mark.parametrize("name", NAMES)
 def test_each_cell_seats_the_baseline_team(name: str) -> None:
     """Roster, topology, and both teammates are the instrument, not the treatment.
@@ -232,8 +182,6 @@ def test_each_cell_seats_the_baseline_team(name: str) -> None:
     walked = {(s, d) for s in ROLES for d in ROLES if team.topology.allows(s, d)}
     assert walked == {(s, d) for s in ROLES for d in ROLES if s != d}
 
-
-# --- The team files themselves ------------------------------------------------
 
 ANALYST_PROMPT_LINE = "    prompt_file: handoff-experiment/"
 
@@ -281,9 +229,6 @@ def test_every_team_file_differs_only_in_the_analysts_two_lines() -> None:
     )
 
 
-# --- The frozen first generation ----------------------------------------------
-
-
 def test_the_first_generation_cards_are_still_where_their_batches_left_them() -> None:
     """``legacy/`` is an archive, not a staging area.
 
@@ -307,9 +252,6 @@ def test_each_first_generation_team_file_still_loads_its_archived_card(level: st
     suffix = "" if level == "primary" else f".{level}"
     archived = (PROMPTS / "legacy" / f"analyst{suffix}.md").read_text(encoding="utf-8")
     assert team.roles["analyst"].prompt == archived
-
-
-# --- Every cell has to declare what it may not be pooled with -----------------
 
 
 @pytest.mark.parametrize("name", NAMES)

@@ -1,14 +1,4 @@
-"""STEP 5a/5c — deterministic pre-recon FACT SHEET + complexity-sized recon.
-
-* T1 (FACT SHEET + INTEGRITY) — the NON-LLM extractor returns the correct
-  signature / call-sites / imports / siblings / referenced types for a sample
-  in-workspace file, AND its scanned file set provably EXCLUDES every answer
-  artifact (``test_code/``, ``func_implementation*``, ``*_result.jsonl``,
-  ``*_output.jsonl``) — even when those artifacts contain calls to the target.
-
-* T2 (COMPLEXITY SIZING) — sizing yields fewer scouts for a trivial target than
-  a complex one while respecting the caller-supplied ceiling.
-"""
+"""Check fact extraction, answer-artifact exclusion, and complexity-sized scouting."""
 
 from __future__ import annotations
 
@@ -27,10 +17,6 @@ from opencollab_eval.workflows._fact_sheet import (
     recon_pool_is_ample,
     size_recon,
 )
-
-# --------------------------------------------------------------------------- #
-# fixtures (built on disk; no network, no real LLM)
-# --------------------------------------------------------------------------- #
 
 _TARGET_SRC = '''\
 import os
@@ -108,11 +94,6 @@ def _build_rich_repo(root: Path) -> tuple[str, str]:
         "INSTRUCTIONS: implement it.\n"
     )
     return str(root), goal
-
-
-# --------------------------------------------------------------------------- #
-# T1 — fact sheet correctness + integrity exclusion
-# --------------------------------------------------------------------------- #
 
 
 def test_t1_fact_sheet_extracts_signature_calls_imports(tmp_path):
@@ -286,11 +267,6 @@ def test_t1_source_tree_enumeration_is_bounded(tmp_path, monkeypatch):
             str(tmp_path),
             "TASK: Implement the function `missing`.",
         )
-
-
-# --------------------------------------------------------------------------- #
-# T2 — complexity sizing application helpers
-# --------------------------------------------------------------------------- #
 
 
 def test_t2_sizing_trivial_gets_fewer_scouts_than_complex():

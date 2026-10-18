@@ -1,19 +1,7 @@
-"""A pre-registered instance whose evaluation environment is unusable.
+"""Replace an unusable evaluation instance with the first unused reserve row.
 
-``pylint-dev__pylint-4661`` is row 39 of ``subset-50``. Its SWE-bench
-evaluation environment does not run -- the benchmark's own gold patch does not
-resolve there -- so no run of any arm on that instance can be scored, and the
-score is the outcome the grid reads. A broken environment is not a random
-event, so its replacement cannot be chosen after the fact: the draw carries an
-ordered reserve for exactly this, and the replacement is the first row of it
-that no cell has run.
-
-That makes two out-dirs one cell again, but the other way round from a retry.
-A retry adds a second attempt at an instance the cell keeps; a replacement
-takes an instance *out* of every denominator and puts a different one in. The
-run rows of the instance that left are not deleted -- a paid run that no
-number counts still has to be findable -- so they move to ``excluded`` in the
-JSON with the reason they left.
+A replacement removes the original instance from every denominator. Its paid
+run records remain in excluded output with the reason for their exclusion.
 """
 
 from __future__ import annotations
@@ -103,9 +91,6 @@ def _run(instance: str, status: str = "completed", tokens: int = 10, reason: str
     return {"instance_id": instance, "run_summary": summary}
 
 
-# --- the spec field ---------------------------------------------------------------
-
-
 def test_replaces_changes_the_identity_only_for_the_specs_that_use_it(experiment: dict) -> None:
     """The same rule ``retry_of`` had to obey: a new key must not move an old digest.
 
@@ -151,9 +136,6 @@ def test_a_spec_is_either_a_retry_or_a_replacement(experiment: dict) -> None:
     )
     with pytest.raises(SpecError, match="never both"):
         load_spec(path)
-
-
-# --- what plan refuses ------------------------------------------------------------
 
 
 def test_plan_refuses_a_replacement_whose_original_was_never_planned(experiment: dict, capsys) -> None:
@@ -209,9 +191,6 @@ def test_plan_accepts_a_one_row_replacement_from_another_suite(experiment: dict,
     )
     assert _plan(experiment, path) == 0
     assert "replaces b__b-2 of t1" in capsys.readouterr().out
-
-
-# --- what report does with it -----------------------------------------------------
 
 
 def test_report_drops_the_replaced_instance_and_merges_the_replacement(
@@ -296,14 +275,11 @@ def test_a_cell_with_no_replacement_carries_an_empty_ledger(experiment: dict, tm
     assert "replaced" not in cell_report.render(rows, cell_report.summarize(rows), [])
 
 
-# --- withdrawing a replacement ----------------------------------------------------
-#
 # A replacement is withdrawn when the fault that triggered it turns out not to
 # have been the instance's. The trigger for ``pylint-dev__pylint-4661`` was
 # "the benchmark's own gold patch does not resolve there"; re-run on a machine
 # with a network the gold patch resolves, so the condition never held and the
 # stand-in never had a reason to be in the cell.
-#
 # Withdrawing is not "the replacement never happened". Both runs were paid for
 # and both stay in the document: the drawn instance goes back into every
 # denominator, and the stand-in's run takes the place in ``excluded`` the drawn

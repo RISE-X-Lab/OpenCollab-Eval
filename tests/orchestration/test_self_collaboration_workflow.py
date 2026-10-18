@@ -1,11 +1,6 @@
-"""Tests for ``opencollab_eval.workflows.self_collaboration``.
+"""Check self-collaboration orchestration and parity with the primary-legacy team.
 
-The workflow's reason to exist is that it is the code-sequenced twin of
-``experiment/framework/configs/team.handoff.primary-legacy.yaml``: same three roles, same six
-directed edges, same tool bundles, and only the sequencing differs. That claim
-is worth nothing as a comment, so the parity is read off both sides here and
-compared. Everything else is pure orchestration over ``ctx.agent``, so a
-scripted context stand-in exercises it without touching an LLM.
+The scripted workflow and team share roles, directed edges, and tool bundles.
 """
 
 from __future__ import annotations

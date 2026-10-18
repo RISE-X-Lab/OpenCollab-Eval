@@ -1,14 +1,4 @@
-"""A dropped run's second attempt, and the hand check that finds a live driver.
-
-Both are about a report that cannot be read at face value. A run the endpoint
-dropped has to be re-attempted in an out-dir of its own and merged back into
-the cell it belongs to; a "nothing is running" answer has to come from a check
-that has been shown to find something.
-
-The fixtures for a whole experiment directory live next door, in
-``test_batch_launcher``, and are imported rather than rebuilt: a second copy
-would drift from the one the launcher's own tests exercise.
-"""
+"""Check retry merging and process checks that can detect a planted driver."""
 
 from __future__ import annotations
 
@@ -35,8 +25,6 @@ _spec_text = launcher._spec_text
 _oc_repo = pytest.fixture(name="oc_repo")(launcher.oc_repo.__wrapped__)
 _experiment = pytest.fixture(name="experiment")(launcher.experiment.__wrapped__)
 
-# --- the hand check the README tells a human to run --------------------------------------
-#
 # The README's fallback for "pgrep cannot be trusted here" was
 # ``grep -F '[o]pencollab_eval...'``. Under ``-F`` the brackets are literal, so
 # the pattern matches no driver that ever ran -- only the grep's own command
@@ -109,8 +97,6 @@ def test_the_readme_hand_check_carries_its_own_positive_control() -> None:
     row = next(line for line in text.splitlines() if "sees a planted process" in line)
     assert "exec -a" in row and "sleep" in row, row
 
-
-# --- retries: a second attempt at the instances an endpoint dropped -----------------------
 
 #: The digest of a checked-in spec, frozen. ``retry_of`` had to enter the batch
 #: identity, and a new key with a ``None`` value would have changed the digest of

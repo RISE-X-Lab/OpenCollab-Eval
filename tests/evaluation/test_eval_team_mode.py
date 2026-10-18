@@ -1,16 +1,7 @@
-"""The third execution regime: order of work decided by the model, not by code.
+"""Check team selection, workflow exclusivity, and fixed experimental settings.
 
-A workflow and a team differ in exactly one respect -- who sequences the work --
-and a comparison between them is only about that if everything else is held
-equal. These tests hold the evaluator to that: the team regime is selected the
-same way a workflow is, it is refused when both are asked for, and the three
-run settings that make a team run an experimental arm are fixed here rather
-than left to a caller to remember.
-
-That last point is the one worth stating. A run missing any of the three still
-finishes and still looks ordinary in its output, so the failure would be
-invisible until the data was analysed and found to answer a different question
-than the one asked.
+Missing team settings can silently change the experimental arm while the run
+still completes with ordinary output.
 """
 
 from __future__ import annotations

@@ -1,9 +1,4 @@
-"""Tests for ``harness.test_injection.apply_test_patch``.
-
-The helper stages a benchmark test_patch inside the env, runs ``git apply``,
-and returns the test files it touched. A failed partial apply returns ``[]``
-only after Git proves every touched path and reject artifact clean.
-"""
+"""Check test-patch staging and cleanup after partial Git apply failures."""
 
 from __future__ import annotations
 

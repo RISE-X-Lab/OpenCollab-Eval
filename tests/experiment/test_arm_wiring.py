@@ -1,10 +1,4 @@
-"""What the batch driver has to get right before it starts a paid run.
-
-The driver is where an arm stops being a name and becomes an argv and an
-environment. Everything checked here is a way that translation goes wrong
-without anything crashing: a setting the run was supposed to have that never
-reaches it, or an arm that is quietly run as a different arm.
-"""
+"""Check that batch arm settings reach generator arguments and environment."""
 
 from __future__ import annotations
 
@@ -15,7 +9,6 @@ import pytest
 
 from opencollab_eval.generation import gen_prediction_batch as batch
 
-# --------------------------------------------------------------------------
 # an arm that is not wired up has to fail loudly
 
 
@@ -93,7 +86,6 @@ def test_an_unknown_arm_is_refused_rather_than_funded_for_one_seat() -> None:
         batch.pool_for("no-such-arm", 2_000_000, None)
 
 
-# --------------------------------------------------------------------------
 # the environment a generator is started with
 
 

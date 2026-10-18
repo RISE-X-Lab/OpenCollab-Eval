@@ -1,12 +1,4 @@
-"""The s2dual roster with the Adopter's tools changed, and what keeps it comparable.
-
-Each cell of this family is a claim that it is ``s2dual-judge`` with one thing
-moved -- what the Adopter holds -- and that its card differs from
-``adopter.s2dual-judge.md`` only where it has to say so. Both halves are
-checked here on the files that are seated: the team files against
-``team.s2dual-judge.yaml``, and the body, rendered with ``s2dual``'s own text in
-this family's slots, against the ``s2dual-judge`` card byte for byte.
-"""
+"""Check that s2tools varies only the Adopter's tools and the card text describing them."""
 
 from __future__ import annotations
 

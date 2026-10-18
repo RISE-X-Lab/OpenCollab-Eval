@@ -1,27 +1,6 @@
-"""The forced-action axis: three cells between "state a fact" and "give an order".
+"""Check the decide-first, opt-out-message, and role-identity treatment cards.
 
-Five Analyst cards that only restate facts -- capability (``primary``), benefit
-(``salience``), norm (``norm``), default-with-an-opt-out (``default``), and the
-three-level stance ladder (``weak``/``primary``/``strong``) -- all measured
-``message_agent`` at zero. The one card that did not, ``analyst.instructed.md``,
-does not restate anything: it blocks the action the model would otherwise take
-("Do not apply the fix yourself"). The difference between the two groups is not
-how clearly the option was described but whether an action was compelled, so
-these three cells vary exactly that and nothing else:
-
-``decide-first``
-    A stated choice is compelled; neither branch of it is.
-``opt-out-message``
-    One ``message_agent`` call is compelled; which of two messages it carries
-    is not. This is the cell that removes the asymmetry whereby doing nothing
-    and doing the work alone are the same action.
-``role-identity``
-    Nothing is compelled. The role is framed as an identity, with the tools
-    stated to be in hand and their use stated to break no rule.
-
-What is pinned here is that the cells differ from ``facts-v2`` in their closing
-section and in nothing else, that no cell smuggles in the order that
-``instructed`` gives, and that all three seat the same team.
+Each varies only facts-v2's closing section and retains the same team.
 """
 
 from __future__ import annotations
@@ -101,9 +80,6 @@ def baseline():
 
 def _team(cell: str):
     return load_team_config(path=str(CONFIGS / CELLS[cell][1]))
-
-
-# --- The cards ----------------------------------------------------------------
 
 
 @pytest.mark.parametrize("cell", sorted(CELLS))
@@ -195,9 +171,6 @@ def test_the_role_identity_card_says_the_tools_are_in_hand_and_permitted() -> No
     assert "You also hold the Coder's tools" in block
     assert "nothing here forbids using them" in block
     assert "no rule is broken and nothing refuses it" in block
-
-
-# --- The team files -----------------------------------------------------------
 
 
 @pytest.mark.parametrize("cell", sorted(CELLS))

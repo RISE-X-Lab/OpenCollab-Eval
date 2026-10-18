@@ -304,9 +304,7 @@ def measure_trajectory(runtime_dir: str) -> dict[str, Any]:
     return out
 
 
-# =============================================================================
 # Cell scanning
-# =============================================================================
 
 
 def _has_seat_snapshot(directory: str) -> bool:
@@ -481,7 +479,6 @@ def scan_cell(
         "n_records": len(runs),
         # Every class, every time: the raw material for any other denominator.
         "class_counts": _by_class(runs),
-        # ---- denominator 1: alpha (budget/truncated runs KEPT) ------------
         "alpha_valid_classes": sorted(alpha_valid),
         "n_valid_alpha": len(a_valid),
         "n_dropped_alpha": len(a_dropped),
@@ -503,7 +500,6 @@ def scan_cell(
         "alpha_all_num": len(delegating_all),
         "alpha_all_den": len(runs),
         "alpha_all": (len(delegating_all) / len(runs)) if runs else None,
-        # ---- denominator 2: resolve rate / cost (uncensored only) ---------
         "outcome_valid_classes": sorted(outcome_valid),
         "n_valid_outcome": len(o_valid),
         "n_censored_outcome": len(o_censored),
@@ -525,7 +521,6 @@ def scan_cell(
         # The censored side kept separately, never merged into the line above.
         "tokens_censored": [r["tokens"] for r in o_censored],
         "patch_chars_censored": [r["patch_chars"] for r in o_censored],
-        # ---- mechanism quantities, on the alpha denominator ---------------
         "message_agent_calls_alpha": sum(r["message_agent_calls"] for r in a_valid),
         "team_status_calls_alpha": sum(r["team_status_calls"] for r in a_valid),
         "reasoning_chars_aid0_alpha": [r["reasoning_chars_aid0"] for r in a_valid],
@@ -537,6 +532,4 @@ def scan_cell(
     }
 
 
-# =============================================================================
 # Reporting
-# =============================================================================

@@ -1,10 +1,4 @@
-"""What an unattended batch has to get right before it is left alone.
-
-Each test here pins one way a batch of twenty runs comes back unusable without
-anything having crashed: the pairs it produced are not pairs, work already paid
-for is paid for twice, or the machine it ran on had no image under the name the
-generator derived.
-"""
+"""Check batch pairing, resume behavior, budgets, and image selection."""
 
 from __future__ import annotations
 

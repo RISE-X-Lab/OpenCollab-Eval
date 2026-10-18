@@ -49,9 +49,6 @@ HAND_LAUNCHED_ARGV = [
 HAND_LAUNCHED_INSTANCES_SHA256 = "3dc013350ddd681237fe109bb9d5364d4cc4659c918a4e3ae8333e5f5084ba4f"
 
 
-# --- fixtures: a tiny experiment dir and a git repo standing in for OpenCollab ---
-
-
 def _git(repo: Path, *args: str) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", *args],
@@ -177,19 +174,7 @@ def _spec_text(experiment: dict, old: str, new: str) -> str:
     return text.replace(old, new)
 
 
-# --- spec loading -----------------------------------------------------------------
-
-
-# --- instances --------------------------------------------------------------------
-
-
 REAL_CACHE = Path("~/.cache/opencollab-eval/swebench-verified.jsonl").expanduser()
-
-
-# --- the command ------------------------------------------------------------------
-
-
-# --- pre-flight -------------------------------------------------------------------
 
 
 def _good_facts(spec, host, cards: dict[str, str], instances_sha: str) -> str:
@@ -242,9 +227,6 @@ def _facts(experiment: dict) -> str:
     return _good_facts(spec, host, cards, "abc")
 
 
-# --- the CLI end to end with a fake host ---------------------------------------------
-
-
 class FakeRemote:
     def __init__(self, facts: str) -> None:
         self.facts = facts
@@ -266,9 +248,6 @@ class FakeRemote:
         raise AssertionError("not used here")
 
 
-# --- the report ------------------------------------------------------------------------
-
-
 def _agent_file(
     cell: Path, iid: str, aid: int, role: str, tokens: int, assistant: int, calls: list[str], terminal: str = ""
 ) -> None:
@@ -288,9 +267,6 @@ def _agent_file(
         ),
         encoding="utf-8",
     )
-
-
-# --- the host scripts, executed for real under bash ------------------------------------
 
 
 @pytest.fixture
@@ -378,11 +354,6 @@ def _bash(script: str) -> str:
     return subprocess.run(["bash", "-s"], input=script, capture_output=True, text=True, timeout=60, check=False).stdout
 
 
-# --- rungs, pins, and arms without a team -------------------------------------------------
-
-
-# --- sync: bringing the host's checkouts to the pins ------------------------------
-#
 # Pre-flight names a pin mismatch and stops; every batch so far was preceded by
 # a hand-run fetch and checkout over ssh. The step is now a command, which means
 # its two refusals have to be the tested part: a checkout that moves the code
@@ -475,8 +446,6 @@ _NEEDS_PROC = pytest.mark.skipif(
 )
 
 
-# --- score: the gold control, and the counts read before anything is spent --------
-#
 # On 2026-09-07 a cell reported a task as unresolvable with a note about a bad
 # evaluation environment. The environment was a machine with no route to the
 # package index; the same task's reference patch resolves where there is one.
@@ -540,6 +509,3 @@ def _score(experiment: dict, remote: ScoreRemote, *extra: str) -> int:
         ["--experiment-dir", str(experiment["dir"]), "score", str(experiment["spec"]), *extra],
         remote_factory=lambda h: remote,
     )
-
-
-# --- derived specs ----------------------------------------------------------------

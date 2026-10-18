@@ -1,17 +1,7 @@
-"""The dual-candidate family's own invariants, kept apart from the ladder's.
+"""Check dual-candidate card assembly, treatment isolation, roster, and topology.
 
-This family is a second instrument, not more cells of the handoff ladder: an
-``adopter`` and two coders that cannot address each other, over four directed
-edges instead of six. Its files therefore live in ``configs/dual-candidate/``
-and are named ``team.dual-*.yaml``, outside the ``team.handoff.*.yaml``
-namespace that ``test_analyst_card_assembly.py`` reads as "one instrument,
-seventeen files". Keeping the namespaces apart is what lets both instruments
-carry the same guarantees without either test weakening the other's.
-
-What is asserted here is what is asserted there, restated for this roster: a
-card is exactly what its declaration assembles to, one place varies and it is
-the declared one, no two cells collapse into each other, and every cell seats
-the same roster and the same partial topology.
+This family's Adopter and two Coders use four directed edges, so its namespace
+and shared body are separate from the six-edge handoff ladder.
 """
 
 from __future__ import annotations
@@ -99,9 +89,6 @@ def _paragraphs(text: str) -> list[str]:
     return text.split("\n\n")
 
 
-# --- This family restates the handoff ladder, cell for cell --------------------
-
-
 @pytest.mark.parametrize("ours,theirs", sorted(COUNTERPARTS.items()))
 def test_each_block_is_its_handoff_counterpart_outside_the_division_paragraph(
     ours: str, theirs: str
@@ -144,9 +131,6 @@ def test_the_two_families_state_the_same_tools_in_the_same_words() -> None:
     assert ours == theirs
 
 
-# --- Assembly ------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("name", NAMES)
 def test_every_checked_in_card_is_exactly_what_its_declaration_assembles_to(name: str) -> None:
     """The team files load the checked-in card, not the assembly."""
@@ -185,9 +169,6 @@ def test_the_two_card_sets_do_not_share_a_body() -> None:
     assert DUAL_CARDS.directory != HANDOFF_CARDS.directory
 
 
-# --- Cells must not collapse into each other -----------------------------------
-
-
 def test_no_two_cells_assemble_to_the_same_card() -> None:
     cards = {name: _card_on_disk(name) for name in NAMES}
     duplicates = [
@@ -210,9 +191,6 @@ def test_every_registered_block_and_bundle_file_exists_and_is_used() -> None:
     assert used_blocks == {p.stem for p in (PROMPTS / "blocks").glob("*.md")}
     used_capabilities = {VARIANTS[name].capabilities for name in NAMES}
     assert used_capabilities == {p.stem for p in (PROMPTS / "capabilities").glob("*.md")}
-
-
-# --- Adjacent rungs differ by exactly one move ---------------------------------
 
 
 def test_each_ladder_step_is_exactly_one_contiguous_move() -> None:
@@ -241,9 +219,6 @@ def test_each_ladder_step_is_exactly_one_contiguous_move() -> None:
             assert moves[0][0] in {"insert", "delete"}, (
                 f"{ladder}: {upper} -> {lower} replaces text rather than adding or removing it"
             )
-
-
-# --- Every cell seats the same team --------------------------------------------
 
 
 @pytest.mark.parametrize("name", NAMES)
@@ -293,8 +268,6 @@ def test_the_two_coder_cards_differ_only_in_identity_and_the_answer_asked_for() 
     assert normalize(body_a) == normalize(body_b)
 
 
-# --- The team files themselves --------------------------------------------------
-
 ENTRY_PROMPT_LINE = "    prompt_file: dual-candidate/adopter."
 
 
@@ -329,9 +302,6 @@ def test_this_family_stays_out_of_the_ladders_namespace() -> None:
     assert not list(CONFIGS.glob("team.handoff.dual-*.yaml"))
     for name in NAMES:
         assert VARIANTS[name].team_file.startswith("team.dual-")
-
-
-# --- Every cell has to declare what it may not be pooled with -------------------
 
 
 @pytest.mark.parametrize("name", NAMES)

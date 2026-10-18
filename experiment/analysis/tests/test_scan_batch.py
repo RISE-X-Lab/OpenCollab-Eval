@@ -1,10 +1,7 @@
-"""Tests for scan_batch.py.
+"""Check scanner classification and reporting with mixed-validity fixtures.
 
-Design note: the mixed fixture cell is built so that the *invalid* run
-``acme__acme-2`` also calls ``message_agent``.  A scanner that lets dead runs
-into alpha therefore reports 2/5 instead of 1/1 -- both numerator and
-denominator move -- so these assertions actually discriminate rather than
-happening to pass.  Each mutation in ``mutate.py`` flips at least one of them.
+An invalid fixture run also delegates, so including dead runs changes both the
+alpha numerator and denominator. mutate.py verifies that tests detect this.
 """
 
 from __future__ import annotations
@@ -29,11 +26,6 @@ CLEAN = os.path.join(FIXTURES, "cell-clean")
 UNKNOWN = os.path.join(FIXTURES, "cell-unknown")
 ALPHA = scan_batch.ALPHA_VALID_CLASSES
 OUTCOME = scan_batch.OUTCOME_VALID_CLASSES
-
-
-# --------------------------------------------------------------------------
-# 1. The classifier, on the five shapes taken from the writer-side source.
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -127,11 +119,6 @@ def test_an_unseen_reason_is_loudly_unclassified_not_quietly_valid():
     assert "brand new runtime string" in evidence
 
 
-# --------------------------------------------------------------------------
-# 2. Denominators use valid runs only.  This is the think-decide-first bug.
-# --------------------------------------------------------------------------
-
-
 def test_mid_flight_deaths_are_excluded_from_the_alpha_denominator():
     cell = scan_batch.scan_cell(MIXED)
     assert cell["n_records"] == 7
@@ -192,11 +179,6 @@ def test_treat_valid_can_widen_the_alpha_denominator_further():
     assert cell["alpha_den"] == 5
 
 
-# --------------------------------------------------------------------------
-# 3. The positive control on the *output*: exclusions are always printed.
-# --------------------------------------------------------------------------
-
-
 def test_exclusion_report_names_each_discarded_run_and_its_reason():
     cells = [scan_batch.scan_cell(MIXED)]
     text = scan_batch.render_text(cells)
@@ -247,11 +229,6 @@ def test_unclassified_run_reaches_the_printed_report():
     text = scan_batch.render_text(cells)
     assert scan_batch.UNCLASSIFIED in text
     assert "\u5254\u9664 1 \u4e2a" in text
-
-
-# --------------------------------------------------------------------------
-# 4. Mechanism quantities.
-# --------------------------------------------------------------------------
 
 
 def test_per_seat_quantities_are_split_by_aid():
@@ -308,9 +285,6 @@ def test_classify_seat_reason_reads_the_seat_field(reason, expected):
     assert scan_batch.classify_seat_reason(reason) == expected
 
 
-# --------------------------------------------------------------------------
-# 4b. The seat classifier against the strings real seats actually wrote.
-#
 # Every case below is one of the 16 distinct ``runs[].seats[].terminal`` strings
 # found across the 1,673 seat records of the 26 batch reports in
 # /root/oc-batches (2026-09-06), copied verbatim, with the count that string had
@@ -318,7 +292,6 @@ def test_classify_seat_reason_reads_the_seat_field(reason, expected):
 # only the ``status == "stopped"`` half of ``_RULES``, so 11 of these 16
 # families -- 960 of the 1,673 records, "submitted" the largest single family
 # among them -- came back UNCLASSIFIED.
-# --------------------------------------------------------------------------
 
 REAL_SEAT_REASONS = [
     # (n in the census, verbatim reason, expected class)
@@ -537,11 +510,6 @@ def test_a_metrics_row_with_no_trajectory_is_not_counted_as_a_silent_zero(tmp_pa
     assert result["dropped_alpha_by_class"] == {scan_batch.NO_TRAJECTORY: 1}
 
 
-# --------------------------------------------------------------------------
-# 5. Parameterisation and machine-readable output.
-# --------------------------------------------------------------------------
-
-
 def _code_without_comments_or_docs(path: str) -> str:
     """Source with ``#`` comments and the DEFERRED_VERIFICATION note removed,
     but with every other string literal kept.
@@ -640,9 +608,6 @@ def test_strict_flag_is_reachable_from_the_command_line(tmp_path):
     assert doc["cells"][0]["alpha_den"] == 1
 
 
-# --------------------------------------------------------------------------
-# 6. The two arms whose seats are not where the team arm keeps them.
-#
 # ``_find_runtime_dir`` looked for ``team.json``, which only the team arm
 # writes, and ``measure_trajectory`` globbed ``agent_*.json``, which only the
 # team arm names its seats. So on 2026-09-04 every single-arm run read as
@@ -650,7 +615,6 @@ def test_strict_flag_is_reachable_from_the_command_line(tmp_path):
 # with every seat column zero -- the same output a run whose seats did nothing
 # produces. The cell report's JSON, reading the same directories, had the real
 # numbers, so the text table and the JSON disagreed on the same runs.
-#
 #   single: ``<cell>/agent-<hex>/agent.json``, at the batch root, named by a
 #           random id that carries no instance; the tie is the run's own
 #           ``trajectory_path``.
@@ -658,7 +622,6 @@ def test_strict_flag_is_reachable_from_the_command_line(tmp_path):
 #           <nnn>_<label>.json``, with no ``team.json`` anywhere and one
 #           generic ``workflow_agent`` role stamped on every seat, so a seat's
 #           identity is in its file name.
-# --------------------------------------------------------------------------
 
 
 def _write(path, payload):

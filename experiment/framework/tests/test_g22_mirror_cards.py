@@ -1,18 +1,7 @@
-"""The G22-mirror cell's invariants: G22's words, this runtime's collaboration.
+"""Check G22-mirror wording and tool bundles against the original prompts.
 
-`team.dual-*.yaml` restates G22's ORGANIZATION in this repository's voice;
-`team.g22-mirror.yaml` restates G22's WORDS. What makes the second readable is
-that its departures from the source are a closed, declared list -- so this
-module pins the sentences that must have crossed unedited, and pins the bundle
-each seat actually gets against the bundle G22 gives the same seat.
-
-The expected strings below are copied from OpenCollab-Eval at
-``src/opencollab_eval/workflows/validation_council_dual_coder_contract.py``
-(``MINIMAL_CODER_PROMPT`` / ``CROSS_COMPONENT_CODER_PROMPT`` /
-``CONTRACT_PROMPT``) and ``_validation_council_solve_defs.SHARED_RULES``. They
-live here rather than being imported because that package is a separate
-repository: a copy that drifts is exactly what this file exists to catch, and a
-drifting copy fails loudly here instead of silently changing the instrument.
+Expected strings are copied from validation_council_dual_coder_contract and
+_validation_council_solve_defs.SHARED_RULES so upstream drift remains visible.
 """
 
 from __future__ import annotations

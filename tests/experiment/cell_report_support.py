@@ -1,11 +1,7 @@
-"""What ``cell_report`` reads off a cell, for each arm that writes seat files.
+"""Build writer-shaped seat fixtures for cell reports.
 
-The reason this file exists: every DW run in ``dw-subset50`` reported zero
-seats, zero snapshots and ``delivered=False``, and nothing anywhere said the
-seat files had never been opened. Two independent silent failures produced
-that -- a glob that matches only the team's file names, and a role field the
-workflow runtime writes as one generic value -- so both are pinned here, on a
-tree built to the shape the driver actually writes.
+Workflow seat filenames and generic role fields require separate handling from
+team snapshots or the report silently shows no seats and no delivery.
 """
 
 from __future__ import annotations
@@ -138,24 +134,6 @@ def _rows(cell: Path) -> dict[str, cell_report.RunRow]:
     return {r.instance_id: r for r in rows}
 
 
-# --- E3: the seat files are found at all ------------------------------------ #
-
-
-# --- E4: the seat's role, and therefore delivery ---------------------------- #
-
-
-# --- E5: the snapshots a workflow records inside its own result ------------- #
-
-
-# --- E7: the two things spelt "budget" ------------------------------------- #
-
-
-# --- E6: delivery is read on the DW arm without widening TEAM_ARMS ---------- #
-
-
-# --- E8: the single arm's seat, which lives nowhere the globs look ---------- #
-
-
 def _single_cell(tmp_path: Path) -> Path:
     """One capped and one clean single run, laid out the way the driver writes.
 
@@ -195,11 +173,6 @@ def _single_cell(tmp_path: Path) -> Path:
     return cell
 
 
-# --- E9: a seat file that was never found, said out loud -------------------- #
-
-
-# --- E10: a role seated twice in one run ------------------------------------ #
-#
 # The scripted workflow seats its analyst twice -- ``000_analyst`` to write the
 # brief and ``003_analyst-adjudicate-r1`` to rule on the tester's report -- and
 # the report keyed the render's per-role lookup by role alone, so the second
@@ -208,13 +181,10 @@ def _single_cell(tmp_path: Path) -> Path:
 # 48,695 where the run spent 1,995,025.
 
 
-# --- E11: the seat allowance, and what a workflow seat's stop actually says -- #
-#
 # On the smoke DW batch three runs of four had every seat's ``terminal_reason``
 # reading ``"interrupted by user"`` and printed ``-`` in the cap column while
 # one of them had spent 1,995,025 of a 2,000,000-token analyst seat. Reading
 # the runtime settles both halves of that:
-#
 #   * "interrupted by user" is not a stop at the budget. It is the
 #     structured-output capture: ``workflow_structured.py:137-138`` sets a
 #     cancel event on a successful ``structured_output`` call and
@@ -226,7 +196,6 @@ def _single_cell(tmp_path: Path) -> Path:
 #     (``session_run.py:333-380``) in the run's own event log --
 #     ``trajectory.jsonl`` on the single and team arms, ``orchestration.jsonl``
 #     on a scripted workflow.
-#
 # So the cap column stays what it was, a stop the runtime *recorded*, and the
 # report gains the recorded ceiling beside the spend, so a run that finished
 # with 0.25% of its seat left is no longer spelt exactly like one that finished
@@ -345,8 +314,6 @@ def dw_capped_cell(tmp_path: Path) -> Path:
     return cell
 
 
-# --- E12: the arm whose edges are written by a script ----------------------- #
-#
 # ``batch.py`` chose the delivery reading by ``arm in DELIVERY_READABLE_ARMS``,
 # which holds the scripted workflow, so a DW cell reported
 # ``alpha = 0.750 (0.194, 0.994)``. That number is not the paper's alpha. Alpha
@@ -401,14 +368,11 @@ def dw_edges_cell(tmp_path: Path) -> Path:
     return cell
 
 
-# --- E13: the censoring indicator only one arm wrote ------------------------ #
-#
 # ``wall_clock_timeout`` is written by ``gen_prediction_agent.py:154`` and by
 # nothing else, so only the single arm carries a censoring indicator -- and the
 # wall-clock window is *shorter* on the other two, which take the remainder
 # after container start (arm_registry.py:476-516). The two arms most likely to
 # be censored were the two with no indicator.
-#
 # The rule does not have to be invented. ``gen_prediction_agent.py:102`` builds
 # that flag as ``status == "stopped" and reason == "timeout"``, and
 # ``gen_prediction_workflow.py:184-203`` writes the very same pair into
@@ -466,8 +430,6 @@ def _timeout_cell(tmp_path: Path) -> Path:
     return cell
 
 
-# --- E13: the team arm's declared edges, which no report read --------------- #
-#
 # ``edges_declared`` was read only out of ``workflow_result``, which only the
 # scripted workflow writes, so both team batches of 2026-09-04 reported
 # ``edges_declared = 0`` and ``edges_walked_rate = None``. The team arm does
@@ -475,7 +437,6 @@ def _timeout_cell(tmp_path: Path) -> Path:
 # ``assigned.topology_edges`` event per run into ``trajectory.jsonl``, and the
 # real runs carry six edges over three roles. "Nobody may talk" and "this
 # report never looked" were spelt the same way.
-#
 # Alpha and edges are not the same quantity and this does not merge them.
 # Alpha is the rate at which an agent *chose* to hand work on -- one number per
 # run, over runs. An edge is a channel the team file declared; walking it is

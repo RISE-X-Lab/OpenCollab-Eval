@@ -1,8 +1,4 @@
-"""Each manifest row names the run id its generator process was given.
-
-The manifest is written by the driver and the metrics row and trajectory by
-the run, so the three join only if the driver chooses the id and hands it on.
-"""
+"""Join manifest, metrics, and trajectory records using the driver-chosen run id."""
 
 from __future__ import annotations
 

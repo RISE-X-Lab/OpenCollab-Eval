@@ -1,16 +1,7 @@
-"""Phase 2 — cheap behavioral warts (enforcement-gated; OFF == reference).
+"""Check enforcement behavior after braking and after successful phase verification.
 
-* 2A (post-brake dead turn) — the FIRST post-brake turn narrows the toolset to
-  submit-only (or {submit_findings, request_extension} when the extension valve is
-  armed). The nudge injected AT that trip now states the narrowed toolset up front,
-  so a model does not reflexively re-issue a now-removed exploration tool and burn
-  the turn on an "unknown tool" error before the provider-compat retry recovers it.
-
-* 2B (redundant final tester) — when every phase already passed its own adversarial
-  tester on the current tree and no forced write touched it since, the whole-goal
-  ``tester:final`` would re-run near-identical checks on a byte-identical tree.
-  Behind enforcement it is skipped; with enforcement OFF it runs exactly as the
-  reference, and it always runs when a phase failed/blocked (repair loop intact).
+The brake nudge must describe the narrowed toolset before the next model call.
+Final verification is skipped only after all phases pass on an unchanged tree.
 """
 
 from __future__ import annotations
@@ -24,9 +15,6 @@ F2P = ["tests/test_widget.py::test_empty"]
 ON = "needs-enforcement"
 
 
-# --------------------------------------------------------------------------- #
-# 2B — skip the redundant whole-goal final tester (enforcement-gated).
-# --------------------------------------------------------------------------- #
 class ScriptedCtx:
     """WorkflowContext stand-in scripting agent() replies (mirrors the f2p-gate
     test's fake). ``tree``/``source`` answer the working-tree probes."""

@@ -1,10 +1,7 @@
-"""Every docker call in the teardown path obeys OPENCOLLAB_DOCKER_TIMEOUT.
+"""Apply OPENCOLLAB_DOCKER_TIMEOUT to every teardown call.
 
-Three call sites used to pin 30 s and so opt out of the knob silently. That cost
-a whole cell: at 36 concurrent runs `docker rm -f` took longer than 30 s, every
-finished run raised `technical container cleanup failed`, and five successful
-runs in a row were recorded as failures with no prediction written -- the agent
-had already done its work.
+At high concurrency, container removal can exceed a hardcoded 30-second limit
+and turn completed solver work into a cleanup failure without a prediction.
 """
 
 from __future__ import annotations

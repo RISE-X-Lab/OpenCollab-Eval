@@ -1,19 +1,7 @@
-"""Every arm names one directory, and it is the one the container presents.
+"""Keep every arm's repository path aligned with CONTAINER_REPO_ROOT.
 
-Images disagree about where a task's repository lives -- SWE-bench Verified
-checks out at ``/testbed``, SWE-bench Pro at ``/app`` -- and the driver settles
-it before an agent runs, linking whichever directory holds the checkout to
-``CONTAINER_REPO_ROOT`` (``gen_prediction_docker.py:195-213``). So the path an
-arm's prompt names is a harness fact, not a benchmark fact, and changing
-benchmark does not change it.
-
-What can still go wrong is drift between the arms. The path is named thirteen
-times across the shared task text and the scripted workflow's own prompts, and
-an arm whose copy was edited and another's was not would be describing a
-different machine from the arm it is compared against. That difference sits in
-the prompt, where no results table can show it -- the shape of every defect the
-arm-alignment audit exists for. Hence: one literal, and a check that every arm
-follows it when it moves.
+The driver normalizes benchmark checkouts to this path before the solver runs.
+Changing the shared constant must update every arm's prompt.
 """
 
 from __future__ import annotations
@@ -90,9 +78,6 @@ def _arm_prompts(repo_root: str | None = None) -> dict[str, str]:
     }
 
 
-# --- one directory, and it is the container's ---------------------------------
-
-
 def test_the_directory_is_written_down_in_exactly_one_place() -> None:
     assert HOME.read_text(encoding="utf-8").count('CONTAINER_REPO_ROOT = "/testbed"') == 1
 
@@ -113,9 +98,6 @@ def test_the_shared_task_text_is_what_every_measured_run_was_given() -> None:
     assert workspace_facts() == WORKSPACE_FACTS
     assert CONTAINER_REPO_ROOT in text
     assert workspace_facts(ELSEWHERE) in compose_shared_task(INSTANCE, repo_root=ELSEWHERE)
-
-
-# --- and every arm follows it when it moves -----------------------------------
 
 
 @pytest.mark.parametrize("arm", sorted(_arm_prompts()))

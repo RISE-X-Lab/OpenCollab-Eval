@@ -1,9 +1,4 @@
-"""analyst-solve weaves FAIL_TO_PASS node-ids into its prompts (inject-f2p).
-
-The node-ids must reach the scope/plan/coder/tester prompts so the run is
-scoped to the graded behavior. Anti-overfit: the block surfaces node-ids + a
-root-cause instruction, never the tests' literal assertion values.
-"""
+"""Check that FAIL_TO_PASS node-ids reach workflow prompts without assertion values."""
 
 from __future__ import annotations
 

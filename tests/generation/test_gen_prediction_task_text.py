@@ -1,11 +1,4 @@
-"""What a run is asked to do must not depend on which arm is asked.
-
-The comparison these arms are built for is about how the work is organized. Any
-other difference between them -- what the task text discloses, what it says
-about the machine, how hard the system prompt pushes -- is read off the results
-table as if it were that organization. These tests pin the differences down to
-the one block that is allowed to differ.
-"""
+"""Check shared task text and declared prompt differences across solver arms."""
 
 from __future__ import annotations
 
@@ -36,12 +29,7 @@ FIXTURE = {
 
 
 def test_the_two_arms_get_byte_identical_task_text_when_both_are_blind():
-    """The condition trusted host extraction requires, so it is the real case.
-
-    ``gen_prediction_workflow`` refuses to run at all unless blind validation is
-    on, so this equality — not the general case below it — is what the arms
-    actually ran under.
-    """
+    """Workflow extraction requires blind validation, so compare that active mode."""
     assert gpa.build_task(FIXTURE) == gpw.build_task(FIXTURE, include_fail_to_pass=False)
 
 
@@ -57,24 +45,14 @@ def test_the_only_difference_a_disclosure_makes_is_the_trailing_block():
 
 
 def test_the_issue_hints_reach_both_arms():
-    """They used to reach the workflow arm only.
-
-    ``hints_text`` is the issue discussion, and on a SWE-bench instance it
-    routinely names the function to change. One arm having it and the other not
-    is a difference about where the bug is, not about how work is organized.
-    """
+    """Issue discussion can identify the faulty function and must reach both arms."""
     hint = FIXTURE["hints_text"]
     assert hint in gpa.build_task(FIXTURE)
     assert hint in gpw.build_task(FIXTURE, include_fail_to_pass=False)
 
 
 def test_both_arms_are_told_where_the_answer_is_read_from():
-    """Otherwise a run that left its work elsewhere cannot be read as a choice.
-
-    An agent that leaves its edits in a teammate's worktree submits nothing, and
-    the empty patch is indistinguishable from a model that chose not to finish
-    unless the model was told which tree is collected.
-    """
+    """Edits in a teammate's worktree are absent from the collected patch."""
     for text in (
         gpa.build_task(FIXTURE),
         gpw.build_task(FIXTURE, include_fail_to_pass=False),
@@ -98,14 +76,7 @@ def test_neither_system_prompt_carries_procedure_for_one_arm_only():
 
 
 def test_the_single_arm_asks_for_exactly_the_declared_working_bundle():
-    """The list passed to ``builtin_tools`` is the one both arms declare.
-
-    Its counterpart -- that the team's Analyst holds these seven and only the
-    collaboration channel on top -- is pinned in OpenCollab's
-    ``experiment/framework/tests/test_handoff_experiment_team.py``, because the team configuration
-    lives in that repository. Both sides assert the same seven names, so a
-    change on either fails a test rather than drifting.
-    """
+    """Match the working tools declared by the experimental team's Analyst."""
     from opencollab_eval.generation.gen_prediction_constants import (
         WORKING_TOOL_NAMES,
     )
@@ -127,15 +98,7 @@ def test_the_single_arm_asks_for_exactly_the_declared_working_bundle():
 
 
 def test_the_repository_listing_is_appended_the_same_way_for_both_arms():
-    """One formatter, two call sites, because the arms reach an env differently.
-
-    An arm handed a map of the repository and an arm that has to go and list it
-    are not doing the same task, and neither are two arms whose maps are laid
-    out differently. The listing itself has to be taken through the environment
-    -- the directory this process could walk is the one the run was launched
-    from, not the one inside the task container -- so it arrives as a string and
-    only the formatting is shared.
-    """
+    """Format the environment-provided repository listing identically for both arms."""
     from opencollab_eval.generation.gen_prediction_task_text import (
         append_repository_layout,
     )
@@ -149,9 +112,7 @@ def test_the_repository_listing_is_appended_the_same_way_for_both_arms():
 
 
 def test_a_listing_that_could_not_be_taken_appends_nothing():
-    """``build_repo_map_via_env`` returns "" when it fails, so callers append
-    unconditionally. A run without a map must be a shorter prompt, not a prompt
-    with an empty section in it."""
+    """Failed or blank repository listings must leave the prompt unchanged."""
     from opencollab_eval.generation.gen_prediction_task_text import (
         REPOSITORY_LAYOUT_HEADER,
         append_repository_layout,
@@ -164,12 +125,7 @@ def test_a_listing_that_could_not_be_taken_appends_nothing():
 
 
 def test_a_listing_that_could_not_be_taken_says_so(capsys):
-    """Silence is how this went unnoticed for a whole day in a container.
-
-    A failed listing produces the same prompt as a run that never asked for
-    one, so nothing downstream had any reason to mention it. The run log now
-    does.
-    """
+    """Log a failed listing because its prompt matches a run that never requested one."""
     from opencollab_eval.generation.gen_prediction_task_text import (
         append_repository_layout,
     )
@@ -182,19 +138,7 @@ def test_a_listing_that_could_not_be_taken_says_so(capsys):
 
 
 def test_both_arms_default_to_the_same_run_limits() -> None:
-    """A ceiling that differs by arm is a ration that differs by arm.
-
-    The two generators wrote their own numbers and had drifted apart: 40 steps
-    and 900 seconds for the single agent, 60 and 1800 for the workflow and the
-    team. Neither ceiling bound on the runs that had been done, so the gap left
-    no trace in any result -- and a longer run, or a slower machine, is all it
-    would take for one arm to be stopped by a limit the other never meets.
-
-    Tokens are what the arms are aligned on. These two are stop-losses, so what
-    is pinned is that both arms read the same value, not what the value is: the
-    constants come from one module, and each CLI names them instead of writing
-    a number of its own.
-    """
+    """Use shared defaults so longer or slower runs face the same limits."""
     from opencollab_eval.generation import gen_prediction as single
     from opencollab_eval.generation import gen_prediction_workflow as workflow
 
@@ -217,14 +161,7 @@ def test_shared_text_works_with_native_profile_budget_and_tools():
     assert "no network access" not in text
 
 
-# The properties below are checked against families of terms rather than
-# against the sentences themselves. A prompt is edited for wording constantly
-# -- a clause moves, a synonym replaces a word -- and a test that pins the
-# literal string goes red on every one of those without a property having
-# changed. What must not change is that the text still tells every arm what is
-# scored, what finishing looks like, what the machine it runs on can and cannot
-# do, and what a step costs. A family is wide enough that a rewrite inside it
-# stays green and narrow enough that deleting the paragraph turns it red.
+# Term families permit wording changes while detecting missing prompt properties.
 _SOURCE_UNIT = ("source", "source code", "code")
 _SCORING = ("scored", "graded", "counts", "credit")
 _UNSCORED_ARTIFACTS = (
