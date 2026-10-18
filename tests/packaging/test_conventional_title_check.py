@@ -12,7 +12,7 @@ from scripts.check_conventional_title import validate_title
 from tests.support.paths import SOURCE_ROOT
 
 _REPO_ROOT = SOURCE_ROOT
-_CLEAN_SNAPSHOT = "chore: \u5efa\u7acb\u5e72\u51c0\u53d1\u5e03\u5feb\u7167"
+_CLEAN_SNAPSHOT = "chore: create clean release snapshot"
 _ZERO_SHA = "0" * 40
 
 
@@ -60,12 +60,12 @@ def _run(repository: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 def test_title_accepts_repository_convention():
     assert validate_title(_CLEAN_SNAPSHOT) is None
-    assert validate_title("fix(runtime)!: \u4fee\u590d\u4f1a\u8bdd\u7ec8\u6001") is None
+    assert validate_title("fix(runtime)!: preserve terminal state") is None
 
 
-def test_title_rejects_invalid_type_english_summary_and_multiple_lines():
+def test_title_rejects_invalid_type_chinese_summary_and_multiple_lines():
     assert validate_title("change: \u66f4\u65b0") == "title must follow Conventional Commits"
-    assert validate_title("fix: repair runtime") == "title summary must contain Chinese text"
+    assert validate_title("fix: \u4fee\u590d") == "title summary must use English"
     assert validate_title("fix: \u4fee\u590d\nsecond line") == "title must be a single line"
 
 
@@ -99,7 +99,7 @@ def test_range_mode_checks_every_pushed_commit(tmp_path):
         repository,
         "commit",
         "-m",
-        "fix: \u4fee\u590d\u6700\u7ec8\u63d0\u4ea4",
+        "fix: repair final commit",
     )
 
     result = _run(repository, "--range", base, "HEAD")
@@ -117,7 +117,7 @@ def test_range_mode_accepts_all_valid_titles(tmp_path):
         repository,
         "commit",
         "-m",
-        "test: \u589e\u52a0\u9996\u4e2a\u6d4b\u8bd5",
+        "test: add first test",
     )
     (repository / "tracked.txt").write_text("second\n", encoding="utf-8")
     _git(repository, "add", "tracked.txt")
@@ -125,7 +125,7 @@ def test_range_mode_accepts_all_valid_titles(tmp_path):
         repository,
         "commit",
         "-m",
-        "fix: \u4fee\u590d\u7b2c\u4e8c\u4e2a\u6d4b\u8bd5",
+        "fix: repair second test",
     )
 
     result = _run(repository, "--range", base, "HEAD")
@@ -152,7 +152,7 @@ def test_zero_sha_range_checks_all_reachable_commits(tmp_path):
         repository,
         "commit",
         "-m",
-        "fix: \u4fee\u590d\u6700\u7ec8\u63d0\u4ea4",
+        "fix: repair final commit",
     )
 
     result = _run(repository, "--range", _ZERO_SHA, "HEAD")
@@ -184,8 +184,8 @@ def test_github_merge_validates_its_pr_title_and_introduced_commits(tmp_path):
     repository = _repository(tmp_path, _CLEAN_SNAPSHOT)
     base = _github_merge(
         repository,
-        branch_title="fix: \u4fee\u590d\u8bc4\u5206\u6267\u884c",
-        pr_title="fix(eval): \u4fee\u590d\u8bc4\u5206\u6267\u884c",
+        branch_title="fix: repair scoring execution",
+        pr_title="fix(eval): repair scoring execution",
     )
     assert _run(repository, "--commit", "HEAD").returncode == 0
     result = _run(repository, "--range", base, "HEAD")
@@ -198,25 +198,25 @@ def test_github_merge_does_not_hide_invalid_branch_commit(tmp_path):
     base = _github_merge(
         repository,
         branch_title="invalid branch change",
-        pr_title="fix: \u4fee\u590d\u8bc4\u5206\u6267\u884c",
+        pr_title="fix: repair scoring execution",
     )
     result = _run(repository, "--range", base, "HEAD")
     assert result.returncode == 1
     assert "invalid branch change" in result.stdout
 
 
-def test_github_merge_still_requires_conventional_chinese_pr_title(tmp_path):
+def test_github_merge_requires_conventional_english_pr_title(tmp_path):
     repository = _repository(tmp_path, _CLEAN_SNAPSHOT)
-    _github_merge(repository, branch_title="fix: \u4fee\u590d\u8bc4\u5206\u6267\u884c", pr_title="fix: repair scoring")
+    _github_merge(repository, branch_title="fix: repair scoring execution", pr_title="fix: \u4fee\u590d\u8bc4\u5206")
     result = _run(repository, "--commit", "HEAD")
     assert result.returncode == 1
-    assert "Chinese text" in result.stdout
+    assert "English" in result.stdout
 
 
 def test_single_parent_commit_cannot_impersonate_a_github_merge(tmp_path):
     repository = _repository(tmp_path, _CLEAN_SNAPSHOT)
     _git(repository, "commit", "--allow-empty", "-m", "Merge pull request #28 from org/feature",
-         "-m", "fix: \u4fee\u590d\u8bc4\u5206\u6267\u884c")
+         "-m", "fix: repair scoring execution")
     assert _run(repository, "--commit", "HEAD").returncode == 1
 
 
@@ -250,3 +250,9 @@ def test_reviewed_history_does_not_exempt_an_unrelated_branch(tmp_path, monkeypa
     monkeypatch.chdir(repository)
 
     assert checker.main(["--range", base, "HEAD"]) == 1
+
+
+def test_title_rejects_cjk_extensions_and_unreadable_summaries():
+    for summary in ("\U00020000", "12345", "\u200b"):
+        assert validate_title(f"fix: {summary}") is not None
+    assert validate_title("docs: clarify café setup — preserve Unicode punctuation") is None

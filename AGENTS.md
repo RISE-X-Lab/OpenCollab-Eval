@@ -9,11 +9,11 @@ Other translated documents live only in root `*.zh-CN.md` files,
 `src/opencollab_eval/`. Every translation must link to its English source,
 preserve code blocks and technical identifiers, and remain structurally
 aligned with the canonical content. Commit messages, pull request text, and
-review replies use Chinese while retaining an English Conventional Commit type.
+review replies use English, retaining the existing Conventional Commit format.
 
 Merge pull requests with a merge commit, preserving the feature-branch history and
 human authorship. Keep commits focused on meaningful implementation, tests, or
-documentation changes. Merge commit subjects also use Chinese descriptions with
+documentation changes. Merge commit subjects also use English descriptions with
 an English Conventional Commit type.
 
 The dependency direction is `opencollab_eval -> opencollab public API`.

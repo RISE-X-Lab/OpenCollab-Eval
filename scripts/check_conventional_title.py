@@ -7,18 +7,18 @@ import argparse
 import os
 import re
 import subprocess
+import unicodedata
 from pathlib import Path
 
 _TITLE = re.compile(
     r"^(feat|fix|refactor|docs|test|chore|perf|ci|build|style|revert)"
     r"(\([a-z0-9._/ -]+\))?!?: .+$"
 )
-_CHINESE = re.compile(r"[\u3400-\u9fff]")
 _ZERO_SHA = "0" * 40
 _GITHUB_MERGE = re.compile(r"^Merge pull request #[1-9][0-9]* from \S+$")
-# Preserve titles in the reviewed ICLR history when importing it into main.
+# Preserve reviewed history from before the English collaboration convention.
 # Descendants and unrelated commits remain subject to the current convention.
-_PRESERVED_HISTORY_TIPS = ("d7cd9e167ce6b52d3d2a65a2de81a237f3fd8100",)
+_PRESERVED_HISTORY_TIPS = ("411141abfa8e36096d3bfef03816e70e3cf4a8bf",)
 
 
 def _git_environment() -> dict[str, str]:
@@ -37,8 +37,14 @@ def validate_title(title: str) -> str | None:
         return "title must be a single line"
     if not _TITLE.fullmatch(title):
         return "title must follow Conventional Commits"
-    if not _CHINESE.search(title):
-        return "title summary must contain Chinese text"
+    summary = title.split(": ", 1)[1]
+    if not any(char.isalpha() for char in summary) or any(
+        unicodedata.category(char).startswith("C") or char in "\u2028\u2029"
+        for char in summary
+    ):
+        return "title summary must contain readable text"
+    if any("CJK" in unicodedata.name(char, "") and char.isalpha() for char in summary):
+        return "title summary must use English"
     return None
 
 
