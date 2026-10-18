@@ -11,13 +11,13 @@ scripted context stand-in exercises it without touching an LLM.
 from __future__ import annotations
 
 import importlib
-from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
 
 from opencollab_eval.generation.gen_prediction_constants import WORKING_TOOL_NAMES
+from tests.support.paths import SOURCE_ROOT
 
 _module = importlib.import_module("opencollab_eval.workflows.self_collaboration")
 self_collaboration = _module.self_collaboration
@@ -31,7 +31,7 @@ COORDINATION_TOOLS = {"message_agent", "team_status"}
 
 def _team_config() -> dict[str, Any]:
     """Read the owned instrument even when OpenCollab is installed as a wheel."""
-    path = Path(__file__).resolve().parents[2] / "experiment/framework/configs/team.handoff.primary-legacy.yaml"
+    path = SOURCE_ROOT / "experiment/framework/configs/team.handoff.primary-legacy.yaml"
     return yaml.safe_load(path.read_text())
 
 
