@@ -314,7 +314,7 @@ _FACTORS: tuple[Factor, ...] = (
         ),
         evidence=(
             "OpenCollab-Eval/src/opencollab_eval/generation/gen_prediction_constants.py:49",
-            "OpenCollab/configs/team.handoff.primary-legacy.yaml:78",
+            "OpenCollab-Eval/experiment/framework/configs/team.handoff.primary-legacy.yaml:78",
             "OpenCollab-Eval/src/opencollab_eval/workflows/self_collaboration.py:432",
         ),
     ),
@@ -329,7 +329,7 @@ _FACTORS: tuple[Factor, ...] = (
             "and was removed for exactly that reason."
         ),
         evidence=(
-            "OpenCollab/configs/team.handoff.primary-legacy.yaml:67",
+            "OpenCollab-Eval/experiment/framework/configs/team.handoff.primary-legacy.yaml:67",
             "OpenCollab/opencollab/bootstrap/tool_registry.py:164",
         ),
     ),

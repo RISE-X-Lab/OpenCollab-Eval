@@ -1,7 +1,7 @@
 """Tests for ``opencollab_eval.workflows.self_collaboration``.
 
 The workflow's reason to exist is that it is the code-sequenced twin of
-``OpenCollab/configs/team.handoff.experiment.yaml``: same three roles, same six
+``experiment/framework/configs/team.handoff.primary-legacy.yaml``: same three roles, same six
 directed edges, same tool bundles, and only the sequencing differs. That claim
 is worth nothing as a comment, so the parity is read off both sides here and
 compared. Everything else is pure orchestration over ``ctx.agent``, so a
@@ -11,13 +11,13 @@ scripted context stand-in exercises it without touching an LLM.
 from __future__ import annotations
 
 import importlib
-from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
 
 from opencollab_eval.generation.gen_prediction_constants import WORKING_TOOL_NAMES
+from tests.support.paths import SOURCE_ROOT
 
 _module = importlib.import_module("opencollab_eval.workflows.self_collaboration")
 self_collaboration = _module.self_collaboration
@@ -30,21 +30,8 @@ COORDINATION_TOOLS = {"message_agent", "team_status"}
 
 
 def _team_config() -> dict[str, Any]:
-    """The team this workflow mirrors, read from the OpenCollab working tree.
-
-    Reachable when OpenCollab is installed from source, which is how the
-    experiment runs; a wheel carries the package without ``configs/``, and
-    there the parity tests skip rather than fail on a missing file.
-    """
-    import opencollab
-
-    path = (
-        Path(opencollab.__file__).resolve().parent.parent
-        / "configs"
-        / "team.handoff.primary-legacy.yaml"
-    )
-    if not path.is_file():
-        pytest.skip(f"team config not reachable from this install: {path}")
+    """Read the owned instrument even when OpenCollab is installed as a wheel."""
+    path = SOURCE_ROOT / "experiment/framework/configs/team.handoff.primary-legacy.yaml"
     return yaml.safe_load(path.read_text())
 
 

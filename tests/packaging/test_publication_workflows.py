@@ -200,8 +200,9 @@ def test_ci_uses_verified_action_release_commits() -> None:
         workflow.count(
             "token: ${{ secrets.OPENCOLLAB_READ_TOKEN || github.token }}"
         )
-        == 2
+        == 3
     )
+    assert "ref: d2736f3adbfbe5da40c080daa59c0c3c7f5b1643" in workflow
     assert "if-no-files-found: error" in workflow
     assert workflow.count(
         "OPENCOLLAB_SOURCE_ROOT: ${{ github.workspace }}/opencollab-source"

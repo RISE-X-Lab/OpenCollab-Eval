@@ -86,6 +86,35 @@ jobs:
           OPENCOLLAB_EVAL_SOURCE_ROOT: ${{ github.workspace }}/eval
         run: scripts/verify_wheel_contract.sh "${{ steps.wheels.outputs.opencollab }}" "${{ steps.wheels.outputs.eval }}"
 
+  framework-experiments:
+    name: Framework experiment instruments
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out evaluation inputs
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: eval
+          persist-credentials: false
+      - name: Check out the framework instrument version
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: RISE-X-Lab/OpenCollab
+          ref: d2736f3adbfbe5da40c080daa59c0c3c7f5b1643
+          token: ${{ secrets.OPENCOLLAB_READ_TOKEN || github.token }}
+          path: framework
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install the instrument runtime
+        run: python -m pip install -e './framework[dev]'
+      - name: Check assembly and transferred regressions
+        working-directory: eval
+        run: |
+          python experiment/framework/scripts/analyst_cards.py
+          python -m pytest -q -o asyncio_mode=auto experiment/framework/tests
+
   deterministic-e2e:
     name: Deterministic SWE end-to-end
     runs-on: ubuntu-latest

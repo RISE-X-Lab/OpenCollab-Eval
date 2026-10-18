@@ -68,28 +68,19 @@ _REPOSITORY_LISTING_HEADERS = ("Repository files", "Repository map")
 
 
 def default_team_config() -> str:
-    """Where the experiment team file is, in either layout this runs in.
+    """Resolve current owned inputs, or an explicitly selected historical checkout.
 
-    A wheel carries the package without ``configs/``, and CI installs
-    OpenCollab from one -- so the checkout it built the wheel from is named by
-    ``OPENCOLLAB_SOURCE_ROOT``, which is where the file is then reachable. A
-    working tree carries both, so the installed package's own parent answers
-    when no source root is named. The path is returned either way: whether it
-    exists is the caller's to check and to say something useful about, because
-    "the team arm's configuration is not here" is a finding and not a detail.
+    A wheel needs an evaluation source checkout named by
+    ``OPENCOLLAB_EVAL_SOURCE_ROOT``. An explicit ``OPENCOLLAB_SOURCE_ROOT``
+    retains the historical framework layout. Missing selected inputs remain
+    missing; never substitute another revision's prompt silently.
     """
-    import os
-
-    import opencollab
-
-    source_root = os.environ.get("OPENCOLLAB_SOURCE_ROOT", "").strip()
-    roots = [Path(source_root)] if source_root else []
-    roots.append(Path(opencollab.__file__).resolve().parent.parent)
-    for root in roots:
-        candidate = root / EXPERIMENT_TEAM_CONFIG
-        if candidate.is_file():
-            return str(candidate)
-    return str(roots[0] / EXPERIMENT_TEAM_CONFIG)
+    legacy_root = os.environ.get("OPENCOLLAB_SOURCE_ROOT", "").strip()
+    if legacy_root:
+        return str(Path(legacy_root) / EXPERIMENT_TEAM_CONFIG)
+    source_root = os.environ.get("OPENCOLLAB_EVAL_SOURCE_ROOT", "").strip()
+    root = Path(source_root) if source_root else Path(__file__).resolve().parents[3]
+    return str(root / "experiment/framework" / EXPERIMENT_TEAM_CONFIG)
 
 
 # --------------------------------------------------------------------------

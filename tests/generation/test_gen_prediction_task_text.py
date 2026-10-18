@@ -102,7 +102,7 @@ def test_the_single_arm_asks_for_exactly_the_declared_working_bundle():
 
     Its counterpart -- that the team's Analyst holds these seven and only the
     collaboration channel on top -- is pinned in OpenCollab's
-    ``tests/test_handoff_experiment_team.py``, because the team configuration
+    ``experiment/framework/tests/test_handoff_experiment_team.py``, because the team configuration
     lives in that repository. Both sides assert the same seven names, so a
     change on either fails a test rather than drifting.
     """

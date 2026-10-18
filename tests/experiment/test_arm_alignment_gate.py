@@ -85,15 +85,14 @@ def test_the_team_arm_s_configuration_is_reachable_from_here() -> None:
     # that goes quiet exactly when the thing it guards is missing is the shape
     # this project has been bitten by three times in one day.
     #
-    # Reachable means: a source checkout, either the one the installed package
-    # came from or the one named by OPENCOLLAB_SOURCE_ROOT. A wheel carries no
-    # ``configs/``, so CI has to point that variable at the checkout it built
-    # the wheel from, pinned at a commit that has this team file.
+    # Current instruments belong to this evaluation checkout. An explicit
+    # historical framework root retains the original batch layout.
     path = Path(arm_audit.default_team_config())
 
     assert path.is_file(), (
         f"the team arm's configuration is not at {path}. Point "
-        "OPENCOLLAB_SOURCE_ROOT at an OpenCollab checkout that carries "
+        "OPENCOLLAB_EVAL_SOURCE_ROOT at the evaluation checkout, or use an explicit "
+        "historical OPENCOLLAB_SOURCE_ROOT carrying "
         f"{arm_audit.EXPERIMENT_TEAM_CONFIG}."
     )
 
@@ -647,3 +646,14 @@ def test_an_arm_that_stops_recording_its_transport_turns_the_check_red(
 
     assert not report.ok
     assert "metrics_key_set" in _failing_factors(report)
+
+
+def test_current_config_lookup_uses_evaluation_owned_inputs_and_keeps_missing_inputs_missing(tmp_path, monkeypatch):
+    monkeypatch.delenv("OPENCOLLAB_SOURCE_ROOT", raising=False)
+    monkeypatch.setenv("OPENCOLLAB_EVAL_SOURCE_ROOT", str(tmp_path))
+    expected = tmp_path / "experiment/framework" / arm_audit.EXPERIMENT_TEAM_CONFIG
+    assert arm_audit.default_team_config() == str(expected)
+    assert not expected.exists()
+    expected.parent.mkdir(parents=True)
+    expected.write_text("entry: solo\nroles:\n  solo:\n    prompt: work\n")
+    assert Path(arm_audit.default_team_config()).read_text() == expected.read_text()
