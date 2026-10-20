@@ -405,7 +405,6 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
         proof["passed"] = sorted(passed)
         proof["failed"] = sorted(failed)
         proof["missing"] = [item for item in expected if item not in observed]
-        not_passed = [item for item in expected if item not in passed]
     elif repo == "tutao/tutanota":
         results = []
         marker = "OPENCOLLAB_OSPEC_RESULTS "
@@ -466,7 +465,6 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
         proof["missing"] = [item for item in expected if item not in observed]
         proof["passed"] = passed
         proof["failed"] = failed
-        not_passed = [item for item in expected if item not in proof["passed"]]
     elif language in {"js", "javascript", "typescript", "ts"} or repo == "nodebb/nodebb":
         expected_titles = {
             item: " ".join(part.strip() for part in item.split(" | ")[1:] if part.strip()) if " | " in item else item
@@ -672,7 +670,6 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
         proof["missing"] = [item for item in expected if item not in proof["observed"]]
         proof["passed"] = [item for item in expected if item in passed_items and item not in failed_items]
         proof["failed"] = [item for item in expected if item in failed_items]
-        not_passed = [item for item in expected if item not in proof["passed"]]
     elif language == "python" or any("::" in item for item in expected):
         statuses = {}
         base_statuses = {}
@@ -706,7 +703,6 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
         proof["missing"] = [item for item in expected if item not in observed]
         proof["passed"] = [item for item in observed if python_expected_status(item) == "PASSED"]
         proof["failed"] = [item for item in observed if item not in proof["passed"]]
-        not_passed = [item for item in expected if item not in proof["passed"]]
     else:
         observed = []
         missing = []
@@ -720,7 +716,8 @@ def fail_to_pass_execution_proof(row, tests, exit_status, log_text):
         proof["missing"] = missing
         proof["passed"] = observed if exit_status == 0 else []
         proof["failed"] = observed if exit_status != 0 else []
-        not_passed = [item for item in expected if item not in proof["passed"]]
+    passed_targets = set(proof["passed"])
+    not_passed = [item for item in expected if item not in passed_targets]
     proof["not_passed"] = not_passed
     proof["ok"] = exit_status == 0 and not not_passed
     return proof
