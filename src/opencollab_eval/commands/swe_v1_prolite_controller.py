@@ -453,6 +453,29 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
         + shlex.quote(owner_nonce)
     )
     command = [*ssh_command, args.host, remote_command]
+
+    def cleanup_execution() -> tuple[dict[str, Any], BaseException | None]:
+        return _cleanup_remote_execution(
+            ssh_command=ssh_command,
+            host=args.host,
+            base_run_dir=args.base_run_dir,
+            remote_runtime_repo=args.remote_runtime_repo,
+            remote_python=str(args.remote_python),
+            proc=proc,
+        )
+
+    def wait_for_summary() -> dict[str, Any] | None:
+        return wait_for_terminal_remote_summary(
+            ssh_command=ssh_command,
+            host=args.host,
+            base_run_dir=args.base_run_dir,
+            remote_runtime_repo=args.remote_runtime_repo,
+            remote_python=str(args.remote_python),
+            owner_nonce=owner_nonce,
+            payload=payload,
+            deadline=completion_deadline,
+        )
+
     primary_failure_detail = ""
     try:
         existing_summary = recover_existing_remote_summary(
@@ -532,14 +555,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             poll_callback=poll_remote_runner,
         )
         if _local_process_group_exists(proc.pid):
-            cleanup, interruption = _cleanup_remote_execution(
-                ssh_command=ssh_command,
-                host=args.host,
-                base_run_dir=args.base_run_dir,
-                remote_runtime_repo=args.remote_runtime_repo,
-                remote_python=str(args.remote_python),
-                proc=proc,
-            )
+            cleanup, interruption = cleanup_execution()
             if interruption is not None:
                 raise interruption
             if not cleanup.get("ok"):
@@ -549,16 +565,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
         result = subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
         if result.returncode not in (0, 1, 2):
             primary_failure_detail = _redacted(result.stderr or result.stdout or f"ssh exited {result.returncode}")
-            summary = wait_for_terminal_remote_summary(
-                ssh_command=ssh_command,
-                host=args.host,
-                base_run_dir=args.base_run_dir,
-                remote_runtime_repo=args.remote_runtime_repo,
-                remote_python=str(args.remote_python),
-                owner_nonce=owner_nonce,
-                payload=payload,
-                deadline=completion_deadline,
-            )
+            summary = wait_for_summary()
             if summary is not None:
                 return recovered(summary, "primary_transport_lost")
             raise RuntimeError(_redacted(result.stderr or result.stdout or f"ssh exited {result.returncode}"))
@@ -566,16 +573,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
             summary = json.loads(result.stdout)
         except json.JSONDecodeError as exc:
             primary_failure_detail = _redacted(result.stderr or result.stdout or "remote runner returned no report")
-            recovered_summary = wait_for_terminal_remote_summary(
-                ssh_command=ssh_command,
-                host=args.host,
-                base_run_dir=args.base_run_dir,
-                remote_runtime_repo=args.remote_runtime_repo,
-                remote_python=str(args.remote_python),
-                owner_nonce=owner_nonce,
-                payload=payload,
-                deadline=completion_deadline,
-            )
+            recovered_summary = wait_for_summary()
             if recovered_summary is not None:
                 return recovered(recovered_summary, "primary_output_invalid")
             raise RuntimeError(_redacted(result.stdout[-4000:] or result.stderr[-4000:])) from exc
@@ -594,14 +592,7 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
                 "remote runner became unavailable because ownership could not be "
                 f"verified; refusing remote cleanup{detail}"
             ) from exc
-        cleanup, interruption = _cleanup_remote_execution(
-            ssh_command=ssh_command,
-            host=args.host,
-            base_run_dir=args.base_run_dir,
-            remote_runtime_repo=args.remote_runtime_repo,
-            remote_python=str(args.remote_python),
-            proc=proc,
-        )
+        cleanup, interruption = cleanup_execution()
         if interruption is not None:
             raise interruption from exc
         raise RuntimeError(
@@ -629,26 +620,12 @@ def _run_remote(args: argparse.Namespace) -> dict[str, Any]:
         recovered_summary = matching_terminal_remote_summary(observed, payload) if observed is not None else None
         if recovered_summary is not None:
             return recovered(recovered_summary, "primary_timeout")
-        cleanup, interruption = _cleanup_remote_execution(
-            ssh_command=ssh_command,
-            host=args.host,
-            base_run_dir=args.base_run_dir,
-            remote_runtime_repo=args.remote_runtime_repo,
-            remote_python=str(args.remote_python),
-            proc=proc,
-        )
+        cleanup, interruption = cleanup_execution()
         if interruption is not None:
             raise interruption from exc
         raise RuntimeError(f"remote run timed out after {args.total_timeout}s; cleanup={cleanup}") from exc
     except BaseException:
-        cleanup, _interruption = _cleanup_remote_execution(
-            ssh_command=ssh_command,
-            host=args.host,
-            base_run_dir=args.base_run_dir,
-            remote_runtime_repo=args.remote_runtime_repo,
-            remote_python=str(args.remote_python),
-            proc=proc,
-        )
+        cleanup, _interruption = cleanup_execution()
         print(
             "remote execution aborted; cleanup requested: " + json.dumps(cleanup, ensure_ascii=False),
             file=sys.stderr,
