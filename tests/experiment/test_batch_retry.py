@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 import shlex
 import subprocess
@@ -14,16 +13,17 @@ import pytest
 from opencollab_eval.commands import batch as batch_cli
 from opencollab_eval.experiment import cell_report
 from opencollab_eval.experiment.batch_spec import load_spec, spec_digest
-from tests.experiment import batch_support as launcher
-
-EXPERIMENT = launcher.EXPERIMENT
-_spec_text = launcher._spec_text
-
-# The same two fixtures the launcher's own tests run on, registered here under
-# the names the tests ask for. Bound to the module-level names with an
-# underscore so nothing in this file shadows a fixture argument.
-_oc_repo = pytest.fixture(name="oc_repo")(launcher.oc_repo.__wrapped__)
-_experiment = pytest.fixture(name="experiment")(launcher.experiment.__wrapped__)
+from tests.experiment.batch_support import (
+    EXPERIMENT,
+    _spec_text,
+)
+from tests.experiment.batch_support import (
+    experiment as experiment,
+)
+from tests.experiment.batch_support import (
+    oc_repo as oc_repo,
+)
+from tests.experiment.cell_report_support import _write_metrics as _metrics
 
 # The README's fallback for "pgrep cannot be trusted here" was
 # ``grep -F '[o]pencollab_eval...'``. Under ``-F`` the brackets are literal, so
@@ -201,11 +201,6 @@ def test_plan_refuses_a_retry_on_another_machine(experiment: dict, capsys) -> No
     path = _retry_spec(experiment, "t1r", "rows: {start: 2, stop: 2}", ("host: h\n", "host: g\n"))
     assert _plan(experiment, path) == 2
     assert "host" in capsys.readouterr().err
-
-
-def _metrics(cell: Path, rows: list[dict]) -> None:
-    cell.mkdir(parents=True, exist_ok=True)
-    (cell / "metrics.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
 
 
 def test_retry_merge_takes_the_last_valid_attempt(tmp_path: Path) -> None:

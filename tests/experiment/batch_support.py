@@ -13,6 +13,8 @@ import pytest
 from opencollab_eval.commands import batch as batch_cli
 from opencollab_eval.experiment import batch_remote
 from opencollab_eval.experiment.batch_spec import (
+    BatchSpec,
+    HostConfig,
     card_file_paths,
     load_host,
     load_spec,
@@ -206,24 +208,24 @@ def _good_facts(spec, host, cards: dict[str, str], instances_sha: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _checks(experiment: dict, facts: str) -> dict[str, batch_remote.Check]:
+def _preflight_inputs(experiment: dict) -> tuple[BatchSpec, HostConfig, dict[str, str]]:
     spec = load_spec(experiment["spec"])
     host = load_host(experiment["dir"] / "hosts" / "h.yaml")
     cards = {
         rel: batch_cli.blob_sha256(experiment["repo"], experiment["sha"], rel)
         for rel in card_file_paths(spec, experiment["repo"])
     }
+    return spec, host, cards
+
+
+def _checks(experiment: dict, facts: str) -> dict[str, batch_remote.Check]:
+    spec, host, cards = _preflight_inputs(experiment)
     parsed = batch_remote.parse_facts(facts)
     return {c.name: c for c in batch_remote.evaluate_preflight(spec, host, parsed, cards, "abc")}
 
 
 def _facts(experiment: dict) -> str:
-    spec = load_spec(experiment["spec"])
-    host = load_host(experiment["dir"] / "hosts" / "h.yaml")
-    cards = {
-        rel: batch_cli.blob_sha256(experiment["repo"], experiment["sha"], rel)
-        for rel in card_file_paths(spec, experiment["repo"])
-    }
+    spec, host, cards = _preflight_inputs(experiment)
     return _good_facts(spec, host, cards, "abc")
 
 
