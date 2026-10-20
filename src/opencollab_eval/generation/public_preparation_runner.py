@@ -435,25 +435,42 @@ def _quiesce_group(
             return True
     if not _group_exists(group_id):
         return True
-    for sent_signal in (signal.SIGTERM, signal.SIGKILL):
-        try:
-            if not leader_matches():
-                return True
-            os.killpg(group_id, sent_signal)
-        except ProcessLookupError:
+    try:
+        if not leader_matches():
             return True
-        deadline = time.monotonic() + _CLEANUP_SECONDS
-        while time.monotonic() < deadline:
-            _reap_children()
-            if expected_leader_identity is not None:
-                try:
-                    if not leader_matches():
-                        return True
-                except ProcessInspectionError:
-                    return False
-            if not _group_exists(group_id):
-                return True
-            time.sleep(0.05)
+        os.killpg(group_id, signal.SIGTERM)
+    except ProcessLookupError:
+        return True
+    deadline = time.monotonic() + _CLEANUP_SECONDS
+    while time.monotonic() < deadline:
+        _reap_children()
+        if expected_leader_identity is not None:
+            try:
+                if not leader_matches():
+                    return True
+            except ProcessInspectionError:
+                return False
+        if not _group_exists(group_id):
+            return True
+        time.sleep(0.05)
+    try:
+        if not leader_matches():
+            return True
+        os.killpg(group_id, signal.SIGKILL)
+    except ProcessLookupError:
+        return True
+    deadline = time.monotonic() + _CLEANUP_SECONDS
+    while time.monotonic() < deadline:
+        _reap_children()
+        if expected_leader_identity is not None:
+            try:
+                if not leader_matches():
+                    return True
+            except ProcessInspectionError:
+                return False
+        if not _group_exists(group_id):
+            return True
+        time.sleep(0.05)
     return not _group_exists(group_id)
 
 
