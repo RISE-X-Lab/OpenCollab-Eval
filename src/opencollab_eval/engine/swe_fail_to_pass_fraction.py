@@ -115,43 +115,27 @@ def fail_to_pass_outcome(instance_report: dict[str, Any] | None) -> FailToPassOu
     with ``graded`` False, which is the same answer an empty denominator gets:
     no evidence about the bug was produced.
     """
-    if not isinstance(instance_report, dict):
-        return FailToPassOutcome(
-            y=0.0,
-            f2p_success_count=0,
-            f2p_failure_count=0,
-            f2p_denominator=0,
-            graded=False,
-            ungraded_reason=UNGRADED_NO_REPORT,
-            resolved=False,
-            patch_successfully_applied=False,
-            p2p_success_count=0,
-            p2p_failure_count=0,
-        )
-
-    tests_status = instance_report.get("tests_status")
+    report = instance_report if isinstance(instance_report, dict) else {}
+    tests_status = report.get("tests_status")
     success = _test_ids(tests_status, "FAIL_TO_PASS", "success")
     failure = _test_ids(tests_status, "FAIL_TO_PASS", "failure")
     denominator = len(success) + len(failure)
-    applied = instance_report.get("patch_successfully_applied") is True
+    applied = report.get("patch_successfully_applied") is True
 
     if denominator > 0:
-        # The one place the ratio is formed. Skipped fail-to-pass tests are
-        # already inside `failure` when the report came from swebench 5.x.
-        y = len(success) / denominator
         reason = ""
+    elif not isinstance(instance_report, dict):
+        reason = UNGRADED_NO_REPORT
+    elif report.get("patch_is_None") is True or report.get("patch_exists") is False:
+        reason = UNGRADED_NO_PATCH
+    elif not applied:
+        reason = UNGRADED_PATCH_NOT_APPLIED
     else:
-        # Deliberately 0, where the official compute_fail_to_pass returns 1.
-        y = 0.0
-        if instance_report.get("patch_is_None") is True or instance_report.get("patch_exists") is False:
-            reason = UNGRADED_NO_PATCH
-        elif not applied:
-            reason = UNGRADED_PATCH_NOT_APPLIED
-        else:
-            reason = UNGRADED_NO_FAIL_TO_PASS_TESTS
+        reason = UNGRADED_NO_FAIL_TO_PASS_TESTS
 
     return FailToPassOutcome(
-        y=y,
+        # swebench 5.x includes skipped tests in failure; an empty denominator scores zero.
+        y=len(success) / denominator if denominator else 0.0,
         f2p_success_count=len(success),
         f2p_failure_count=len(failure),
         f2p_denominator=denominator,
@@ -159,7 +143,7 @@ def fail_to_pass_outcome(instance_report: dict[str, Any] | None) -> FailToPassOu
         ungraded_reason=reason,
         # Straight from the harness: resolved additionally requires every
         # pass-to-pass test to hold, so it is not implied by y == 1.
-        resolved=instance_report.get("resolved") is True,
+        resolved=report.get("resolved") is True,
         patch_successfully_applied=applied,
         p2p_success_count=len(_test_ids(tests_status, "PASS_TO_PASS", "success")),
         p2p_failure_count=len(_test_ids(tests_status, "PASS_TO_PASS", "failure")),
