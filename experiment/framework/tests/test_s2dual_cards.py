@@ -12,8 +12,6 @@ import re
 from pathlib import Path
 
 import pytest
-from opencollab.application.event_bus import EventBus
-from opencollab.bootstrap.context_builder import ContextBuilder, SpawnConfig
 from opencollab.bootstrap.single2_prompt import SINGLE2_SYSTEM_PROMPT
 from opencollab.bootstrap.team_config import load_team_config
 from opencollab.teams import declared_role_profiles
@@ -27,6 +25,7 @@ from experiment.framework.scripts.analyst_cards import (
     render,
     shared_body,
 )
+from experiment.framework.tests import prompt_context
 from experiment.framework.tests.paths import FRAMEWORK_ROOT as REPO_ROOT
 
 CONFIGS = REPO_ROOT / "configs"
@@ -94,14 +93,7 @@ def test_the_seated_prompt_is_single2s_with_the_card_after_it(name: str) -> None
     the one the single-agent arm runs.
     """
     team = _team(name)
-    builder = ContextBuilder(
-        team,
-        SpawnConfig(
-            model="m", provider="openai", api_key="k", base_url=None,
-            llm_timeout=600.0, tracer=None, event_bus=EventBus(None),
-            permission_policy=None,
-        ),
-    )
+    builder = prompt_context(team)
     for role in ROLES:
         prompt = builder.build_plan(role).system_prompt()
         assert prompt.startswith(SINGLE2_SYSTEM_PROMPT), role
