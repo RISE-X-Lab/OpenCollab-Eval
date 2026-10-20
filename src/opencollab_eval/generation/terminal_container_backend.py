@@ -321,6 +321,16 @@ def file_snapshot(container, paths, output):
     return records
 
 
+def _git_mode(entry):
+    if entry is None:
+        return None
+    if entry[2] == "symlink":
+        return "120000"
+    if entry[2] == "directory":
+        return "040000"
+    return "100755" if entry[0] & 0o111 else "100644"
+
+
 def state_diff(before, after):
     """Create actual Git-style textual/binary differences without model changes."""
     result = []
@@ -329,32 +339,7 @@ def state_diff(before, after):
         if a == b:
             continue
         relative = path.lstrip("/")
-        oldmode = (
-            None
-            if a is None
-            else (
-                "120000"
-                if a[2] == "symlink"
-                else "040000"
-                if a[2] == "directory"
-                else "100755"
-                if a[0] & 0o111
-                else "100644"
-            )
-        )
-        newmode = (
-            None
-            if b is None
-            else (
-                "120000"
-                if b[2] == "symlink"
-                else "040000"
-                if b[2] == "directory"
-                else "100755"
-                if b[0] & 0o111
-                else "100644"
-            )
-        )
+        oldmode, newmode = _git_mode(a), _git_mode(b)
         header = f"diff --git a/{relative} b/{relative}\n"
         if a is None:
             header += f"new file mode {newmode}\n"

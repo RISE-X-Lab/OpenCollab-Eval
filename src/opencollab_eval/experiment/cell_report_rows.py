@@ -654,6 +654,7 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
         role_headroom = (
             {role: seat_cap - spent for role, spent in role_tokens.items()} if seat_cap is not None else {}
         )
+        delegates = delegate_roles(nodes) or DELEGATE_ROLES
         row = RunRow(
             instance_id=record["instance_id"],
             status=str(summary.get("status") or record.get("runtime_status") or ""),
@@ -673,7 +674,7 @@ def run_rows(cell: str | Path, arm: str = "team") -> list[RunRow]:
                 == {k: v for k, v in recorded_spend.items() if v or k in role_tokens}
             ),
             delivered=any(
-                s.role in (delegate_roles(nodes) or DELEGATE_ROLES) and s.tokens > 0 and s.assistant > 0
+                s.role in delegates and s.tokens > 0 and s.assistant > 0
                 for s in seats.values()
             ),
             every_delegate=_every_delegate_worked(seats, nodes),

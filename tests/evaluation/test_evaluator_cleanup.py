@@ -51,7 +51,7 @@ def test_run_eval_task_rejects_invalid_extras_before_side_effects(
     assert output_dir.exists() is False
 
 
-def test_tracer_close_failure_still_cleans_environment(monkeypatch, tmp_path):
+def test_tracer_close_failure_still_cleans_environment(monkeypatch, tmp_path, eval_in_env):
     patch_evaluator_llm(monkeypatch, FakeLLMClient)
     real_tracer = evaluator.Tracer
 
@@ -68,15 +68,10 @@ def test_tracer_close_failure_still_cleans_environment(monkeypatch, tmp_path):
     monkeypatch.setattr(evaluator, "Tracer", FailingCloseTracer)
     env = FakeEnv()
 
-    async def env_factory(task):
-        return env
-
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id="trace-close", description="fix"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
         )
     )
 
@@ -104,7 +99,7 @@ def test_tracer_destructor_never_emits_an_unraisable_close_failure(monkeypatch):
     assert unraisable == []
 
 
-def test_patch_extraction_exception_is_reported(monkeypatch, tmp_path):
+def test_patch_extraction_exception_is_reported(monkeypatch, tmp_path, eval_in_env):
     patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
     class ExtractionFailureEnv(FakeEnv):
@@ -115,15 +110,10 @@ def test_patch_extraction_exception_is_reported(monkeypatch, tmp_path):
 
     env = ExtractionFailureEnv()
 
-    async def env_factory(task):
-        return env
-
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id="extract-exception", description="fix"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
         )
     )
 
@@ -134,7 +124,7 @@ def test_patch_extraction_exception_is_reported(monkeypatch, tmp_path):
     assert result.submission_eligible is False
 
 
-def test_patch_extraction_nonzero_exit_is_reported(monkeypatch, tmp_path):
+def test_patch_extraction_nonzero_exit_is_reported(monkeypatch, tmp_path, eval_in_env):
     patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
     class ExtractionFailureEnv(FakeEnv):
@@ -145,15 +135,10 @@ def test_patch_extraction_nonzero_exit_is_reported(monkeypatch, tmp_path):
 
     env = ExtractionFailureEnv()
 
-    async def env_factory(task):
-        return env
-
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id="extract-nonzero", description="fix"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
         )
     )
 
@@ -164,7 +149,7 @@ def test_patch_extraction_nonzero_exit_is_reported(monkeypatch, tmp_path):
     assert result.submission_eligible is False
 
 
-def test_patch_extraction_rejects_truncated_diff(monkeypatch, tmp_path):
+def test_patch_extraction_rejects_truncated_diff(monkeypatch, tmp_path, eval_in_env):
     patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
     class TruncatedDiffEnv(FakeEnv):
@@ -181,15 +166,10 @@ def test_patch_extraction_rejects_truncated_diff(monkeypatch, tmp_path):
 
     env = TruncatedDiffEnv()
 
-    async def env_factory(task):
-        return env
-
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id="extract-truncated", description="fix"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
         )
     )
 
@@ -204,6 +184,7 @@ def test_patch_extraction_rejects_truncated_diff(monkeypatch, tmp_path):
 def test_deferred_patch_extraction_skips_container_diff_without_hiding_cleanup(
     monkeypatch,
     tmp_path,
+    eval_in_env,
 ):
     patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
@@ -215,15 +196,10 @@ def test_deferred_patch_extraction_skips_container_diff_without_hiding_cleanup(
 
     env = DeferredEnv()
 
-    async def env_factory(task):
-        return env
-
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id="deferred-extraction", description="fix"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             defer_patch_extraction=True,
         )
     )
@@ -236,7 +212,7 @@ def test_deferred_patch_extraction_skips_container_diff_without_hiding_cleanup(
     assert result.error is None
 
 
-def test_environment_cleanup_failure_is_reported(monkeypatch, tmp_path):
+def test_environment_cleanup_failure_is_reported(monkeypatch, tmp_path, eval_in_env):
     patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
     class CleanupFailureEnv(FakeEnv):
@@ -245,15 +221,10 @@ def test_environment_cleanup_failure_is_reported(monkeypatch, tmp_path):
 
     env = CleanupFailureEnv()
 
-    async def env_factory(task):
-        return env
-
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id="cleanup-failure", description="fix"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
         )
     )
 
@@ -265,7 +236,7 @@ def test_environment_cleanup_failure_is_reported(monkeypatch, tmp_path):
     assert env.revoked is True
 
 
-def test_environment_cleanup_exception_invokes_abort_hook(monkeypatch, tmp_path):
+def test_environment_cleanup_exception_invokes_abort_hook(monkeypatch, tmp_path, eval_in_env):
     patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
     class CleanupFailureEnv(FakeEnv):
@@ -281,15 +252,10 @@ def test_environment_cleanup_exception_invokes_abort_hook(monkeypatch, tmp_path)
 
     env = CleanupFailureEnv()
 
-    async def env_factory(task):
-        return env
-
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id="cleanup-failure-abort", description="fix"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
         )
     )
 
@@ -302,6 +268,7 @@ def test_environment_cleanup_exception_invokes_abort_hook(monkeypatch, tmp_path)
 def test_environment_cleanup_and_abort_exceptions_are_both_reported(
     monkeypatch,
     tmp_path,
+    eval_in_env,
 ):
     patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
@@ -314,15 +281,10 @@ def test_environment_cleanup_and_abort_exceptions_are_both_reported(
 
     env = CleanupAndAbortFailureEnv()
 
-    async def env_factory(task):
-        return env
-
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id="cleanup-and-abort-failure", description="fix"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
         )
     )
 
@@ -334,6 +296,7 @@ def test_environment_cleanup_and_abort_exceptions_are_both_reported(
 def test_environment_cleanup_exception_and_stubborn_abort_are_bounded(
     monkeypatch,
     tmp_path,
+    eval_in_env,
 ):
     patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
@@ -358,16 +321,11 @@ def test_environment_cleanup_exception_and_stubborn_abort_are_bounded(
 
     env = CleanupFailureBlockingAbortEnv()
 
-    async def env_factory(task):
-        return env
-
     async def scenario():
         result = await asyncio.wait_for(
-            run_eval_task(
+            eval_in_env(
                 EvalTask(task_id="cleanup-failure-blocking-abort", description="fix"),
-                output_dir=str(tmp_path),
-                tools_factory=list,
-                env_factory=env_factory,
+                env,
                 cancellation_cleanup_timeout=0.01,
             ),
             timeout=0.5,
@@ -383,7 +341,7 @@ def test_environment_cleanup_exception_and_stubborn_abort_are_bounded(
     assert "environment abort timed out" in result.error
 
 
-def test_cancelled_environment_cleanup_is_reported_as_timeout(monkeypatch, tmp_path):
+def test_cancelled_environment_cleanup_is_reported_as_timeout(monkeypatch, tmp_path, eval_in_env):
     patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
     class BlockingCleanupEnv(FakeEnv):
@@ -392,16 +350,11 @@ def test_cancelled_environment_cleanup_is_reported_as_timeout(monkeypatch, tmp_p
 
     env = BlockingCleanupEnv()
 
-    async def env_factory(task):
-        return env
-
     result = run(
         asyncio.wait_for(
-            run_eval_task(
+            eval_in_env(
                 EvalTask(task_id="blocked-cleanup", description="fix"),
-                output_dir=str(tmp_path),
-                tools_factory=list,
-                env_factory=env_factory,
+                env,
                 cancellation_cleanup_timeout=0.01,
             ),
             timeout=0.5,

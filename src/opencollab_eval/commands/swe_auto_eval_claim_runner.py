@@ -130,12 +130,14 @@ def run(
         attempt.update(final)
         _publish_both(claim_path, attempt_path, claim, attempt)
         exit_code = RESIDUAL_GROUP_EXIT if residual_group or not cleanup_quiesced else returncode
-    except TerminationRequested as exc:
+    except BaseException as exc:
         cleanup_quiesced = child is None or terminate_child(child)
+        terminated = isinstance(exc, TerminationRequested)
+        failure = {"termination_signal": exc.signum} if terminated else {"wrapper_failure": True}
         final = {
             "pid": 0,
             "status": "technical_eval_failed",
-            "termination_signal": exc.signum,
+            **failure,
             "cleanup_quiesced": cleanup_quiesced,
         }
         if cleanup_quiesced:
@@ -147,25 +149,10 @@ def run(
                 write_json(path, payload)
             except BaseException:
                 pass
-        exit_code = 128 + exc.signum
-    except BaseException:
-        cleanup_quiesced = child is None or terminate_child(child)
-        final = {
-            "pid": 0,
-            "status": "technical_eval_failed",
-            "wrapper_failure": True,
-            "cleanup_quiesced": cleanup_quiesced,
-        }
-        if cleanup_quiesced:
-            final.update({"evaluator_pid": 0, "evaluator_pgid": 0})
-        claim.update(final)
-        attempt.update(final)
-        for path, payload in ((claim_path, claim), (attempt_path, attempt)):
-            try:
-                write_json(path, payload)
-            except BaseException:
-                pass
-        raise
+        if terminated:
+            exit_code = 128 + exc.signum
+        else:
+            raise
     finally:
         if child is not None and child_pid and posix_group_exists(child_pid):
             terminate_child(child)

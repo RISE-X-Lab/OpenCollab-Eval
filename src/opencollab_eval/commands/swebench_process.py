@@ -6,6 +6,7 @@ import math
 import os
 import signal
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,40 @@ def positive_timeout_seconds(value: object, *, name: str) -> float:
         raise ValueError(f"{name} must be a positive finite number")
     return timeout
 
+
+def pid_is_active(pid: object) -> bool:
+    try:
+        value = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if value <= 0:
+        return False
+    try:
+        os.kill(value, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def wait_for_owned_cleanup(
+    done: threading.Event,
+    *,
+    timeout: float,
+) -> tuple[bool, BaseException | None]:
+    deadline = time.monotonic() + max(0.0, timeout)
+    interruption: BaseException | None = None
+    while not done.is_set():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        try:
+            done.wait(min(0.05, remaining))
+        except (KeyboardInterrupt, SystemExit) as exc:
+            if interruption is None:
+                interruption = exc
+    return done.is_set(), interruption
 
 def process_group_kwargs() -> dict[str, Any]:
     if os.name == "posix":

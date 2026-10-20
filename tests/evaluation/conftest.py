@@ -1,4 +1,4 @@
-"""Factories for terminal rejudge reports and reliability plans."""
+"""Factories for evaluator runs and rejudge reports."""
 
 from __future__ import annotations
 
@@ -9,6 +9,24 @@ from types import SimpleNamespace
 import pytest
 
 from opencollab_eval.commands import swe_rejudge_queue as queue
+from opencollab_eval.engine.evaluator import run_eval_task
+
+
+@pytest.fixture
+def eval_in_env(tmp_path):
+    def prepare(task, env, **kwargs):
+        async def env_factory(_task):
+            return env
+
+        return run_eval_task(
+            task,
+            output_dir=str(tmp_path),
+            tools_factory=list,
+            env_factory=env_factory,
+            **kwargs,
+        )
+
+    return prepare
 
 
 @pytest.fixture

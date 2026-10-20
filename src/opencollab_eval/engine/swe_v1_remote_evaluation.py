@@ -263,28 +263,9 @@ def eval_for_task_once(row, patch_selection=None):
     cidfile = eval_dir / "container.cid"
     marker_path = eval_dir / "container.marker.json"
     previous_marker = load_json(marker_path)
-    if isinstance(previous_marker, dict):
-        previous_name = str(previous_marker.get("container_name") or "")
-        stale_cleanup = cleanup_eval_container(
-            cidfile,
-            marker_path,
-            previous_name,
-        )
-        if not stale_cleanup.get("ok"):
-            summary = {
-                "schema": "opencollab.prolite_direct_eval.v2",
-                "status": "technical_eval_failed",
-                "task": task,
-                "resolved": False,
-                "patch_sha256": row_patch_sha(prediction),
-                "record_id": row_record_id(prediction),
-                "technical_reasons": ["stale_container_cleanup"],
-                "container_cleanup": stale_cleanup,
-            }
-            write_json(summary_path, summary)
-            return {"status": "technical_eval_failed", "task": task, "summary": summary}
-    elif marker_path.exists() or cidfile.exists():
-        stale_cleanup = cleanup_eval_container(cidfile, marker_path, "")
+    if isinstance(previous_marker, dict) or marker_path.exists() or cidfile.exists():
+        previous_name = str(previous_marker.get("container_name") or "") if isinstance(previous_marker, dict) else ""
+        stale_cleanup = cleanup_eval_container(cidfile, marker_path, previous_name)
         if not stale_cleanup.get("ok"):
             summary = {
                 "schema": "opencollab.prolite_direct_eval.v2",
@@ -512,26 +493,7 @@ def eval_for_task_once(row, patch_selection=None):
         pass_to_pass_skips_allowed=row.get("pass_to_pass_skips_allowed", True) is True,
     )
     output_artifact_errors = verdict["output_artifact_errors"]
-    diagnostic_artifact_errors = artifacts["diagnostic_artifact_errors"]
-    base_commit_status = artifacts["base_commit_status"]
-    service_status = artifacts["service_status"]
-    before_status = artifacts["before_status"]
-    post_before_base_status = artifacts["post_before_base_status"]
     model_status = artifacts["model_status"]
-    test_status = artifacts["test_status"]
-    f2p_status = artifacts["f2p_status"]
-    p2p_status = artifacts["p2p_status"]
-    f2p_log_tail = artifacts["f2p_log_tail"]
-    p2p_log_tail = artifacts["p2p_log_tail"]
-    f2p_evidence = artifacts["f2p_evidence"]
-    p2p_evidence = artifacts["p2p_evidence"]
-    f2p_command = artifacts["f2p_command"]
-    p2p_command = artifacts["p2p_command"]
-    base_commit_log_tail = artifacts["base_commit_log_tail"]
-    before_repo_log_tail = artifacts["before_repo_log_tail"]
-    service_bootstrap_log_tail = artifacts["service_bootstrap_log_tail"]
-    model_patch_log_tail = artifacts["model_patch_log_tail"]
-    test_patch_log_tail = artifacts["test_patch_log_tail"]
     technical_reasons = verdict["technical_reasons"]
     technical_error, resolved, summary_status = (
         verdict["technical_error"],
@@ -549,7 +511,7 @@ def eval_for_task_once(row, patch_selection=None):
         "error": bool(technical_error),
         "technical_reasons": technical_reasons,
         "output_artifact_errors": output_artifact_errors,
-        "diagnostic_artifact_errors": diagnostic_artifact_errors,
+        "diagnostic_artifact_errors": artifacts["diagnostic_artifact_errors"],
         "docker_exit": docker_exit,
         "cleanup_quiesced": cleanup_quiesced,
         "container_cleanup": container_cleanup,
@@ -567,29 +529,29 @@ def eval_for_task_once(row, patch_selection=None):
         "eval_model_patch_chars": len(model_patch),
         "tests_status": {
             "pass_to_pass_skips_allowed": verdict["pass_to_pass_skips_allowed"],
-            "base_commit_status": base_commit_status,
-            "service_bootstrap_status": service_status,
-            "before_repo_status": before_status,
-            "post_before_base_status": post_before_base_status,
+            "base_commit_status": artifacts["base_commit_status"],
+            "service_bootstrap_status": artifacts["service_status"],
+            "before_repo_status": artifacts["before_status"],
+            "post_before_base_status": artifacts["post_before_base_status"],
             "model_patch_status": model_status,
-            "test_patch_status": test_status,
-            "fail_to_pass_status": f2p_status,
-            "pass_to_pass_status": p2p_status,
+            "test_patch_status": artifacts["test_status"],
+            "fail_to_pass_status": artifacts["f2p_status"],
+            "pass_to_pass_status": artifacts["p2p_status"],
             "fail_to_pass": fail_to_pass,
             "pass_to_pass": pass_to_pass,
             "fail_to_pass_plan": f2p_plan,
             "pass_to_pass_plan": p2p_plan,
-            "fail_to_pass_evidence": f2p_evidence,
-            "pass_to_pass_evidence": p2p_evidence,
-            "f2p_command": f2p_command,
-            "p2p_command": p2p_command,
-            "base_commit_log_tail": base_commit_log_tail,
-            "before_repo_log_tail": before_repo_log_tail,
-            "service_bootstrap_log_tail": service_bootstrap_log_tail,
-            "f2p_log_tail": f2p_log_tail,
-            "p2p_log_tail": p2p_log_tail,
-            "model_patch_log_tail": model_patch_log_tail,
-            "test_patch_log_tail": test_patch_log_tail,
+            "fail_to_pass_evidence": artifacts["f2p_evidence"],
+            "pass_to_pass_evidence": artifacts["p2p_evidence"],
+            "f2p_command": artifacts["f2p_command"],
+            "p2p_command": artifacts["p2p_command"],
+            "base_commit_log_tail": artifacts["base_commit_log_tail"],
+            "before_repo_log_tail": artifacts["before_repo_log_tail"],
+            "service_bootstrap_log_tail": artifacts["service_bootstrap_log_tail"],
+            "f2p_log_tail": artifacts["f2p_log_tail"],
+            "p2p_log_tail": artifacts["p2p_log_tail"],
+            "model_patch_log_tail": artifacts["model_patch_log_tail"],
+            "test_patch_log_tail": artifacts["test_patch_log_tail"],
         },
     }
     report["scoring_adapter"] = scoring_adapter_receipt
@@ -608,7 +570,7 @@ def eval_for_task_once(row, patch_selection=None):
         "eval_model_patch_chars": len(model_patch),
         "technical_reasons": technical_reasons,
         "output_artifact_errors": output_artifact_errors,
-        "diagnostic_artifact_errors": diagnostic_artifact_errors,
+        "diagnostic_artifact_errors": artifacts["diagnostic_artifact_errors"],
         "docker_exit": docker_exit,
         "cleanup_quiesced": cleanup_quiesced,
         "container_cleanup": container_cleanup,

@@ -259,10 +259,8 @@ def test_the_two_coder_cards_differ_only_in_identity_and_the_answer_asked_for() 
     body_a, stance_a = a.split(heading)
     body_b, stance_b = b.split(heading)
     assert stance_a != stance_b
-    identity = str.maketrans({})
     normalize = lambda text: (  # noqa: E731
-        text.translate(identity)
-        .replace("Coder A", "<peer>").replace("Coder B", "<peer>")
+        text.replace("Coder A", "<peer>").replace("Coder B", "<peer>")
         .replace("`coder_a`", "<token>").replace("`coder_b`", "<token>")
     )
     assert normalize(body_a) == normalize(body_b)

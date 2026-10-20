@@ -105,34 +105,38 @@ def write_markdown(summary):
     summary["markdown"] = "\n".join(lines) + "\n"
 
 
+def _failed_runner_result(status, **details):
+    summary = {
+        "schema": "opencollab.swe_g11_prolite_runner.v1",
+        "status": status,
+        "generated_at": now(),
+        "slice": slice_label(),
+        "base_run_dir": str(base_run_dir),
+        "remote_runtime_repo": str(remote_repo),
+        "workflow": workflow,
+        **details,
+        "counts": {
+            "tasks": 0,
+            "generation_done": 0,
+            "empty_patch": 0,
+            "eval_done": 0,
+            "eval_attempts": 0,
+            "eval_retry_tasks": 0,
+            "resolved": 0,
+            "unresolved": 0,
+            "technical_failed": 1,
+        },
+        "rows": [],
+    }
+    write_json(base_run_dir / "summary.json", summary)
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 2
+
+
 def main():
     config_errors = validate_runner_config()
     if config_errors:
-        summary = {
-            "schema": "opencollab.swe_g11_prolite_runner.v1",
-            "status": "invalid_config",
-            "generated_at": now(),
-            "slice": slice_label(),
-            "base_run_dir": str(base_run_dir),
-            "remote_runtime_repo": str(remote_repo),
-            "workflow": workflow,
-            "config_errors": config_errors,
-            "counts": {
-                "tasks": 0,
-                "generation_done": 0,
-                "empty_patch": 0,
-                "eval_done": 0,
-                "eval_attempts": 0,
-                "eval_retry_tasks": 0,
-                "resolved": 0,
-                "unresolved": 0,
-                "technical_failed": 1,
-            },
-            "rows": [],
-        }
-        write_json(base_run_dir / "summary.json", summary)
-        print(json.dumps(summary, ensure_ascii=False, indent=2))
-        return 2
+        return _failed_runner_result("invalid_config", config_errors=config_errors)
     preflight = {
         "dataset_exists": dataset_path.exists(),
         "remote_root_exists": remote_root.exists(),
@@ -156,31 +160,7 @@ def main():
             preflight["proxy_health"].get("ok"),
         ]
     ):
-        summary = {
-            "schema": "opencollab.swe_g11_prolite_runner.v1",
-            "status": "preflight_failed",
-            "generated_at": now(),
-            "slice": slice_label(),
-            "base_run_dir": str(base_run_dir),
-            "remote_runtime_repo": str(remote_repo),
-            "workflow": workflow,
-            "preflight": preflight,
-            "counts": {
-                "tasks": 0,
-                "generation_done": 0,
-                "empty_patch": 0,
-                "eval_done": 0,
-                "eval_attempts": 0,
-                "eval_retry_tasks": 0,
-                "resolved": 0,
-                "unresolved": 0,
-                "technical_failed": 1,
-            },
-            "rows": [],
-        }
-        write_json(base_run_dir / "summary.json", summary)
-        print(json.dumps(summary, ensure_ascii=False, indent=2))
-        return 2
+        return _failed_runner_result("preflight_failed", preflight=preflight)
     selected = load_dataset(start_index, limit)
     scoring_selected = [prepare_scoring_row(row, resolve_scoring_adapter_registry()) for row in selected]
     base_run_dir.mkdir(parents=True, exist_ok=True)
@@ -260,11 +240,6 @@ def main():
                 "scoring_adapter": eval_row.scoring_adapter_receipt,
             }
         )
-    generation_ok_statuses = {"generation_done", "generation_candidate_captured", "empty_patch", "intrinsic_unresolved"}
-    eval_ok_statuses = {"eval_done", "skipped_empty_patch", "skipped_intrinsic_unresolved"}
-    if dry_run:
-        generation_ok_statuses.add("would_generate")
-        eval_ok_statuses.add("would_eval")
     counts = {
         "tasks": len(result_rows),
         "generation_done": sum(1 for row in result_rows if row["generation"].get("status") == "generation_done"),

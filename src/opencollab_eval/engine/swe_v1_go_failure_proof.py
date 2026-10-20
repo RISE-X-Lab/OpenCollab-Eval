@@ -443,11 +443,11 @@ def _build_output_for_package(events: list[dict[str, Any]], package: str) -> str
     )
 
 
-def _target_timeout_failure_packages(
+def _target_runtime_failure_packages(
     events: list[dict[str, Any]],
     bindings: list[dict[str, Any]],
-) -> set[str]:
-    """Return packages with a strictly attributed target timeout."""
+) -> tuple[set[str], set[str]]:
+    """Attribute timeout and panic failures to unterminated declared targets."""
     failed_packages = {
         str(event.get("Package") or "")
         for event in events
@@ -455,7 +455,8 @@ def _target_timeout_failure_packages(
         and event.get("Package")
         and not event.get("Test")
     }
-    proven: set[str] = set()
+    timeout_packages: set[str] = set()
+    panic_packages: set[str] = set()
     for binding in bindings:
         matching_packages = [
             package
@@ -470,54 +471,6 @@ def _target_timeout_failure_packages(
             for event in events
             if event.get("Package") == package and event.get("Action") == "output"
         )
-        if "panic: test timed out after " not in package_output:
-            continue
-        for test in binding["tests"]:
-            actions = {
-                str(event.get("Action") or "")
-                for event in events
-                if event.get("Package") == package and event.get("Test") == test
-            }
-            ran = any(
-                event.get("Action") == "run"
-                and event.get("Test") == test
-                and event.get("Package") == package
-                for event in events
-            )
-            target_output = "".join(
-                str(event.get("Output") or "")
-                for event in events
-                if event.get("Action") == "output"
-                and event.get("Package") == package
-                and event.get("Test") == test
-            )
-            if ran and actions.isdisjoint({"pass", "fail", "skip"}) and test in target_output:
-                proven.add(package)
-    return proven
-
-
-def _target_panic_failure_packages(
-    events: list[dict[str, Any]],
-    bindings: list[dict[str, Any]],
-) -> set[str]:
-    """Return packages with an unterminated declared target that emitted a panic."""
-    failed_packages = {
-        str(event.get("Package") or "")
-        for event in events
-        if event.get("Action") == "fail"
-        and event.get("Package")
-        and not event.get("Test")
-    }
-    proven: set[str] = set()
-    for binding in bindings:
-        matching_packages = [
-            package
-            for package in failed_packages
-            if _package_matches(binding["package"], package)
-        ]
-        if len(matching_packages) != 1:
-            continue
-        package = matching_packages[0]
         for test in binding["tests"]:
             target_events = [
                 event
@@ -525,26 +478,22 @@ def _target_panic_failure_packages(
                 if event.get("Package") == package and event.get("Test") == test
             ]
             actions = {str(event.get("Action") or "") for event in target_events}
+            if "run" not in actions or not actions.isdisjoint({"pass", "fail", "skip"}):
+                continue
             target_output = "".join(
                 str(event.get("Output") or "")
                 for event in target_events
                 if event.get("Action") == "output"
             )
-            panic_lines = [
-                line.strip()
+            if "panic: test timed out after " in package_output and test in target_output:
+                timeout_packages.add(package)
+            if any(
+                line.strip().startswith("panic: ")
+                and not line.strip().startswith("panic: test timed out after ")
                 for line in target_output.splitlines()
-                if line.strip().startswith("panic: ")
-            ]
-            if (
-                "run" in actions
-                and actions.isdisjoint({"pass", "fail", "skip"})
-                and any(
-                    not line.startswith("panic: test timed out after ")
-                    for line in panic_lines
-                )
             ):
-                proven.add(package)
-    return proven
+                panic_packages.add(package)
+    return timeout_packages, panic_packages
 
 
 def go_pass_proof_matches(proof: dict[str, Any], log_text: str) -> bool:
@@ -638,8 +587,9 @@ def go_failure_proof_matches(
         if binding is None or event.get("Test") not in binding["tests"]:
             return False
         exact_failure_packages.add(package)
-    timeout_failure_packages = _target_timeout_failure_packages(events, bindings)
-    panic_failure_packages = _target_panic_failure_packages(events, bindings)
+    timeout_failure_packages, panic_failure_packages = _target_runtime_failure_packages(
+        events, bindings
+    )
     runtime_failure_packages = exact_failure_packages | timeout_failure_packages | panic_failure_packages
     if (
         proof.get("dynamic_discovery") is True

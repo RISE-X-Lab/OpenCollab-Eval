@@ -9,7 +9,10 @@ import pytest
 
 from opencollab_eval.generation import gen_prediction_openhands as gpo
 from opencollab_eval.generation.gen_prediction_snapshot import SolverGitSnapshot
-from tests.support.gen_prediction_openhands_support import install_fake_openhands_process
+from tests.support.gen_prediction_openhands_support import (
+    install_fake_openhands_process,
+    prepare_openhands_main,
+)
 from tests.support.gen_prediction_openhands_support import (
     isolated_external_runtime_dependencies as _isolated_external_runtime_dependencies,  # noqa: F401
 )
@@ -19,29 +22,8 @@ def test_main_persists_delayed_cleanup_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    instance_file = tmp_path / "instance.json"
+    instance_file = prepare_openhands_main(tmp_path, monkeypatch)
     output = tmp_path / "predictions.jsonl"
-    instance_file.write_text(
-        json.dumps(
-            {
-                "instance_id": "acme__widget-1",
-                "base_commit": "b" * 40,
-                "repo": "acme/widget",
-                "problem_statement": "Fix the widget.",
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        gpo.gp,
-        "start_container_with_marker",
-        lambda image, name, run_dir: "container-123",
-    )
-    monkeypatch.setattr(
-        gpo.container_guard,
-        "container_image_id",
-        lambda container_id: "sha256:" + "8" * 64,
-    )
     snapshot = SolverGitSnapshot(
         anonymous_head="c" * 40,
         base_tree="d" * 40,

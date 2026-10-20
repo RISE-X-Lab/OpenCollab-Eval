@@ -537,6 +537,8 @@ async def run_validation_council_lean_candidate(
 
     attempts: list[dict[str, Any]] = []
     feedback = ""
+    status = "incomplete"
+    blocker_fields: dict[str, Any] = {}
     for attempt in range(1, MAX_CODER_ROUNDS + 1):
         await ctx.phase(f"solve:r{attempt}")
         report = await _run_attempt(
@@ -553,35 +555,15 @@ async def run_validation_council_lean_candidate(
         )
         attempts.append(report)
         if _is_pass(report["final_verdict"]):
-            return {
-                "status": "done",
-                "rounds": attempt,
-                "contracts": len(contracts.get("contracts", [])),
-                "pre_validation_accepted": _accepted_count(pre_judge),
-                "post_patch_checks": _post_patch_check_count(report["post_patch_evidence"]),
-                "critic_invocations": sum(item["risk_critic"] is not None for item in attempts),
-                "allowed_patch_paths": report["final_verdict"].get("allowed_patch_paths", []),
-                "disallowed_patch_paths": report["final_verdict"].get("disallowed_patch_paths", []),
-                "attempts": attempts,
-                "tokens_spent": ctx.tokens_spent(),
-            }
+            status = "done"
+            break
         blocked = _is_blocked(report["final_verdict"])
         if blocked and not report.get("actionable_retry"):
             blocker = report["final_verdict"].get("findings", "")
             await ctx.log(f"attempt {attempt} blocked: {blocker}")
-            return {
-                "status": "blocked",
-                "rounds": attempt,
-                "blocker": blocker,
-                "contracts": len(contracts.get("contracts", [])),
-                "pre_validation_accepted": _accepted_count(pre_judge),
-                "post_patch_checks": _post_patch_check_count(report["post_patch_evidence"]),
-                "critic_invocations": sum(item["risk_critic"] is not None for item in attempts),
-                "allowed_patch_paths": report["final_verdict"].get("allowed_patch_paths", []),
-                "disallowed_patch_paths": report["final_verdict"].get("disallowed_patch_paths", []),
-                "attempts": attempts,
-                "tokens_spent": ctx.tokens_spent(),
-            }
+            status = "blocked"
+            blocker_fields = {"blocker": blocker}
+            break
         if blocked:
             await ctx.log(
                 f"attempt {attempt} reported BLOCKED but supplied actionable retry evidence; "
@@ -608,8 +590,9 @@ async def run_validation_council_lean_candidate(
         feedback = next_feedback
 
     return {
-        "status": "incomplete",
+        "status": status,
         "rounds": len(attempts),
+        **blocker_fields,
         "contracts": len(contracts.get("contracts", [])),
         "pre_validation_accepted": _accepted_count(pre_judge),
         "post_patch_checks": _post_patch_check_count(attempts[-1]["post_patch_evidence"]) if attempts else 0,

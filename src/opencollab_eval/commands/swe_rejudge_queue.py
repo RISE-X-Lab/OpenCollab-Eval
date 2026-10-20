@@ -73,13 +73,11 @@ def _runner_eval_timeout(runner_args: list[str]) -> float | None:
         index += 1
     if not values:
         return None
-    parsed: list[float] = []
     for value in values:
         timeout = _positive_finite_timeout(value, label="--eval-timeout")
         if not timeout.is_integer():
             raise ValueError("--eval-timeout must be an integer number of seconds")
-    parsed.append(timeout)
-    return parsed[-1]
+    return timeout
 def _job_eval_timeout(plan: dict[str, Any], job: dict[str, Any]) -> float:
     if "eval_timeout" in job and job["eval_timeout"] is not None:
         return _positive_finite_timeout(job["eval_timeout"], label="eval_timeout")

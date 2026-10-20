@@ -62,6 +62,23 @@ class _AggregatingUpstreamHandler(BaseHTTPRequestHandler):
         self.wfile.write(self.response)
 
 
+def _start_servers(upstream: ThreadingHTTPServer, proxy: ThreadingHTTPServer) -> None:
+    proxy.daemon_threads = True
+    threads = [
+        threading.Thread(target=upstream.serve_forever, daemon=True),
+        threading.Thread(target=proxy.serve_forever, daemon=True),
+    ]
+    for thread in threads:
+        thread.start()
+
+
+def _close_servers(upstream: ThreadingHTTPServer, proxy: ThreadingHTTPServer) -> None:
+    proxy.shutdown()
+    upstream.shutdown()
+    proxy.server_close()
+    upstream.server_close()
+
+
 @pytest.fixture
 def relay():
     _UpstreamHandler.requests = []
@@ -82,10 +99,7 @@ def relay():
     try:
         yield f"http://127.0.0.1:{proxy.server_port}"
     finally:
-        proxy.shutdown()
-        upstream.shutdown()
-        proxy.server_close()
-        upstream.server_close()
+        _close_servers(upstream, proxy)
 
 
 def test_proxy_health_and_authenticated_forwarding(relay: str) -> None:
@@ -183,13 +197,7 @@ def test_proxy_returns_retryable_502_without_invented_retry_after() -> None:
             )
         ),
     )
-    proxy.daemon_threads = True
-    threads = [
-        threading.Thread(target=upstream.serve_forever, daemon=True),
-        threading.Thread(target=proxy.serve_forever, daemon=True),
-    ]
-    for thread in threads:
-        thread.start()
+    _start_servers(upstream, proxy)
     request = urllib.request.Request(
         f"http://127.0.0.1:{proxy.server_port}/v1/responses",
         data=b"{}",
@@ -202,10 +210,7 @@ def test_proxy_returns_retryable_502_without_invented_retry_after() -> None:
         assert caught.value.code == 502
         assert caught.value.headers.get("Retry-After") is None
     finally:
-        proxy.shutdown()
-        upstream.shutdown()
-        proxy.server_close()
-        upstream.server_close()
+        _close_servers(upstream, proxy)
 
 
 def test_responses_rejects_uncancellable_default_transport() -> None:
@@ -222,13 +227,7 @@ def test_responses_rejects_uncancellable_default_transport() -> None:
             )
         ),
     )
-    proxy.daemon_threads = True
-    threads = [
-        threading.Thread(target=upstream.serve_forever, daemon=True),
-        threading.Thread(target=proxy.serve_forever, daemon=True),
-    ]
-    for thread in threads:
-        thread.start()
+    _start_servers(upstream, proxy)
     request = urllib.request.Request(
         f"http://127.0.0.1:{proxy.server_port}/v1/responses",
         data=b'{"model":"gpt-fake","input":"hello"}',
@@ -244,10 +243,7 @@ def test_responses_rejects_uncancellable_default_transport() -> None:
         }
         assert _UpstreamHandler.requests == []
     finally:
-        proxy.shutdown()
-        upstream.shutdown()
-        proxy.server_close()
-        upstream.server_close()
+        _close_servers(upstream, proxy)
 
 
 def test_proxy_enforces_declared_upstream_request_limit_after_processing() -> None:
@@ -283,10 +279,7 @@ def test_proxy_enforces_declared_upstream_request_limit_after_processing() -> No
         assert json.load(caught.value)["error"] == "upstream_request_too_large"
         assert _UpstreamHandler.requests == []
     finally:
-        proxy.shutdown()
-        upstream.shutdown()
-        proxy.server_close()
-        upstream.server_close()
+        _close_servers(upstream, proxy)
 
 
 def test_proxy_config_requires_private_file_and_separate_tokens(tmp_path) -> None:
@@ -408,13 +401,7 @@ def test_proxy_forwards_first_sse_event_before_upstream_closes() -> None:
             )
         ),
     )
-    proxy.daemon_threads = True
-    threads = [
-        threading.Thread(target=upstream.serve_forever, daemon=True),
-        threading.Thread(target=proxy.serve_forever, daemon=True),
-    ]
-    for thread in threads:
-        thread.start()
+    _start_servers(upstream, proxy)
     connection = http.client.HTTPConnection("127.0.0.1", proxy.server_port, timeout=3)
     try:
         connection.request(
@@ -442,10 +429,7 @@ def test_proxy_forwards_first_sse_event_before_upstream_closes() -> None:
     finally:
         release_upstream.set()
         connection.close()
-        proxy.shutdown()
-        upstream.shutdown()
-        proxy.server_close()
-        upstream.server_close()
+        _close_servers(upstream, proxy)
 
 
 def test_direct_proxy_cancels_upstream_when_client_leaves_before_headers() -> None:
@@ -483,13 +467,7 @@ def test_direct_proxy_cancels_upstream_when_client_leaves_before_headers() -> No
             )
         ),
     )
-    proxy.daemon_threads = True
-    threads = [
-        threading.Thread(target=upstream.serve_forever, daemon=True),
-        threading.Thread(target=proxy.serve_forever, daemon=True),
-    ]
-    for thread in threads:
-        thread.start()
+    _start_servers(upstream, proxy)
     client = socket.create_connection(("127.0.0.1", proxy.server_port), timeout=2)
     try:
         request = (
@@ -506,10 +484,7 @@ def test_direct_proxy_cancels_upstream_when_client_leaves_before_headers() -> No
         assert request_count == 1
     finally:
         client.close()
-        proxy.shutdown()
-        upstream.shutdown()
-        proxy.server_close()
-        upstream.server_close()
+        _close_servers(upstream, proxy)
 
 
 def test_direct_response_delegates_bounded_line_reads_and_closes() -> None:
@@ -553,13 +528,7 @@ def test_proxy_aggregates_chat_stream_without_losing_request_or_response_evidenc
             )
         ),
     )
-    proxy.daemon_threads = True
-    threads = [
-        threading.Thread(target=upstream.serve_forever, daemon=True),
-        threading.Thread(target=proxy.serve_forever, daemon=True),
-    ]
-    for thread in threads:
-        thread.start()
+    _start_servers(upstream, proxy)
     request_body = {
         "model": "gpt-5.6-sol",
         "messages": [{"role": "user", "content": "hi"}],
@@ -588,10 +557,7 @@ def test_proxy_aggregates_chat_stream_without_losing_request_or_response_evidenc
         assert result["usage"]["total_tokens"] == 12
         ChatCompletion.model_validate(result)
     finally:
-        proxy.shutdown()
-        upstream.shutdown()
-        proxy.server_close()
-        upstream.server_close()
+        _close_servers(upstream, proxy)
 
 
 def test_proxy_preserves_client_stream_and_upstream_error_status() -> None:
@@ -612,13 +578,7 @@ def test_proxy_preserves_client_stream_and_upstream_error_status() -> None:
             )
         ),
     )
-    proxy.daemon_threads = True
-    threads = [
-        threading.Thread(target=upstream.serve_forever, daemon=True),
-        threading.Thread(target=proxy.serve_forever, daemon=True),
-    ]
-    for thread in threads:
-        thread.start()
+    _start_servers(upstream, proxy)
     request = urllib.request.Request(
         f"http://127.0.0.1:{proxy.server_port}/v1/chat/completions",
         data=b'{"model":"gpt-5.6-sol","stream":true}',
@@ -631,10 +591,7 @@ def test_proxy_preserves_client_stream_and_upstream_error_status() -> None:
         assert caught.value.code == 429
         assert json.loads(_AggregatingUpstreamHandler.requests[0]["body"])["stream"] is True
     finally:
-        proxy.shutdown()
-        upstream.shutdown()
-        proxy.server_close()
-        upstream.server_close()
+        _close_servers(upstream, proxy)
 
 
 def test_proxy_preserves_successful_client_chat_stream_byte_for_byte() -> None:
@@ -658,13 +615,7 @@ def test_proxy_preserves_successful_client_chat_stream_byte_for_byte() -> None:
             )
         ),
     )
-    proxy.daemon_threads = True
-    threads = [
-        threading.Thread(target=upstream.serve_forever, daemon=True),
-        threading.Thread(target=proxy.serve_forever, daemon=True),
-    ]
-    for thread in threads:
-        thread.start()
+    _start_servers(upstream, proxy)
     body = b'{"model":"gpt-5.6-sol","messages":[],"stream":true}'
     request = urllib.request.Request(
         f"http://127.0.0.1:{proxy.server_port}/v1/chat/completions",
@@ -678,10 +629,7 @@ def test_proxy_preserves_successful_client_chat_stream_byte_for_byte() -> None:
             assert response.read() == _AggregatingUpstreamHandler.response
         assert _AggregatingUpstreamHandler.requests[0]["body"] == body
     finally:
-        proxy.shutdown()
-        upstream.shutdown()
-        proxy.server_close()
-        upstream.server_close()
+        _close_servers(upstream, proxy)
 
 
 @pytest.mark.parametrize("content_type", ["application/json", "text/plain"])
@@ -703,13 +651,7 @@ def test_proxy_rejects_non_sse_success_during_aggregation(content_type: str) -> 
             )
         ),
     )
-    proxy.daemon_threads = True
-    threads = [
-        threading.Thread(target=upstream.serve_forever, daemon=True),
-        threading.Thread(target=proxy.serve_forever, daemon=True),
-    ]
-    for thread in threads:
-        thread.start()
+    _start_servers(upstream, proxy)
     request = urllib.request.Request(
         f"http://127.0.0.1:{proxy.server_port}/v1/chat/completions",
         data=b'{"model":"gpt-5.6-sol","messages":[]}',
@@ -721,10 +663,7 @@ def test_proxy_rejects_non_sse_success_during_aggregation(content_type: str) -> 
             urllib.request.urlopen(request, timeout=3)
         assert caught.value.code == 502
     finally:
-        proxy.shutdown()
-        upstream.shutdown()
-        proxy.server_close()
-        upstream.server_close()
+        _close_servers(upstream, proxy)
 
 
 @pytest.mark.parametrize("direct_upstream", [False, True])
@@ -766,13 +705,7 @@ def test_proxy_aborts_stream_that_stalls_after_first_chunk(
             )
         ),
     )
-    proxy.daemon_threads = True
-    threads = [
-        threading.Thread(target=upstream.serve_forever, daemon=True),
-        threading.Thread(target=proxy.serve_forever, daemon=True),
-    ]
-    for thread in threads:
-        thread.start()
+    _start_servers(upstream, proxy)
     request = urllib.request.Request(
         f"http://127.0.0.1:{proxy.server_port}/v1/chat/completions",
         data=b'{"model":"gpt-5.6-sol","messages":[]}',
@@ -784,7 +717,4 @@ def test_proxy_aborts_stream_that_stalls_after_first_chunk(
             urllib.request.urlopen(request, timeout=3)
         assert caught.value.code == 502
     finally:
-        proxy.shutdown()
-        upstream.shutdown()
-        proxy.server_close()
-        upstream.server_close()
+        _close_servers(upstream, proxy)

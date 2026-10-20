@@ -139,6 +139,7 @@ async def base_team(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
 
     findings = ""
     rounds: list[dict[str, Any]] = []
+    status = "incomplete"
     for round_no in range(1, MAX_REPAIR_ROUNDS + 2):
         await ctx.phase("code" if round_no == 1 else f"code-repair-{round_no}")
         coder_report = await ctx.agent(
@@ -182,25 +183,15 @@ async def base_team(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
 
         verdict = str(tester_verdict.get("verdict") or "").upper()
         if verdict == "PASS" and source_changed is not False:
-            return {
-                "status": "done",
-                "root_cause": brief.get("root_cause", ""),
-                "files": brief.get("files", []),
-                "rounds": rounds,
-                "tokens_spent": ctx.tokens_spent(),
-            }
+            status = "done"
+            break
         if verdict == "BLOCKED":
-            return {
-                "status": "blocked",
-                "root_cause": brief.get("root_cause", ""),
-                "files": brief.get("files", []),
-                "rounds": rounds,
-                "tokens_spent": ctx.tokens_spent(),
-            }
+            status = "blocked"
+            break
         findings = str(tester_verdict.get("findings") or "Tester reported failure.")
 
     return {
-        "status": "incomplete",
+        "status": status,
         "root_cause": brief.get("root_cause", ""),
         "files": brief.get("files", []),
         "rounds": rounds,

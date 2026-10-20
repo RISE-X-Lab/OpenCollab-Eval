@@ -15,21 +15,16 @@ from tests.support.evaluator_workflow_test_support import (
 )
 
 
-def test_workflow_checkpoint_writes_bounded_loss_patch(tmp_path):
+def test_workflow_checkpoint_writes_bounded_loss_patch(tmp_path, eval_in_env):
     env = CheckpointEnv()
-
-    async def env_factory(task):
-        return env
 
     async def wf(ctx, args):
         return {"status": "done"}
 
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id="ckpt", description="x"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=wf,
             checkpoint_interval_seconds=300,
         )
@@ -46,11 +41,8 @@ def test_workflow_checkpoint_writes_bounded_loss_patch(tmp_path):
     assert result.checkpoint_result["final"]["status"] == "written"
 
 
-def test_workflow_checkpoint_restore_applies_before_test_injection(tmp_path):
+def test_workflow_checkpoint_restore_applies_before_test_injection(tmp_path, eval_in_env):
     env = CheckpointEnv(diff_outputs=["", "diff --git a/x b/x\n+after\n"])
-
-    async def env_factory(task):
-        return env
 
     async def wf(ctx, args):
         return {"status": "done"}
@@ -60,7 +52,7 @@ def test_workflow_checkpoint_restore_applies_before_test_injection(tmp_path):
     seed_checkpoint(WorktreeCheckpoint(run_dir), checkpoint_patch)
 
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(
                 task_id="restore",
                 description="x",
@@ -74,9 +66,7 @@ def test_workflow_checkpoint_restore_applies_before_test_injection(tmp_path):
                     ),
                 },
             ),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=wf,
             checkpoint_interval_seconds=300,
             resume_from_checkpoint=True,
@@ -93,11 +83,8 @@ def test_workflow_checkpoint_restore_applies_before_test_injection(tmp_path):
     assert result.checkpoint_result["restore"]["status"] == "restored"
 
 
-def test_workflow_checkpoint_restore_skips_dirty_worktree(tmp_path):
+def test_workflow_checkpoint_restore_skips_dirty_worktree(tmp_path, eval_in_env):
     env = CheckpointEnv(diff_outputs=["diff --git a/dirty b/dirty\n+dirty\n"])
-
-    async def env_factory(task):
-        return env
 
     async def wf(ctx, args):
         return {"status": "done"}
@@ -109,11 +96,9 @@ def test_workflow_checkpoint_restore_skips_dirty_worktree(tmp_path):
     )
 
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id="dirty", description="x"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=wf,
             checkpoint_interval_seconds=300,
             resume_from_checkpoint=True,
@@ -124,11 +109,8 @@ def test_workflow_checkpoint_restore_skips_dirty_worktree(tmp_path):
     assert not any(cmd.startswith("git apply") for cmd in env.cmds)
 
 
-def test_workflow_checkpoint_restore_rejects_corrupt_metadata(tmp_path):
+def test_workflow_checkpoint_restore_rejects_corrupt_metadata(tmp_path, eval_in_env):
     env = CheckpointEnv(diff_outputs=["", "diff --git a/x b/x\n+after\n"])
-
-    async def env_factory(task):
-        return env
 
     async def wf(ctx, args):
         return {"status": "done"}
@@ -140,11 +122,9 @@ def test_workflow_checkpoint_restore_rejects_corrupt_metadata(tmp_path):
     (run_dir / "checkpoint.worktree.json").write_text("{bad json", encoding="utf-8")
 
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id="corrupt", description="x"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=wf,
             checkpoint_interval_seconds=300,
             resume_from_checkpoint=True,
@@ -190,11 +170,8 @@ def test_workflow_checkpoint_restore_path_is_private_per_run_dir(tmp_path):
     assert second_env.writes[0][0].startswith("/tmp/opencollab-checkpoint-recovery-")
 
 
-def test_workflow_checkpoint_restore_respects_ineligible_metadata(tmp_path):
+def test_workflow_checkpoint_restore_respects_ineligible_metadata(tmp_path, eval_in_env):
     env = CheckpointEnv()
-
-    async def env_factory(task):
-        return env
 
     async def wf(ctx, args):
         return {"status": "done"}
@@ -208,11 +185,9 @@ def test_workflow_checkpoint_restore_respects_ineligible_metadata(tmp_path):
     )
 
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id="ineligible", description="x"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=wf,
             checkpoint_interval_seconds=300,
             resume_from_checkpoint=True,
@@ -223,17 +198,14 @@ def test_workflow_checkpoint_restore_respects_ineligible_metadata(tmp_path):
     assert not env.writes
 
 
-def test_workflow_checkpoint_excludes_injected_test_paths(tmp_path):
+def test_workflow_checkpoint_excludes_injected_test_paths(tmp_path, eval_in_env):
     env = CheckpointEnv()
-
-    async def env_factory(task):
-        return env
 
     async def wf(ctx, args):
         return {"status": "done"}
 
     run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(
                 task_id="exclude",
                 description="x",
@@ -247,9 +219,7 @@ def test_workflow_checkpoint_excludes_injected_test_paths(tmp_path):
                     ),
                 },
             ),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=wf,
             checkpoint_interval_seconds=300,
         )

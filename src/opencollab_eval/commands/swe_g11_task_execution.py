@@ -42,16 +42,17 @@ def _max_task_starts(config: ParallelConfig, attempt: RecoveryAttempt | None) ->
     return 0 if attempt.mode == "eval_only" else 1
 
 
-def task_command(
+def runner_command_prefix(
     config: ParallelConfig,
+    *,
+    executable: str,
     index: int,
-    attempt: RecoveryAttempt | None = None,
+    run_id: str,
+    session_prefix: str,
+    base_run_dir: str,
 ) -> list[str]:
-    paths = task_paths(config, index, attempt)
-    run_id = attempt.run_id if attempt is not None else f"{config.run_id}_task{index}"
-    base_run_dir = attempt.base_run_dir if attempt is not None else f"{config.remote_base}/task_{index}"
-    command = [
-        sys.executable,
+    return [
+        executable,
         "-m",
         "opencollab_eval.commands.swe_g11_prolite_runner",
         "--host",
@@ -69,7 +70,7 @@ def task_command(
         "--run-id",
         run_id,
         "--session-prefix",
-        (attempt.session_prefix(config.session_prefix) if attempt is not None else config.session_prefix),
+        session_prefix,
         "--model-name",
         config.model_name,
         "--llm-provider",
@@ -94,34 +95,14 @@ def task_command(
         str(config.openhands_empty_patch_rejections),
         "--max-empty-patch-retries",
         str(config.max_empty_patch_retries),
-        "--swe-timeout",
-        str(config.swe_timeout),
-        "--task-wall-timeout",
-        str(config.task_wall_timeout),
-        "--eval-timeout",
-        str(config.eval_timeout),
-        "--eval-container-bind-timeout",
-        str(config.eval_container_bind_timeout),
-        "--llm-timeout",
-        str(config.llm_timeout),
-        "--checkpoint-interval",
-        str(config.checkpoint_interval),
-        "--max-task-starts",
-        str(_max_task_starts(config, attempt)),
-        "--max-eval-attempts",
-        str(attempt.max_eval_attempts if attempt is not None else config.max_eval_attempts),
-        "--total-timeout",
-        str(config.total_timeout),
-        "--json-output",
-        str(paths["json_report"]),
-        "--markdown-output",
-        str(paths["markdown_report"]),
     ]
-    if attempt is not None and attempt.mode == "eval_only":
-        pass
-    elif config.remote_api_env_file:
+
+
+def runner_command_options(config: ParallelConfig, *, include_api_credentials: bool = True) -> list[str]:
+    command: list[str] = []
+    if include_api_credentials and config.remote_api_env_file:
         command += ["--remote-api-env-file", config.remote_api_env_file]
-    else:
+    elif include_api_credentials:
         command += [
             "--local-proxy-base-url",
             config.local_proxy_base_url,
@@ -152,6 +133,52 @@ def task_command(
         ]
     if config.no_ensure_remote_proxy:
         command.append("--no-ensure-remote-proxy")
+    return command
+
+
+def task_command(
+    config: ParallelConfig,
+    index: int,
+    attempt: RecoveryAttempt | None = None,
+) -> list[str]:
+    paths = task_paths(config, index, attempt)
+    run_id = attempt.run_id if attempt is not None else f"{config.run_id}_task{index}"
+    base_run_dir = attempt.base_run_dir if attempt is not None else f"{config.remote_base}/task_{index}"
+    command = runner_command_prefix(
+        config,
+        executable=sys.executable,
+        index=index,
+        run_id=run_id,
+        session_prefix=attempt.session_prefix(config.session_prefix) if attempt is not None else config.session_prefix,
+        base_run_dir=base_run_dir,
+    )
+    command += [
+        "--swe-timeout",
+        str(config.swe_timeout),
+        "--task-wall-timeout",
+        str(config.task_wall_timeout),
+        "--eval-timeout",
+        str(config.eval_timeout),
+        "--eval-container-bind-timeout",
+        str(config.eval_container_bind_timeout),
+        "--llm-timeout",
+        str(config.llm_timeout),
+        "--checkpoint-interval",
+        str(config.checkpoint_interval),
+        "--max-task-starts",
+        str(_max_task_starts(config, attempt)),
+        "--max-eval-attempts",
+        str(attempt.max_eval_attempts if attempt is not None else config.max_eval_attempts),
+        "--total-timeout",
+        str(config.total_timeout),
+        "--json-output",
+        str(paths["json_report"]),
+        "--markdown-output",
+        str(paths["markdown_report"]),
+    ]
+    command += runner_command_options(
+        config, include_api_credentials=attempt is None or attempt.mode != "eval_only",
+    )
     if attempt is not None and attempt.mode == "eval_only":
         assert attempt.candidate is not None
         command += [
@@ -231,8 +258,7 @@ def task_result_from_summary(
         reasons.append("returncode_status_conflict")
     accepted_counts = {field: counts.get(field, 0) for field in _config.SINGLE_TASK_COUNT_FIELDS}
     if reasons:
-        accepted_counts = dict.fromkeys(_config.SINGLE_TASK_COUNT_FIELDS, 0)
-        accepted_counts["technical_failed"] = 1
+        accepted_counts = dict.fromkeys(_config.SINGLE_TASK_COUNT_FIELDS, 0) | {"technical_failed": 1}
     failure_scope = str(summary.get("failure_scope") or "")
     if failure_scope not in {"task", "image", "shared_infrastructure"}:
         failure_scope = "task" if reasons or accepted_counts["technical_failed"] else "none"
@@ -275,6 +301,26 @@ def run_one(
 ) -> dict[str, Any]:
     started = time.time()
     paths = task_paths(config, index, attempt)
+
+    def missing_report_result(returncode: int, attempts: int) -> dict[str, Any]:
+        return {
+            "index": index,
+            "returncode": returncode,
+            "elapsed_seconds": round(time.time() - started, 1),
+            "json_report": str(paths["json_report"]),
+            "markdown_report": str(paths["markdown_report"]),
+            "stdout_log": str(paths["stdout_log"]),
+            "stderr_log": str(paths["stderr_log"]),
+            "runner_status": "missing_report",
+            "completed": False,
+            "attempts": attempts,
+            **(dict.fromkeys(_config.SINGLE_TASK_COUNT_FIELDS, 0) | {"technical_failed": 1}),
+            "failure_scope": "task",
+            "failure_probe": {},
+            "base_run_dir": attempt.base_run_dir if attempt is not None else "",
+            "run_id": attempt.run_id if attempt is not None else "",
+        }
+
     if paths["json_report"].exists():
         summary = load_json(paths["json_report"])
         if _config.report_is_reusable(
@@ -303,31 +349,7 @@ def run_one(
         write_text(paths["stderr_log"], proc.stderr)
         summary = load_json(paths["json_report"])
         if not summary:
-            return {
-                "index": index,
-                "returncode": proc.returncode,
-                "elapsed_seconds": round(time.time() - started, 1),
-                "json_report": str(paths["json_report"]),
-                "markdown_report": str(paths["markdown_report"]),
-                "stdout_log": str(paths["stdout_log"]),
-                "stderr_log": str(paths["stderr_log"]),
-                "runner_status": "missing_report",
-                "completed": False,
-                "attempts": runner_attempt,
-                "tasks": 0,
-                "generation_done": 0,
-                "empty_patch": 0,
-                "eval_done": 0,
-                "eval_attempts": 0,
-                "eval_retry_tasks": 0,
-                "resolved": 0,
-                "unresolved": 0,
-                "technical_failed": 1,
-                "failure_scope": "task",
-                "failure_probe": {},
-                "base_run_dir": attempt.base_run_dir if attempt is not None else "",
-                "run_id": attempt.run_id if attempt is not None else "",
-            }
+            return missing_report_result(proc.returncode, runner_attempt)
         result = task_result_from_summary(
             config,
             index,
@@ -351,31 +373,7 @@ def run_one(
             break
 
     assert proc is not None
-    return {
-        "index": index,
-        "returncode": proc.returncode,
-        "elapsed_seconds": round(time.time() - started, 1),
-        "json_report": str(paths["json_report"]),
-        "markdown_report": str(paths["markdown_report"]),
-        "stdout_log": str(paths["stdout_log"]),
-        "stderr_log": str(paths["stderr_log"]),
-        "runner_status": "missing_report",
-        "completed": False,
-        "attempts": config.runner_attempts,
-        "tasks": 0,
-        "generation_done": 0,
-        "empty_patch": 0,
-        "eval_done": 0,
-        "eval_attempts": 0,
-        "eval_retry_tasks": 0,
-        "resolved": 0,
-        "unresolved": 0,
-        "technical_failed": 1,
-        "failure_scope": "task",
-        "failure_probe": {},
-        "base_run_dir": attempt.base_run_dir if attempt is not None else "",
-        "run_id": attempt.run_id if attempt is not None else "",
-    }
+    return missing_report_result(proc.returncode, config.runner_attempts)
 
 
 __all__ = ["run_one", "task_command", "task_paths", "task_result_from_summary"]

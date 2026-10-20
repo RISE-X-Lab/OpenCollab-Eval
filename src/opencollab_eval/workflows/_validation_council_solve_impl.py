@@ -430,32 +430,13 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
         )
         attempts.append(report)
         if _is_pass(report["final_verdict"]):
-            return {
-                "status": "done",
-                "rounds": attempt,
-                "contracts": len(contracts.get("contracts", [])),
-                "pre_validation_accepted": _accepted_count(pre_judge),
-                "post_validation_accepted": _accepted_count(report["post_judge"]),
-                "allowed_patch_paths": report["final_verdict"].get("allowed_patch_paths", []),
-                "disallowed_patch_paths": report["final_verdict"].get("disallowed_patch_paths", []),
-                "attempts": attempts,
-                "tokens_spent": ctx.tokens_spent(),
-            }
+            outcome = {"status": "done", "rounds": attempt}
+            break
         if _is_blocked(report["final_verdict"]):
             blocker = report["final_verdict"].get("findings", "")
             await ctx.log(f"attempt {attempt} blocked: {blocker[:200]}")
-            return {
-                "status": "blocked",
-                "rounds": attempt,
-                "blocker": blocker,
-                "contracts": len(contracts.get("contracts", [])),
-                "pre_validation_accepted": _accepted_count(pre_judge),
-                "post_validation_accepted": _accepted_count(report["post_judge"]),
-                "allowed_patch_paths": report["final_verdict"].get("allowed_patch_paths", []),
-                "disallowed_patch_paths": report["final_verdict"].get("disallowed_patch_paths", []),
-                "attempts": attempts,
-                "tokens_spent": ctx.tokens_spent(),
-            }
+            outcome = {"status": "blocked", "rounds": attempt, "blocker": blocker}
+            break
         feedback = _feedback(
             report["final_verdict"],
             report["patch_verdict"],
@@ -463,10 +444,11 @@ async def validation_council_solve(ctx: Any, args: dict[str, Any]) -> dict[str, 
             report["diff_risks"],
         )
         await ctx.log(f"attempt {attempt} failed: {feedback[:200]}")
+    else:
+        outcome = {"status": "incomplete", "rounds": max_coder_rounds()}
 
     return {
-        "status": "incomplete",
-        "rounds": max_coder_rounds(),
+        **outcome,
         "contracts": len(contracts.get("contracts", [])),
         "pre_validation_accepted": _accepted_count(pre_judge),
         "post_validation_accepted": _accepted_count(attempts[-1]["post_judge"]) if attempts else 0,

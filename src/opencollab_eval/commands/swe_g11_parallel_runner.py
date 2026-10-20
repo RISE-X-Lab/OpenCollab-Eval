@@ -102,50 +102,15 @@ def prepare_runtime(config: ParallelConfig) -> str:
     preflight_json = config.output_dir / "shared_runtime_preflight.json"
     preflight_md = config.output_dir / "shared_runtime_preflight.md"
     preflight_run_dir = f"{config.remote_base}/_preflight"
-    command = [
-        sys.executable,
-        "-m",
-        "opencollab_eval.commands.swe_g11_prolite_runner",
-        "--host",
-        config.host,
-        "--ssh-command",
-        config.ssh_command,
-        "--runner-transport",
-        getattr(config, "runner_transport", "ssh"),
-        "--remote-python",
-        config.remote_python,
-        "--remote-root",
-        config.remote_root,
-        "--image-repository",
-        config.image_repository,
-        "--run-id",
-        f"{config.run_id}_preflight",
-        "--session-prefix",
-        config.session_prefix,
-        "--model-name",
-        config.model_name,
-        "--llm-provider",
-        config.llm_provider,
-        "--start-index",
-        str(config.indices[0]),
-        "--limit",
-        "1",
-        "--base-run-dir",
-        preflight_run_dir,
-        "--remote-runtime-repo",
-        config.remote_runtime_repo,
-        "--workflow",
-        config.workflow,
-        "--remote-proxy-base-url",
-        config.remote_proxy_base_url,
-        "--budget",
-        str(config.budget),
-        "--max-steps",
-        str(config.max_steps),
-        "--openhands-empty-patch-rejections",
-        str(config.openhands_empty_patch_rejections),
-        "--max-empty-patch-retries",
-        str(config.max_empty_patch_retries),
+    command = _task_execution.runner_command_prefix(
+        config,
+        executable=sys.executable,
+        index=config.indices[0],
+        run_id=f"{config.run_id}_preflight",
+        session_prefix=config.session_prefix,
+        base_run_dir=preflight_run_dir,
+    )
+    command += [
         "--max-task-starts",
         str(config.max_task_starts),
         "--max-eval-attempts",
@@ -156,35 +121,7 @@ def prepare_runtime(config: ParallelConfig) -> str:
         str(preflight_md),
         "--dry-run",
     ]
-    if config.remote_api_env_file:
-        command += ["--remote-api-env-file", config.remote_api_env_file]
-    else:
-        command += [
-            "--local-proxy-base-url",
-            config.local_proxy_base_url,
-            "--proxy-env-file",
-            str(config.proxy_env_file),
-        ]
-    for option, value in (
-        ("--scoring-adapter-registry", getattr(config, "scoring_adapter_registry", "")),
-        ("--llm-model", config.llm_model),
-        ("--context-window", config.context_window),
-        ("--temperature", config.temperature),
-        ("--top-p", config.top_p),
-        ("--max-output-tokens", config.max_output_tokens),
-    ):
-        if value not in (None, ""):
-            command += [option, str(value)]
-    for item in config.workflow_env:
-        command += ["--workflow-env", item]
-    if getattr(config, "agent_profile", None) is not None:
-        command += ["--agent-profile", config.agent_profile]
-    if config.openhands_command:
-        command += ["--openhands-command", config.openhands_command]
-    if config.no_sync_runtime:
-        command += ["--no-sync-runtime", "--expected-runtime-tree-sha256", config.runtime_tree_sha256]
-    if config.no_ensure_remote_proxy:
-        command.append("--no-ensure-remote-proxy")
+    command += _task_execution.runner_command_options(config)
     proc = _run_task_process(command)
     write_text(config.output_dir / "shared_runtime_preflight.stdout.log", proc.stdout)
     write_text(config.output_dir / "shared_runtime_preflight.stderr.log", proc.stderr)
@@ -578,15 +515,7 @@ def _run_parallel(config: ParallelConfig) -> dict[str, Any]:
                         "runner_status": "orchestrator_exception",
                         "error": str(exc),
                         "completed": False,
-                        "tasks": 0,
-                        "generation_done": 0,
-                        "empty_patch": 0,
-                        "eval_done": 0,
-                        "eval_attempts": 0,
-                        "eval_retry_tasks": 0,
-                        "resolved": 0,
-                        "unresolved": 0,
-                        "technical_failed": 1,
+                        **(dict.fromkeys(_config.SINGLE_TASK_COUNT_FIELDS, 0) | {"technical_failed": 1}),
                         "failure_scope": "task",
                         "failure_probe": {},
                     }

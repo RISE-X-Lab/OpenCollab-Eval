@@ -24,7 +24,23 @@ from tests.support.gen_prediction_openhands_support import (
 from tests.support.gen_prediction_openhands_support import (
     isolated_external_runtime_dependencies as _isolated_external_runtime_dependencies,  # noqa: F401
 )
+from tests.support.gen_prediction_openhands_support import (
+    prepare_openhands_main,
+    trusted_openhands_extraction,
+)
 from tests.support.paths import SOURCE_ROOT
+
+
+def _run_openhands_fixture(tmp_path: Path, *, timeout: float = 5):
+    return gpo._run_openhands(
+        command_template="openhands --headless --file {prompt_file}",
+        container_id="container-123",
+        instance={"instance_id": "acme__widget-1"},
+        instance_file=tmp_path / "instance.json",
+        prompt_file=tmp_path / "prompt.md",
+        output_dir=tmp_path / "output",
+        timeout=timeout,
+    )
 
 
 def test_prompt_requires_all_repository_work_to_use_the_existing_container() -> None:
@@ -50,15 +66,7 @@ def test_run_openhands_records_timeout_logs(tmp_path: Path, monkeypatch: pytest.
         stdout="partial stdout",
         stderr="timeout stderr",
     )
-    result = gpo._run_openhands(
-        command_template="openhands --headless --file {prompt_file}",
-        container_id="container-123",
-        instance={"instance_id": "acme__widget-1"},
-        instance_file=tmp_path / "instance.json",
-        prompt_file=tmp_path / "prompt.md",
-        output_dir=tmp_path / "output",
-        timeout=5,
-    )
+    result = _run_openhands_fixture(tmp_path)
 
     assert result["status"] == "openhands_timeout"
     assert result["returncode"] == 124
@@ -79,15 +87,7 @@ def test_run_openhands_rejects_zero_exit_with_fatal_traceback(
         ),
     )
 
-    result = gpo._run_openhands(
-        command_template="openhands --headless --file {prompt_file}",
-        container_id="container-123",
-        instance={"instance_id": "acme__widget-1"},
-        instance_file=tmp_path / "instance.json",
-        prompt_file=tmp_path / "prompt.md",
-        output_dir=tmp_path / "output",
-        timeout=5,
-    )
+    result = _run_openhands_fixture(tmp_path)
 
     assert result["status"] == "openhands_failed"
     assert result["returncode"] == 0
@@ -139,15 +139,7 @@ def test_run_openhands_marks_process_group_cleanup_failure(
         stdout="done",
     )
 
-    result = gpo._run_openhands(
-        command_template="openhands --headless --file {prompt_file}",
-        container_id="container-123",
-        instance={"instance_id": "acme__widget-1"},
-        instance_file=tmp_path / "instance.json",
-        prompt_file=tmp_path / "prompt.md",
-        output_dir=tmp_path / "output",
-        timeout=5,
-    )
+    result = _run_openhands_fixture(tmp_path)
 
     assert result["status"] == "openhands_cleanup_failed"
     assert result["returncode"] == 125
@@ -169,15 +161,7 @@ def test_run_openhands_container_quiescence_failure_blocks_success(
         },
     )
 
-    result = gpo._run_openhands(
-        command_template="openhands --headless --file {prompt_file}",
-        container_id="container-123",
-        instance={"instance_id": "acme__widget-1"},
-        instance_file=tmp_path / "instance.json",
-        prompt_file=tmp_path / "prompt.md",
-        output_dir=tmp_path / "output",
-        timeout=5,
-    )
+    result = _run_openhands_fixture(tmp_path)
 
     assert result["status"] == "openhands_cleanup_failed"
     assert result["returncode"] == 125
@@ -207,15 +191,7 @@ def test_run_openhands_external_container_cleanup_failure_blocks_success(
         },
     )
 
-    result = gpo._run_openhands(
-        command_template="openhands --headless --file {prompt_file}",
-        container_id="container-123",
-        instance={"instance_id": "acme__widget-1"},
-        instance_file=tmp_path / "instance.json",
-        prompt_file=tmp_path / "prompt.md",
-        output_dir=tmp_path / "output",
-        timeout=5,
-    )
+    result = _run_openhands_fixture(tmp_path)
 
     assert result["status"] == "openhands_cleanup_failed"
     assert result["returncode"] == 125
@@ -234,15 +210,7 @@ def test_run_openhands_treats_signalled_supervisor_as_cleanup_failure(
         stdout="partial",
     )
 
-    result = gpo._run_openhands(
-        command_template="openhands --headless --file {prompt_file}",
-        container_id="container-123",
-        instance={"instance_id": "acme__widget-1"},
-        instance_file=tmp_path / "instance.json",
-        prompt_file=tmp_path / "prompt.md",
-        output_dir=tmp_path / "output",
-        timeout=5,
-    )
+    result = _run_openhands_fixture(tmp_path)
 
     assert result["status"] == "openhands_cleanup_failed"
     assert result["returncode"] == 125
@@ -261,15 +229,7 @@ def test_run_openhands_outer_supervisor_timeout_fails_closed(
         captured=captured,
     )
 
-    result = gpo._run_openhands(
-        command_template="openhands --headless --file {prompt_file}",
-        container_id="container-123",
-        instance={"instance_id": "acme__widget-1"},
-        instance_file=tmp_path / "instance.json",
-        prompt_file=tmp_path / "prompt.md",
-        output_dir=tmp_path / "output",
-        timeout=0.1,
-    )
+    result = _run_openhands_fixture(tmp_path, timeout=0.1)
 
     assert captured["signals"] == [gpo.signal.SIGTERM]
     grace = gpo.container_guard.KILL_GRACE_SECONDS + 1.0
@@ -538,30 +498,9 @@ def test_main_writes_generation_contract_for_nonempty_patch(
     returncode: int,
     expected_workflow_status: str,
 ) -> None:
-    instance_file = tmp_path / "instance.json"
+    instance_file = prepare_openhands_main(tmp_path, monkeypatch)
     output = tmp_path / "predictions.jsonl"
     metrics = tmp_path / "metrics.jsonl"
-    instance_file.write_text(
-        json.dumps(
-            {
-                "instance_id": "acme__widget-1",
-                "base_commit": "b" * 40,
-                "repo": "acme/widget",
-                "problem_statement": "Fix the widget.",
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        gpo.gp,
-        "start_container_with_marker",
-        lambda image, name, run_dir: "container-123",
-    )
-    monkeypatch.setattr(
-        gpo.container_guard,
-        "container_image_id",
-        lambda container_id: "sha256:" + "8" * 64,
-    )
     pending: dict = {}
     finalized: dict = {}
     lifecycle: list[str] = []
@@ -623,21 +562,7 @@ def test_main_writes_generation_contract_for_nonempty_patch(
         lambda cid, prepared_snapshot: baseline,
     )
     patch = "diff --git a/widget.py b/widget.py\n+fixed = True\n"
-    proof = gpo.gp.gen_prediction_patch.TrustedPatchExtraction(
-        fixed_anonymous_base=snapshot.anonymous_head,
-        base_tree=snapshot.base_tree,
-        baseline_archive_sha256="e" * 64,
-        baseline_archive_bytes=10,
-        baseline_archive_entries=1,
-        baseline_extracted_bytes=1,
-        workspace_archive_sha256="f" * 64,
-        workspace_archive_bytes=10,
-        workspace_archive_entries=1,
-        workspace_extracted_bytes=1,
-        patch_sha256=hashlib.sha256(patch.encode()).hexdigest(),
-        patch_bytes=len(patch.encode()),
-        candidate_tree="a" * 40, changed_paths=(), path_modes=(),
-    ).as_dict()
+    proof = trusted_openhands_extraction(snapshot, patch)
     monkeypatch.setattr(
         gpo,
         "extract_patch_guarded",

@@ -77,14 +77,13 @@ def recompute_arm_failure_reasons(
 
     corrected_false_infra_flags: dict[str, Any] = {}
     for instance_id in list(failure_reasons):
-        instance_report = instance_reports.get(instance_id)
-        if not instance_has_parsed_grading(instance_report):
+        outcome = fail_to_pass_outcome(instance_reports.get(instance_id))
+        if not (outcome.patch_successfully_applied and outcome.graded):
             continue
         reason = failure_reasons.pop(instance_id)
         was_infra_tier = instance_id in infra_failure_ids
         infra_failure_ids.discard(instance_id)
         ambiguous_failure_ids.discard(instance_id)
-        outcome = fail_to_pass_outcome(instance_report)
         corrected_false_infra_flags[instance_id] = {
             "original_reason": reason,
             "original_tier": "environment" if was_infra_tier else "ambiguous",

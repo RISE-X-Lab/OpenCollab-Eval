@@ -106,27 +106,30 @@ class ProbeUnavailable(RuntimeError):
     """No endpoint to probe, or no credential for it."""
 
 
-def _read_env_file(name: str) -> str | None:
-    """One value out of ``OPENCOLLAB_ENV_FILE``, without reading it aloud."""
+def _read_env_file() -> dict[str, str | None]:
     path = os.environ.get("OPENCOLLAB_ENV_FILE")
     if not path:
-        return None
+        return {}
     try:
         lines = Path(path).read_text(encoding="utf-8").splitlines()
     except OSError:
-        return None
+        return {}
+    values: dict[str, str | None] = {}
     for line in lines:
         stripped = line.strip()
         if stripped.startswith("export "):
             stripped = stripped[len("export ") :]
         key, _, value = stripped.partition("=")
-        if key.strip() == name:
-            return value.strip().strip("'\"") or None
-    return None
+        values.setdefault(key.strip(), value.strip().strip("'\"") or None)
+    return values
 
 
 def credentials() -> tuple[str, str]:
-    base_url = os.environ.get("OPENCOLLAB_BASE_URL") or _read_env_file("OPENCOLLAB_BASE_URL")
+    base_url = os.environ.get("OPENCOLLAB_BASE_URL")
+    file_env = None
+    if not base_url:
+        file_env = _read_env_file()
+        base_url = file_env.get("OPENCOLLAB_BASE_URL")
     if not base_url:
         raise ProbeUnavailable("no OPENCOLLAB_BASE_URL in the environment; nothing to probe")
     base_url = base_url.strip().rstrip("/")
@@ -147,11 +150,13 @@ def credentials() -> tuple[str, str]:
         key_names = ("DASHSCOPE_API_KEY", "OPENCOLLAB_API_KEY")
     else:
         key_names = ("OPENCOLLAB_API_KEY",)
+    if file_env is None:
+        file_env = _read_env_file()
     api_key = next(
         (
             value.strip()
             for name in key_names
-            for value in (os.environ.get(name), _read_env_file(name))
+            for value in (os.environ.get(name), file_env.get(name))
             if value and value.strip()
         ),
         None,
@@ -507,11 +512,9 @@ def run_probes(
         if name == "context":
             results[name] = probe_context(model, sender, budget=share, ceiling_tokens=ceiling_tokens)
             budget -= int(results[name]["requests_spent"])
-        elif name == "tool_choice":
-            results[name] = probe_tool_choice(model, sender, budget=share)
-            budget -= sum(1 for row in results[name].values() if "skipped" not in row)
         else:
-            results[name] = probe_max_tokens(model, sender, budget=share)
+            probe = probe_tool_choice if name == "tool_choice" else probe_max_tokens
+            results[name] = probe(model, sender, budget=share)
             budget -= sum(1 for row in results[name].values() if "skipped" not in row)
     report["results"] = results
     report["requests_remaining"] = budget

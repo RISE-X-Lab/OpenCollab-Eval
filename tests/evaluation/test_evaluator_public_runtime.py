@@ -179,6 +179,7 @@ def test_failed_or_uncontrolled_agent_result_keeps_patch_but_blocks_submission(
     tmp_path,
     status,
     reason,
+    eval_in_env,
 ):
     class Client:
         async def agent(self, _prompt, **_kwargs):
@@ -193,15 +194,10 @@ def test_failed_or_uncontrolled_agent_result_keeps_patch_but_blocks_submission(
     _install_client(monkeypatch, Client)
     env = FakeEnv()
 
-    async def env_factory(_task):
-        return env
-
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id=f"agent-{status}", description="repair"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
         )
     )
 
@@ -234,6 +230,7 @@ def test_controlled_stop_keeps_quiescent_patch_and_metrics_eligible(
     monkeypatch,
     tmp_path,
     reason,
+    eval_in_env,
 ):
     class Client:
         async def agent(self, _prompt, **_kwargs):
@@ -248,15 +245,10 @@ def test_controlled_stop_keeps_quiescent_patch_and_metrics_eligible(
     _install_client(monkeypatch, Client)
     env = FakeEnv()
 
-    async def env_factory(_task):
-        return env
-
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id=f"agent-{reason}", description="repair"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
         )
     )
 
@@ -278,7 +270,7 @@ def test_controlled_stop_keeps_quiescent_patch_and_metrics_eligible(
         "output truncated: provider reached its generation limit",
     ],
 )
-def test_nonquiescent_controlled_stop_blocks_submission(monkeypatch, tmp_path, reason):
+def test_nonquiescent_controlled_stop_blocks_submission(monkeypatch, tmp_path, reason, eval_in_env):
     class Client:
         async def agent(self, _prompt, **_kwargs):
             return RunResult(
@@ -292,15 +284,10 @@ def test_nonquiescent_controlled_stop_blocks_submission(monkeypatch, tmp_path, r
     _install_client(monkeypatch, Client)
     env = FakeEnv()
 
-    async def env_factory(_task):
-        return env
-
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id="agent-nonquiescent", description="repair"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
         )
     )
 
@@ -333,6 +320,7 @@ def test_controlled_workflow_stop_keeps_patch_eligible(
     monkeypatch,
     tmp_path,
     reason,
+    eval_in_env,
 ):
     class Client:
         async def workflow(self, _workflow, _args, **_kwargs):
@@ -354,15 +342,10 @@ def test_controlled_workflow_stop_keeps_patch_eligible(
     _install_client(monkeypatch, Client)
     env = FakeEnv()
 
-    async def env_factory(_task):
-        return env
-
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id=f"workflow-{reason}", description="repair"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=workflow,
         )
     )
@@ -380,6 +363,7 @@ def test_controlled_workflow_stop_keeps_patch_eligible(
 def test_workflow_result_and_public_artifacts_are_bound_to_eval_result(
     monkeypatch,
     tmp_path,
+    eval_in_env,
 ):
     failure = {"agent": "reviewer", "reason": "probe failed"}
 
@@ -410,15 +394,10 @@ def test_workflow_result_and_public_artifacts_are_bound_to_eval_result(
     _install_client(monkeypatch, Client)
     env = FakeEnv()
 
-    async def env_factory(_task):
-        return env
-
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id="public-workflow", description="repair"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=sample_workflow,
         )
     )
@@ -445,6 +424,7 @@ def test_workflow_result_and_public_artifacts_are_bound_to_eval_result(
 def test_workflow_exception_keeps_observable_patch_and_blocks_submission(
     monkeypatch,
     tmp_path,
+    eval_in_env,
 ):
     class Client:
         async def workflow(self, _workflow, _args, **_kwargs):
@@ -456,15 +436,10 @@ def test_workflow_exception_keeps_observable_patch_and_blocks_submission(
     _install_client(monkeypatch, Client)
     env = FakeEnv()
 
-    async def env_factory(_task):
-        return env
-
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id="workflow-error", description="repair"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=workflow,
         )
     )
@@ -478,6 +453,7 @@ def test_workflow_exception_keeps_observable_patch_and_blocks_submission(
 def test_workflow_manifest_failure_keeps_patch_and_blocks_submission(
     monkeypatch,
     tmp_path,
+    eval_in_env,
 ):
     from opencollab_eval.engine import evaluator_resources
 
@@ -504,15 +480,10 @@ def test_workflow_manifest_failure_keeps_patch_and_blocks_submission(
     )
     env = FakeEnv()
 
-    async def env_factory(_task):
-        return env
-
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id="manifest-error", description="repair"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=workflow,
         )
     )
@@ -530,6 +501,7 @@ def test_workflow_manifest_failure_keeps_patch_and_blocks_submission(
 def test_workflow_manifest_timeout_marks_execution_nonquiescent(
     monkeypatch,
     tmp_path,
+    eval_in_env,
 ):
     from opencollab_eval.engine import evaluator_resources
 
@@ -562,16 +534,11 @@ def test_workflow_manifest_timeout_marks_execution_nonquiescent(
     )
     env = FakeEnv()
 
-    async def env_factory(_task):
-        return env
-
     async def scenario():
         evaluation = asyncio.create_task(
-            run_eval_task(
+            eval_in_env(
                 EvalTask(task_id="manifest-timeout", description="repair"),
-                output_dir=str(tmp_path),
-                tools_factory=list,
-                env_factory=env_factory,
+                env,
                 workflow=workflow,
                 cancellation_cleanup_timeout=0.01,
             )

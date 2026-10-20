@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import ast
 import asyncio
-import hashlib
 import json
 import sys
 from pathlib import Path
@@ -16,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from opencollab_eval.generation import gen_prediction_config as config
+from tests.support.gen_prediction_single_agent_support import _trusted_extraction
 
 gp = pytest.importorskip("opencollab_eval.generation.gen_prediction")
 
@@ -124,27 +124,6 @@ def _isolated_solver_snapshot(monkeypatch):
     baseline = type("Baseline", (), {"snapshot": evidence, "cleanup": lambda self: None})()
     monkeypatch.setattr(gp, "prepare_trusted_patch_baseline", lambda cid, snapshot: baseline)
     return evidence
-
-
-def _trusted_extraction(patch: str):
-    encoded = patch.encode("utf-8")
-    return gp.gen_prediction_patch.TrustedPatchExtraction(
-        fixed_anonymous_base="a" * 40,
-        base_tree="b" * 40,
-        baseline_archive_sha256="c" * 64,
-        baseline_archive_bytes=10,
-        baseline_archive_entries=1,
-        baseline_extracted_bytes=1,
-        workspace_archive_sha256="d" * 64,
-        workspace_archive_bytes=10,
-        workspace_archive_entries=1,
-        workspace_extracted_bytes=1,
-        patch_sha256=hashlib.sha256(encoded).hexdigest(),
-        patch_bytes=len(encoded),
-        candidate_tree="e" * 40,
-        changed_paths=(),
-        path_modes=(),
-    )
 
 
 def test_a_finished_single_agent_run_records_how_it_reached_the_provider(

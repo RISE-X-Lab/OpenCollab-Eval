@@ -2,14 +2,14 @@
 
 import json
 
-import pytest
-
 from opencollab_eval.commands import batch as batch_cli
 from opencollab_eval.experiment import cell_report
-from tests.experiment import batch_support as launcher
-
-_oc_repo = pytest.fixture(name="oc_repo")(launcher.oc_repo.__wrapped__)
-_experiment = pytest.fixture(name="experiment")(launcher.experiment.__wrapped__)
+from tests.experiment.batch_support import (
+    experiment as experiment,
+)
+from tests.experiment.batch_support import (
+    oc_repo as oc_repo,
+)
 
 
 def _reject_constant(value):

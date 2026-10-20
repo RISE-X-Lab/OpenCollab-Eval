@@ -365,6 +365,7 @@ def observe(
         "team": seats["team"],
         **{arm: len(observations[arm].seat_calls) for arm in workflows},
     }
+    tool_bundles = {arm: _tool_bundles(arm, observations.get(arm), team_config) for arm in ARMS}
 
     values: dict[str, dict[str, Any]] = {
         "max_steps_flag": dict(steps),
@@ -373,10 +374,9 @@ def observe(
         "token_pool_per_run": dict(pools),
         "seat_count": dict(seats),
         "token_budget_per_seat": {arm: pools[arm] // seats[arm] for arm in ARMS},
-        "role_tool_names": {arm: _tool_bundles(arm, observations.get(arm), team_config) for arm in ARMS},
+        "role_tool_names": tool_bundles,
         "ask_user_reachable": {
-            arm: any("ask_user" in tools for _role, tools in _tool_bundles(arm, observations.get(arm), team_config))
-            for arm in ARMS
+            arm: any("ask_user" in tools for _role, tools in bundles) for arm, bundles in tool_bundles.items()
         },
         "task_description_sha256": {arm: _digest(observations[arm].task_description) for arm in ARMS},
         "system_prompt_origin": {arm: _system_prompt_origin(observations[arm]) for arm in ARMS},

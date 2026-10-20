@@ -32,35 +32,24 @@ async def _remove_recovery_patch(
     deadline = asyncio.get_running_loop().time() + _checkpoint_module().MAX_CHECKPOINT_TEMP_CLEANUP_SECONDS
     while not cleanup_task.done():
         remaining = deadline - asyncio.get_running_loop().time()
-        if remaining <= 0:
-            cleanup_failure = TimeoutError("checkpoint recovery temporary-file cleanup exceeded its deadline")
-            cleanup_task.cancel()
-            cleanup_task.add_done_callback(
-                lambda finished: (
-                    pending_tasks.discard(finished),
-                    _checkpoint_module().WorktreeCheckpoint._consume_task_result(finished),
-                )
+        if remaining > 0:
+            try:
+                done, _pending = await asyncio.wait({cleanup_task}, timeout=remaining)
+            except asyncio.CancelledError as exc:
+                if cancellation is None:
+                    cancellation = exc
+                continue
+            if done:
+                continue
+        cleanup_failure = TimeoutError("checkpoint recovery temporary-file cleanup exceeded its deadline")
+        cleanup_task.cancel()
+        cleanup_task.add_done_callback(
+            lambda finished: (
+                pending_tasks.discard(finished),
+                _checkpoint_module().WorktreeCheckpoint._consume_task_result(finished),
             )
-            break
-        try:
-            done, _pending = await asyncio.wait(
-                {cleanup_task},
-                timeout=remaining,
-            )
-        except asyncio.CancelledError as exc:
-            if cancellation is None:
-                cancellation = exc
-            continue
-        if not done:
-            cleanup_failure = TimeoutError("checkpoint recovery temporary-file cleanup exceeded its deadline")
-            cleanup_task.cancel()
-            cleanup_task.add_done_callback(
-                lambda finished: (
-                    pending_tasks.discard(finished),
-                    _checkpoint_module().WorktreeCheckpoint._consume_task_result(finished),
-                )
-            )
-            break
+        )
+        break
 
     if cleanup_failure is None and cleanup_task.done():
         pending_tasks.discard(cleanup_task)
@@ -87,7 +76,6 @@ async def _prove_failed_restore_clean(
     )
     pending_tasks.add(proof_task)
     result: ExecResult | None = None
-    proof_failure: BaseException | None = None
     deadline = asyncio.get_running_loop().time() + _checkpoint_module().MAX_FAILED_RESTORE_PROOF_SECONDS
     while not proof_task.done():
         remaining = deadline - asyncio.get_running_loop().time()
@@ -118,12 +106,9 @@ async def _prove_failed_restore_clean(
     try:
         result = proof_task.result()
     except BaseException as exc:
-        proof_failure = exc
-
-    if proof_failure is not None:
         return (
             False,
-            f"failed restore worktree proof raised {type(proof_failure).__name__}: {proof_failure}",
+            f"failed restore worktree proof raised {type(exc).__name__}: {exc}",
             cancellation,
         )
     if result is None:

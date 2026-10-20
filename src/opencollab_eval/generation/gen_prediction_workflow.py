@@ -32,7 +32,6 @@ import hashlib
 import math
 import os
 import tempfile
-import uuid
 from pathlib import Path
 
 from opencollab.builtin_workflows import get_builtin_workflows
@@ -193,35 +192,14 @@ def build_output_records(
     workflow_name: str | None = None,
     record_id: str | None = None,
 ) -> tuple[dict, dict]:
-    record_id = record_id or uuid.uuid4().hex
-    patch_sha256 = _patch_sha256(patch)
-    metric_record = {
-        **metrics,
-        "instance_id": instance_id,
-        "record_id": record_id,
-        "patch_sha256": patch_sha256,
-        "model_name_or_path": model_name,
-    }
-    # EvalTask uses an anonymous solver id; persisted rows use the benchmark
-    # instance id.  Bind the generic task alias to the public identity while
-    # retaining the solver id for diagnostics.
-    solver_task_id = metric_record.get("task_id")
-    if solver_task_id not in (None, "", instance_id):
-        metric_record["solver_task_id"] = solver_task_id
-    metric_record["task_id"] = instance_id
-    metric_record["runner_returncode"] = gp.runner_returncode_for_metrics(metric_record)
-    prediction = {
-        "instance_id": instance_id,
-        "record_id": record_id,
-        "patch_sha256": patch_sha256,
-        "model_name_or_path": model_name,
-        "model_patch": patch,
-        "workflow_metric": metric_record,
-    }
-    if workflow_name:
-        prediction["workflow"] = workflow_name
-        metric_record["workflow"] = workflow_name
-    return prediction, metric_record
+    return gp.build_output_records(
+        instance_id=instance_id,
+        model_name=model_name,
+        patch=patch,
+        metrics=metrics,
+        workflow_name=workflow_name,
+        record_id=record_id,
+    )
 
 
 def _patch_path_audit(patch: str) -> dict[str, object]:
@@ -710,22 +688,7 @@ def main() -> None:
     cfg = get_config(
         str(_REPO_ROOT), overrides={"model": args.model, "provider": args.provider},
     )
-    if args.temperature is not None:
-        if not 0.0 <= args.temperature <= 2.0:
-            ap.error("--temperature must be between 0 and 2")
-        cfg["temperature"] = args.temperature
-    if args.top_p is not None:
-        if not 0.0 <= args.top_p <= 1.0:
-            ap.error("--top-p must be between 0 and 1")
-        cfg["top_p"] = args.top_p
-    if args.max_output_tokens is not None:
-        if args.max_output_tokens <= 0:
-            ap.error("--max-output-tokens must be positive")
-        cfg["max_output_tokens"] = args.max_output_tokens
-    if args.context_window is not None:
-        if args.context_window <= 0:
-            ap.error("--context-window must be positive")
-        cfg["context_window"] = args.context_window
+    gp.apply_model_overrides(cfg, args, ap)
     model_name = args.model_name or f"opencollab-{wf_label}-{cfg['model']}"
 
     print(f"Instance: {iid}")

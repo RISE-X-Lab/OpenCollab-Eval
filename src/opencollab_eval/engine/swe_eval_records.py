@@ -6,7 +6,6 @@ import json
 import os
 import re
 import stat
-from collections import deque
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -147,7 +146,7 @@ class PairedRows:
     status: str
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
-    rows: deque[tuple[int, dict[str, Any]]] = deque()
+    rows: list[dict[str, Any]] = []
     retained_bytes = 0
     try:
         with open_regular_binary(path) as handle:
@@ -179,9 +178,8 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
                         f"JSONL record must be an object: {path}"
                     )
                 validate_candidate_read(value, RecordInputLimitError)
-                line_size = len(line)
-                rows.append((line_size, value))
-                retained_bytes += line_size
+                rows.append(value)
+                retained_bytes += len(line)
                 if (
                     len(rows) > MAX_JSONL_RETAINED_ROWS
                     or retained_bytes > MAX_JSONL_RETAINED_BYTES
@@ -203,7 +201,7 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
                 )
     except FileNotFoundError:
         return []
-    return [value for _size, value in rows]
+    return rows
 
 def prediction_patch(row: dict[str, Any] | None) -> str:
     if not isinstance(row, dict):
@@ -400,14 +398,15 @@ def _direct_eval_plan_status(
         return None
     statuses: list[int] = []
     outcomes: list[bool] = []
-    unknown_batches: list[int] = []
+    has_unknown_batches = False
     skip_allowed = tests_status.get("pass_to_pass_skips_allowed", False) is True
-    for index, item in enumerate(evidence, 1):
+    for item in evidence:
         if not isinstance(item, dict):
             return None
         status = item.get("status")
         if isinstance(status, bool) or not isinstance(status, int):
             return None
+        statuses.append(status)
         if not all(
             item.get(field) is True
             for field in (
@@ -416,20 +415,17 @@ def _direct_eval_plan_status(
                 "artifact_safe",
             )
         ):
-            unknown_batches.append(index)
-            statuses.append(status)
+            has_unknown_batches = True
             continue
         outcome = target_evidence_passed(item, allow_skipped=prefix == "pass_to_pass" and skip_allowed)
         if outcome is None:
-            unknown_batches.append(index)
-            statuses.append(status)
+            has_unknown_batches = True
             continue
-        statuses.append(status)
         outcomes.append(outcome)
     reported_status = tests_status.get(f"{prefix}_status")
     if isinstance(reported_status, bool) or not isinstance(reported_status, int):
         return None
-    if unknown_batches:
+    if has_unknown_batches:
         return None if not outcomes or all(outcomes) else 1
     expected_status = next((status for status in statuses if status != 0), 0)
     if reported_status != expected_status:

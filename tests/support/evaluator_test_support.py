@@ -181,18 +181,12 @@ class CapturingLLMClient:
         )
 
 
-class InjectFakeEnv:
+class InjectFakeEnv(FakeEnv):
     """Model per-path cleanup of injected tests before staged patch extraction.
 
     Tracked edits require checkout and untracked files require clean. A path
     remains in the staged diff until both per-path operations are attempted.
     """
-
-    workspace = "/tmp/opencollab-test-worktree"
-    host_workspace = None
-    source_workspace = None
-    local_filesystem = False
-    process_isolated = False
 
     def __init__(self, src_path="src/app.py", mod_path=None, new_path=None):
         self.src_path = src_path
@@ -207,39 +201,8 @@ class InjectFakeEnv:
         self.cleaned_up = False
         self._revoked = False
 
-    @property
-    def revoked(self) -> bool:
-        return self._revoked
-
-    def revoke(self) -> None:
-        self._revoked = True
-
-    def _ensure_active(self) -> None:
-        if self.revoked:
-            raise RuntimeError("execution environment has been revoked")
-
-    async def read_file(self, path: str) -> str:
-        return ""
-
-    async def write_file(self, path: str, content: str) -> None:
-        pass
-
-    async def write_temp_file(
-        self,
-        content: str,
-        *,
-        prefix: str,
-        suffix: str = ".tmp",
-    ) -> str:
-        path = f"/tmp/{prefix}{id(self):x}{suffix}"
-        await self.write_file(path, content)
-        return path
-
     async def remove_file(self, path: str) -> None:
         return None
-
-    async def abort(self) -> None:
-        self.revoke()
 
     def _leaks(self, path: str | None, *, untracked: bool) -> bool:
         if not path:
@@ -287,6 +250,3 @@ class InjectFakeEnv:
                 parts.append(f"diff --git a/{self.new_path} b/{self.new_path}\nnew file mode 100644\n+brand new test\n")
             return ExecResult(returncode=0, stdout="".join(parts), stderr="")
         return ExecResult(returncode=0, stdout="", stderr="")
-
-    async def cleanup(self) -> None:
-        self.cleaned_up = True

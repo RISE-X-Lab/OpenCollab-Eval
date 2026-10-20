@@ -18,11 +18,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     capture = commands.add_parser("capture")
-    for command in (capture,):
-        command.add_argument("--git-dir", type=Path, required=True)
-        command.add_argument("--base", required=True)
-        command.add_argument("--base-tree", required=True)
-        command.add_argument("--baseline-sha256", required=True)
+    capture.add_argument("--git-dir", type=Path, required=True)
+    capture.add_argument("--base", required=True)
+    capture.add_argument("--base-tree", required=True)
+    capture.add_argument("--baseline-sha256", required=True)
     capture.add_argument("--work-tree", type=Path, required=True)
     capture.add_argument("--repository-directory", type=Path, required=True)
     project = commands.add_parser("project")
@@ -32,9 +31,8 @@ def main() -> None:
     project.add_argument("--repository-directory", type=Path, required=True)
     replay = commands.add_parser("replay-paths")
     replay.add_argument("--manifest", type=Path, required=True)
-    for command in (capture, project):
+    for command in (capture, project, replay):
         command.add_argument("--output", type=Path, required=True)
-    replay.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "capture":
         value = capture_gitlink_manifest(

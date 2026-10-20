@@ -255,18 +255,18 @@ def ensure_remote_proxy(
         ]
         tunnel_kwargs = {} if deadline is None else {"deadline": deadline}
         proc, message = start_remote_proxy_tunnel(command, **tunnel_kwargs)
+        health_kwargs = {
+            "ssh_command": ssh_command,
+            "host": host,
+            "base_url": candidate_base_url,
+            "remote_python": remote_python,
+            "timeout": 2,
+        }
+        if deadline is not None:
+            health_kwargs["deadline"] = deadline
         if proc is None:
             attempts.append(f"{candidate_port}: {message}")
             if remote_forward_port_conflict(message):
-                health_kwargs = {
-                    "ssh_command": ssh_command,
-                    "host": host,
-                    "base_url": candidate_base_url,
-                    "remote_python": remote_python,
-                    "timeout": 2,
-                }
-                if deadline is not None:
-                    health_kwargs["deadline"] = deadline
                 if remote_http_ok(**health_kwargs):
                     return {
                         "status": "already_healthy",
@@ -276,15 +276,6 @@ def ensure_remote_proxy(
                 continue
             raise RuntimeError(message)
         for _ in range(6):
-            health_kwargs = {
-                "ssh_command": ssh_command,
-                "host": host,
-                "base_url": candidate_base_url,
-                "remote_python": remote_python,
-                "timeout": 2,
-            }
-            if deadline is not None:
-                health_kwargs["deadline"] = deadline
             if remote_http_ok(**health_kwargs):
                 return {
                     "status": "started" if candidate_port == remote_port else "started_fallback_port",

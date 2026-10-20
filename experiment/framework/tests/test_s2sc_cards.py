@@ -10,8 +10,6 @@ import re
 from pathlib import Path
 
 import pytest
-from opencollab.application.event_bus import EventBus
-from opencollab.bootstrap.context_builder import ContextBuilder, SpawnConfig
 from opencollab.bootstrap.scheduler_factory import _reject_unwalkable_edges
 from opencollab.bootstrap.single2_prompt import SINGLE2_SYSTEM_PROMPT
 from opencollab.bootstrap.team_config import load_team_config
@@ -29,6 +27,7 @@ from experiment.framework.scripts.analyst_cards import (
     shared_body,
     slot_marker,
 )
+from experiment.framework.tests import prompt_context
 from experiment.framework.tests.paths import FRAMEWORK_ROOT as REPO_ROOT
 
 CONFIGS = REPO_ROOT / "configs"
@@ -138,14 +137,7 @@ def test_every_seat_declares_the_profile(name: str) -> None:
 @pytest.mark.parametrize("name", NAMES)
 def test_the_seated_prompt_is_single2s_with_the_card_after_it(name: str) -> None:
     team = _team(name)
-    builder = ContextBuilder(
-        team,
-        SpawnConfig(
-            model="m", provider="openai", api_key="k", base_url=None,
-            llm_timeout=600.0, tracer=None, event_bus=EventBus(None),
-            permission_policy=None,
-        ),
-    )
+    builder = prompt_context(team)
     cards = _cards_on_disk(name)
     for role in ROLES:
         prompt = builder.build_plan(role).system_prompt()

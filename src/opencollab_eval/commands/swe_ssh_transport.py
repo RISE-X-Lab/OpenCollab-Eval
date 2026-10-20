@@ -189,44 +189,30 @@ def run_ssh_checked(
                     input_text=input_text,
                     cwd=cwd,
                 )
-        except subprocess.TimeoutExpired:
-            retryable = idempotent and attempt < attempts_value
+        except (subprocess.TimeoutExpired, CheckedCommandError) as exc:
+            if isinstance(exc, subprocess.TimeoutExpired):
+                failure_kind = "command_timeout"
+                returncode = None
+                retryable = idempotent and attempt < attempts_value
+            else:
+                failure_kind = retryable_ssh_transport_failure(exc)
+                if not failure_kind and idempotent:
+                    failure_kind = idempotent_ssh_disconnect_failure(exc)
+                returncode = exc.returncode
+                retryable = bool(failure_kind) and attempt < attempts_value
             if retry_log is not None:
                 retry_log.append(
                     {
                         "attempt": attempt,
                         "status": "failed",
-                        "returncode": None,
-                        "failure_kind": "command_timeout",
-                        "retried": retryable,
-                    }
-                )
-            if not retryable:
-                raise
-            sleep_for = min(float(attempt), 10.0)
-            if deadline is not None:
-                sleep_for = min(sleep_for, max(0.0, deadline - time.monotonic()))
-            if sleep_for <= 0:
-                raise
-            time.sleep(sleep_for)
-            continue
-        except CheckedCommandError as exc:
-            failure_kind = retryable_ssh_transport_failure(exc)
-            if not failure_kind and idempotent:
-                failure_kind = idempotent_ssh_disconnect_failure(exc)
-            retryable = bool(failure_kind) and attempt < attempts_value
-            if retry_log is not None:
-                retry_log.append(
-                    {
-                        "attempt": attempt,
-                        "status": "failed",
-                        "returncode": exc.returncode,
+                        "returncode": returncode,
                         "failure_kind": failure_kind or "non_retryable",
                         "retried": retryable,
                     }
                 )
-            exc.ssh_attempts = attempt
-            exc.ssh_failure_kind = failure_kind
+            if isinstance(exc, CheckedCommandError):
+                exc.ssh_attempts = attempt
+                exc.ssh_failure_kind = failure_kind
             if not retryable:
                 raise
             sleep_for = min(float(attempt), 10.0)

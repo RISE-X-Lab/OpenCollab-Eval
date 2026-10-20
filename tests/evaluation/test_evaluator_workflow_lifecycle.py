@@ -267,7 +267,7 @@ def test_bind_mounted_docker_artifacts_never_enter_patch_or_checkpoint(tmp_path)
     assert "eval_results/" in status
 
 
-def test_workflow_checkpoint_capture_failure_does_not_reendorse_orphan_patch(tmp_path):
+def test_workflow_checkpoint_capture_failure_does_not_reendorse_orphan_patch(tmp_path, eval_in_env):
     class FailingCheckpointEnv(CheckpointEnv):
         async def exec_cmd(self, cmd: str, timeout: float = 120.0) -> ExecResult:
             self.cmds.append(cmd)
@@ -276,9 +276,6 @@ def test_workflow_checkpoint_capture_failure_does_not_reendorse_orphan_patch(tmp
             return ExecResult(returncode=0, stdout="", stderr="")
 
     env = FailingCheckpointEnv()
-
-    async def env_factory(task):
-        return env
 
     async def wf(ctx, args):
         return {"status": "done"}
@@ -289,11 +286,9 @@ def test_workflow_checkpoint_capture_failure_does_not_reendorse_orphan_patch(tmp
     (run_dir / "checkpoint.worktree.patch").write_text(old_patch, encoding="utf-8")
 
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id="preserve", description="x"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=wf,
             checkpoint_interval_seconds=300,
         )
@@ -439,7 +434,7 @@ def test_caller_cancel_adopts_late_environment_before_propagating(tmp_path):
     assert env.cleaned_up is True
 
 
-def test_caller_cancel_keeps_environment_cleanup_failure_in_note(tmp_path):
+def test_caller_cancel_keeps_environment_cleanup_failure_in_note(tmp_path, eval_in_env):
     started = asyncio.Event()
 
     class CleanupFailureEnv(FakeEnv):
@@ -448,20 +443,15 @@ def test_caller_cancel_keeps_environment_cleanup_failure_in_note(tmp_path):
 
     env = CleanupFailureEnv()
 
-    async def env_factory(task):
-        return env
-
     async def wf(ctx, args):
         started.set()
         await asyncio.Event().wait()
 
     async def scenario():
         evaluation = asyncio.create_task(
-            run_eval_task(
+            eval_in_env(
                 EvalTask(task_id="cancel-cleanup-failure", description="x"),
-                output_dir=str(tmp_path),
-                tools_factory=list,
-                env_factory=env_factory,
+                env,
                 workflow=wf,
                 cancellation_cleanup_timeout=0.05,
             )

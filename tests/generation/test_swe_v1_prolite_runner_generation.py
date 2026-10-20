@@ -12,6 +12,23 @@ from tests.support.swe_v1_prolite_runner_test_support import (
 )
 
 
+def _completed_generation_metrics(tmp_path):
+    namespace = _remote_namespace(tmp_path)
+    task = "task-1"
+    _seed_remote_completed_generation(namespace, task)
+    metrics_path = namespace["base_run_dir"] / task / "metrics.jsonl"
+    return namespace, task, metrics_path, namespace["read_jsonl"](metrics_path)
+
+
+def _run_saved_generation(namespace, task, metrics_path, metrics):
+    _write_jsonl(metrics_path, metrics)
+    namespace["ensure_image"] = lambda _image: {
+        "ok": True,
+        "image_id": "sha256:" + "8" * 64,
+    }
+    return namespace["generation_for_task_once"]({"instance_id": task})
+
+
 def test_remote_spawn_guard_does_not_block_sigterm_in_exec_child(tmp_path):
     namespace = _remote_namespace(tmp_path)
     spawn_signal_state = namespace["block_spawn_signals"]()
@@ -88,11 +105,7 @@ def test_completed_generation_reuse_requires_current_immutable_image_id(tmp_path
 
 
 def test_incomplete_workflow_with_proven_candidate_continues_to_official_eval(tmp_path):
-    namespace = _remote_namespace(tmp_path)
-    task = "task-1"
-    _seed_remote_completed_generation(namespace, task)
-    metrics_path = namespace["base_run_dir"] / task / "metrics.jsonl"
-    metrics = namespace["read_jsonl"](metrics_path)
+    namespace, task, metrics_path, metrics = _completed_generation_metrics(tmp_path)
     metrics[0].update(
         workflow_status="incomplete",
         runner_returncode=1,
@@ -100,13 +113,7 @@ def test_incomplete_workflow_with_proven_candidate_continues_to_official_eval(tm
         error=None,
         agent_failures=[],
     )
-    _write_jsonl(metrics_path, metrics)
-    namespace["ensure_image"] = lambda _image: {
-        "ok": True,
-        "image_id": "sha256:" + "8" * 64,
-    }
-
-    result = namespace["generation_for_task_once"]({"instance_id": task})
+    result = _run_saved_generation(namespace, task, metrics_path, metrics)
 
     assert result["status"] == "generation_done"
     assert result["workflow_status"] == "incomplete"
@@ -114,11 +121,7 @@ def test_incomplete_workflow_with_proven_candidate_continues_to_official_eval(tm
 
 
 def test_blocked_workflow_with_proven_candidate_continues_to_official_eval(tmp_path):
-    namespace = _remote_namespace(tmp_path)
-    task = "task-1"
-    _seed_remote_completed_generation(namespace, task)
-    metrics_path = namespace["base_run_dir"] / task / "metrics.jsonl"
-    metrics = namespace["read_jsonl"](metrics_path)
+    namespace, task, metrics_path, metrics = _completed_generation_metrics(tmp_path)
     metrics[0].update(
         workflow_status="blocked",
         runner_returncode=1,
@@ -126,13 +129,7 @@ def test_blocked_workflow_with_proven_candidate_continues_to_official_eval(tmp_p
         error=None,
         agent_failures=[],
     )
-    _write_jsonl(metrics_path, metrics)
-    namespace["ensure_image"] = lambda _image: {
-        "ok": True,
-        "image_id": "sha256:" + "8" * 64,
-    }
-
-    result = namespace["generation_for_task_once"]({"instance_id": task})
+    result = _run_saved_generation(namespace, task, metrics_path, metrics)
 
     assert result["status"] == "generation_done"
     assert result["workflow_status"] == "blocked"
@@ -140,11 +137,7 @@ def test_blocked_workflow_with_proven_candidate_continues_to_official_eval(tmp_p
 
 
 def test_incomplete_workflow_without_proven_eligibility_remains_failed(tmp_path):
-    namespace = _remote_namespace(tmp_path)
-    task = "task-1"
-    _seed_remote_completed_generation(namespace, task)
-    metrics_path = namespace["base_run_dir"] / task / "metrics.jsonl"
-    metrics = namespace["read_jsonl"](metrics_path)
+    namespace, task, metrics_path, metrics = _completed_generation_metrics(tmp_path)
     metrics[0].update(
         workflow_status="incomplete",
         runner_returncode=1,
@@ -153,13 +146,7 @@ def test_incomplete_workflow_without_proven_eligibility_remains_failed(tmp_path)
         agent_failures=[],
         submission_eligible=False,
     )
-    _write_jsonl(metrics_path, metrics)
-    namespace["ensure_image"] = lambda _image: {
-        "ok": True,
-        "image_id": "sha256:" + "8" * 64,
-    }
-
-    result = namespace["generation_for_task_once"]({"instance_id": task})
+    result = _run_saved_generation(namespace, task, metrics_path, metrics)
 
     assert result["status"] == "generation_failed"
 
@@ -183,11 +170,7 @@ def test_incomplete_workflow_without_proven_eligibility_remains_failed(tmp_path)
 def test_incomplete_workflow_rejects_unproven_runtime_state(
     tmp_path, removed_field, updates
 ):
-    namespace = _remote_namespace(tmp_path)
-    task = "task-1"
-    _seed_remote_completed_generation(namespace, task)
-    metrics_path = namespace["base_run_dir"] / task / "metrics.jsonl"
-    metrics = namespace["read_jsonl"](metrics_path)
+    namespace, task, metrics_path, metrics = _completed_generation_metrics(tmp_path)
     metrics[0].update(
         workflow_status="incomplete",
         runner_returncode=1,
@@ -198,23 +181,13 @@ def test_incomplete_workflow_rejects_unproven_runtime_state(
     if removed_field:
         metrics[0].pop(removed_field)
     metrics[0].update(updates)
-    _write_jsonl(metrics_path, metrics)
-    namespace["ensure_image"] = lambda _image: {
-        "ok": True,
-        "image_id": "sha256:" + "8" * 64,
-    }
-
-    result = namespace["generation_for_task_once"]({"instance_id": task})
+    result = _run_saved_generation(namespace, task, metrics_path, metrics)
 
     assert result["status"] == "generation_failed"
 
 
 def test_structured_provider_failure_rejects_a_conflicting_nonempty_candidate(tmp_path):
-    namespace = _remote_namespace(tmp_path)
-    task = "task-1"
-    _seed_remote_completed_generation(namespace, task)
-    metrics_path = namespace["base_run_dir"] / task / "metrics.jsonl"
-    metrics = namespace["read_jsonl"](metrics_path)
+    namespace, task, metrics_path, metrics = _completed_generation_metrics(tmp_path)
     metrics[0]["workflow_status"] = "provider_request_rejected"
     metrics[0]["agent_failures"] = [
         {
@@ -224,24 +197,14 @@ def test_structured_provider_failure_rejects_a_conflicting_nonempty_candidate(tm
             "provider_error_type": "access_terminated_error",
         }
     ]
-    _write_jsonl(metrics_path, metrics)
-    namespace["ensure_image"] = lambda image: {
-        "ok": True,
-        "image_id": "sha256:" + "8" * 64,
-    }
-
-    result = namespace["generation_for_task_once"]({"instance_id": task})
+    result = _run_saved_generation(namespace, task, metrics_path, metrics)
 
     assert result["status"] == "technical_generation_provider_evidence_invalid"
     assert result["failure_scope"] == "task"
 
 
 def test_eval_only_accepts_exact_proven_candidate_interrupted_by_provider(tmp_path):
-    namespace = _remote_namespace(tmp_path)
-    task = "task-1"
-    _seed_remote_completed_generation(namespace, task)
-    metrics_path = namespace["base_run_dir"] / task / "metrics.jsonl"
-    metrics = namespace["read_jsonl"](metrics_path)
+    namespace, task, metrics_path, metrics = _completed_generation_metrics(tmp_path)
     metrics[0].update(
         workflow_status="incomplete",
         runner_returncode=1,
@@ -257,13 +220,7 @@ def test_eval_only_accepts_exact_proven_candidate_interrupted_by_provider(tmp_pa
         ],
         provider_failure={"status": "provider_request_rejected"},
     )
-    _write_jsonl(metrics_path, metrics)
-    namespace["ensure_image"] = lambda _image: {
-        "ok": True,
-        "image_id": "sha256:" + "8" * 64,
-    }
-
-    normal = namespace["generation_for_task_once"]({"instance_id": task})
+    normal = _run_saved_generation(namespace, task, metrics_path, metrics)
 
     assert normal["status"] == "technical_generation_provider_evidence_invalid"
 
@@ -278,11 +235,7 @@ def test_eval_only_accepts_exact_proven_candidate_interrupted_by_provider(tmp_pa
 
 
 def test_eval_only_rejects_legacy_candidate_interrupted_by_provider(tmp_path):
-    namespace = _remote_namespace(tmp_path)
-    task = "task-1"
-    _seed_remote_completed_generation(namespace, task)
-    metrics_path = namespace["base_run_dir"] / task / "metrics.jsonl"
-    metrics = namespace["read_jsonl"](metrics_path)
+    namespace, task, metrics_path, metrics = _completed_generation_metrics(tmp_path)
     for field in _proven_submission_integrity():
         metrics[0].pop(field, None)
     metrics[0].update(

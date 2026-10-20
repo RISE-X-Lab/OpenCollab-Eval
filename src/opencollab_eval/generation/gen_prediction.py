@@ -85,6 +85,7 @@ from .gen_prediction_config import (
     _docker_timeout_from_env,
     _stable_docker_component,
     _workspace_archive_timeout_from_env,
+    apply_model_overrides,
     bind_llm_transport,
     default_container_image,
     llm_transport_metrics,
@@ -381,22 +382,7 @@ def main() -> None:
     cfg = get_config(
         str(_CONFIG_ROOT), overrides={"model": args.model, "provider": args.provider},
     )
-    if args.temperature is not None:
-        if not 0.0 <= args.temperature <= 2.0:
-            ap.error("--temperature must be between 0 and 2")
-        cfg["temperature"] = args.temperature
-    if args.top_p is not None:
-        if not 0.0 <= args.top_p <= 1.0:
-            ap.error("--top-p must be between 0 and 1")
-        cfg["top_p"] = args.top_p
-    if args.max_output_tokens is not None:
-        if args.max_output_tokens <= 0:
-            ap.error("--max-output-tokens must be positive")
-        cfg["max_output_tokens"] = args.max_output_tokens
-    if args.context_window is not None:
-        if args.context_window <= 0:
-            ap.error("--context-window must be positive")
-        cfg["context_window"] = args.context_window
+    apply_model_overrides(cfg, args, ap)
     model_name = args.model_name or f"opencollab-{cfg['model']}"
 
     print(f"Instance: {iid}")

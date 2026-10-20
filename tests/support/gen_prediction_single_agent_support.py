@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -90,3 +91,23 @@ def _agent_config():
         "base_url": "http://local",
     }
 
+
+def _trusted_extraction(patch: str):
+    encoded = patch.encode("utf-8")
+    return gp.gen_prediction_patch.TrustedPatchExtraction(
+        fixed_anonymous_base="a" * 40,
+        base_tree="b" * 40,
+        baseline_archive_sha256="c" * 64,
+        baseline_archive_bytes=10,
+        baseline_archive_entries=1,
+        baseline_extracted_bytes=1,
+        workspace_archive_sha256="d" * 64,
+        workspace_archive_bytes=10,
+        workspace_archive_entries=1,
+        workspace_extracted_bytes=1,
+        patch_sha256=hashlib.sha256(encoded).hexdigest(),
+        patch_bytes=len(encoded),
+        candidate_tree="e" * 40,
+        changed_paths=(),
+        path_modes=(),
+    )

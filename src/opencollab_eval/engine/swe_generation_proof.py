@@ -91,6 +91,17 @@ def _candidate_path(value: Any) -> bool:
     return not path.is_absolute() and ".." not in path.parts
 
 
+def _workspace_integrity_valid(value: Any) -> bool:
+    return (
+        isinstance(value, dict)
+        and value.get("schema") == "opencollab.workspace_integrity.v1"
+        and value.get("failure_scope") == "none"
+        and value.get("outcome") in {"allow", "sanitize_then_continue"}
+        and isinstance(value.get("findings"), list)
+        and len(value["findings"]) <= 2048
+    )
+
+
 def solver_git_snapshot_valid(value: Any) -> bool:
     """Return whether *value* is an exact current solver snapshot proof."""
     if not isinstance(value, dict) or set(value) != _SNAPSHOT_KEYS:
@@ -112,12 +123,7 @@ def solver_git_snapshot_valid(value: Any) -> bool:
         not isinstance(expected_base_commit, str)
         or not _OBJECT_ID_RE.fullmatch(expected_base_commit)
         or len(expected_base_commit) != len(anonymous_head)
-        or not isinstance(integrity, dict)
-        or integrity.get("schema") != "opencollab.workspace_integrity.v1"
-        or integrity.get("failure_scope") != "none"
-        or integrity.get("outcome") not in {"allow", "sanitize_then_continue"}
-        or not isinstance(integrity.get("findings"), list)
-        or len(integrity["findings"]) > 2048
+        or not _workspace_integrity_valid(integrity)
     ):
         return False
     removed_gitlinks = value.get("removed_gitlinks")
@@ -192,12 +198,7 @@ def preparation_input_valid(value: Any) -> bool:
         or value.get("worktree_matches_base") is not True
         or value.get("solver_started") is not False
         or value.get("object_access_scope") != "trusted_public_preparation_only"
-        or not isinstance(integrity, dict)
-        or integrity.get("schema") != "opencollab.workspace_integrity.v1"
-        or integrity.get("failure_scope") != "none"
-        or integrity.get("outcome") not in {"allow", "sanitize_then_continue"}
-        or not isinstance(integrity.get("findings"), list)
-        or len(integrity["findings"]) > 2048
+        or not _workspace_integrity_valid(integrity)
     ):
         return False
     if (
@@ -261,14 +262,7 @@ def _trusted_patch_extraction_shape_valid(
     if value.get("base_tree") != snapshot["base_tree"]:
         return False
     integrity = value.get("workspace_integrity")
-    if (
-        not isinstance(integrity, dict)
-        or integrity.get("schema") != "opencollab.workspace_integrity.v1"
-        or integrity.get("failure_scope") != "none"
-        or integrity.get("outcome") not in {"allow", "sanitize_then_continue"}
-        or not isinstance(integrity.get("findings"), list)
-        or len(integrity["findings"]) > 2048
-    ):
+    if not _workspace_integrity_valid(integrity):
         return False
     if sanitized and (
         integrity.get("outcome") != "sanitize_then_continue"

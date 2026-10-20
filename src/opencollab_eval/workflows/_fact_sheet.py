@@ -462,14 +462,11 @@ def _find_target(
     """
     candidates: list[tuple[ast.AST, ast.ClassDef | None]] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef):
+        if isinstance(node, (ast.Module, ast.ClassDef)):
+            enclosing = node if isinstance(node, ast.ClassDef) else None
             for child in node.body:
                 if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and child.name == short_name:
-                    candidates.append((child, node))
-        elif isinstance(node, ast.Module):
-            for child in node.body:
-                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and child.name == short_name:
-                    candidates.append((child, None))
+                    candidates.append((child, enclosing))
     if not candidates:
         return None, None
     if class_qual:
@@ -556,10 +553,7 @@ def build_fact_sheet(workspace_root: str | None, goal: str) -> dict[str, Any] | 
 
     is_method = enclosing is not None
     docstring = ast.get_docstring(fn_node) or ""
-    referenced = _annotation_types(fn_node) + _class_defs(tree)
-    # de-dup, preserve order
-    seen: set[str] = set()
-    referenced_types = [t for t in referenced if not (t in seen or seen.add(t))]
+    referenced_types = list(dict.fromkeys(_annotation_types(fn_node) + _class_defs(tree)))
 
     call_sites, call_count, scanned = _scan_call_sites(
         workspace_root, short, target_rel, getattr(fn_node, "lineno", -1)

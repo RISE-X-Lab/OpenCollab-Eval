@@ -68,14 +68,9 @@ def python_test_patch_candidate_callsites(
     for block in split_patch_blocks(str(row.get("test_patch") or "")):
         path = patch_block_target_path(block)
         normalized_path = path.replace("\\", "/").removeprefix("./")
-        matched_targets = [
-            target_file
-            for target_file in target_files
-            if normalized_path == target_file
-        ]
-        if len(matched_targets) != 1:
+        if normalized_path not in target_files:
             continue
-        target_file = matched_targets[0]
+        target_file = normalized_path
         for line in block:
             if not line.startswith("+") or line.startswith("+++"):
                 continue
@@ -179,7 +174,7 @@ def pytest_candidate_callsite_failure_matches(
             != {alias}
         ):
             return False
-        valid_bindings.append(binding)
+        valid_bindings.append((binding, call_bindings))
     target_pattern = "|".join(
         re.escape(path) for path in sorted(target_files, key=len, reverse=True)
     )
@@ -197,13 +192,12 @@ def pytest_candidate_callsite_failure_matches(
         callable_parts = error.group("callable").split(".")
         callable_name = callable_parts[-1]
         matches = []
-        for binding in valid_bindings:
+        for binding, calls in valid_bindings:
             if (
                 binding["test_file"] != match.group("target")
                 or binding["source"] != match.group("source").strip()
             ):
                 continue
-            calls = candidate_call_bindings(binding["source"])
             if not calls or any(call is None for call in calls):
                 continue
             if callable_name == "__init__" and len(callable_parts) == 1:

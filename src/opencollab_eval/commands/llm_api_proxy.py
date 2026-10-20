@@ -432,6 +432,15 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             self.wfile.write(body)
 
+        def _finish_upstream_headers(self, response) -> None:
+            for name in ("x-request-id", "Retry-After"):
+                value = response.headers.get(name, "")
+                if value:
+                    self.send_header(name, value)
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.close_connection = True
+
         def do_GET(self) -> None:  # noqa: N802
             if urllib.parse.urlsplit(self.path).path != "/healthz":
                 self._json(404, {"error": "not_found"})
@@ -592,15 +601,7 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Content-Length", str(len(payload)))
-                    request_id = response.headers.get("x-request-id", "")
-                    if request_id:
-                        self.send_header("x-request-id", request_id)
-                    retry_after = response.headers.get("Retry-After", "")
-                    if retry_after:
-                        self.send_header("Retry-After", retry_after)
-                    self.send_header("Connection", "close")
-                    self.end_headers()
-                    self.close_connection = True
+                    self._finish_upstream_headers(response)
                     self.wfile.write(payload)
                     return
                 self.send_response(int(response.status))
@@ -608,15 +609,7 @@ def make_handler(config: ProxyConfig) -> type[BaseHTTPRequestHandler]:
                     "Content-Type",
                     response.headers.get("Content-Type", "application/json"),
                 )
-                request_id = response.headers.get("x-request-id", "")
-                if request_id:
-                    self.send_header("x-request-id", request_id)
-                retry_after = response.headers.get("Retry-After", "")
-                if retry_after:
-                    self.send_header("Retry-After", retry_after)
-                self.send_header("Connection", "close")
-                self.end_headers()
-                self.close_connection = True
+                self._finish_upstream_headers(response)
                 total = 0
                 read_chunk = getattr(response, "read1", response.read)
                 while True:

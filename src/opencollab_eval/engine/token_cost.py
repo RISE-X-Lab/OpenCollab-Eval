@@ -36,21 +36,16 @@ def _iter_jsonl(path: Path) -> Iterable[dict[str, Any]]:
 
 def _usage_from_record(record: dict[str, Any], model_filter: str | None) -> dict[str, Any] | None:
     if record.get("schema") == "opencollab.api_usage.v1":
-        model = str(record.get("model") or "")
-        if model_filter and model_filter not in model:
-            return None
-        usage = record.get("usage")
-        return usage if isinstance(usage, dict) else None
-
-    if record.get("type") == "llm_call":
+        payload = record
+    elif record.get("type") == "llm_call":
         payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
-        model = str(payload.get("model") or "")
-        if model_filter and model_filter not in model:
-            return None
-        usage = payload.get("usage")
-        return usage if isinstance(usage, dict) else None
-
-    return None
+    else:
+        return None
+    model = str(payload.get("model") or "")
+    if model_filter and model_filter not in model:
+        return None
+    usage = payload.get("usage")
+    return usage if isinstance(usage, dict) else None
 
 
 def _int(value: Any) -> int:

@@ -67,31 +67,20 @@ def update_events(
                     }
                 else:
                     prior["started_epoch"] = min(float(prior["started_epoch"]), fields["event_epoch"])
-            elif row.get("type") == "llm_call_cancelled":
-                matched = pending.pop(key, None)
-                if matched is not None:
-                    completed.append(
-                        {
-                            **fields,
-                            "started_epoch": matched["started_epoch"],
-                            "cancelled_epoch": fields["event_epoch"],
-                            "cancelled": True,
-                        }
-                    )
+                continue
+            if row.get("type") == "llm_call_cancelled":
+                completion = {"cancelled_epoch": fields["event_epoch"], "cancelled": True}
             elif row.get("type") == "llm_call" and {
                 "content",
                 "tool_calls",
                 "finish_reason",
             }.issubset(row.get("payload") or {}):
-                matched = pending.pop(key, None)
-                if matched is not None:
-                    completed.append(
-                        {
-                            **fields,
-                            "started_epoch": matched["started_epoch"],
-                            "completed_epoch": fields["event_epoch"],
-                        }
-                    )
+                completion = {"completed_epoch": fields["event_epoch"]}
+            else:
+                continue
+            matched = pending.pop(key, None)
+            if matched is not None:
+                completed.append({**fields, "started_epoch": matched["started_epoch"], **completion})
     pause_candidates = []
     for value in pending.values():
         elapsed = max(0.0, now - float(value["started_epoch"]))

@@ -8,16 +8,12 @@ from tests.support.evaluator_test_support import (
     asyncio,
     is_worktree_diff_cmd,
     run,
-    run_eval_task,
 )
 
 
-def test_diff_exclusion_omits_injected_test_paths(tmp_path):
+def test_diff_exclusion_omits_injected_test_paths(tmp_path, eval_in_env):
     # Injected test_patch that MODIFIES an existing tracked test file.
     env = InjectFakeEnv(mod_path="tests/test_app.py")
-
-    async def env_factory(task):
-        return env
 
     seen = {}
 
@@ -26,7 +22,7 @@ def test_diff_exclusion_omits_injected_test_paths(tmp_path):
         return "done"
 
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(
                 task_id="t-inj",
                 description="fix it",
@@ -39,9 +35,7 @@ def test_diff_exclusion_omits_injected_test_paths(tmp_path):
                     "fail_to_pass": ["tests/test_app.py::test_thing"],
                 },
             ),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=wf,
         )
     )
@@ -58,7 +52,7 @@ def test_diff_exclusion_omits_injected_test_paths(tmp_path):
     assert seen["args"]["injected_test_paths"] == ["tests/test_app.py"]
 
 
-def test_diff_exclusion_omits_injected_new_test_file(tmp_path):
+def test_diff_exclusion_omits_injected_new_test_file(tmp_path, eval_in_env):
     # Regression for the new-file leak: SWE-bench test_patches commonly ADD a new
     # test file. `git checkout --` cannot remove an untracked file (errors rc=1);
     # the production exclusion must also `git clean -fq` it. The submitted patch is
@@ -66,14 +60,11 @@ def test_diff_exclusion_omits_injected_new_test_file(tmp_path):
     # would otherwise be staged and leak -> double-apply at grading time (D1).
     env = InjectFakeEnv(new_path="tests/test_new.py")
 
-    async def env_factory(task):
-        return env
-
     async def wf(ctx, args):
         return "done"
 
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(
                 task_id="t-inj-new",
                 description="fix it",
@@ -86,9 +77,7 @@ def test_diff_exclusion_omits_injected_new_test_file(tmp_path):
                     "fail_to_pass": ["tests/test_new.py::test_new"],
                 },
             ),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=wf,
         )
     )
@@ -100,21 +89,18 @@ def test_diff_exclusion_omits_injected_new_test_file(tmp_path):
     assert "tests/test_new.py" not in result.patch
 
 
-def test_diff_exclusion_one_new_file_does_not_strand_other_injected_edits(tmp_path):
+def test_diff_exclusion_one_new_file_does_not_strand_other_injected_edits(tmp_path, eval_in_env):
     # A mixed test_patch (new file + modified existing file) must not let the new
     # file abort reverting the rest. The old single-command `git checkout -- p1 p2`
     # aborted entirely (rc=1) on the untracked path, stranding the tracked edit in
     # the submitted patch. Per-path revert keeps each independent.
     env = InjectFakeEnv(mod_path="tests/test_exist.py", new_path="tests/test_brand_new.py")
 
-    async def env_factory(task):
-        return env
-
     async def wf(ctx, args):
         return "done"
 
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(
                 task_id="t-inj-mixed",
                 description="fix it",
@@ -130,9 +116,7 @@ def test_diff_exclusion_one_new_file_does_not_strand_other_injected_edits(tmp_pa
                     "fail_to_pass": ["tests/test_brand_new.py::test_new"],
                 },
             ),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=wf,
         )
     )
@@ -146,7 +130,7 @@ def test_diff_exclusion_one_new_file_does_not_strand_other_injected_edits(tmp_pa
     assert "tests/test_brand_new.py" not in result.patch
 
 
-def test_failed_injected_path_cleanup_is_reported(tmp_path):
+def test_failed_injected_path_cleanup_is_reported(tmp_path, eval_in_env):
     class CleanupFailureEnv(InjectFakeEnv):
         async def exec_cmd(self, cmd: str, timeout: float = 120.0) -> ExecResult:
             if cmd.startswith("git --literal-pathspecs clean -fq -- "):
@@ -156,14 +140,11 @@ def test_failed_injected_path_cleanup_is_reported(tmp_path):
 
     env = CleanupFailureEnv(new_path="tests/test_new.py")
 
-    async def env_factory(task):
-        return env
-
     async def wf(ctx, args):
         return "done"
 
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(
                 task_id="cleanup-injected",
                 description="fix",
@@ -175,9 +156,7 @@ def test_failed_injected_path_cleanup_is_reported(tmp_path):
                     )
                 },
             ),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=wf,
         )
     )
@@ -189,7 +168,7 @@ def test_failed_injected_path_cleanup_is_reported(tmp_path):
     assert result.submission_eligible is False
 
 
-def test_injected_path_cleanup_aggregate_deadline_invalidates_submission(tmp_path):
+def test_injected_path_cleanup_aggregate_deadline_invalidates_submission(tmp_path, eval_in_env):
     class SlowCleanupEnv(InjectFakeEnv):
         def __init__(self):
             super().__init__(mod_path="tests/test_slow.py")
@@ -203,14 +182,11 @@ def test_injected_path_cleanup_aggregate_deadline_invalidates_submission(tmp_pat
 
     env = SlowCleanupEnv()
 
-    async def env_factory(task):
-        return env
-
     async def wf(ctx, args):
         return "done"
 
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(
                 task_id="cleanup-deadline",
                 description="fix",
@@ -223,9 +199,7 @@ def test_injected_path_cleanup_aggregate_deadline_invalidates_submission(tmp_pat
                     )
                 },
             ),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=wf,
             cancellation_cleanup_timeout=0.005,
         )
@@ -239,7 +213,7 @@ def test_injected_path_cleanup_aggregate_deadline_invalidates_submission(tmp_pat
     assert "aggregate injected-path cleanup deadline expired" in result.error
 
 
-def test_failed_partial_test_patch_rollback_stops_agent_and_invalidates_output(tmp_path):
+def test_failed_partial_test_patch_rollback_stops_agent_and_invalidates_output(tmp_path, eval_in_env):
     class IsolationFailureEnv(FakeEnv):
         def __init__(self):
             super().__init__()
@@ -298,16 +272,13 @@ def test_failed_partial_test_patch_rollback_stops_agent_and_invalidates_output(t
     checkpoint_path = checkpoint_dir / "checkpoint.worktree.patch"
     checkpoint_path.write_text(old_checkpoint, encoding="utf-8")
 
-    async def env_factory(task):
-        return env
-
     async def wf(ctx, args):
         nonlocal workflow_ran
         workflow_ran = True
         return "done"
 
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(
                 task_id="partial-injection-rollback",
                 description="fix",
@@ -320,9 +291,7 @@ def test_failed_partial_test_patch_rollback_stops_agent_and_invalidates_output(t
                     )
                 },
             ),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=wf,
             checkpoint_interval_seconds=300,
         )
@@ -346,14 +315,11 @@ def test_failed_partial_test_patch_rollback_stops_agent_and_invalidates_output(t
     assert "tests/test_new.py.rej" not in diff_command
 
 
-def test_workflow_args_preserve_fail_to_pass_when_not_injected(tmp_path):
+def test_workflow_args_preserve_fail_to_pass_when_not_injected(tmp_path, eval_in_env):
     # A missing test patch must not erase the declared verification targets.
     # The workflow may prove that the targets already exist and pass; otherwise
     # its FAIL_TO_PASS gate must keep the result red.
     env = FakeEnv()
-
-    async def env_factory(task):
-        return env
 
     seen = {}
 
@@ -362,15 +328,13 @@ def test_workflow_args_preserve_fail_to_pass_when_not_injected(tmp_path):
         return "done"
 
     run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(
                 task_id="t-f2p",
                 description="x",
                 extras={"fail_to_pass": ["pkg::test_a", "pkg::test_b"]},
             ),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=wf,
         )
     )

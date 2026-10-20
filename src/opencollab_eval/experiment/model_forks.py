@@ -272,11 +272,11 @@ def _matches_family(model: str, family: str, exact: dict[str, Any], bounded: fro
 # Runtime probe: OpenCollab's own answers, executed out of process.
 
 
-def eval_context_window_source(model: str) -> tuple[Any, str, str]:
+def eval_context_window_source(model: str, *, tree: ast.Module | None = None) -> tuple[Any, str, str]:
     """Eval's recorded window, plus how its own three rules reached it."""
     import re
 
-    tree = _parse(Path(eval_usage.__file__))
+    tree = _parse(Path(eval_usage.__file__)) if tree is None else tree
     exact = _literal_dict(_assigned_value(tree, "EXACT_MODEL_CONTEXT_WINDOWS"), "EXACT_MODEL_CONTEXT_WINDOWS")
     family = _literal_dict(_assigned_value(tree, "MODEL_CONTEXT_WINDOWS"), "MODEL_CONTEXT_WINDOWS")
     path = Path(eval_usage.__file__)
@@ -294,14 +294,16 @@ def eval_context_window_source(model: str) -> tuple[Any, str, str]:
     return None, FALLBACK, _ref(path, _module_assign(tree, "MODEL_CONTEXT_WINDOWS").lineno)
 
 
-def shared_table_disagreements(source: OpenCollabSource) -> dict[str, tuple[Any, Any]]:
+def shared_table_disagreements(
+    source: OpenCollabSource, *, tree: ast.Module | None = None
+) -> dict[str, tuple[Any, Any]]:
     """Rows both repositories carry, where the two copies say different things.
 
     A row Eval omits is fine -- Eval only needs the models it records. A row
     both carry with different values is the recorded window disagreeing with the
     enforced one, for whichever model runs next.
     """
-    tree = _parse(Path(eval_usage.__file__))
+    tree = _parse(Path(eval_usage.__file__)) if tree is None else tree
     eval_exact = {
         k: v[0]
         for k, v in _literal_dict(
@@ -342,83 +344,52 @@ def _capability_findings(
 
     findings: list[Finding] = []
     for field_name, (default_value, default_line) in defaults.items():
+        fallback_value = None
+        gate = GATE_FALLBACK
         if row is not None and field_name in row:
             value, line = row[field_name]
-            findings.append(
-                Finding(
-                    quantity=f"capabilities.{field_name}",
-                    side="opencollab",
-                    source=_ref(types_path, line),
-                    value=value,
-                    hit=EXACT,
-                    method="source",
-                    gate=GATE_FALLBACK,
-                    note=f"_EXACT_MODEL_CAPABILITIES[{canonical!r}]",
-                )
-            )
+            hit = EXACT
+            note = f"_EXACT_MODEL_CAPABILITIES[{canonical!r}]"
         elif row is not None:
-            findings.append(
-                Finding(
-                    quantity=f"capabilities.{field_name}",
-                    side="opencollab",
-                    source=_ref(types_path, default_line),
-                    value=default_value,
-                    hit=ROW_DEFAULT,
-                    method="source",
-                    fallback_value=default_value,
-                    gate=None,
-                    note=f"row {canonical!r} exists but does not set this field",
-                )
-            )
+            value, line = default_value, default_line
+            hit = ROW_DEFAULT
+            fallback_value = default_value
+            gate = None
+            note = f"row {canonical!r} exists but does not set this field"
         elif field_name == "context_window":
-            window = None
+            value = None
             line = _module_assign(source._types, "MODEL_CONTEXT_WINDOWS").lineno
             hit = FALLBACK
             note = "no row, and no family matched"
             for family, (candidate, family_line) in families.items():
                 if _matches_family(model, family, exact, bounded):
-                    window, line, hit = candidate, family_line, FAMILY
+                    value, line, hit = candidate, family_line, FAMILY
+                    fallback_value = candidate
                     note = f"MODEL_CONTEXT_WINDOWS[{family!r}] -- a family, not this model"
                     break
-            findings.append(
-                Finding(
-                    quantity="capabilities.context_window",
-                    side="opencollab",
-                    source=_ref(types_path, line),
-                    value=window,
-                    hit=hit,
-                    method="source",
-                    fallback_value=window if hit == FAMILY else None,
-                    gate=GATE_FALLBACK,
-                    note=note,
-                )
-            )
         else:
-            # No row: ``model_capabilities`` builds a fresh ModelCapabilities.
-            # Two of its fields are decided by a regex on the model *name*
-            # (``_is_responses_reasoning_family`` and its sampling twin), which
-            # is a rule rather than a default -- a gateway alias such as
-            # ``gpt-5.6-luna`` is classified as an OpenAI GPT-5 by its spelling
-            # alone. The rest are dataclass defaults nobody chose for this
-            # model. ``capabilities.row`` below carries the fact that no row
-            # exists, so these two do not have to overstate their own case.
+            # Unlisted models derive these two fields from their names. Other
+            # capabilities retain the dataclass default and fail the fallback gate.
             value = runtime["capabilities"][field_name]
+            line = default_line
             by_regex = field_name in {"supports_responses_reasoning", "supports_responses_sampling"}
-            findings.append(
-                Finding(
-                    quantity=f"capabilities.{field_name}",
-                    side="opencollab",
-                    source=_ref(types_path, default_line),
-                    value=value,
-                    hit=RULE if by_regex else FALLBACK,
-                    method="source",
-                    fallback_value=default_value,
-                    gate=None if by_regex else GATE_FALLBACK,
-                    note=(
-                        "decided by a regex on the model name, not by a row" if by_regex else "no row for this model"
-                    ),
-                )
+            hit = RULE if by_regex else FALLBACK
+            fallback_value = default_value
+            gate = None if by_regex else GATE_FALLBACK
+            note = "decided by a regex on the model name, not by a row" if by_regex else "no row for this model"
+        findings.append(
+            Finding(
+                quantity=f"capabilities.{field_name}",
+                side="opencollab",
+                source=_ref(types_path, line),
+                value=value,
+                hit=hit,
+                method="source",
+                fallback_value=fallback_value,
+                gate=gate,
+                note=note,
             )
+        )
 
     findings.insert(
         0,
@@ -603,7 +574,9 @@ def resolve(
             )
         )
 
-    eval_window, eval_hit, eval_ref = eval_context_window_source(model)
+    eval_path = Path(eval_usage.__file__)
+    eval_tree = _parse(eval_path)
+    eval_window, eval_hit, eval_ref = eval_context_window_source(model, tree=eval_tree)
     if eval_window != eval_usage.model_context_window(model):
         raise ForkResolutionError(
             f"this module's copy of Eval's lookup rule disagrees with usage.model_context_window: "
@@ -627,8 +600,8 @@ def resolve(
             quantity="pricing.mode",
             side="eval",
             source=_ref(
-                Path(eval_usage.__file__),
-                _module_assign(_parse(Path(eval_usage.__file__)), "DEFAULT_GLM52_INPUT_USD_PER_MTOK").lineno,
+                eval_path,
+                _module_assign(eval_tree, "DEFAULT_GLM52_INPUT_USD_PER_MTOK").lineno,
             ),
             value=eval_mode,
             hit=EXACT if eval_mode != "unset" else FALLBACK,
@@ -656,7 +629,7 @@ def resolve(
                 note="" if agree else "the recorded value is not the value the runtime enforced",
             )
         )
-    drift = shared_table_disagreements(source)
+    drift = shared_table_disagreements(source, tree=eval_tree)
     findings.append(
         Finding(
             quantity="tables.shared_rows",

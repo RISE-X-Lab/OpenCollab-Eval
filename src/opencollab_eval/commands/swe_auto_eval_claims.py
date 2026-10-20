@@ -11,6 +11,7 @@ import time
 import unicodedata
 from pathlib import Path
 
+from opencollab_eval.commands import swebench_process as _shared_process
 from opencollab_eval.commands.swe_auto_eval_constants import (
     CLAIM_CONSTRUCTION_GRACE_SECONDS,
     CLAIM_LEASE_SECONDS,
@@ -75,19 +76,7 @@ def _attempt_log_path(args: argparse.Namespace, row: dict) -> Path:
 
 
 def _pid_is_active(pid: object) -> bool:
-    try:
-        value = int(pid)
-    except (TypeError, ValueError):
-        return False
-    if value <= 0:
-        return False
-    try:
-        os.kill(value, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    return _shared_process.pid_is_active(pid)
 
 
 def _process_group_exists(pgid: int) -> bool:

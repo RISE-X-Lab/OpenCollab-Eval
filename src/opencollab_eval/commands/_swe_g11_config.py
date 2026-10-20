@@ -505,7 +505,8 @@ def _strict_success_row_reasons(row: Any, config: ParallelConfig, expected_index
     evaluation = row.get("eval") if isinstance(row.get("eval"), dict) else {}
     generation_status = generation.get("status")
     expected_eval = "skipped_empty_patch" if generation_status == "empty_patch" else "eval_done"
-    reasons = list(_eval_integrity.attempt_integrity(row, task).reasons)
+    identity = _eval_integrity.attempt_integrity(row, task)
+    reasons = list(identity.reasons)
     if generation_status not in {"generation_done", "empty_patch"}:
         reasons.append("unexpected_terminal_generation_status")
     if evaluation.get("status") != expected_eval:
@@ -515,7 +516,7 @@ def _strict_success_row_reasons(row: Any, config: ParallelConfig, expected_index
     if generation_status == "generation_done":
         if metric_submission_integrity(generation) != SUBMISSION_INTEGRITY_PROVEN:
             reasons.append("submission_integrity_unproven")
-        if not _eval_integrity.attempt_integrity(row, task).direct_execution_proven:
+        if not identity.direct_execution_proven:
             reasons.append("missing_direct_execution_proof")
     elif generation_status == "empty_patch" and not _eval_integrity.declared_empty_patch(row):
         reasons.append("empty_patch_integrity_unproven")

@@ -7,6 +7,8 @@ import hashlib
 import json
 import os
 import stat
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from opencollab_eval.candidate_bytes import CandidateByteLimitError, encode_candidate_jsonl, encode_pending_candidate
@@ -200,6 +202,22 @@ def _open_pending_regular(path: Path) -> int:
     return fd
 
 
+@contextmanager
+def _locked_file(fd: int, *, label: str) -> Iterator[None]:
+    """Own the descriptor through lock acquisition, body, and unlock failures."""
+    locked = False
+    try:
+        _acquire_exclusive_lock(fd, label=label)
+        locked = True
+        yield
+    finally:
+        try:
+            if locked:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
+
 def _candidate_matches_owner(candidate: dict, owner: dict) -> bool:
     return (
         candidate.get("container_id") == owner.get("container_id")
@@ -233,20 +251,8 @@ def _promote_durable_preservation_candidates(run_dir: Path) -> bool:
             for path in sorted(pending_dir.glob("*.json")):
                 try:
                     fd = _open_pending_regular(path)
-                    locked = False
-                    try:
-                        _acquire_exclusive_lock(
-                            fd,
-                            label=f"pending-output lock {path}",
-                        )
-                        locked = True
+                    with _locked_file(fd, label=f"pending-output lock {path}"):
                         candidate, _payload = _read_pending_fd(fd)
-                    finally:
-                        try:
-                            if locked:
-                                fcntl.flock(fd, fcntl.LOCK_UN)
-                        finally:
-                            os.close(fd)
                 except BaseException:
                     continue
                 if _candidate_matches_owner(candidate, owner):
@@ -258,13 +264,7 @@ def _promote_durable_preservation_candidates(run_dir: Path) -> bool:
         path = matching_paths[0]
         try:
             fd = _open_pending_regular(path)
-            locked = False
-            try:
-                _acquire_exclusive_lock(
-                    fd,
-                    label=f"pending-output lock {path}",
-                )
-                locked = True
+            with _locked_file(fd, label=f"pending-output lock {path}"):
                 candidate, _payload = _read_pending_fd(fd)
                 if not _candidate_matches_owner(candidate, owner):
                     raise RuntimeError("pending output identity changed during preservation recovery")
@@ -275,12 +275,6 @@ def _promote_durable_preservation_candidates(run_dir: Path) -> bool:
                     owner,
                     {**owner, "state": "candidate_staged"},
                 )
-            finally:
-                try:
-                    if locked:
-                        fcntl.flock(fd, fcntl.LOCK_UN)
-                finally:
-                    os.close(fd)
         except BaseException as exc:
             if _preservation_was_superseded(owner_path, owner):
                 continue
@@ -338,10 +332,7 @@ def _append_jsonl_durable_once(path: Path, row: dict) -> bool:
         os.O_RDWR | os.O_APPEND,
         0o644,
     )
-    locked = False
-    try:
-        _acquire_exclusive_lock(fd, label=f"output lock {path}")
-        locked = True
+    with _locked_file(fd, label=f"output lock {path}"):
         _require_path_matches_open_file(path, fd)
         if _find_committed_identity(fd, row):
             _fsync_directory(path.parent)
@@ -358,12 +349,6 @@ def _append_jsonl_durable_once(path: Path, row: dict) -> bool:
         _fsync_directory(path.parent)
         _require_path_matches_open_file(path, fd)
         return True
-    finally:
-        try:
-            if locked:
-                fcntl.flock(fd, fcntl.LOCK_UN)
-        finally:
-            os.close(fd)
 
 
 def _pending_owner_state(run_dir: Path, candidate: dict) -> str:
@@ -406,10 +391,7 @@ def publish_pending_output(run_dir: Path, path: Path) -> str:
         fd = _open_pending_regular(path)
     except FileNotFoundError:
         return "missing"
-    locked = False
-    try:
-        _acquire_exclusive_lock(fd, label=f"pending-output lock {path}")
-        locked = True
+    with _locked_file(fd, label=f"pending-output lock {path}"):
         try:
             current = path.lstat()
         except FileNotFoundError:
@@ -424,12 +406,6 @@ def publish_pending_output(run_dir: Path, path: Path) -> str:
         _append_jsonl_durable_once(Path(candidate["metrics_path"]), candidate["metric"])
         _unlink_pending_locked(path, fd, payload)
         return "published"
-    finally:
-        try:
-            if locked:
-                fcntl.flock(fd, fcntl.LOCK_UN)
-        finally:
-            os.close(fd)
 
 
 def require_published_output(status: str, *, label: str = "pending output") -> None:

@@ -14,22 +14,21 @@ import pytest
 from opencollab_eval.commands import batch as batch_cli
 from opencollab_eval.experiment import cell_report
 from opencollab_eval.experiment.batch_spec import SpecError, load_spec, spec_digest, spec_identity
-from tests.experiment import batch_support as launcher
+from tests.experiment.batch_support import (
+    EXPERIMENT,
+    _spec_text,
+)
+from tests.experiment.batch_support import (
+    experiment as experiment,
+)
+from tests.experiment.batch_support import (
+    oc_repo as oc_repo,
+)
+from tests.experiment.cell_report_support import _write_metrics as _metrics
 from tests.experiment.test_batch_retry import CMDPLAIN30_DIGEST
-
-EXPERIMENT = launcher.EXPERIMENT
-_spec_text = launcher._spec_text
-
-_oc_repo = pytest.fixture(name="oc_repo")(launcher.oc_repo.__wrapped__)
-_experiment = pytest.fixture(name="experiment")(launcher.experiment.__wrapped__)
+from tests.experiment.test_batch_retry import _plan as _plan
 
 REASON = "eval environment unusable: replaced by {instance} per ordered draw"
-
-
-def _plan(experiment: dict, path: Path) -> int:
-    return batch_cli.main(
-        ["--experiment-dir", str(experiment["dir"]), "plan", str(path)], remote_factory=lambda h: None
-    )
 
 
 def _report(experiment: dict, path: Path, json_out: Path) -> int:
@@ -77,11 +76,6 @@ def _retry_spec(experiment: dict, name: str, of: str, rows: str, suite: str) -> 
     path = experiment["dir"] / "batches" / f"{name}.yaml"
     path.write_text(text, encoding="utf-8")
     return path
-
-
-def _metrics(cell: Path, rows: list[dict]) -> None:
-    cell.mkdir(parents=True, exist_ok=True)
-    (cell / "metrics.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
 
 
 def _run(instance: str, status: str = "completed", tokens: int = 10, reason: str = "") -> dict:

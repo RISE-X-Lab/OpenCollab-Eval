@@ -169,14 +169,18 @@ def load_registry(
     return variants, ladders
 
 
+def _fill_extra_slots(card: str, variant: Variant) -> str:
+    directory = variant.card_set.directory
+    for slot, value in variant.slots:
+        card = card.replace(slot_marker(slot), _read(directory / slot.lower() / f"{value}.md"))
+    return card
+
+
 def render(variant: Variant) -> str:
-    """The card this cell's declaration assembles to."""
     directory = variant.card_set.directory
     capabilities = _read(directory / "capabilities" / f"{variant.capabilities}.md")
     block = _read(directory / "blocks" / f"{variant.block}.md")
-    card = shared_body(variant.card_set)
-    for slot, value in variant.slots:
-        card = card.replace(slot_marker(slot), _read(directory / slot.lower() / f"{value}.md"))
+    card = _fill_extra_slots(shared_body(variant.card_set), variant)
     return card.replace(CAPABILITIES_SLOT, capabilities).replace(BLOCK_SLOT, block)
 
 
@@ -192,12 +196,7 @@ def peer_body(card_set: CardSet, peer: str) -> str:
 
 
 def render_peer(variant: Variant, peer: str) -> str:
-    """The card of one of the set's ``peers`` for this cell."""
-    card = peer_body(variant.card_set, peer)
-    directory = variant.card_set.directory
-    for slot, value in variant.slots:
-        card = card.replace(slot_marker(slot), _read(directory / slot.lower() / f"{value}.md"))
-    return card
+    return _fill_extra_slots(peer_body(variant.card_set, peer), variant)
 
 
 def rendered_cards(variant: Variant) -> list[tuple[Path, str]]:

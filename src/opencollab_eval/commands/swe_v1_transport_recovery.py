@@ -405,56 +405,47 @@ def recover_existing_remote_summary(
     expected_owner: tuple[int, str, str, str, str] | None = None,
 ) -> dict[str, Any] | None:
     """Adopt a matching runner from a lost controller before any new launch."""
-    while True:
-        remaining = math.inf if deadline is None else deadline - time.monotonic()
-        if remaining <= 0:
-            raise TimeoutError("remote ownership remained unknown until the task deadline")
-        observed = probe_remote_execution_state(
-            ssh_command=ssh_command,
-            host=host,
-            base_run_dir=base_run_dir,
-            remote_runtime_repo=remote_runtime_repo,
-            remote_python=remote_python,
-            timeout=_probe_timeout_for_remaining(remaining),
-        )
-        if observed is not None:
-            state = observed.get("runner_state")
-            if state == "missing" and observed.get("summary") is None:
-                return None
-            if state in {"alive", "dead", "identity_mismatch"}:
-                identity = runner_owner_identity(observed)
-                if identity is None:
-                    raise RemoteRunnerUnavailable(observed)
-                if expected_owner is not None and identity != expected_owner:
-                    raise RemoteRunnerUnavailable(observed)
-                if identity[3] != runner_claim_sha256(payload):
-                    raise RemoteRunnerUnavailable(observed)
-                if identity[4] != payload.get("invocation_id"):
-                    raise RemoteRunnerUnavailable(observed)
-                if state == "alive":
-                    return wait_for_terminal_remote_summary(
-                        ssh_command=ssh_command,
-                        host=host,
-                        base_run_dir=base_run_dir,
-                        remote_runtime_repo=remote_runtime_repo,
-                        remote_python=remote_python,
-                        owner_nonce=identity[2],
-                        payload=payload,
-                        deadline=deadline,
-                        expected_owner=identity,
-                    )
-                terminal = matching_terminal_remote_summary(
-                    observed,
-                    payload,
-                    expected_owner=identity,
-                )
-                if terminal is not None:
-                    return terminal
+    observed = wait_for_remote_ownership_fact(
+        ssh_command=ssh_command,
+        host=host,
+        base_run_dir=base_run_dir,
+        remote_runtime_repo=remote_runtime_repo,
+        remote_python=remote_python,
+        deadline=deadline,
+    )
+    state = observed.get("runner_state")
+    if state == "missing" and observed.get("summary") is None:
+        return None
+    if state in {"alive", "dead", "identity_mismatch"}:
+        identity = runner_owner_identity(observed)
+        if identity is None:
             raise RemoteRunnerUnavailable(observed)
-        remaining = math.inf if deadline is None else deadline - time.monotonic()
-        if remaining <= 0:
-            raise TimeoutError("remote ownership remained unknown until the task deadline")
-        time.sleep(min(REMOTE_COMPLETION_POLL_SECONDS, remaining))
+        if expected_owner is not None and identity != expected_owner:
+            raise RemoteRunnerUnavailable(observed)
+        if identity[3] != runner_claim_sha256(payload):
+            raise RemoteRunnerUnavailable(observed)
+        if identity[4] != payload.get("invocation_id"):
+            raise RemoteRunnerUnavailable(observed)
+        if state == "alive":
+            return wait_for_terminal_remote_summary(
+                ssh_command=ssh_command,
+                host=host,
+                base_run_dir=base_run_dir,
+                remote_runtime_repo=remote_runtime_repo,
+                remote_python=remote_python,
+                owner_nonce=identity[2],
+                payload=payload,
+                deadline=deadline,
+                expected_owner=identity,
+            )
+        terminal = matching_terminal_remote_summary(
+            observed,
+            payload,
+            expected_owner=identity,
+        )
+        if terminal is not None:
+            return terminal
+    raise RemoteRunnerUnavailable(observed)
 
 
 __all__ = [

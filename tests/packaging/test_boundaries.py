@@ -68,13 +68,7 @@ def _forbidden_opencollab_imports(tree: ast.AST) -> list[str]:
                     offenders.append(module)
         elif isinstance(node, ast.ImportFrom) and node.module:
             module = node.module
-            if module == "opencollab":
-                offenders.extend(
-                    f"{module}.{alias.name}"
-                    for alias in node.names
-                    if alias.name not in _PUBLIC_NAMES[module]
-                )
-            elif (
+            if (
                 module == "opencollab" or module.startswith("opencollab.")
             ) and module not in _PUBLIC_MODULES:
                 offenders.append(module)

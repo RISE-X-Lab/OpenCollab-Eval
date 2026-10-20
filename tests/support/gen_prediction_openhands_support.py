@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import subprocess
 from types import SimpleNamespace
 
@@ -86,3 +88,49 @@ def install_fake_openhands_process(
             )
             or "",
         )
+
+
+def prepare_openhands_main(tmp_path, monkeypatch):
+    instance_file = tmp_path / "instance.json"
+    instance_file.write_text(
+        json.dumps(
+            {
+                "instance_id": "acme__widget-1",
+                "base_commit": "b" * 40,
+                "repo": "acme/widget",
+                "problem_statement": "Fix the widget.",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        gpo.gp,
+        "start_container_with_marker",
+        lambda image, name, run_dir: "container-123",
+    )
+    monkeypatch.setattr(
+        gpo.container_guard,
+        "container_image_id",
+        lambda container_id: "sha256:" + "8" * 64,
+    )
+    return instance_file
+
+
+def trusted_openhands_extraction(snapshot, patch):
+    return gpo.gp.gen_prediction_patch.TrustedPatchExtraction(
+        fixed_anonymous_base=snapshot.anonymous_head,
+        base_tree=snapshot.base_tree,
+        baseline_archive_sha256="e" * 64,
+        baseline_archive_bytes=10,
+        baseline_archive_entries=1,
+        baseline_extracted_bytes=1,
+        workspace_archive_sha256="f" * 64,
+        workspace_archive_bytes=10,
+        workspace_archive_entries=1,
+        workspace_extracted_bytes=1,
+        patch_sha256=hashlib.sha256(patch.encode()).hexdigest(),
+        patch_bytes=len(patch.encode()),
+        candidate_tree="a" * 40,
+        changed_paths=(),
+        path_modes=(),
+    ).as_dict()
