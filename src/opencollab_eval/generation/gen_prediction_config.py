@@ -72,26 +72,23 @@ def default_container_image(arch: str, instance_id: str) -> str:
     return f"sweb.eval.{arch_component}.{instance_component}:latest"
 
 
-def _docker_timeout_from_env() -> float:
-    raw = os.environ.get("OPENCOLLAB_DOCKER_TIMEOUT", "60").strip()
+def _positive_timeout_from_env(name: str, default: str) -> float:
+    raw = os.environ.get(name, default).strip()
     try:
         timeout = float(raw)
     except ValueError as exc:
-        raise ValueError(f"OPENCOLLAB_DOCKER_TIMEOUT must be a positive number, got {raw!r}") from exc
+        raise ValueError(f"{name} must be a positive number, got {raw!r}") from exc
     if not math.isfinite(timeout) or timeout <= 0:
-        raise ValueError(f"OPENCOLLAB_DOCKER_TIMEOUT must be a positive number, got {raw!r}")
+        raise ValueError(f"{name} must be a positive number, got {raw!r}")
     return timeout
+
+
+def _docker_timeout_from_env() -> float:
+    return _positive_timeout_from_env("OPENCOLLAB_DOCKER_TIMEOUT", "60")
 
 
 def _workspace_archive_timeout_from_env() -> float:
-    raw = os.environ.get("OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT", "900").strip()
-    try:
-        timeout = float(raw)
-    except ValueError as exc:
-        raise ValueError(f"OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT must be a positive number, got {raw!r}") from exc
-    if not math.isfinite(timeout) or timeout <= 0:
-        raise ValueError(f"OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT must be a positive number, got {raw!r}")
-    return timeout
+    return _positive_timeout_from_env("OPENCOLLAB_WORKSPACE_ARCHIVE_TIMEOUT", "900")
 
 
 def _dependency_preparation_timeout_from_env() -> float:
