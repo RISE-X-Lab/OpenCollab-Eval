@@ -258,8 +258,7 @@ def task_result_from_summary(
         reasons.append("returncode_status_conflict")
     accepted_counts = {field: counts.get(field, 0) for field in _config.SINGLE_TASK_COUNT_FIELDS}
     if reasons:
-        accepted_counts = dict.fromkeys(_config.SINGLE_TASK_COUNT_FIELDS, 0)
-        accepted_counts["technical_failed"] = 1
+        accepted_counts = dict.fromkeys(_config.SINGLE_TASK_COUNT_FIELDS, 0) | {"technical_failed": 1}
     failure_scope = str(summary.get("failure_scope") or "")
     if failure_scope not in {"task", "image", "shared_infrastructure"}:
         failure_scope = "task" if reasons or accepted_counts["technical_failed"] else "none"
@@ -341,15 +340,7 @@ def run_one(
                 "runner_status": "missing_report",
                 "completed": False,
                 "attempts": runner_attempt,
-                "tasks": 0,
-                "generation_done": 0,
-                "empty_patch": 0,
-                "eval_done": 0,
-                "eval_attempts": 0,
-                "eval_retry_tasks": 0,
-                "resolved": 0,
-                "unresolved": 0,
-                "technical_failed": 1,
+                **(dict.fromkeys(_config.SINGLE_TASK_COUNT_FIELDS, 0) | {"technical_failed": 1}),
                 "failure_scope": "task",
                 "failure_probe": {},
                 "base_run_dir": attempt.base_run_dir if attempt is not None else "",
@@ -389,15 +380,7 @@ def run_one(
         "runner_status": "missing_report",
         "completed": False,
         "attempts": config.runner_attempts,
-        "tasks": 0,
-        "generation_done": 0,
-        "empty_patch": 0,
-        "eval_done": 0,
-        "eval_attempts": 0,
-        "eval_retry_tasks": 0,
-        "resolved": 0,
-        "unresolved": 0,
-        "technical_failed": 1,
+        **(dict.fromkeys(_config.SINGLE_TASK_COUNT_FIELDS, 0) | {"technical_failed": 1}),
         "failure_scope": "task",
         "failure_probe": {},
         "base_run_dir": attempt.base_run_dir if attempt is not None else "",
