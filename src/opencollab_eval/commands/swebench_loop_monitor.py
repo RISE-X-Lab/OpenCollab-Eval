@@ -14,10 +14,13 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, BinaryIO
 
+from opencollab_eval.commands import _swe_report_io as _report_io
 from opencollab_eval.commands import swebench_loop_analysis as loop_analysis
 from opencollab_eval.commands.swebench_loop_snapshots import native_snapshot_inputs, read_native_snapshot
 from opencollab_eval.safe_files import (
-    directory_handle_matches_path,
+    directory_handle_matches_path as directory_handle_matches_path,
+)
+from opencollab_eval.safe_files import (
     ensure_directory_no_symlinks,
     open_directory_no_symlinks,
     write_regular_bytes_atomic,
@@ -53,64 +56,8 @@ MAX_SESSION_TREE_ENTRIES = 20_000
 
 @contextmanager
 def _open_regular_binary(path: Path) -> Iterator[BinaryIO]:
-    """Open one stable regular input without waiting on FIFOs or devices."""
-    path = _lexical_absolute(path)
-    parent_fd = open_directory_no_symlinks(path.parent)
-    fd = -1
-    flags = (
-        os.O_RDONLY
-        | getattr(os, "O_NONBLOCK", 0)
-        | getattr(os, "O_NOFOLLOW", 0)
-        | getattr(os, "O_CLOEXEC", 0)
-    )
-    try:
-        before = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
-        if not stat.S_ISREG(before.st_mode):
-            raise OSError(f"monitor input is not a regular file: {path}")
-        fd = os.open(path.name, flags, dir_fd=parent_fd)
-        opened = os.fstat(fd)
-        if not stat.S_ISREG(opened.st_mode):
-            raise OSError(f"monitor input is not a regular file: {path}")
-        if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
-            raise OSError(f"monitor input changed while opening: {path}")
-        with os.fdopen(fd, "rb") as handle:
-            fd = -1
-            yield handle
-            after = os.fstat(handle.fileno())
-            current = os.stat(
-                path.name,
-                dir_fd=parent_fd,
-                follow_symlinks=False,
-            )
-            opened_identity = (
-                opened.st_dev,
-                opened.st_ino,
-                opened.st_size,
-                opened.st_mtime_ns,
-                opened.st_ctime_ns,
-            )
-            after_identity = (
-                after.st_dev,
-                after.st_ino,
-                after.st_size,
-                after.st_mtime_ns,
-                after.st_ctime_ns,
-            )
-            current_identity = (
-                current.st_dev,
-                current.st_ino,
-                current.st_size,
-                current.st_mtime_ns,
-                current.st_ctime_ns,
-            )
-            if opened_identity != after_identity or after_identity != current_identity:
-                raise OSError(f"monitor input changed while reading: {path}")
-            if not directory_handle_matches_path(path.parent, parent_fd):
-                raise OSError(f"monitor input parent changed while reading: {path}")
-    finally:
-        if fd >= 0:
-            os.close(fd)
-        os.close(parent_fd)
+    with _report_io.open_regular_binary(path, context="monitor input") as handle:
+        yield handle
 
 
 def _read_regular_bytes(

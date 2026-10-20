@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 from opencollab_eval import safe_files as files
 
@@ -66,12 +70,54 @@ def write_json(path: Path, value: Any) -> None:
     )
 
 
+@contextmanager
+def open_regular_binary(path: Path, *, context: str) -> Iterator[BinaryIO]:
+    """Check a regular stream's visible identity and parent again after reading."""
+    path = Path(os.path.abspath(os.fspath(path)))
+    parent_fd = files.open_directory_no_symlinks(path.parent)
+    fd = -1
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
+    try:
+        before = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+        if not stat.S_ISREG(before.st_mode):
+            raise OSError(f"{context} is not a regular file: {path}")
+        fd = os.open(path.name, flags, dir_fd=parent_fd)
+        opened = os.fstat(fd)
+        if not stat.S_ISREG(opened.st_mode):
+            raise OSError(f"{context} is not a regular file: {path}")
+        if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
+            raise OSError(f"{context} changed while opening: {path}")
+        with os.fdopen(fd, "rb") as handle:
+            fd = -1
+            yield handle
+            after = os.fstat(handle.fileno())
+            current = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+            identities = [
+                (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+                for info in (opened, after, current)
+            ]
+            if identities[0] != identities[1] or identities[1] != identities[2]:
+                raise OSError(f"{context} changed while reading: {path}")
+            if not files.directory_handle_matches_path(path.parent, parent_fd):
+                raise OSError(f"{context} parent changed while reading: {path}")
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        os.close(parent_fd)
+
+
 __all__ = [
     "MAX_LOG_BYTES",
     "MAX_REPORT_BYTES",
     "ensure_directory",
     "load_json",
     "load_json_with_error",
+    "open_regular_binary",
     "read_bytes",
     "read_text",
     "write_json",
