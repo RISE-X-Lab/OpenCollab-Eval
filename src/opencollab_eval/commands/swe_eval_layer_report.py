@@ -37,7 +37,8 @@ def _task_key(row: dict[str, Any]) -> str:
 def _task_index(row: dict[str, Any]) -> int | None:
     return _integrity.strict_index(row.get("index"))
 
-def _eval_state(row: dict[str, Any]) -> dict[str, Any]:
+def _attempt_state(row: dict[str, Any]) -> dict[str, Any]:
+    generation = row.get("generation") if isinstance(row.get("generation"), dict) else {}
     evaluation = row.get("eval") if isinstance(row.get("eval"), dict) else {}
     summary = evaluation.get("summary") if isinstance(evaluation.get("summary"), dict) else {}
     status = str(evaluation.get("status") or "")
@@ -59,23 +60,6 @@ def _eval_state(row: dict[str, Any]) -> dict[str, Any]:
             technical_reasons.append(status_reason)
     technical_failed = bool(integrity.reasons or status not in allowed_statuses)
     return {
-        "eval_status": "technical_identity_failure" if integrity.reasons else status,
-        "eval_success": eval_success,
-        "eval_pending": status == "would_eval" and not integrity.reasons,
-        "resolved": resolved if eval_success else None,
-        "technical_failed": technical_failed,
-        "report_path": evaluation.get("report_path") or summary.get("report_path"),
-        "technical_reasons": technical_reasons,
-        "identity_reasons": list(integrity.reasons),
-        "record_id": integrity.record_id,
-        "direct_execution_proven": integrity.direct_execution_proven,
-    }
-
-
-def _generation_state(row: dict[str, Any]) -> dict[str, Any]:
-    generation = row.get("generation") if isinstance(row.get("generation"), dict) else {}
-    integrity = _integrity.attempt_integrity(row, _task_key(row))
-    return {
         "generation_status": generation.get("status"),
         "patch_len": generation.get("patch_len"),
         "workflow_status": generation.get("workflow_status"),
@@ -94,6 +78,14 @@ def _generation_state(row: dict[str, Any]) -> dict[str, Any]:
         "record_id": integrity.record_id,
         "direct_execution_proven": integrity.direct_execution_proven,
         "generation_log": generation.get("log"),
+        "eval_status": "technical_identity_failure" if integrity.reasons else status,
+        "eval_success": eval_success,
+        "eval_pending": status == "would_eval" and not integrity.reasons,
+        "resolved": resolved if eval_success else None,
+        "technical_failed": technical_failed,
+        "report_path": evaluation.get("report_path") or summary.get("report_path"),
+        "technical_reasons": technical_reasons,
+        "identity_reasons": list(integrity.reasons),
     }
 
 
@@ -134,7 +126,8 @@ def _read_workflow_records_from_log(path: str | None) -> list[dict[str, Any]]:
 
 
 def _task_workflow_records(row: dict[str, Any], token_cost: dict[str, Any]) -> list[dict[str, Any]]:
-    log_path = _generation_state(row).get("generation_log")
+    generation = row.get("generation") if isinstance(row.get("generation"), dict) else {}
+    log_path = generation.get("log")
     records = [
         record
         for record in _load_workflow_records(token_cost)
@@ -142,7 +135,6 @@ def _task_workflow_records(row: dict[str, Any], token_cost: dict[str, Any]) -> l
     ]
     if records:
         return records
-    generation = row.get("generation") if isinstance(row.get("generation"), dict) else {}
     if generation.get("tokens_used") is not None:
         return [
             {
@@ -287,7 +279,8 @@ def _assign_costs(rows: list[dict[str, Any]], token_cost: dict[str, Any]) -> dic
         )
         workflow_records = _task_workflow_records(row, token_cost)
         if not workflow_records:
-            log_path = _generation_state(row).get("generation_log")
+            generation = row.get("generation") if isinstance(row.get("generation"), dict) else {}
+            log_path = generation.get("log")
             direct_groups = [
                 (index, group)
                 for index, group in enumerate(groups)
@@ -346,14 +339,12 @@ def _assign_costs(rows: list[dict[str, Any]], token_cost: dict[str, Any]) -> dic
     return assigned
 
 
-def _row_score(row: dict[str, Any], round_number: int) -> tuple[int, int]:
-    evaluation = _eval_state(row)
-    generation = _generation_state(row)
-    if evaluation["eval_success"]:
-        return (3, round_number)
-    if generation["generation_status"] == "generation_done":
-        return (2, round_number)
-    return (1, round_number)
+def _attempt_score(attempt: dict[str, Any]) -> tuple[int, int]:
+    if attempt["eval_success"]:
+        return (3, attempt["round"])
+    if attempt["generation_status"] == "generation_done":
+        return (2, attempt["round"])
+    return (1, attempt["round"])
 
 
 def _compact_attempt(attempt: dict[str, Any]) -> dict[str, Any]:
@@ -459,8 +450,7 @@ def build_report(
                 "index": index,
                 "task": task,
                 "row": row,
-                **_generation_state(row),
-                **_eval_state(row),
+                **_attempt_state(row),
             }
             observed_attempts.append(observed)
             if round_number > max_rounds:
@@ -595,9 +585,7 @@ def build_report(
         if not task:
             continue
         previous = final_by_task.get(task)
-        if previous is None or _row_score(
-            attempt["row"], attempt["round"]
-        ) >= _row_score(previous["row"], previous["round"]):
+        if previous is None or _attempt_score(attempt) >= _attempt_score(previous):
             final_by_task[task] = attempt
 
     tasks = []
