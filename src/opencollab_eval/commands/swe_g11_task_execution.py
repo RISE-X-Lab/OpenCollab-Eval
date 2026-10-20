@@ -42,16 +42,17 @@ def _max_task_starts(config: ParallelConfig, attempt: RecoveryAttempt | None) ->
     return 0 if attempt.mode == "eval_only" else 1
 
 
-def task_command(
+def runner_command_prefix(
     config: ParallelConfig,
+    *,
+    executable: str,
     index: int,
-    attempt: RecoveryAttempt | None = None,
+    run_id: str,
+    session_prefix: str,
+    base_run_dir: str,
 ) -> list[str]:
-    paths = task_paths(config, index, attempt)
-    run_id = attempt.run_id if attempt is not None else f"{config.run_id}_task{index}"
-    base_run_dir = attempt.base_run_dir if attempt is not None else f"{config.remote_base}/task_{index}"
-    command = [
-        sys.executable,
+    return [
+        executable,
         "-m",
         "opencollab_eval.commands.swe_g11_prolite_runner",
         "--host",
@@ -69,7 +70,7 @@ def task_command(
         "--run-id",
         run_id,
         "--session-prefix",
-        (attempt.session_prefix(config.session_prefix) if attempt is not None else config.session_prefix),
+        session_prefix,
         "--model-name",
         config.model_name,
         "--llm-provider",
@@ -94,34 +95,14 @@ def task_command(
         str(config.openhands_empty_patch_rejections),
         "--max-empty-patch-retries",
         str(config.max_empty_patch_retries),
-        "--swe-timeout",
-        str(config.swe_timeout),
-        "--task-wall-timeout",
-        str(config.task_wall_timeout),
-        "--eval-timeout",
-        str(config.eval_timeout),
-        "--eval-container-bind-timeout",
-        str(config.eval_container_bind_timeout),
-        "--llm-timeout",
-        str(config.llm_timeout),
-        "--checkpoint-interval",
-        str(config.checkpoint_interval),
-        "--max-task-starts",
-        str(_max_task_starts(config, attempt)),
-        "--max-eval-attempts",
-        str(attempt.max_eval_attempts if attempt is not None else config.max_eval_attempts),
-        "--total-timeout",
-        str(config.total_timeout),
-        "--json-output",
-        str(paths["json_report"]),
-        "--markdown-output",
-        str(paths["markdown_report"]),
     ]
-    if attempt is not None and attempt.mode == "eval_only":
-        pass
-    elif config.remote_api_env_file:
+
+
+def runner_command_options(config: ParallelConfig, *, include_api_credentials: bool = True) -> list[str]:
+    command: list[str] = []
+    if include_api_credentials and config.remote_api_env_file:
         command += ["--remote-api-env-file", config.remote_api_env_file]
-    else:
+    elif include_api_credentials:
         command += [
             "--local-proxy-base-url",
             config.local_proxy_base_url,
@@ -152,6 +133,52 @@ def task_command(
         ]
     if config.no_ensure_remote_proxy:
         command.append("--no-ensure-remote-proxy")
+    return command
+
+
+def task_command(
+    config: ParallelConfig,
+    index: int,
+    attempt: RecoveryAttempt | None = None,
+) -> list[str]:
+    paths = task_paths(config, index, attempt)
+    run_id = attempt.run_id if attempt is not None else f"{config.run_id}_task{index}"
+    base_run_dir = attempt.base_run_dir if attempt is not None else f"{config.remote_base}/task_{index}"
+    command = runner_command_prefix(
+        config,
+        executable=sys.executable,
+        index=index,
+        run_id=run_id,
+        session_prefix=attempt.session_prefix(config.session_prefix) if attempt is not None else config.session_prefix,
+        base_run_dir=base_run_dir,
+    )
+    command += [
+        "--swe-timeout",
+        str(config.swe_timeout),
+        "--task-wall-timeout",
+        str(config.task_wall_timeout),
+        "--eval-timeout",
+        str(config.eval_timeout),
+        "--eval-container-bind-timeout",
+        str(config.eval_container_bind_timeout),
+        "--llm-timeout",
+        str(config.llm_timeout),
+        "--checkpoint-interval",
+        str(config.checkpoint_interval),
+        "--max-task-starts",
+        str(_max_task_starts(config, attempt)),
+        "--max-eval-attempts",
+        str(attempt.max_eval_attempts if attempt is not None else config.max_eval_attempts),
+        "--total-timeout",
+        str(config.total_timeout),
+        "--json-output",
+        str(paths["json_report"]),
+        "--markdown-output",
+        str(paths["markdown_report"]),
+    ]
+    command += runner_command_options(
+        config, include_api_credentials=attempt is None or attempt.mode != "eval_only",
+    )
     if attempt is not None and attempt.mode == "eval_only":
         assert attempt.candidate is not None
         command += [
