@@ -10,11 +10,32 @@ import os
 import re
 import unicodedata
 import uuid
+from argparse import ArgumentParser, Namespace
 from pathlib import PureWindowsPath
 
 from opencollab_eval.runtime_config import effective_generation_limits
 
 from .gen_prediction_constants import MAX_INSTANCE_ID_BYTES
+
+
+def apply_model_overrides(cfg: dict, args: Namespace, parser: ArgumentParser) -> None:
+    if args.temperature is not None:
+        if not 0.0 <= args.temperature <= 2.0:
+            parser.error("--temperature must be between 0 and 2")
+        cfg["temperature"] = args.temperature
+    if args.top_p is not None:
+        if not 0.0 <= args.top_p <= 1.0:
+            parser.error("--top-p must be between 0 and 1")
+        cfg["top_p"] = args.top_p
+    if args.max_output_tokens is not None:
+        if args.max_output_tokens <= 0:
+            parser.error("--max-output-tokens must be positive")
+        cfg["max_output_tokens"] = args.max_output_tokens
+    context_window = getattr(args, "context_window", None)
+    if context_window is not None:
+        if context_window <= 0:
+            parser.error("--context-window must be positive")
+        cfg["context_window"] = context_window
 
 
 def unique_container_name(prefix: str, instance_id: str) -> str:

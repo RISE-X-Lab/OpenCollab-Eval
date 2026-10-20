@@ -94,7 +94,7 @@ def _ignored(
         allowed_returncodes=(0, 1),
     )
     return frozenset(
-        os.fsdecode(record)[2:] if os.fsdecode(record).startswith("./") else os.fsdecode(record)
+        os.fsdecode(record).removeprefix("./")
         for record in output.split(b"\0")
         if record
     )

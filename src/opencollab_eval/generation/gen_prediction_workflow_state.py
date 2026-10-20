@@ -90,6 +90,11 @@ def workflow_stop_metrics(result) -> dict:
     all_role_failures_external = bool(role_origins) and all(
         role["origin"] == "provider_transport" for role in role_origins
     )
+    role_failure_origin = (
+        "provider_transport" if all_role_failures_external else "oc" if any(
+            role["origin"] == "oc" for role in role_origins
+        ) else "unclassified"
+    )
     lifecycle_exception = status is None and str(result.error or "").startswith(
         ("RunError:", "ProgrammaticLifecycleError:", "WorkflowLifecycleError:")
     )
@@ -125,14 +130,13 @@ def workflow_stop_metrics(result) -> dict:
         origin = "evaluation_persistence"
     elif storage_failure and not delivered:
         origin = "evaluation_storage"
-    elif not delivered and attribution.get("origin") == "evaluation_environment":
-        origin = "evaluation_environment"
-    elif not delivered and any(role["origin"] == "evaluation_environment" for role in role_origins):
+    elif not delivered and (
+        attribution.get("origin") == "evaluation_environment"
+        or any(role["origin"] == "evaluation_environment" for role in role_origins)
+    ):
         origin = "evaluation_environment"
     elif role_origins and not role_failures_handled:
-        origin = "provider_transport" if all_role_failures_external else "oc" if any(
-            role["origin"] == "oc" for role in role_origins
-        ) else "unclassified"
+        origin = role_failure_origin
     elif not session_quiesced:
         origin = "oc"
     elif completed:
@@ -141,20 +145,14 @@ def workflow_stop_metrics(result) -> dict:
         origin = "evaluation_deadline"
     elif is_progress_stop(native):
         origin = "evaluation_no_progress"
-    elif any(role["origin"] == "oc" for role in role_origins):
+    elif role_failure_origin == "oc":
         origin = "oc"
     elif (native.get("failure_attribution") or {}).get("origin") in {"provider_transport", "unclassified", "oc"}:
         origin = native["failure_attribution"]["origin"]
     elif native.get("external_error") is True:
         origin = "unclassified"
     elif status == "completed" and output_status == "incomplete" and role_origins:
-        origin = (
-            "oc"
-            if any(role["origin"] == "oc" for role in role_origins)
-            else "provider_transport"
-            if all_role_failures_external
-            else "unclassified"
-        )
+        origin = role_failure_origin
     elif status in {"failed", "stopped"} or output_status not in {None, "done"}:
         origin = "oc"
     elif result.error:

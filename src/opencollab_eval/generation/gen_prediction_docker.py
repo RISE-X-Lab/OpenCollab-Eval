@@ -520,21 +520,14 @@ def start_container_with_marker(
         raise RuntimeError("stale generation state recovery failed")
     pending = _create_pending_owner(run_dir, name)
     try:
-        if temporary_directory is None:
-            cid = start_container(
-                image,
-                name,
-                pending["owner_token"],
-                termination_evidence_path=run_dir / "container-termination-evidence.json",
-            )
-        else:
-            cid = start_container(
-                image,
-                name,
-                pending["owner_token"],
-                temporary_directory=temporary_directory,
-                termination_evidence_path=run_dir / "container-termination-evidence.json",
-            )
+        options = {} if temporary_directory is None else {"temporary_directory": temporary_directory}
+        cid = start_container(
+            image,
+            name,
+            pending["owner_token"],
+            termination_evidence_path=run_dir / "container-termination-evidence.json",
+            **options,
+        )
         write_container_marker(run_dir, cid, name)
     except BaseException:
         current = _read_owner(container_owner_path(run_dir, name)) or pending

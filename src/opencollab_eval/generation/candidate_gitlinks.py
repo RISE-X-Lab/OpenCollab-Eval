@@ -129,8 +129,7 @@ def visible_unmaterialized_gitlinks(
             )
     visible: set[str] = set()
     expected = set(paths)
-    records = [raw for raw in output.split(b"\0") if raw]
-    for raw in records:
+    for raw in output.split(b"\0"):
         if not raw:
             continue
         candidate = os.fsdecode(raw).rstrip("/")

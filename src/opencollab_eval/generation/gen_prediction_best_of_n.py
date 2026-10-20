@@ -50,6 +50,7 @@ from .container_quiescence import (
 )
 from .gen_prediction_agent import build_task, load_instance, resolve_agent_generation_limits, run_agent
 from .gen_prediction_config import (
+    apply_model_overrides,
     bind_llm_transport,
     default_container_image,
     llm_transport_metrics,
@@ -295,7 +296,8 @@ def solve_candidate(
             generation_error is not None
             or trusted_baseline is not None and metrics.get("patch_extraction_succeeded") is not True
         )
-        if retention_required:
+
+        def retain_source(error: BaseException | None, reason: str) -> None:
             retain_best_of_n_source(
                 run_dir=run_dir,
                 instance=instance,
@@ -306,14 +308,19 @@ def solve_candidate(
                 baseline=trusted_baseline,
                 generation_image_id=generation_image_id,
                 metrics=metrics,
-                error=generation_error,
-                reason="candidate_record_unwritten"
-                if generation_error is not None and extraction_succeeded
-                else "trusted_patch_extraction_incomplete",
+                error=error,
+                reason=reason,
                 mark_kept=mark_container_kept,
                 quiesce=require_container_quiescence,
                 isolate=isolate_container_for_preservation,
                 persist_failure=persist_generation_failure,
+            )
+
+        if retention_required:
+            retain_source(
+                generation_error,
+                "candidate_record_unwritten" if generation_error is not None and extraction_succeeded
+                else "trusted_patch_extraction_incomplete",
             )
         try:
             _write_candidate_record(run_dir, index=index, patch=patch, metrics=metrics)
@@ -333,23 +340,7 @@ def solve_candidate(
                 if generation_error is None:
                     raise
             else:
-                retain_best_of_n_source(
-                    run_dir=run_dir,
-                    instance=instance,
-                    image=image,
-                    index=index,
-                    cid=cid,
-                    name=name,
-                    baseline=trusted_baseline,
-                    generation_image_id=generation_image_id,
-                    metrics=metrics,
-                    error=write_error,
-                    reason="candidate_record_unwritten",
-                    mark_kept=mark_container_kept,
-                    quiesce=require_container_quiescence,
-                    isolate=isolate_container_for_preservation,
-                    persist_failure=persist_generation_failure,
-                )
+                retain_source(write_error, "candidate_record_unwritten")
                 raise
         if not retention_required:
             try:
@@ -601,18 +592,7 @@ def main() -> None:
     cfg = get_config(
         str(Path.cwd()), overrides={"model": args.model, "provider": args.provider},
     )
-    if args.temperature is not None:
-        if not 0.0 <= args.temperature <= 2.0:
-            ap.error("--temperature must be between 0 and 2")
-        cfg["temperature"] = args.temperature
-    if args.top_p is not None:
-        if not 0.0 <= args.top_p <= 1.0:
-            ap.error("--top-p must be between 0 and 1")
-        cfg["top_p"] = args.top_p
-    if args.max_output_tokens is not None:
-        if args.max_output_tokens <= 0:
-            ap.error("--max-output-tokens must be positive")
-        cfg["max_output_tokens"] = args.max_output_tokens
+    apply_model_overrides(cfg, args, ap)
     model_name = args.model_name or f"opencollab-{WORKFLOW_NAME}-{cfg['model']}"
 
     print(f"Instance:   {iid}")

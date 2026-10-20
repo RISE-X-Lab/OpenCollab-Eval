@@ -145,16 +145,10 @@ def quiesce_container(
 ) -> dict[str, object]:
     del python_bin, cleanup_guard_root
     try:
-        _quiesce_from_host(container_id)
-    except HostPidNamespaceUnavailable:
         try:
+            _quiesce_from_host(container_id)
+        except HostPidNamespaceUnavailable:
             _quiesce_with_daemon_helper(container_id)
-        except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
-            return {
-                "proven": False,
-                "returncode": 125,
-                "error": f"{type(exc).__name__}: {exc}",
-            }
     except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
         return {
             "proven": False,

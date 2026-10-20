@@ -181,7 +181,6 @@ def _untracked(
         flattened.extend(current)
         if changed:
             continue
-        ignored_paths = trusted_ignored_paths
         excluded = tuple(
             path
             for path in paths
@@ -191,34 +190,33 @@ def _untracked(
             or is_generated_runtime_artifact_path(path)
         )
         selected = tuple(path for path in paths if path not in excluded)
-        immediate = selected
-        for path in immediate:
+        for path in selected:
             if path.endswith("/"):
                 raise CandidateConstructionError(f"untracked directory {path} could not be projected")
             validate_file(worktree, path, file_byte_limit)
         _reject_unignored_special_files(
             git, ignore_common, worktree,
             (
-                *ignored_paths,
+                *trusted_ignored_paths,
                 *(root.rstrip("/") + "/" for root in preserved_roots),
                 *ignored_roots,
             ),
             env=env, timeout=timeout, byte_limit=byte_limit, entry_limit=entry_limit,
         )
-        flattened_hardlinks = flatten_hardlinks(worktree, immediate, file_byte_limit)
-        if immediate:
+        flattened_hardlinks = flatten_hardlinks(worktree, selected, file_byte_limit)
+        if selected:
             _stage_exact_paths(
                 git,
                 common,
                 worktree,
-                immediate,
+                selected,
                 env=env,
                 timeout=timeout,
                 byte_limit=file_byte_limit,
             )
         return (
-            selected, excluded, tuple(flattened), ignored_paths, flattened_hardlinks,
-            len(output) + sum(len(os.fsencode(path)) + 1 for path in ignored_paths),
+            selected, excluded, tuple(flattened), trusted_ignored_paths, flattened_hardlinks,
+            len(output) + sum(len(os.fsencode(path)) + 1 for path in trusted_ignored_paths),
         )
     raise CandidateConstructionError("nested repository flattening did not converge")
 

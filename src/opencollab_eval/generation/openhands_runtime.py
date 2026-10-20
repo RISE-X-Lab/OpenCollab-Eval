@@ -13,20 +13,12 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-if __package__:
-    from .container_quiescence import (
-        guarded_terminal_invocation as _guarded_terminal_invocation,
-    )
-    from .container_quiescence import (
-        stop_guarded_terminal_session as _stop_guarded_terminal_session,
-    )
-else:
-    from .container_quiescence import (
-        guarded_terminal_invocation as _guarded_terminal_invocation,
-    )
-    from .container_quiescence import (
-        stop_guarded_terminal_session as _stop_guarded_terminal_session,
-    )
+from .container_quiescence import (
+    guarded_terminal_invocation as _guarded_terminal_invocation,
+)
+from .container_quiescence import (
+    stop_guarded_terminal_session as _stop_guarded_terminal_session,
+)
 
 
 @dataclass(frozen=True)
