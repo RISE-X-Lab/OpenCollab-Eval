@@ -98,41 +98,30 @@ def _float_env(name: str, default: float) -> float:
 def pricing_for_model(model: str | None) -> dict[str, float | str]:
     """Return per-million-token prices for a model."""
     if "glm" in (model or "").lower():
-        input_price = _float_env(
-            "GLM_INPUT_USD_PER_MTOK",
-            DEFAULT_GLM52_INPUT_USD_PER_MTOK,
-        )
-        return {
-            "mode": "glm-5.2-default",
-            "input_usd_per_mtok": input_price,
-            "cached_input_usd_per_mtok": _float_env(
-                "GLM_CACHED_INPUT_USD_PER_MTOK",
-                DEFAULT_GLM52_CACHED_INPUT_USD_PER_MTOK,
-            ),
-            "cache_creation_usd_per_mtok": _float_env(
-                "GLM_CACHE_CREATION_USD_PER_MTOK",
-                input_price,
-            ),
-            "output_usd_per_mtok": _float_env(
-                "GLM_OUTPUT_USD_PER_MTOK",
-                DEFAULT_GLM52_OUTPUT_USD_PER_MTOK,
-            ),
-        }
-    input_price = _float_env("OPENCOLLAB_INPUT_USD_PER_MTOK", 0.0)
+        prefix = "GLM"
+        mode = "glm-5.2-default"
+        input_default = DEFAULT_GLM52_INPUT_USD_PER_MTOK
+        cached_default = DEFAULT_GLM52_CACHED_INPUT_USD_PER_MTOK
+        output_default = DEFAULT_GLM52_OUTPUT_USD_PER_MTOK
+    else:
+        prefix = "OPENCOLLAB"
+        mode = "unset"
+        input_default = cached_default = output_default = 0.0
+    input_price = _float_env(f"{prefix}_INPUT_USD_PER_MTOK", input_default)
     return {
-        "mode": "unset",
+        "mode": mode,
         "input_usd_per_mtok": input_price,
         "cached_input_usd_per_mtok": _float_env(
-            "OPENCOLLAB_CACHED_INPUT_USD_PER_MTOK",
-            0.0,
+            f"{prefix}_CACHED_INPUT_USD_PER_MTOK",
+            cached_default,
         ),
         "cache_creation_usd_per_mtok": _float_env(
-            "OPENCOLLAB_CACHE_CREATION_USD_PER_MTOK",
+            f"{prefix}_CACHE_CREATION_USD_PER_MTOK",
             input_price,
         ),
         "output_usd_per_mtok": _float_env(
-            "OPENCOLLAB_OUTPUT_USD_PER_MTOK",
-            0.0,
+            f"{prefix}_OUTPUT_USD_PER_MTOK",
+            output_default,
         ),
     }
 

@@ -22,6 +22,7 @@ from typing import Any
 
 from opencollab_eval.engine.swe_generation_proof import current_generation_proof_valid
 from opencollab_eval.patch_diff import patch_paths
+from tests.e2e.evidence_publish import _sha256 as _sha256_file
 from tests.e2e.evidence_publish import publish_production_evidence
 from tests.e2e.fake_openai_server import (
     EXPECTED_THINKING,
@@ -43,14 +44,6 @@ E2E_TOKEN_BUDGET = 60_000
 
 def _sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        while chunk := handle.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _json(path: Path) -> dict[str, Any]:

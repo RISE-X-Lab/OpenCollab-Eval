@@ -55,10 +55,11 @@ import sys
 
 try:
     value = float(sys.argv[1])
+    maximum = float(sys.argv[2]) if len(sys.argv) > 2 else math.inf
 except (IndexError, TypeError, ValueError, OverflowError):
     raise SystemExit(1)
-raise SystemExit(0 if math.isfinite(value) and value > 0 else 1)
-' "$1"
+raise SystemExit(0 if math.isfinite(value) and 0 < value <= maximum else 1)
+' "$@"
 }
 
 # macOS ships `shasum` rather than GNU `sha256sum`.  Hashing is part of the
@@ -108,16 +109,7 @@ if ! validate_positive_timeout "$docker_health_timeout"; then
   echo "Claude Code Docker health timeout must be finite and positive" >&2
   exit 2
 fi
-if ! "$python_bin" -c '
-import math
-import sys
-
-try:
-    value = float(sys.argv[1])
-except (IndexError, TypeError, ValueError, OverflowError):
-    raise SystemExit(1)
-raise SystemExit(0 if math.isfinite(value) and 0 < value <= 5 else 1)
-' "$docker_health_timeout"; then
+if ! validate_positive_timeout "$docker_health_timeout" 5; then
   echo "Claude Code Docker health timeout must be at most five seconds" >&2
   exit 2
 fi
@@ -125,16 +117,7 @@ if ! validate_positive_timeout "$docker_health_retry_budget"; then
   echo "Claude Code Docker health retry budget must be finite and positive" >&2
   exit 2
 fi
-if ! "$python_bin" -c '
-import math
-import sys
-
-try:
-    value = float(sys.argv[1])
-except (IndexError, TypeError, ValueError, OverflowError):
-    raise SystemExit(1)
-raise SystemExit(0 if math.isfinite(value) and 0 < value <= 30 else 1)
-' "$docker_health_retry_budget"; then
+if ! validate_positive_timeout "$docker_health_retry_budget" 30; then
   echo "Claude Code Docker health retry budget must be at most thirty seconds" >&2
   exit 2
 fi
