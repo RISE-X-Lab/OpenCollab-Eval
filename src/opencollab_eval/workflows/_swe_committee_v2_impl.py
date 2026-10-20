@@ -504,27 +504,10 @@ async def _run_attempt(
         },
     )
 
-    if _concrete_blocker(final_verdict):
-        return {
-            "attempt": attempt,
-            "status": "coder_minimal_retry",
-            "coder_report": coder_report or "",
-            "etv_report": etv_report,
-            "patch_verdict": etv_report,
-            "diff_risks": diff_risks,
-            "post_candidates": post_candidates,
-            "post_judge": post_decision,
-            "post_triage": post_decision,
-            "skeptic": skeptic,
-            "final_verdict": final_verdict,
-            "edge": "FV->CR",
-            "feedback": _feedback(skeptic, final_verdict),
-            "retry": True,
-        }
-
+    retry = _concrete_blocker(final_verdict)
     return {
         "attempt": attempt,
-        "status": "done",
+        "status": "coder_minimal_retry" if retry else "done",
         "coder_report": coder_report or "",
         "etv_report": etv_report,
         "patch_verdict": etv_report,
@@ -534,9 +517,9 @@ async def _run_attempt(
         "post_triage": post_decision,
         "skeptic": skeptic,
         "final_verdict": final_verdict,
-        "edge": "FV->OUT",
+        "edge": "FV->CR" if retry else "FV->OUT",
         "feedback": _feedback(skeptic, final_verdict),
-        "retry": False,
+        "retry": retry,
     }
 
 
