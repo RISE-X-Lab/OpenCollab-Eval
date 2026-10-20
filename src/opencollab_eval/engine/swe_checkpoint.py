@@ -7,6 +7,7 @@ import math
 import os
 import shlex
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -148,17 +149,7 @@ class WorktreeCheckpoint:
             except Exception as exc:  # noqa: BLE001
                 write_error = f"{type(exc).__name__}: {exc}"
                 try:
-                    if previous_patch is None:
-                        _unlink_durable(
-                            self.patch_path,
-                            expected_parent_identity=self._run_dir_identity,
-                        )
-                    else:
-                        _atomic_write(
-                            self.patch_path,
-                            previous_patch,
-                            expected_parent_identity=self._run_dir_identity,
-                        )
+                    self._restore_previous_patch(previous_patch)
                 except Exception as rollback_exc:  # noqa: BLE001
                     return CheckpointResult(
                         status="failed",
@@ -207,17 +198,7 @@ class WorktreeCheckpoint:
             rollback_error = ""
             if patch.strip():
                 try:
-                    if previous_patch is None:
-                        _unlink_durable(
-                            self.patch_path,
-                            expected_parent_identity=self._run_dir_identity,
-                        )
-                    else:
-                        _atomic_write(
-                            self.patch_path,
-                            previous_patch,
-                            expected_parent_identity=self._run_dir_identity,
-                        )
+                    self._restore_previous_patch(previous_patch)
                 except Exception as rollback_exc:
                     rollback_error = (
                         f"; patch rollback failed: {type(rollback_exc).__name__}: "
@@ -525,17 +506,7 @@ class WorktreeCheckpoint:
                 self._task = None
         result = await self.capture(env, reason="final", exclude_paths=exclude_paths)
         if self._background_errors:
-            return CheckpointResult(
-                status=result.status,
-                patch_bytes=result.patch_bytes,
-                patch_sha256=result.patch_sha256,
-                reason=result.reason,
-                error=result.error,
-                preserved_previous_patch=result.preserved_previous_patch,
-                submission_eligible=result.submission_eligible,
-                worktree_integrity_proven=result.worktree_integrity_proven,
-                background_errors=tuple(self._background_errors),
-            )
+            return replace(result, background_errors=tuple(self._background_errors))
         return result
 
     async def abort(
@@ -599,15 +570,6 @@ class WorktreeCheckpoint:
         self._consume_task_result(task)
 
     @staticmethod
-    async def _wait_for_abort_task(
-        task: asyncio.Task[Any], *, timeout: float
-    ) -> bool:
-        if task.done():
-            return False
-        _done, pending = await asyncio.wait({task}, timeout=timeout)
-        return bool(pending)
-
-    @staticmethod
     def _consume_task_result(task: asyncio.Future[Any]) -> None:
         try:
             task.result()
@@ -664,6 +626,19 @@ class WorktreeCheckpoint:
                 raise OSError("checkpoint run directory identity changed")
         finally:
             os.close(run_dir_fd)
+
+    def _restore_previous_patch(self, patch: str | None) -> None:
+        if patch is None:
+            _unlink_durable(
+                self.patch_path,
+                expected_parent_identity=self._run_dir_identity,
+            )
+        else:
+            _atomic_write(
+                self.patch_path,
+                patch,
+                expected_parent_identity=self._run_dir_identity,
+            )
 
     def _has_existing_patch(self) -> bool:
         try:
