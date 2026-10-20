@@ -71,15 +71,17 @@ def default_team_config() -> str:
     """Resolve current owned inputs, or an explicitly selected historical checkout.
 
     A wheel needs an evaluation source checkout named by
-    ``OPENCOLLAB_EVAL_SOURCE_ROOT``. An explicit ``OPENCOLLAB_SOURCE_ROOT``
-    retains the historical framework layout. Missing selected inputs remain
-    missing; never substitute another revision's prompt silently.
+    ``OPENCOLLAB_EVAL_SOURCE_ROOT``. Without it, an explicit
+    ``OPENCOLLAB_SOURCE_ROOT`` retains the historical framework layout.
+    Missing selected inputs remain missing.
     """
+    source_root = os.environ.get("OPENCOLLAB_EVAL_SOURCE_ROOT", "").strip()
+    if source_root:
+        return str(Path(source_root) / "experiment/framework" / EXPERIMENT_TEAM_CONFIG)
     legacy_root = os.environ.get("OPENCOLLAB_SOURCE_ROOT", "").strip()
     if legacy_root:
         return str(Path(legacy_root) / EXPERIMENT_TEAM_CONFIG)
-    source_root = os.environ.get("OPENCOLLAB_EVAL_SOURCE_ROOT", "").strip()
-    root = Path(source_root) if source_root else Path(__file__).resolve().parents[3]
+    root = Path(__file__).resolve().parents[3]
     return str(root / "experiment/framework" / EXPERIMENT_TEAM_CONFIG)
 
 

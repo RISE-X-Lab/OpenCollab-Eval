@@ -77,13 +77,13 @@ def test_the_team_arm_s_configuration_is_reachable_from_here() -> None:
 
 
 def test_the_config_lookup_prefers_the_checkout_the_environment_names() -> None:
-    # CI installs OpenCollab from a wheel, which carries no ``configs/``, and
-    # names the checkout it was built from. That checkout has to win.
+    # Historical runs can select a framework checkout without an evaluator root.
     import opencollab
     from _pytest.monkeypatch import MonkeyPatch
 
     patch = MonkeyPatch()
     try:
+        patch.delenv("OPENCOLLAB_EVAL_SOURCE_ROOT", raising=False)
         root = Path(tempfile.mkdtemp())
         planted = root / arm_audit.EXPERIMENT_TEAM_CONFIG
         planted.parent.mkdir(parents=True, exist_ok=True)
@@ -101,6 +101,19 @@ def test_the_config_lookup_prefers_the_checkout_the_environment_names() -> None:
         assert not Path(arm_audit.default_team_config()).is_file()
     finally:
         patch.undo()
+
+
+def test_current_evaluation_inputs_take_precedence_over_runtime_checkout(
+    monkeypatch, tmp_path,
+) -> None:
+    evaluation = tmp_path / "evaluation"
+    runtime = tmp_path / "runtime"
+    monkeypatch.setenv("OPENCOLLAB_EVAL_SOURCE_ROOT", str(evaluation))
+    monkeypatch.setenv("OPENCOLLAB_SOURCE_ROOT", str(runtime))
+
+    assert arm_audit.default_team_config() == str(
+        evaluation / "experiment/framework" / arm_audit.EXPERIMENT_TEAM_CONFIG
+    )
 
 
 def test_the_registry_covers_exactly_the_arms_the_batch_driver_runs() -> None:

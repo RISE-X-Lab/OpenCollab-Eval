@@ -13,6 +13,8 @@ commit.
 Evaluation and experiment inputs now reside in this repository. Shared setup
 for generation, evaluation, orchestration, reports, and tests has been
 consolidated while retaining the existing execution and scoring behavior.
+Arm audits select the owned evaluation inputs when both source checkouts are
+provided, as they are in CI.
 Contributor guidance and development documentation reflect the current
 repository layout.
 
