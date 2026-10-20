@@ -98,44 +98,34 @@ def select_candidate(candidates: Sequence[Candidate]) -> Selection:
     by_index = {candidate.index: candidate for candidate in candidates}
     trees = {by_index[index].tree for index in eligible}
 
+    arbitrary = False
     if not eligible:
-        return Selection(
-            index=None,
-            rule=NO_CANDIDATE,
-            arbitrary=False,
-            eligible=(),
-            distinct_trees=0,
-            note="no candidate produced a patch that projects to a tree",
-        )
-    if len(eligible) == 1:
-        return Selection(
-            index=eligible[0],
-            rule=ONLY_CANDIDATE,
-            arbitrary=False,
-            eligible=eligible,
-            distinct_trees=len(trees),
-            note="one candidate had something to submit",
-        )
-    if len(trees) == 1:
-        return Selection(
-            index=min(eligible),
-            rule=CANDIDATES_AGREE,
-            arbitrary=False,
-            eligible=eligible,
-            distinct_trees=1,
-            note="every eligible candidate projects to the same tree",
-        )
-    chosen = min(eligible, key=lambda index: (by_index[index].tree or "", index))
-    return Selection(
-        index=chosen,
-        rule=LOWEST_TREE_SHA,
-        arbitrary=True,
-        eligible=eligible,
-        distinct_trees=len(trees),
-        note=(
+        chosen = None
+        rule = NO_CANDIDATE
+        note = "no candidate produced a patch that projects to a tree"
+    elif len(eligible) == 1:
+        chosen = eligible[0]
+        rule = ONLY_CANDIDATE
+        note = "one candidate had something to submit"
+    elif len(trees) == 1:
+        chosen = min(eligible)
+        rule = CANDIDATES_AGREE
+        note = "every eligible candidate projects to the same tree"
+    else:
+        chosen = min(eligible, key=lambda index: (by_index[index].tree or "", index))
+        rule = LOWEST_TREE_SHA
+        arbitrary = True
+        note = (
             "the eligible candidates differ and the placeholder ordered them by "
             "tree sha, which is a hash and therefore a lottery"
-        ),
+        )
+    return Selection(
+        index=chosen,
+        rule=rule,
+        arbitrary=arbitrary,
+        eligible=eligible,
+        distinct_trees=len(trees),
+        note=note,
     )
 
 
