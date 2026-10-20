@@ -245,6 +245,24 @@ def _record_key(record: dict[str, Any], row: dict[str, Any]) -> tuple[Any, ...]:
     )
 
 
+def _assign_api_group(entry: dict[str, Any], group: dict[str, Any], match_reason: str) -> None:
+    entry["api_usage_groups"].append(
+        {
+            "api_usage_path": group.get("api_usage_path"),
+            "pid": group.get("pid"),
+            "total_tokens": group.get("total_tokens"),
+            "calls": group.get("calls"),
+            "cost_usd": group.get("cost_usd"),
+            "cost_usd_complete": group.get("cost_usd_complete"),
+            "match_reason": match_reason,
+        }
+    )
+    if group.get("cost_usd_complete"):
+        entry["cost_usd"] += float(group.get("cost_usd") or 0.0)
+    else:
+        entry["cost_usd_complete"] = False
+
+
 def _assign_costs(rows: list[dict[str, Any]], token_cost: dict[str, Any]) -> dict[str, dict[str, Any]]:
     groups = _api_groups(token_cost)
     used: set[int] = set()
@@ -283,21 +301,7 @@ def _assign_costs(rows: list[dict[str, Any]], token_cost: dict[str, Any]) -> dic
                 used.add(match_index)
                 entry["workflow_attempts"] += 1
                 entry["workflow_tokens"] += int(group.get("total_tokens") or 0)
-                entry["api_usage_groups"].append(
-                    {
-                        "api_usage_path": group.get("api_usage_path"),
-                        "pid": group.get("pid"),
-                        "total_tokens": group.get("total_tokens"),
-                        "calls": group.get("calls"),
-                        "cost_usd": group.get("cost_usd"),
-                        "cost_usd_complete": group.get("cost_usd_complete"),
-                        "match_reason": "matched_by_task_directory",
-                    }
-                )
-                if group.get("cost_usd_complete"):
-                    entry["cost_usd"] += float(group.get("cost_usd") or 0.0)
-                else:
-                    entry["cost_usd_complete"] = False
+                _assign_api_group(entry, group, "matched_by_task_directory")
             if direct_groups:
                 continue
         for record in workflow_records:
@@ -333,21 +337,7 @@ def _assign_costs(rows: list[dict[str, Any]], token_cost: dict[str, Any]) -> dic
                 continue
             used.add(match_index)
             group = groups[match_index]
-            entry["api_usage_groups"].append(
-                {
-                    "api_usage_path": group.get("api_usage_path"),
-                    "pid": group.get("pid"),
-                    "total_tokens": group.get("total_tokens"),
-                    "calls": group.get("calls"),
-                    "cost_usd": group.get("cost_usd"),
-                    "cost_usd_complete": group.get("cost_usd_complete"),
-                    "match_reason": match_reason,
-                }
-            )
-            if group.get("cost_usd_complete"):
-                entry["cost_usd"] += float(group.get("cost_usd") or 0.0)
-            else:
-                entry["cost_usd_complete"] = False
+            _assign_api_group(entry, group, match_reason)
     for entry in assigned.values():
         matched_groups = entry["api_usage_groups"]
         complete = bool(entry["cost_usd_complete"] and matched_groups)
