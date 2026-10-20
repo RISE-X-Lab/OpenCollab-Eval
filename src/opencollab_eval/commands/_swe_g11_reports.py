@@ -262,15 +262,11 @@ def aggregate(
                 reasons.append(reason)
             item["summary_validation_reasons"] = reasons
     counts = {
-        "tasks": sum(int(item.get("tasks") or 0) for item in ordered),
-        "generation_done": sum(int(item.get("generation_done") or 0) for item in ordered),
-        "empty_patch": sum(int(item.get("empty_patch") or 0) for item in ordered),
-        "eval_done": sum(int(item.get("eval_done") or 0) for item in ordered),
-        "eval_attempts": sum(int(item.get("eval_attempts") or 0) for item in ordered),
-        "eval_retry_tasks": sum(int(item.get("eval_retry_tasks") or 0) for item in ordered),
-        "resolved": sum(int(item.get("resolved") or 0) for item in ordered),
-        "unresolved": sum(int(item.get("unresolved") or 0) for item in ordered),
-        "technical_failed": sum(int(item.get("technical_failed") or 0) for item in ordered),
+        field: sum(int(item.get(field) or 0) for item in ordered)
+        for field in (
+            "tasks", "generation_done", "empty_patch", "eval_done", "eval_attempts",
+            "eval_retry_tasks", "resolved", "unresolved", "technical_failed",
+        )
     }
     fact_validation_reasons: list[str] = []
     fact_status = ""
@@ -295,16 +291,7 @@ def aggregate(
                 if counts[parallel_field] != fact_counts.get(fact_field):
                     fact_validation_reasons.append(f"parallel_fact_count_mismatch:{parallel_field}")
             if not fact_validation_reasons:
-                counts.update(
-                    tasks=fact_counts["tasks"],
-                    eval_attempts=fact_counts["eval_attempts"],
-                    eval_retry_tasks=fact_counts["eval_retry_tasks"],
-                    empty_patch=fact_counts["empty_patch"],
-                    eval_done=fact_counts["eval_success"],
-                    resolved=fact_counts["resolved"],
-                    unresolved=fact_counts["unresolved"],
-                    technical_failed=fact_counts["technical_failed_final"],
-                )
+                counts.update({field: fact_counts[fact_field] for field, fact_field in comparisons.items()})
     result_indices = [
         item.get("index")
         for item in ordered

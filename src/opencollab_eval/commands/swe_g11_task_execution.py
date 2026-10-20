@@ -301,6 +301,26 @@ def run_one(
 ) -> dict[str, Any]:
     started = time.time()
     paths = task_paths(config, index, attempt)
+
+    def missing_report_result(returncode: int, attempts: int) -> dict[str, Any]:
+        return {
+            "index": index,
+            "returncode": returncode,
+            "elapsed_seconds": round(time.time() - started, 1),
+            "json_report": str(paths["json_report"]),
+            "markdown_report": str(paths["markdown_report"]),
+            "stdout_log": str(paths["stdout_log"]),
+            "stderr_log": str(paths["stderr_log"]),
+            "runner_status": "missing_report",
+            "completed": False,
+            "attempts": attempts,
+            **(dict.fromkeys(_config.SINGLE_TASK_COUNT_FIELDS, 0) | {"technical_failed": 1}),
+            "failure_scope": "task",
+            "failure_probe": {},
+            "base_run_dir": attempt.base_run_dir if attempt is not None else "",
+            "run_id": attempt.run_id if attempt is not None else "",
+        }
+
     if paths["json_report"].exists():
         summary = load_json(paths["json_report"])
         if _config.report_is_reusable(
@@ -329,23 +349,7 @@ def run_one(
         write_text(paths["stderr_log"], proc.stderr)
         summary = load_json(paths["json_report"])
         if not summary:
-            return {
-                "index": index,
-                "returncode": proc.returncode,
-                "elapsed_seconds": round(time.time() - started, 1),
-                "json_report": str(paths["json_report"]),
-                "markdown_report": str(paths["markdown_report"]),
-                "stdout_log": str(paths["stdout_log"]),
-                "stderr_log": str(paths["stderr_log"]),
-                "runner_status": "missing_report",
-                "completed": False,
-                "attempts": runner_attempt,
-                **(dict.fromkeys(_config.SINGLE_TASK_COUNT_FIELDS, 0) | {"technical_failed": 1}),
-                "failure_scope": "task",
-                "failure_probe": {},
-                "base_run_dir": attempt.base_run_dir if attempt is not None else "",
-                "run_id": attempt.run_id if attempt is not None else "",
-            }
+            return missing_report_result(proc.returncode, runner_attempt)
         result = task_result_from_summary(
             config,
             index,
@@ -369,23 +373,7 @@ def run_one(
             break
 
     assert proc is not None
-    return {
-        "index": index,
-        "returncode": proc.returncode,
-        "elapsed_seconds": round(time.time() - started, 1),
-        "json_report": str(paths["json_report"]),
-        "markdown_report": str(paths["markdown_report"]),
-        "stdout_log": str(paths["stdout_log"]),
-        "stderr_log": str(paths["stderr_log"]),
-        "runner_status": "missing_report",
-        "completed": False,
-        "attempts": config.runner_attempts,
-        **(dict.fromkeys(_config.SINGLE_TASK_COUNT_FIELDS, 0) | {"technical_failed": 1}),
-        "failure_scope": "task",
-        "failure_probe": {},
-        "base_run_dir": attempt.base_run_dir if attempt is not None else "",
-        "run_id": attempt.run_id if attempt is not None else "",
-    }
+    return missing_report_result(proc.returncode, config.runner_attempts)
 
 
 __all__ = ["run_one", "task_command", "task_paths", "task_result_from_summary"]
