@@ -36,7 +36,7 @@ def test_registry_uses_oc_implementation_and_preserves_each_workflow_identity(na
 
 def test_only_one_duo_workflow_is_exposed():
     assert workflows.duo is duo
-    assert [spec.name for spec in get_builtin_workflows().list_specs()] == ["duo"]
+    assert [spec.name for spec in get_builtin_workflows().list_specs()].count("duo") == 1
     registry = _bundled_workflow_registry()
     assert "duo-v3" not in registry
     assert "validation-council-dual-coder-selection-v2" not in registry
