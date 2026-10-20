@@ -232,7 +232,7 @@ class _WiringContext:
                     "rationale": "No structured pre-patch candidates.",
                 },
             )
-        if label == "pre-validation-judge":
+        if label == "pre-validation-judge" or label.startswith("post-r") and label.endswith("-validation-judge"):
             return _trim_judge(
                 _dict_or(
                     result,
@@ -243,7 +243,7 @@ class _WiringContext:
                         "validation_brief": "Judge returned no structured decision.",
                     },
                 ),
-                MAX_APPROVED_PRE_TESTS,
+                MAX_APPROVED_PRE_TESTS if label == "pre-validation-judge" else MAX_APPROVED_POST_TESTS,
             )
         if label == "baseline-triage":
             return _dict_or(
@@ -282,19 +282,6 @@ class _WiringContext:
                     "abstained": True,
                     "rationale": "No structured post-patch candidates.",
                 },
-            )
-        if label.startswith("post-r") and label.endswith("-validation-judge"):
-            return _trim_judge(
-                _dict_or(
-                    result,
-                    {
-                        "accepted": [],
-                        "rejected": [],
-                        "diagnostic": [],
-                        "validation_brief": "Judge returned no structured decision.",
-                    },
-                ),
-                MAX_APPROVED_POST_TESTS,
             )
         if label.startswith("post-validation-triage:r"):
             return _dict_or(
@@ -358,8 +345,6 @@ class _WiringContext:
             keys = {"contract-miner", "pre-validation-factory"}
         elif label == "baseline-triage":
             keys = {"pre-validation-factory", "pre-validation-judge"}
-        elif label.startswith("coder:r"):
-            keys = set(self._records)
         elif label.startswith("patch-validator:r"):
             attempt = label.rsplit(":r", 1)[-1]
             keys = {
@@ -393,8 +378,6 @@ class _WiringContext:
                 f"post-validation-factory:r{attempt}",
                 f"post-r{attempt}-validation-judge",
             }
-        elif label.startswith("final-verifier:r"):
-            keys = set(self._records)
         else:
             keys = set(self._records)
         return {key: self._records[key] for key in sorted(keys) if key in self._records}

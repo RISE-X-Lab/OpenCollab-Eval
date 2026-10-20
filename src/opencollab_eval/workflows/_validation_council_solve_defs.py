@@ -601,22 +601,6 @@ def _dump(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
-def _clip(value: Any, limit: int = EVIDENCE_TEXT_BYTES) -> str:
-    """Retain complete role text; the legacy byte limit is no longer applied."""
-    del limit
-    return "" if value is None else str(value)
-
-
-def _items(value: Any, limit: int = EVIDENCE_LIST_ITEMS) -> list[Any]:
-    del limit
-    return list(value) if isinstance(value, list) else []
-
-
-def _bounded_dump(value: Any, limit: int) -> str:
-    del limit
-    return _dump(value)
-
-
 def _complete_goal(goal: str) -> str:
     """Keep every public task field visible to every solver role."""
     return goal.strip()

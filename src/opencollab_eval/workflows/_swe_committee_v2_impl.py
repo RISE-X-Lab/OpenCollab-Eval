@@ -143,17 +143,16 @@ def _merge_risks(*risks: Any) -> dict[str, Any]:
 
     for risk in risks:
         block = _dict_or(risk, EMPTY_DIFF_RISKS)
-        if isinstance(block, dict):
-            summary.append(block.get("summary", "").strip())
-            evidence.extend(entry for entry in block.get("evidence", []) if isinstance(entry, str))
-            for item in block.get("risks", []):
-                if not isinstance(item, dict):
-                    continue
-                rid = str(item.get("id", ""))
-                if rid in seen:
-                    continue
-                seen.add(rid)
-                merged.append(item)
+        summary.append(block.get("summary", "").strip())
+        evidence.extend(entry for entry in block.get("evidence", []) if isinstance(entry, str))
+        for item in block.get("risks", []):
+            if not isinstance(item, dict):
+                continue
+            rid = str(item.get("id", ""))
+            if rid in seen:
+                continue
+            seen.add(rid)
+            merged.append(item)
 
     return {
         "risks": merged,
@@ -197,16 +196,15 @@ async def _run_contract_tribunal(
             "rationale": "No structured tribunal output.",
         },
     )
-    if not isinstance(tribunal.get("contracts"), list):
-        tribunal["contracts"] = []
-    if not isinstance(tribunal.get("strong_contract_ids"), list):
-        tribunal["strong_contract_ids"] = []
-    if not isinstance(tribunal.get("weak_contract_ids"), list):
-        tribunal["weak_contract_ids"] = []
-    if not isinstance(tribunal.get("hypothesis_contract_ids"), list):
-        tribunal["hypothesis_contract_ids"] = []
-    if not isinstance(tribunal.get("forbidden_fields"), list):
-        tribunal["forbidden_fields"] = []
+    for field in (
+        "contracts",
+        "strong_contract_ids",
+        "weak_contract_ids",
+        "hypothesis_contract_ids",
+        "forbidden_fields",
+    ):
+        if not isinstance(tribunal.get(field), list):
+            tribunal[field] = []
     return tribunal
 
 
@@ -648,6 +646,7 @@ async def swe_committee_v2(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
 
     attempts: list[dict[str, Any]] = []
     feedback = ""
+    status = "incomplete"
     for attempt in range(1, MAX_CODER_ROUNDS + 1):
         await ctx.phase(f"solve:r{attempt}")
         report = await _run_attempt(
@@ -665,17 +664,8 @@ async def swe_committee_v2(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         attempts.append(report)
 
         if report["status"] == "done":
-            return {
-                "status": "done",
-                "rounds": attempt,
-                "contracts": len(_dict_or(tribunal, {"contracts": []}).get("contracts", [])),
-                "pre_validation_accepted": _accepted_count(pre_judge),
-                "post_validation_accepted": _accepted_count(report["post_judge"]),
-                "allowed_patch_paths": report["final_verdict"].get("allowed_patch_paths", []),
-                "disallowed_patch_paths": report["final_verdict"].get("disallowed_patch_paths", []),
-                "attempts": attempts,
-                "tokens_spent": ctx.tokens_spent(),
-            }
+            status = "done"
+            break
 
         feedback = _feedback(report["final_verdict"], report.get("skeptic", {}), report.get("post_judge", {}))
         if report["status"] == "contract_rearbitrate" and attempt < MAX_CODER_ROUNDS:
@@ -703,8 +693,8 @@ async def swe_committee_v2(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
             break
 
     return {
-        "status": "incomplete",
-        "rounds": MAX_CODER_ROUNDS,
+        "status": status,
+        "rounds": len(attempts) if status == "done" else MAX_CODER_ROUNDS,
         "contracts": len(_dict_or(tribunal, {"contracts": []}).get("contracts", [])),
         "pre_validation_accepted": _accepted_count(pre_judge),
         "post_validation_accepted": _accepted_count(attempts[-1]["post_judge"]) if attempts else 0,

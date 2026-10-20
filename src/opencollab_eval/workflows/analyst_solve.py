@@ -237,23 +237,29 @@ async def analyst_solve(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     # wrap-up and FORCED_WRITE_BUDGET caps the forced write, so a verify slice
     # always survives — hence the light ``reserve=0`` gate (any budget + time).
     if _budget_ok(ctx, 0) and not skip_final_verify:
-        final_tester_tools = _tester_tools_for(static_verify)
-        final_verdict = await ctx.agent(
-            _tester_prompt(static_verify).format(
-                rules=SHARED_RULES,
-                goal=goal,
-                done=FINAL_DONE,
-                target_tests=target_tests,
-                summary="\n".join(f"- phase {i}: {r['status']}" for i, r in enumerate(phase_reports)),
-                root_cause=root_cause,
-                approach=approach,
-            ),
-            schema=VERDICT_SCHEMA,
-            label="tester:final",
-            tools=final_tester_tools,
-            budget=TESTER_BUDGET,
+        async def verify_final(label: str, summary: str) -> tuple[Any, set[str]]:
+            tools = _tester_tools_for(static_verify)
+            verdict = await ctx.agent(
+                _tester_prompt(static_verify).format(
+                    rules=SHARED_RULES,
+                    goal=goal,
+                    done=FINAL_DONE,
+                    target_tests=target_tests,
+                    summary=summary,
+                    root_cause=root_cause,
+                    approach=approach,
+                ),
+                schema=VERDICT_SCHEMA,
+                label=label,
+                tools=tools,
+                budget=TESTER_BUDGET,
+            )
+            return verdict, _verified_test_targets(tools)
+
+        final_verdict, final_executed_tests = await verify_final(
+            "tester:final",
+            "\n".join(f"- phase {i}: {r['status']}" for i, r in enumerate(phase_reports)),
         )
-        final_executed_tests = _verified_test_targets(final_tester_tools)
         if isinstance(final_verdict, dict) and final_verdict.get("verdict") == "FAIL" and _budget_ok(ctx, 0):
             await ctx.log("final verify FAILED — one repair round")
             repaired = True
@@ -275,23 +281,7 @@ async def analyst_solve(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
                 tools=_coder_tools(enforcement_strength),
                 budget=REPAIR_BUDGET,
             )
-            final_tester_tools = _tester_tools_for(static_verify)
-            final_verdict = await ctx.agent(
-                _tester_prompt(static_verify).format(
-                    rules=SHARED_RULES,
-                    goal=goal,
-                    done=FINAL_DONE,
-                    target_tests=target_tests,
-                    summary="(post-repair re-check)",
-                    root_cause=root_cause,
-                    approach=approach,
-                ),
-                schema=VERDICT_SCHEMA,
-                label="tester:final2",
-                tools=final_tester_tools,
-                budget=TESTER_BUDGET,
-            )
-            final_executed_tests = _verified_test_targets(final_tester_tools)
+            final_verdict, final_executed_tests = await verify_final("tester:final2", "(post-repair re-check)")
 
     passed_phases = sum(1 for r in phase_reports if r["status"] == "passed")
     # "verified" requires not just a PASS label but the named FAIL_TO_PASS tests
