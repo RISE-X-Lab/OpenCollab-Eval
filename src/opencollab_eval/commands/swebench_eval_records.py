@@ -17,6 +17,7 @@ import unicodedata
 from pathlib import Path, PureWindowsPath
 
 from opencollab_eval.candidate_bytes import CandidateByteLimitError, validate_candidate_record
+from opencollab_eval.commands import swebench_process as _shared_process
 from opencollab_eval.engine import swe_eval_records as swe_records
 from opencollab_eval.engine.swe_eval_record_identity import direct_payload_task_id
 from opencollab_eval.engine.swe_eval_records import (
@@ -454,19 +455,7 @@ def write_identity(
 
 
 def _pid_is_active(pid: object) -> bool:
-    try:
-        value = int(pid)
-    except (TypeError, ValueError):
-        return False
-    if value <= 0:
-        return False
-    try:
-        os.kill(value, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    return _shared_process.pid_is_active(pid)
 
 
 def _claim_path(work_dir: Path, instance_id: str) -> Path:

@@ -14,6 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from opencollab_eval.commands import swebench_process as _shared_process
 from opencollab_eval.commands.swe_v1_prolite_common import (
     LOCAL_PROCESS_CLEANUP_OUTER_SLACK_SECONDS,
     LOCAL_PROCESS_KILL_REAP_TIMEOUT_SECONDS,
@@ -71,18 +72,7 @@ def _wait_for_owned_local_cleanup(
     *,
     timeout: float,
 ) -> tuple[bool, BaseException | None]:
-    deadline = time.monotonic() + max(0.0, timeout)
-    interruption: BaseException | None = None
-    while not done.is_set():
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        try:
-            done.wait(min(0.05, remaining))
-        except (KeyboardInterrupt, SystemExit) as exc:
-            if interruption is None:
-                interruption = exc
-    return done.is_set(), interruption
+    return _shared_process.wait_for_owned_cleanup(done, timeout=timeout)
 
 
 def _block_local_spawn_signals() -> dict[str, object]:

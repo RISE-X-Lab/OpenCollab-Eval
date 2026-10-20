@@ -13,6 +13,8 @@ import threading
 import time
 from pathlib import Path
 
+from opencollab_eval.commands import swebench_process as _shared_process
+
 _PS_EXECUTABLE = shutil.which("ps") or "ps"
 
 
@@ -266,18 +268,7 @@ def _wait_for_owned_cleanup(
     timeout: float,
 ) -> tuple[bool, BaseException | None]:
     """Wait for cleanup while deferring repeated caller interrupts."""
-    deadline = time.monotonic() + max(0.0, timeout)
-    interruption: BaseException | None = None
-    while not done.is_set():
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        try:
-            done.wait(min(0.05, remaining))
-        except (KeyboardInterrupt, SystemExit) as exc:
-            if interruption is None:
-                interruption = exc
-    return done.is_set(), interruption
+    return _shared_process.wait_for_owned_cleanup(done, timeout=timeout)
 
 
 def _consume_process_exit(process: subprocess.Popen) -> None:

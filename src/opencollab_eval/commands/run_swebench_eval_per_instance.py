@@ -350,14 +350,17 @@ def run_one(
         _unlink_durable(official_report)
         started_at_ns = time.time_ns()
         prior_report_fingerprint = ""
-        write_identity(
-            attempt_path,
-            identity,
-            status="launching",
-            pid=os.getpid(),
-            started_at_ns=started_at_ns,
-            prior_report_fingerprint=prior_report_fingerprint,
-        )
+
+        def write_attempt_identity(*, status: str, **fields) -> dict:
+            return write_identity(
+                attempt_path,
+                identity,
+                status=status,
+                **fields,
+                started_at_ns=started_at_ns,
+                prior_report_fingerprint=prior_report_fingerprint,
+            )
+        write_attempt_identity(status="launching", pid=os.getpid())
         with _open_append_text(log_path) as log_file:
             log_file.write("\n\n$ " + " ".join(cmd) + "\n")
             log_file.write(f"# outer_timeout={outer_timeout}s\n")
@@ -385,25 +388,19 @@ def run_one(
                     )
             except EvaluatorSpawnTimeout as exc:
                 log_file.write(f"evaluator spawn timed out: {exc}\n")
-                write_identity(
-                    attempt_path,
-                    identity,
-                    status="failed_to_start",
-                    started_at_ns=started_at_ns,
-                    prior_report_fingerprint=prior_report_fingerprint,
-                )
+                write_attempt_identity(status="failed_to_start")
                 return iid, PROCESS_CLEANUP_FAILED_EXIT_CODE
             except OSError as exc:
                 log_file.write(f"failed to start evaluator: {exc}\n")
-                write_identity(
-                    attempt_path,
-                    identity,
-                    status="failed_to_start",
-                    started_at_ns=started_at_ns,
-                    prior_report_fingerprint=prior_report_fingerprint,
-                )
+                write_attempt_identity(status="failed_to_start")
                 return iid, 127
             evaluator_start_identity = ""
+
+            def terminate_evaluator() -> bool:
+                cleanup_quiesced = terminate_process_group(process, log_file)
+                if not cleanup_quiesced:
+                    retain_residual_claim(process.pid, evaluator_start_identity)
+                return cleanup_quiesced
             try:
                 if active_processes is not None:
                     active_processes.add(process)
@@ -420,12 +417,7 @@ def run_one(
                     log_file.write(
                         "failed to persist evaluator process identity in claim\n"
                     )
-                    cleanup_quiesced = terminate_process_group(process, log_file)
-                    if not cleanup_quiesced:
-                        retain_residual_claim(
-                            process.pid,
-                            evaluator_start_identity,
-                        )
+                    cleanup_quiesced = terminate_evaluator()
                     return iid, (
                         4
                         if cleanup_quiesced
@@ -443,14 +435,7 @@ def run_one(
                             evaluator_start_identity,
                         )
                         try:
-                            write_identity(
-                                attempt_path,
-                                identity,
-                                status="cleanup_failed",
-                                pid=process.pid,
-                                started_at_ns=started_at_ns,
-                                prior_report_fingerprint=prior_report_fingerprint,
-                            )
+                            write_attempt_identity(status="cleanup_failed", pid=process.pid)
                         except Exception:
                             pass
                     return iid, (
@@ -459,30 +444,12 @@ def run_one(
                         else PROCESS_CLEANUP_FAILED_EXIT_CODE
                     )
                 try:
-                    write_identity(
-                        attempt_path,
-                        identity,
-                        status="started",
-                        pid=process.pid,
-                        started_at_ns=started_at_ns,
-                        prior_report_fingerprint=prior_report_fingerprint,
-                    )
+                    write_attempt_identity(status="started", pid=process.pid)
                 except Exception as exc:
                     log_file.write(f"failed to persist started evaluator identity: {exc}\n")
-                    cleanup_quiesced = terminate_process_group(process, log_file)
-                    if not cleanup_quiesced:
-                        retain_residual_claim(
-                            process.pid,
-                            evaluator_start_identity,
-                        )
+                    cleanup_quiesced = terminate_evaluator()
                     try:
-                        write_identity(
-                            attempt_path,
-                            identity,
-                            status="identity_persist_failed",
-                            started_at_ns=started_at_ns,
-                            prior_report_fingerprint=prior_report_fingerprint,
-                        )
+                        write_attempt_identity(status="identity_persist_failed")
                     except Exception:
                         pass
                     return iid, (
@@ -504,12 +471,7 @@ def run_one(
                     log_file.write(
                         f"\nouter timeout after {outer_timeout}s; terminating process group\n"
                     )
-                    cleanup_quiesced = terminate_process_group(process, log_file)
-                    if not cleanup_quiesced:
-                        retain_residual_claim(
-                            process.pid,
-                            evaluator_start_identity,
-                        )
+                    cleanup_quiesced = terminate_evaluator()
                     returncode = (
                         124
                         if cleanup_quiesced
@@ -519,12 +481,7 @@ def run_one(
                     log_file.write(
                         f"evaluator wait failed: {type(exc).__name__}: {exc}\n"
                     )
-                    cleanup_quiesced = terminate_process_group(process, log_file)
-                    if not cleanup_quiesced:
-                        retain_residual_claim(
-                            process.pid,
-                            evaluator_start_identity,
-                        )
+                    cleanup_quiesced = terminate_evaluator()
                     returncode = (
                         4 if cleanup_quiesced else PROCESS_CLEANUP_FAILED_EXIT_CODE
                     )
@@ -554,14 +511,7 @@ def run_one(
                         evaluator_start_identity,
                     )
                     try:
-                        write_identity(
-                            attempt_path,
-                            identity,
-                            status="cleanup_failed",
-                            pid=process.pid,
-                            started_at_ns=started_at_ns,
-                            prior_report_fingerprint=prior_report_fingerprint,
-                        )
+                        write_attempt_identity(status="cleanup_failed", pid=process.pid)
                     except Exception:
                         pass
                 raise
@@ -579,14 +529,7 @@ def run_one(
             final_status = "completed" if returncode == 0 else "failed"
             final_pid = 0
         try:
-            write_identity(
-                attempt_path,
-                identity,
-                status=final_status,
-                pid=final_pid,
-                started_at_ns=started_at_ns,
-                prior_report_fingerprint=prior_report_fingerprint,
-            )
+            write_attempt_identity(status=final_status, pid=final_pid)
         except Exception as exc:
             _unlink_durable(attempt_path)
             with _open_append_text(log_path) as log_file:
