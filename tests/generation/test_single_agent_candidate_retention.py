@@ -14,7 +14,7 @@ import pytest
 from opencollab_eval.generation import gen_prediction as gp
 from opencollab_eval.generation import gen_prediction_docker as owners
 from opencollab_eval.generation.gen_prediction_patch import TrustedPatchBaseline
-from tests.generation.test_gen_prediction_single_agent_recovery import _trusted_extraction
+from tests.support.gen_prediction_single_agent_support import _trusted_extraction
 
 
 @pytest.fixture

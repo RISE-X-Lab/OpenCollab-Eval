@@ -23,7 +23,7 @@ def _git(repo, *args: str) -> None:
     )
 
 
-def test_candidate_runtime_hydrates_ignored_dependency_root(tmp_path) -> None:
+def _ignored_dependency_source(tmp_path):
     source = tmp_path / "source"
     source.mkdir()
     _git(source, "init")
@@ -43,6 +43,11 @@ def test_candidate_runtime_hydrates_ignored_dependency_root(tmp_path) -> None:
     dependency = source / "node_modules" / "example"
     dependency.mkdir(parents=True)
     (dependency / "index.js").write_text("module.exports = 42;\n", encoding="utf-8")
+    return source
+
+
+def test_candidate_runtime_hydrates_ignored_dependency_root(tmp_path) -> None:
+    source = _ignored_dependency_source(tmp_path)
     executable = source / "node_modules" / ".bin" / "review-tool"
     executable.parent.mkdir(parents=True)
     executable.write_text("#!/bin/sh\nprintf 'dependency-ready\\n'\n", encoding="utf-8")
@@ -69,17 +74,7 @@ def test_candidate_runtime_hydrates_ignored_dependency_root(tmp_path) -> None:
 
 
 def test_candidate_runtime_copies_ignored_root_across_mounts(tmp_path, monkeypatch) -> None:
-    source = tmp_path / "source"
-    source.mkdir()
-    _git(source, "init")
-    (source / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
-    (source / "tracked.txt").write_text("tracked\n", encoding="utf-8")
-    _git(source, "add", ".gitignore", "tracked.txt")
-    _git(source, "-c", "user.name=OpenCollab Test", "-c",
-         "user.email=test@opencollab.invalid", "commit", "-m", "baseline")
-    dependency = source / "node_modules" / "example"
-    dependency.mkdir(parents=True)
-    (dependency / "index.js").write_text("module.exports = 42;\n", encoding="utf-8")
+    source = _ignored_dependency_source(tmp_path)
     store = tmp_path / "candidate-runtime"
     candidate_runtime.prepare(source, ["node_modules"], store, candidate_count=1)
     candidate = tmp_path / "candidate"

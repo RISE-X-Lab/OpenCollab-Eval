@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import sys
 from pathlib import Path
@@ -11,9 +10,12 @@ import pytest
 from opencollab_eval.engine.swe_eval_decision import TaskSnapshot, TaskState, decide_task
 from opencollab_eval.generation import gen_prediction_openhands as gpo
 from opencollab_eval.generation import openhands_events
-from opencollab_eval.generation.gen_prediction_patch import TrustedPatchExtraction
 from opencollab_eval.generation.gen_prediction_snapshot import SolverGitSnapshot
-from tests.support.gen_prediction_openhands_support import install_fake_openhands_process
+from tests.support.gen_prediction_openhands_support import (
+    install_fake_openhands_process,
+    prepare_openhands_main,
+    trusted_openhands_extraction,
+)
 from tests.support.gen_prediction_openhands_support import (
     isolated_external_runtime_dependencies as _isolated_external_runtime_dependencies,  # noqa: F401
 )
@@ -33,30 +35,9 @@ def _install_main_doubles(
     *,
     patch: str,
 ) -> tuple[Path, Path]:
-    instance_file = tmp_path / "instance.json"
+    instance_file = prepare_openhands_main(tmp_path, monkeypatch)
     output = tmp_path / "predictions.jsonl"
     metrics = tmp_path / "metrics.jsonl"
-    instance_file.write_text(
-        json.dumps(
-            {
-                "instance_id": "acme__widget-1",
-                "base_commit": "b" * 40,
-                "repo": "acme/widget",
-                "problem_statement": "Fix the widget.",
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        gpo.gp,
-        "start_container_with_marker",
-        lambda image, name, run_dir: "container-123",
-    )
-    monkeypatch.setattr(
-        gpo.container_guard,
-        "container_image_id",
-        lambda container_id: "sha256:" + "8" * 64,
-    )
     monkeypatch.setattr(gpo, "anonymous_solver_task_id", lambda: "solver-" + "a" * 32)
     snapshot = SolverGitSnapshot(
         anonymous_head="c" * 40,
@@ -73,23 +54,7 @@ def _install_main_doubles(
         "prepare_trusted_patch_baseline",
         lambda cid, prepared_snapshot: baseline,
     )
-    proof = TrustedPatchExtraction(
-        fixed_anonymous_base=snapshot.anonymous_head,
-        base_tree=snapshot.base_tree,
-        baseline_archive_sha256="e" * 64,
-        baseline_archive_bytes=10,
-        baseline_archive_entries=1,
-        baseline_extracted_bytes=1,
-        workspace_archive_sha256="f" * 64,
-        workspace_archive_bytes=10,
-        workspace_archive_entries=1,
-        workspace_extracted_bytes=1,
-        patch_sha256=hashlib.sha256(patch.encode()).hexdigest(),
-        patch_bytes=len(patch.encode()),
-        candidate_tree="a" * 40,
-        changed_paths=(),
-        path_modes=(),
-    ).as_dict()
+    proof = trusted_openhands_extraction(snapshot, patch)
     monkeypatch.setattr(
         gpo,
         "extract_patch_guarded",
