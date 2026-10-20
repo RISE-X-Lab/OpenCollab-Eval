@@ -293,9 +293,9 @@ def test_remote_runner_rebuilds_the_workspace_from_the_dataset_base_commit():
     assert 'gen_prediction_snapshot_container.py --public-preparation "$repo_root"' in REMOTE_IMPLEMENTATION_SOURCE
     assert 'gen_prediction_snapshot_container.py --prepare-public-input "$repo_root"' in REMOTE_IMPLEMENTATION_SOURCE
     assert 'git rev-list --all --count' in REMOTE_IMPLEMENTATION_SOURCE
-    assert '"base_commit_status": base_commit_status' in REMOTE_IMPLEMENTATION_SOURCE
+    assert '"base_commit_status": artifacts["base_commit_status"]' in REMOTE_IMPLEMENTATION_SOURCE
     assert 'actual_after_before="$(git rev-parse HEAD' in REMOTE_IMPLEMENTATION_SOURCE
-    assert '"post_before_base_status": post_before_base_status' in REMOTE_IMPLEMENTATION_SOURCE
+    assert '"post_before_base_status": artifacts["post_before_base_status"]' in REMOTE_IMPLEMENTATION_SOURCE
     assert "git status --porcelain --untracked-files=no --ignore-submodules=all" in REMOTE_IMPLEMENTATION_SOURCE
     before = REMOTE_IMPLEMENTATION_SOURCE.index("python3 /eval_input/public_preparation_runner.py")
     initial_snapshot = REMOTE_IMPLEMENTATION_SOURCE.index(
