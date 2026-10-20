@@ -75,22 +75,15 @@ def merge_attempts(batches: list[tuple[str, list[RunRow]]]) -> list[RunRow]:
     per instance and a token total over two attempts at one instance is a
     number about the endpoint, not about the arm.
     """
-    order: list[str] = []
     tries: dict[str, list[tuple[str, RunRow]]] = {}
     for name, rows in batches:
         for row in rows:
-            if row.instance_id not in tries:
-                tries[row.instance_id] = []
-                order.append(row.instance_id)
-            tries[row.instance_id].append((name, row))
+            tries.setdefault(row.instance_id, []).append((name, row))
     merged: list[RunRow] = []
-    for instance_id in order:
-        made = tries[instance_id]
-        chosen = len(made) - 1
-        for index in range(len(made) - 1, -1, -1):
-            if made[index][1].valid:
-                chosen = index
-                break
+    for made in tries.values():
+        chosen = next(
+            (index for index in range(len(made) - 1, -1, -1) if made[index][1].valid), len(made) - 1
+        )
         name, row = made[chosen]
         row.attempt = chosen + 1
         row.attempts = len(made)
