@@ -3,31 +3,14 @@
 from __future__ import annotations
 
 import json
-import shlex
 from pathlib import Path, PurePosixPath
 
 try:
+    from .candidate_environment import image_activation_prefix as image_activation_prefix
     from .candidate_runtime import command_prefix
 except ImportError:
+    from candidate_environment import image_activation_prefix as image_activation_prefix
     from candidate_runtime import command_prefix
-
-
-def image_activation_prefix(container_id, activation=""):
-    """Restore the image PATH after the environment's login shell initialization."""
-    from .gen_prediction_docker import (
-        _check_docker,
-        _docker,
-        prepare_testbed_environment,
-    )
-
-    prepare_testbed_environment(container_id)
-    result = _docker("inspect", "--format", "{{json .Config.Env}}", container_id)
-    _check_docker(result, "read image environment")
-    entries = json.loads(result.stdout) or []
-    paths = [value[5:] for value in entries if isinstance(value, str) and value.startswith("PATH=")]
-    if not paths:
-        return activation
-    return "export PATH=" + shlex.quote(paths[-1]) + "\n" + activation
 
 
 def image_helper_python(container_id):
