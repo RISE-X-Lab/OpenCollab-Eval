@@ -24,10 +24,7 @@ MODEL_ARGUMENTS = [
 ]
 
 
-
-
-def test_base_team_entry_delegates_to_parallel_runner(monkeypatch: Any) -> None:
-    module = _load_entry_module()
+def _capture_runner_arguments(monkeypatch: Any, module: Any) -> dict[str, Any]:
     captured: dict[str, Any] = {}
 
     class FakeRunner:
@@ -37,6 +34,12 @@ def test_base_team_entry_delegates_to_parallel_runner(monkeypatch: Any) -> None:
             return 0
 
     monkeypatch.setattr(module, "_load_module", lambda name: FakeRunner)
+    return captured
+
+
+def test_base_team_entry_delegates_to_parallel_runner(monkeypatch: Any) -> None:
+    module = _load_entry_module()
+    captured = _capture_runner_arguments(monkeypatch, module)
 
     rc = module.main(
         [
@@ -66,15 +69,7 @@ def test_base_team_entry_delegates_to_parallel_runner(monkeypatch: Any) -> None:
 
 def test_team_pro_entry_uses_dynamic_workflow_defaults(monkeypatch: Any) -> None:
     module = _load_entry_module()
-    captured: dict[str, Any] = {}
-
-    class FakeRunner:
-        @staticmethod
-        def main() -> int:
-            captured["argv"] = list(sys.argv)
-            return 0
-
-    monkeypatch.setattr(module, "_load_module", lambda name: FakeRunner)
+    captured = _capture_runner_arguments(monkeypatch, module)
 
     rc = module.main(
         [
@@ -106,15 +101,7 @@ def test_team_pro_entry_uses_dynamic_workflow_defaults(monkeypatch: Any) -> None
 
 def test_team_pro_entry_accepts_explicit_runtime_settings(monkeypatch: Any) -> None:
     module = _load_entry_module()
-    captured: dict[str, Any] = {}
-
-    class FakeRunner:
-        @staticmethod
-        def main() -> int:
-            captured["argv"] = list(sys.argv)
-            return 0
-
-    monkeypatch.setattr(module, "_load_module", lambda name: FakeRunner)
+    captured = _capture_runner_arguments(monkeypatch, module)
     assert module.main(
         [
             "--indices",
@@ -179,15 +166,7 @@ def test_unified_entry_rejects_historical_eval_only_maintenance_options() -> Non
 
 def test_openhands_entry_delegates_external_workflow(monkeypatch: Any) -> None:
     module = _load_entry_module()
-    captured: dict[str, Any] = {}
-
-    class FakeRunner:
-        @staticmethod
-        def main() -> int:
-            captured["argv"] = list(sys.argv)
-            return 0
-
-    monkeypatch.setattr(module, "_load_module", lambda name: FakeRunner)
+    captured = _capture_runner_arguments(monkeypatch, module)
 
     rc = module.main(
         [
@@ -217,15 +196,7 @@ def test_openhands_entry_delegates_external_workflow(monkeypatch: Any) -> None:
 
 def test_openhands_entry_has_one_command_defaults(monkeypatch: Any) -> None:
     module = _load_entry_module()
-    captured: dict[str, Any] = {}
-
-    class FakeRunner:
-        @staticmethod
-        def main() -> int:
-            captured["argv"] = list(sys.argv)
-            return 0
-
-    monkeypatch.setattr(module, "_load_module", lambda name: FakeRunner)
+    captured = _capture_runner_arguments(monkeypatch, module)
     assert module.main(
         [
             "--indices",
@@ -253,13 +224,7 @@ def test_claude_code_entry_has_single_attempt_external_solver_defaults(
 ) -> None:
     module = _load_entry_module()
     monkeypatch.setenv("OPENCOLLAB_SWE_LLM_PROVIDER", "openai")
-    captured: dict[str, Any] = {}
-    class FakeRunner:
-        @staticmethod
-        def main() -> int:
-            captured["argv"] = list(sys.argv)
-            return 0
-    monkeypatch.setattr(module, "_load_module", lambda name: FakeRunner)
+    captured = _capture_runner_arguments(monkeypatch, module)
     monkeypatch.setattr(module, "_require_claude_code_configuration", lambda **kwargs: None)
     assert module.main(
         [
@@ -376,17 +341,9 @@ def test_solver_entry_fails_fast_without_model_configuration(monkeypatch: Any) -
 
 def test_solver_entry_reads_model_configuration_from_environment(monkeypatch: Any) -> None:
     module = _load_entry_module()
-    captured: dict[str, Any] = {}
-
-    class FakeRunner:
-        @staticmethod
-        def main() -> int:
-            captured["argv"] = list(sys.argv)
-            return 0
-
     monkeypatch.setenv("OPENCOLLAB_SWE_MODEL_NAME", "environment-run")
     monkeypatch.setenv("OPENCOLLAB_SWE_LLM_MODEL", "provider/environment-model")
-    monkeypatch.setattr(module, "_load_module", lambda name: FakeRunner)
+    captured = _capture_runner_arguments(monkeypatch, module)
 
     assert module.main(["--indices", "1", "--solver", "g11", "--dry-run"]) == 0
     argv = captured["argv"]

@@ -28,9 +28,8 @@ def load_parallel_retry_module():
     return importlib.reload(module)
 
 
-def test_parallel_runner_does_not_reuse_technical_failure_reports():
-    module = load_parallel_retry_module()
-    config = SimpleNamespace(
+def _team_pro_config():
+    return SimpleNamespace(
         workflow="team-pro",
         model_name="teampro-label",
         llm_model="glm-5.2",
@@ -46,6 +45,11 @@ def test_parallel_runner_does_not_reuse_technical_failure_reports():
         remote_runtime_repo="/remote/runtime",
         remote_base="/remote/run",
     )
+
+
+def test_parallel_runner_does_not_reuse_technical_failure_reports():
+    module = load_parallel_retry_module()
+    config = _team_pro_config()
     summary = {
         "status": "done_with_technical_failures",
         "counts": {
@@ -141,22 +145,7 @@ def test_parallel_runner_never_upgrades_a_legacy_empty_patch_report():
 
 def test_parallel_runner_rejects_legacy_eval_reports_without_integrity_proof():
     module = load_parallel_retry_module()
-    config = SimpleNamespace(
-        workflow="team-pro",
-        model_name="teampro-label",
-        llm_model="glm-5.2",
-        context_window=400_000,
-        temperature=1.0,
-        top_p=1.0,
-        max_output_tokens=32_768,
-        budget=4_000_000,
-        max_steps=60,
-        max_task_starts=3,
-        max_eval_attempts=2,
-        workflow_env=(),
-        remote_runtime_repo="/remote/runtime",
-        remote_base="/remote/run",
-    )
+    config = _team_pro_config()
     summary = {
         "status": "done",
         "workflow": "team-pro",
@@ -200,22 +189,7 @@ def test_parallel_runner_rejects_legacy_eval_reports_without_integrity_proof():
 
 def test_parallel_runner_rejects_empty_or_wrong_task_rows():
     module = load_parallel_retry_module()
-    config = SimpleNamespace(
-        workflow="team-pro",
-        model_name="teampro-label",
-        llm_model="glm-5.2",
-        context_window=400_000,
-        temperature=1.0,
-        top_p=1.0,
-        max_output_tokens=32_768,
-        budget=4_000_000,
-        max_steps=60,
-        max_task_starts=3,
-        max_eval_attempts=2,
-        workflow_env=(),
-        remote_runtime_repo="/remote/runtime",
-        remote_base="/remote/run",
-    )
+    config = _team_pro_config()
     identity = {
         "status": "done",
         "workflow": "team-pro",

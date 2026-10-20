@@ -528,11 +528,6 @@ def test_remote_runner_embedded_code_compiles():
 
 def test_runtime_sync_includes_team_pro_workflow():
     assert "src/opencollab_eval" in runner.SYNC_DIRS
-    assert "src/opencollab_eval" in runner.SYNC_DIRS
-    assert "src/opencollab_eval" in runner.SYNC_DIRS
-    assert "src/opencollab_eval" in runner.SYNC_DIRS
-    assert "src/opencollab_eval" in runner.SYNC_DIRS
-    assert "src/opencollab_eval" in runner.SYNC_DIRS
 
 
 def test_generation_shell_forwards_typed_llm_overrides():
