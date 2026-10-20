@@ -168,8 +168,7 @@ def commit_exists(repo: str | Path, sha: str) -> bool:
     return proc.returncode == 0
 
 
-def blob_text(repo: str | Path, rev: str, path: str) -> str:
-    """``path`` at commit ``rev`` in the local checkout, without checking it out."""
+def _blob_bytes(repo: str | Path, rev: str, path: str) -> bytes:
     proc = subprocess.run(
         ["git", "-C", str(repo), "show", f"{rev}:{path}"],
         capture_output=True,
@@ -179,21 +178,17 @@ def blob_text(repo: str | Path, rev: str, path: str) -> str:
         raise SpecError(
             f"{path} does not exist at {rev[:12]} in {repo}: {proc.stderr.decode(errors='replace').strip()}"
         )
-    return proc.stdout.decode("utf-8")
+    return proc.stdout
+
+
+def blob_text(repo: str | Path, rev: str, path: str) -> str:
+    """``path`` at commit ``rev`` in the local checkout, without checking it out."""
+    return _blob_bytes(repo, rev, path).decode("utf-8")
 
 
 def blob_sha256(repo: str | Path, rev: str, path: str) -> str:
     """sha256 of ``path`` at commit ``rev`` in the local checkout, without checking it out."""
-    proc = subprocess.run(
-        ["git", "-C", str(repo), "show", f"{rev}:{path}"],
-        capture_output=True,
-        check=False,
-    )
-    if proc.returncode != 0:
-        raise SpecError(
-            f"{path} does not exist at {rev[:12]} in {repo}: {proc.stderr.decode(errors='replace').strip()}"
-        )
-    return hashlib.sha256(proc.stdout).hexdigest()
+    return hashlib.sha256(_blob_bytes(repo, rev, path)).hexdigest()
 
 
 def original_slice(spec: BatchSpec, record_spec: dict[str, Any]) -> BatchSpec:
