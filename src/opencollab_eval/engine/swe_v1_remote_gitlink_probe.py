@@ -241,11 +241,7 @@ def probe_gitlink_deletions(
 
     container_name = "opencollab-prolite-gitlink-probe-" + uuid.uuid4().hex[:20]
     cidfile = base_run_dir / ("." + container_name + ".cid")
-    probe_argv = [
-        "docker",
-        "run",
-        "--rm",
-        "--read-only",
+    probe_arguments = [
         "--network",
         "none",
         "--entrypoint",
@@ -258,6 +254,7 @@ def probe_gitlink_deletions(
         "--",
         *paths,
     ]
+    probe_argv = ["docker", "run", "--rm", "--read-only", *probe_arguments]
     timeout_prefix = ["timeout", "120"] if shutil.which("timeout") else []
     command = [
         *timeout_prefix,
@@ -273,17 +270,7 @@ def probe_gitlink_deletions(
         f"{PREFLIGHT_OWNER_LABEL}={owner_nonce}",
         "--label",
         f"{PREFLIGHT_SCHEMA_LABEL}={PREFLIGHT_SCHEMA}",
-        "--network",
-        "none",
-        "--entrypoint",
-        "/bin/bash",
-        binding["image_id"],
-        "-c",
-        _PROBE_SCRIPT,
-        "opencollab-gitlink-probe",
-        binding["base_commit"],
-        "--",
-        *paths,
+        *probe_arguments,
     ]
     evidence["probe_argv"] = probe_argv
     evidence["probe_script_sha256"] = hashlib.sha256(_PROBE_SCRIPT.encode("utf-8")).hexdigest()
