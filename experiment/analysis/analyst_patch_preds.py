@@ -103,10 +103,17 @@ def build(batch_dir: Path, arm: str) -> tuple[list[dict], dict]:
     refused: list[dict] = []
     identical = 0
     model = ""
+    predictions_by_task: dict[str, list[dict]] = {}
+    legacy_by_task: dict[str, list[dict]] = {}
+    for prediction in predictions:
+        predictions_by_task.setdefault(row_task_id(prediction), []).append(prediction)
+    for metric in metrics:
+        if not row_record_id(metric) and not row_explicit_patch_sha(metric):
+            legacy_by_task.setdefault(row_task_id(metric), []).append(metric)
     selected = merge_attempts([(batch_dir.name, run_rows(batch_dir, arm))])
     for chosen in selected:
         instance = chosen.instance_id
-        candidates = [prediction for prediction in predictions if row_task_id(prediction) == instance]
+        candidates = predictions_by_task.get(instance, [])
         if chosen.record_id:
             candidates = [prediction for prediction in candidates if row_record_id(prediction) == chosen.record_id]
         elif chosen.patch_sha256:
@@ -117,10 +124,7 @@ def build(batch_dir: Path, arm: str) -> tuple[list[dict], dict]:
         pair = latest_paired_rows(candidates, metrics, instance)
         # A single historical row without attempt identity still has an unambiguous
         # comparison. Multiple such rows cannot identify the adopted attempt.
-        legacy = [
-            metric for metric in metrics
-            if row_task_id(metric) == instance and not row_record_id(metric) and not row_explicit_patch_sha(metric)
-        ]
+        legacy = legacy_by_task.get(instance, [])
         run = pair.metric
         if (
             not chosen.record_id and not chosen.patch_sha256 and len(candidates) == 1 and len(legacy) == 1

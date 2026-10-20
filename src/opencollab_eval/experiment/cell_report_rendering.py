@@ -277,10 +277,10 @@ def render(rows: list[RunRow], summary: dict[str, Any], missing: list[str]) -> s
 
 
 def _run_document(row: RunRow) -> dict[str, Any]:
-    return {
-        **{k: v for k, v in asdict(row).items() if k != "seats"},
-        "seats": {k: asdict(s) for k, s in row.seats.items()},
-    }
+    document = asdict(row)
+    seats = document.pop("seats")
+    document["seats"] = seats
+    return document
 
 
 def _token_lines(summary: dict[str, Any], lines: list[str]) -> None:

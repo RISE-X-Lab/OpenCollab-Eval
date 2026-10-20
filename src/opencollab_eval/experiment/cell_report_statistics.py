@@ -101,7 +101,8 @@ def order_rows(rows: list[RunRow], order_csv: str | Path | None) -> tuple[list[R
         wanted = [r["instance_id"] for r in csv.DictReader(handle)]
     index = {r.instance_id: r for r in rows}
     ordered = [index[i] for i in wanted if i in index]
-    extra = [r for r in rows if r.instance_id not in set(wanted)]
+    wanted_ids = set(wanted)
+    extra = [r for r in rows if r.instance_id not in wanted_ids]
     return ordered + extra, [i for i in wanted if i not in index]
 
 
@@ -138,6 +139,14 @@ def summarize(
     statuses: dict[str, int] = {}
     for r in rows:
         statuses[r.status] = statuses.get(r.status, 0) + 1
+    edges_walked = sum(r.edges_walked or 0 for r in rows if r.edges_declared)
+    edges_declared = sum(r.edges_declared or 0 for r in rows)
+    retried = [r.instance_id for r in rows if r.attempts > 1]
+    retry_succeeded = [r.instance_id for r in rows if r.attempts > 1 and r.attempt > 1 and r.valid]
+    infra_failed = [r.instance_id for r in rows if not r.valid]
+    replaced = [r.replacement_for for r in rows if r.replacement_for]
+    missing_seats = [r.instance_id for r in rows if not r.seat_snapshot_found]
+    timeout_censored = [r.instance_id for r in rows if r.timeout_censored]
     return {
         "runs": len(rows),
         "valid": len(valid),
@@ -158,8 +167,8 @@ def summarize(
         # What the arm that scripts its topology reports instead: not a rate at
         # which an agent chose, a count of how much of a fixed topology carried
         # anything.
-        "edges_walked": sum(r.edges_walked or 0 for r in rows if r.edges_declared),
-        "edges_declared": sum(r.edges_declared or 0 for r in rows),
+        "edges_walked": edges_walked,
+        "edges_declared": edges_declared,
         "message_agent_attempts": sum(s.msg_agent for r in rows for s in r.seats.values()),
         "message_agent_sent": sum(s.msg_agent_sent for r in rows for s in r.seats.values()),
         # Two keys, not one: a cell where no run probed the tree and a cell
@@ -167,11 +176,7 @@ def summarize(
         # both give a count of zero, and they are different findings.
         "analyst_wrote_source": sum(1 for r in rows if r.analyst_wrote_source),
         "analyst_wrote_source_probed": sum(1 for r in rows if r.analyst_wrote_source is not None),
-        "edges_walked_rate": (
-            sum(r.edges_walked or 0 for r in rows if r.edges_declared) / sum(r.edges_declared or 0 for r in rows)
-            if sum(r.edges_declared or 0 for r in rows)
-            else None
-        ),
+        "edges_walked_rate": edges_walked / edges_declared if edges_declared else None,
         # Averaging hides the shape: one run walking none of its six and six
         # runs each missing one are the same rate.
         # Whether an edge set was declared at all. ``edges_declared == 0`` is
@@ -187,23 +192,23 @@ def summarize(
         # The retry ledger. Present on every cell, including the ones nothing
         # was retried in, so "no instance needed a second attempt" and "this
         # report does not say" are not the same blank.
-        "retried": [r.instance_id for r in rows if r.attempts > 1],
-        "retried_count": sum(1 for r in rows if r.attempts > 1),
+        "retried": retried,
+        "retried_count": len(retried),
         # A second attempt that ran where the first did not.
-        "retry_succeeded": [r.instance_id for r in rows if r.attempts > 1 and r.attempt > 1 and r.valid],
-        "retry_succeeded_count": sum(1 for r in rows if r.attempts > 1 and r.attempt > 1 and r.valid),
+        "retry_succeeded": retry_succeeded,
+        "retry_succeeded_count": len(retry_succeeded),
         # No attempt at this instance ever reached the model. Identical to
         # ``invalid`` on a cell with no retries, and deliberately so: it is the
         # same fact, counted after every attempt has been made.
-        "infra_failed": [r.instance_id for r in rows if not r.valid],
-        "infra_failed_count": sum(1 for r in rows if not r.valid),
+        "infra_failed": infra_failed,
+        "infra_failed_count": len(infra_failed),
         "attempt_sources": sorted({r.source_batch for r in rows if r.source_batch}),
         # The replacement ledger, and the reason it is a list of the instances
         # that *left*: those are the ones no number here counts any more. Their
         # run rows are in the document's ``excluded``, not deleted -- a paid run
         # that no denominator holds still has to be findable.
-        "replaced": [r.replacement_for for r in rows if r.replacement_for],
-        "replaced_count": sum(1 for r in rows if r.replacement_for),
+        "replaced": replaced,
+        "replaced_count": len(replaced),
         "replaced_by": [[r.replacement_for, r.instance_id, r.source_batch] for r in rows if r.replacement_for],
         # The mirror of the ledger above, and the reason both are written: a
         # withdrawn replacement is not a replacement that never happened. The
@@ -239,8 +244,8 @@ def summarize(
         # Every count below that comes off a seat has this as its denominator,
         # so a cell where it is short of ``runs`` has counts that are floors.
         "seat_snapshot_found": sum(1 for r in rows if r.seat_snapshot_found),
-        "seat_snapshot_missing": [r.instance_id for r in rows if not r.seat_snapshot_found],
-        "seat_snapshot_missing_count": sum(1 for r in rows if not r.seat_snapshot_found),
+        "seat_snapshot_missing": missing_seats,
+        "seat_snapshot_missing_count": len(missing_seats),
         # The runs where summing the seat files and the workflow's own
         # ``seat_spend`` ledger do not agree. Empty is the expected reading;
         # a non-empty list means one of the two is wrong and neither column
@@ -248,8 +253,8 @@ def summarize(
         "seat_spend_disagrees": [r.instance_id for r in rows if r.seat_spend_agrees is False],
         # Censoring, on every arm, by the rule the single arm's driver uses.
         "timeout_s": timeout_s,
-        "timeout_censored": [r.instance_id for r in rows if r.timeout_censored],
-        "timeout_censored_count": sum(1 for r in rows if r.timeout_censored),
+        "timeout_censored": timeout_censored,
+        "timeout_censored_count": len(timeout_censored),
         # The second, independent reading: the clock against the wall the spec
         # set. It is derived and it is here to contradict the first one -- a
         # run past the wall without the reason, or the reason without the run
