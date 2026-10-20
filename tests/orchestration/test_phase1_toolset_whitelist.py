@@ -91,7 +91,9 @@ class ScriptedCtx:
         if isinstance(reply, dict) and reply.get("verdict") == "PASS":
             for tool in tools or ():
                 if getattr(tool, "name", "") == "bash":
-                    tool._verified_targets.update(reply.get("tests_run") or ())
+                    tool._verified_targets.update(
+                        (False, target) for target in (reply.get("tests_run") or ())
+                    )
         return reply
 
     async def parallel(self, thunks):
