@@ -4,6 +4,18 @@ All notable changes to OpenCollab-Eval are recorded in this file.
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-10-21
+
+Paired with the signed OpenCollab 0.9.5 release. The supported runtime range
+remains `opencollab>=0.9,<0.10`, and CI verifies the immutable 0.9.5 runtime
+commit.
+
+Evaluation and experiment inputs now reside in this repository. Shared setup
+for generation, evaluation, orchestration, reports, and tests has been
+consolidated while retaining the existing execution and scoring behavior.
+Contributor guidance and development documentation reflect the current
+repository layout.
+
 ## [0.9.2] - 2026-10-06
 
 Paired with OpenCollab 0.9.2. The supported runtime dependency remains
@@ -203,4 +215,6 @@ truncated, or mismatched execution output.
 
 [0.9.2]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.9.1...v0.9.2
 
-[Unreleased]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.9.2...HEAD
+[0.9.5]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.9.2...v0.9.5
+
+[Unreleased]: https://github.com/RISE-X-Lab/OpenCollab-Eval/compare/v0.9.5...HEAD
