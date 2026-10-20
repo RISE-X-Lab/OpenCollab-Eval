@@ -113,6 +113,20 @@ def verified_plan_patch_selection(
     return selection
 
 
+def _rejected_eval_patch(summary_path, summary, **extra):
+    write_json(summary_path, summary)
+    return {
+        "ready": False,
+        "result": {
+            "status": summary["status"],
+            "task": summary["task"],
+            "summary": summary,
+            "executed": False,
+            **extra,
+        },
+    }
+
+
 def validated_eval_patch(
     *,
     row,
@@ -147,16 +161,7 @@ def validated_eval_patch(
             "pairing": pairing,
             "executed": False,
         }
-        write_json(summary_path, summary)
-        return {
-            "ready": False,
-            "result": {
-                "status": "technical_eval_failed",
-                "task": task,
-                "summary": summary,
-                "executed": False,
-            },
-        }
+        return _rejected_eval_patch(summary_path, summary)
     patch_selection = bind_eval_image(row, patch_selection)
     candidate_expectation = patch_selection.get("candidate_expectation")
     if patch_selection.get("ok") and not _candidate_expectation_valid(
@@ -195,18 +200,12 @@ def validated_eval_patch(
             "technical_reasons": [selection_status],
             "pairing": pairing,
         }
-        write_json(summary_path, summary)
-        return {
-            "ready": False,
-            "result": {
-                "status": "technical_eval_failed",
-                "task": task,
-                "summary": summary,
-                "executed": False,
-                "eval_patch_sha256": patch_selection.get("eval_patch_sha256"),
-                "eval_image_id": patch_selection.get("image_id") or "",
-            },
-        }
+        return _rejected_eval_patch(
+            summary_path,
+            summary,
+            eval_patch_sha256=patch_selection.get("eval_patch_sha256"),
+            eval_image_id=patch_selection.get("image_id") or "",
+        )
     model_patch = patch_selection["model_patch"]
     patch_evidence = {
         "source_patch_sha256": patch_selection["source_patch_sha256"],
@@ -231,17 +230,11 @@ def validated_eval_patch(
             "technical_reasons": ["empty_eval_patch_after_filter"],
             "pairing": pairing,
         }
-        write_json(summary_path, summary)
-        return {
-            "ready": False,
-            "result": {
-                "status": "empty_eval_patch_invalid",
-                "task": task,
-                "summary": summary,
-                "executed": False,
-                "eval_patch_sha256": patch_selection["eval_patch_sha256"],
-            },
-        }
+        return _rejected_eval_patch(
+            summary_path,
+            summary,
+            eval_patch_sha256=patch_selection["eval_patch_sha256"],
+        )
     return {
         "ready": True,
         "patch_selection": patch_selection,

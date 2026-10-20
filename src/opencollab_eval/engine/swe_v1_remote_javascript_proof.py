@@ -78,6 +78,18 @@ def _js_candidate_module_bindings(candidate_patch, candidate_source_paths):
     return bindings
 
 
+def _jest_reports(log_text):
+    reports = []
+    for line in str(log_text or "").splitlines():
+        try:
+            value = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(value, dict) and "numTotalTestSuites" in value:
+            reports.append(value)
+    return reports
+
+
 def _js_suite_load_failure_proof_matches(
     proof,
     log_text,
@@ -121,14 +133,7 @@ def _js_suite_load_failure_proof_matches(
         bound_modules = modules
     if not bound_suite:
         return False
-    reports = []
-    for line in str(log_text or "").splitlines():
-        try:
-            value = json.loads(line)
-        except (TypeError, ValueError):
-            continue
-        if isinstance(value, dict) and "numTotalTestSuites" in value:
-            reports.append(value)
+    reports = _jest_reports(log_text)
     if len(reports) != 1:
         return False
     report = reports[0]
@@ -181,14 +186,7 @@ def _js_candidate_failure_proof_matches(
     if not isinstance(targets, list) or not targets or not isinstance(candidate_paths, list) or not candidate_paths:
         return False
     target_suites = {str(target).split(" | ", 1)[0].replace("\\", "/").removeprefix("./") for target in targets}
-    reports = []
-    for line in str(log_text or "").splitlines():
-        try:
-            value = json.loads(line)
-        except (TypeError, ValueError):
-            continue
-        if isinstance(value, dict) and "numTotalTestSuites" in value:
-            reports.append(value)
+    reports = _jest_reports(log_text)
     if len(reports) != 1 or reports[0].get("success") is not False:
         return False
     results = reports[0].get("testResults")

@@ -337,39 +337,26 @@ async def _finish_staged_patch_cleanup(
         )
         while not cleanup_task.done():
             remaining = deadline - asyncio.get_running_loop().time()
-            if remaining <= 0:
-                cleanup_failure = TimeoutError(
-                    "test patch staging-file cleanup exceeded its deadline"
-                )
-                env.revoke()
-                _stopped, cancellation, stop_error = await _force_stop_task(
-                    cleanup_task,
-                    cancellation=cancellation,
-                )
-                if stop_error:
-                    add_exception_note(cleanup_failure, stop_error)
-                break
-            try:
-                done, _pending = await asyncio.wait(
-                    {cleanup_task},
-                    timeout=remaining,
-                )
-            except asyncio.CancelledError as exc:
-                if cancellation is None:
-                    cancellation = exc
-                continue
-            if not done:
-                cleanup_failure = TimeoutError(
-                    "test patch staging-file cleanup exceeded its deadline"
-                )
-                env.revoke()
-                _stopped, cancellation, stop_error = await _force_stop_task(
-                    cleanup_task,
-                    cancellation=cancellation,
-                )
-                if stop_error:
-                    add_exception_note(cleanup_failure, stop_error)
-                break
+            if remaining > 0:
+                try:
+                    done, _pending = await asyncio.wait({cleanup_task}, timeout=remaining)
+                except asyncio.CancelledError as exc:
+                    if cancellation is None:
+                        cancellation = exc
+                    continue
+                if done:
+                    continue
+            cleanup_failure = TimeoutError(
+                "test patch staging-file cleanup exceeded its deadline"
+            )
+            env.revoke()
+            _stopped, cancellation, stop_error = await _force_stop_task(
+                cleanup_task,
+                cancellation=cancellation,
+            )
+            if stop_error:
+                add_exception_note(cleanup_failure, stop_error)
+            break
 
         if cleanup_failure is None and cleanup_task.done():
             try:

@@ -236,24 +236,11 @@ def _reports_from_payload(path: Path, payload: Any) -> list[EvalReport]:
             patch_sha = direct_payload_patch_sha(value)
             if patch_sha is None:
                 continue
-            reports.append(
-                EvalReport(
-                    task_id=str(key),
-                    patch_sha=patch_sha,
-                    status=status,
-                    record_id=str(
-                        value.get("record_id") or payload.get("record_id") or ""
-                    ),
-                    resolved_count=resolved,
-                    unresolved_count=unresolved,
-                    path=str(path),
-                )
-            )
-            continue
-        official = _status_from_official_payload(str(key), payload)
-        if official is None:
-            continue
-        status, resolved, unresolved, patch_sha = official
+        else:
+            official = _status_from_official_payload(str(key), payload)
+            if official is None:
+                continue
+            status, resolved, unresolved, patch_sha = official
         reports.append(
             EvalReport(
                 task_id=str(key),
@@ -507,6 +494,71 @@ def _scan_discovery_json_paths(side_dir: Path) -> list[tuple[Path, os.stat_resul
     return paths
 
 
+def _bind_report_to_attempt(
+    report: EvalReport,
+    path: Path,
+    report_stat: os.stat_result,
+    attempt: EvalAttempt | None,
+    side_dir: Path,
+) -> EvalReport:
+    # Legacy task+patch reports gain the attempt's record id only after a
+    # proven post-attempt change. Unchanged reports retain their old identity.
+    can_bind_legacy_identity = bool(
+        report.patch_sha
+        and not report.record_id
+        and attempt is not None
+        and attempt.status in REPORT_BINDING_ATTEMPT_STATUSES
+        and patch_sha_matches(report.patch_sha, attempt.patch_sha)
+    )
+    if report.patch_sha and not can_bind_legacy_identity:
+        return report
+    if attempt is None or attempt.status not in REPORT_BINDING_ATTEMPT_STATUSES:
+        return report
+    fresh_for_attempt = False
+    if attempt.prior_reports is not None:
+        try:
+            relative = str(path.relative_to(side_dir))
+        except ValueError:
+            relative = str(path)
+        prior_fingerprint = attempt.prior_reports.get(relative)
+        if (
+            prior_fingerprint is not None
+            and _report_stat_fingerprint(report_stat) == prior_fingerprint
+        ):
+            return report
+        fresh_for_attempt = True
+    elif (
+        attempt.prior_report_fingerprint is not None
+        and path == Path(attempt.path).with_name("report.json")
+    ):
+        if (
+            attempt.prior_report_fingerprint
+            and _report_stat_fingerprint(report_stat)
+            == attempt.prior_report_fingerprint
+        ):
+            return report
+        fresh_for_attempt = bool(
+            attempt.prior_report_fingerprint
+            and _report_stat_fingerprint(report_stat)
+            != attempt.prior_report_fingerprint
+        )
+    else:
+        return report
+    if report_stat.st_mtime_ns < attempt.started_at_ns:
+        return report
+    if can_bind_legacy_identity and not fresh_for_attempt:
+        return report
+    return EvalReport(
+        task_id=report.task_id,
+        patch_sha=attempt.patch_sha,
+        status=report.status,
+        record_id=attempt.record_id,
+        resolved_count=report.resolved_count,
+        unresolved_count=report.unresolved_count,
+        path=report.path,
+    )
+
+
 def _discover_eval_artifacts(
     side_dir: Path,
 ) -> tuple[list[EvalReport], dict[str, EvalAttempt]]:
@@ -552,82 +604,10 @@ def _discover_eval_artifacts(
         for report in _reports_from_payload(path, payload):
             reports_with_paths.append((report, path, opened_stat))
 
-    reports: list[EvalReport] = []
-    for report, path, report_stat in reports_with_paths:
-        attempt = attempts.get(report.task_id)
-        # Legacy batch reports may carry the evaluated patch hash but omit
-        # ``record_id``.  Once an attempt sidecar exists, leaving that report
-        # unbound allows the synthetic sidecar failure (which has the record
-        # id) to win the current-candidate summary.  Bind only a matching
-        # task+patch report that was created/changed after the attempt; an
-        # unchanged pre-attempt report must remain legacy evidence and still
-        # be shadowed by the conservative synthetic failure below.
-        can_bind_legacy_identity = bool(
-            report.patch_sha
-            and not report.record_id
-            and attempt is not None
-            and attempt.status in REPORT_BINDING_ATTEMPT_STATUSES
-            and patch_sha_matches(report.patch_sha, attempt.patch_sha)
-        )
-        if report.patch_sha and not can_bind_legacy_identity:
-            reports.append(report)
-            continue
-        if attempt is None or attempt.status not in REPORT_BINDING_ATTEMPT_STATUSES:
-            reports.append(report)
-            continue
-        report_mtime_ns = report_stat.st_mtime_ns
-        fresh_for_attempt = False
-        if attempt.prior_reports is not None:
-            try:
-                relative = str(path.relative_to(side_dir))
-            except ValueError:
-                relative = str(path)
-            prior_fingerprint = attempt.prior_reports.get(relative)
-            if (
-                prior_fingerprint is not None
-                and _report_stat_fingerprint(report_stat) == prior_fingerprint
-            ):
-                reports.append(report)
-                continue
-            fresh_for_attempt = prior_fingerprint is None or (
-                _report_stat_fingerprint(report_stat) != prior_fingerprint
-            )
-        elif (
-            attempt.prior_report_fingerprint is not None
-            and path == Path(attempt.path).with_name("report.json")
-        ):
-            if (
-                attempt.prior_report_fingerprint
-                and _report_stat_fingerprint(report_stat)
-                == attempt.prior_report_fingerprint
-            ):
-                reports.append(report)
-                continue
-            fresh_for_attempt = bool(
-                attempt.prior_report_fingerprint
-                and _report_stat_fingerprint(report_stat)
-                != attempt.prior_report_fingerprint
-            )
-        elif attempt.prior_reports is None:
-            reports.append(report)
-            continue
-        if report_mtime_ns < attempt.started_at_ns:
-            reports.append(report)
-            continue
-        if can_bind_legacy_identity and not fresh_for_attempt:
-            reports.append(report)
-            continue
-        reports.append(
-            EvalReport(
-                task_id=report.task_id,
-                patch_sha=attempt.patch_sha,
-                status=report.status,
-                record_id=attempt.record_id,
-                resolved_count=report.resolved_count,
-                unresolved_count=report.unresolved_count,
-                path=report.path,
-            )
-        )
+    reports = [
+        _bind_report_to_attempt(report, path, report_stat, attempts.get(report.task_id), side_dir)
+        for report, path, report_stat in reports_with_paths
+    ]
 
     reported_identities = {
         # SHA-256 hexadecimal spellings are case-insensitive.  Keep the

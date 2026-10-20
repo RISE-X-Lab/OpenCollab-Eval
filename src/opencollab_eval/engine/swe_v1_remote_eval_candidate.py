@@ -447,19 +447,11 @@ def _blocked_identity_document_proven(prediction, metric):
         return False
     if not _historical_provider_failure_clear(embedded, metric):
         return False
-    for field in ("agent_failures",):
-        if field not in embedded or field not in metric:
+    for fields in (("agent_failures",), _BLOCKED_IDENTITY_FIELDS, _BLOCKED_CAUSAL_FIELDS):
+        if any(field not in embedded or field not in metric for field in fields):
             return False
-        if embedded[field] != metric[field]:
+        if any(embedded[field] != metric[field] for field in fields):
             return False
-    if any(field not in embedded or field not in metric for field in _BLOCKED_IDENTITY_FIELDS):
-        return False
-    if any(embedded[field] != metric[field] for field in _BLOCKED_IDENTITY_FIELDS):
-        return False
-    if any(field not in embedded or field not in metric for field in _BLOCKED_CAUSAL_FIELDS):
-        return False
-    if any(embedded[field] != metric[field] for field in _BLOCKED_CAUSAL_FIELDS):
-        return False
     # A prediction can carry a copy of the generation identity in its
     # top-level document.  Bind any fields that are present on both documents
     # so an eval-only run cannot silently pair a stale top-level prediction

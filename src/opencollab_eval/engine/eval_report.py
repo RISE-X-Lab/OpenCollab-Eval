@@ -64,14 +64,8 @@ def build_eval_summary(
                 totals["empty_patch"] += 1
         if accepted_eval_done:
             totals["official_eval_done"] += 1
-        if classification == "resolved":
-            totals["resolved"] += 1
-        elif classification == "unresolved":
-            totals["unresolved"] += 1
-        elif classification == "technical_failed":
-            totals["technical_failed"] += 1
-        elif classification == "missing_eval":
-            totals["missing_eval"] += 1
+        if classification in {"resolved", "unresolved", "technical_failed", "missing_eval"}:
+            totals[classification] += 1
         if len(attempts) > 1:
             totals["retry_tasks"] += 1
 

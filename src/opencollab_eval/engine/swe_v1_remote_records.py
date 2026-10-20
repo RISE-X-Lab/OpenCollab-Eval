@@ -615,34 +615,25 @@ def immutable_image_id(image):
 
 
 def ensure_image(image):
-    if image_exists(image):
-        image_id = immutable_image_id(image)
-        return (
-            {"ok": True, "image": image, "image_id": image_id, "pulled": False}
-            if image_id
-            else {
+    pulled_image = False
+    if not image_exists(image):
+        pulled = run(["docker", "pull", image], timeout=900)
+        if pulled["returncode"] != 0 or not image_exists(image):
+            return {
                 "ok": False,
                 "image": image,
-                "pulled": False,
-                "reason": "invalid_image_identity",
+                "reason": "missing_image",
+                "details": pulled["stderr"] or pulled["stdout"],
             }
-        )
-    pulled = run(["docker", "pull", image], timeout=900)
-    if pulled["returncode"] == 0 and image_exists(image):
-        image_id = immutable_image_id(image)
-        if image_id:
-            return {"ok": True, "image": image, "image_id": image_id, "pulled": True}
-        return {
-            "ok": False,
-            "image": image,
-            "pulled": True,
-            "reason": "invalid_image_identity",
-        }
+        pulled_image = True
+    image_id = immutable_image_id(image)
+    if image_id:
+        return {"ok": True, "image": image, "image_id": image_id, "pulled": pulled_image}
     return {
         "ok": False,
         "image": image,
-        "reason": "missing_image",
-        "details": pulled["stderr"] or pulled["stdout"],
+        "pulled": pulled_image,
+        "reason": "invalid_image_identity",
     }
 
 
