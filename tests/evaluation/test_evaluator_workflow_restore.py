@@ -11,7 +11,6 @@ from tests.support.evaluator_workflow_test_support import (
     json,
     pytest,
     run,
-    run_eval_task,
     seed_checkpoint,
 )
 
@@ -260,6 +259,7 @@ async def test_checkpoint_restore_cancelled_partial_apply_marks_cancellation_unp
 
 def test_evaluator_blocks_workflow_and_patch_after_partial_checkpoint_restore(
     tmp_path,
+    eval_in_env,
 ):
     run_dir = tmp_path / "trajectories" / "partial-restore"
     checkpoint_patch = "diff --git a/new b/new\n+new\n"
@@ -287,20 +287,15 @@ def test_evaluator_blocks_workflow_and_patch_after_partial_checkpoint_restore(
 
     env = PartialRestoreEnv()
 
-    async def env_factory(task):
-        return env
-
     async def workflow(ctx, args):
         nonlocal workflow_ran
         workflow_ran = True
         return {"status": "done"}
 
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id="partial-restore", description="fix"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=workflow,
             checkpoint_interval_seconds=300,
             resume_from_checkpoint=True,

@@ -10,11 +10,10 @@ from tests.support.evaluator_test_support import (
     patch_evaluator_llm,
     pytest,
     run,
-    run_eval_task,
 )
 
 
-def test_caller_cancellation_cleans_environment_before_propagating(monkeypatch, tmp_path):
+def test_caller_cancellation_cleans_environment_before_propagating(monkeypatch, tmp_path, eval_in_env):
     started = asyncio.Event()
 
     async def wait_forever(**kwargs):
@@ -24,16 +23,11 @@ def test_caller_cancellation_cleans_environment_before_propagating(monkeypatch, 
     monkeypatch.setattr(evaluator, "_run_single_session", wait_forever)
     env = FakeEnv()
 
-    async def env_factory(task):
-        return env
-
     async def scenario():
         task = asyncio.create_task(
-            run_eval_task(
+            eval_in_env(
                 EvalTask(task_id="cancelled", description="fix"),
-                output_dir=str(tmp_path),
-                tools_factory=list,
-                env_factory=env_factory,
+                env,
             )
         )
         await started.wait()
@@ -49,6 +43,7 @@ def test_caller_cancellation_cleans_environment_before_propagating(monkeypatch, 
 def test_same_tick_caller_and_teardown_self_cancel_still_cleans_environment(
     monkeypatch,
     tmp_path,
+    eval_in_env,
 ):
     teardown_started = asyncio.Event()
     release_teardown = asyncio.Event()
@@ -79,16 +74,11 @@ def test_same_tick_caller_and_teardown_self_cancel_still_cleans_environment(
     )
     env = FakeEnv()
 
-    async def env_factory(task):
-        return env
-
     async def scenario():
         owner = asyncio.create_task(
-            run_eval_task(
+            eval_in_env(
                 EvalTask(task_id="dual-cancel", description="fix"),
-                output_dir=str(tmp_path),
-                tools_factory=list,
-                env_factory=env_factory,
+                env,
             )
         )
         await teardown_started.wait()
@@ -101,7 +91,7 @@ def test_same_tick_caller_and_teardown_self_cancel_still_cleans_environment(
     assert env.cleaned_up is True
 
 
-def test_caller_cancel_bounds_stubborn_environment_cleanup(monkeypatch, tmp_path):
+def test_caller_cancel_bounds_stubborn_environment_cleanup(monkeypatch, tmp_path, eval_in_env):
     cleanup_started = asyncio.Event()
     cleanup_cancelled = asyncio.Event()
     release_cleanup = asyncio.Event()
@@ -121,16 +111,11 @@ def test_caller_cancel_bounds_stubborn_environment_cleanup(monkeypatch, tmp_path
     env = StubbornCleanupEnv()
     patch_evaluator_llm(monkeypatch, FakeLLMClient)
 
-    async def env_factory(task):
-        return env
-
     async def scenario():
         eval_task = asyncio.create_task(
-            run_eval_task(
+            eval_in_env(
                 EvalTask(task_id="stubborn-env-cleanup", description="fix"),
-                output_dir=str(tmp_path),
-                tools_factory=list,
-                env_factory=env_factory,
+                env,
                 cancellation_cleanup_timeout=0.01,
             )
         )

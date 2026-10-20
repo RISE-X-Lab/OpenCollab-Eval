@@ -42,18 +42,13 @@ def _patch_workflow_runtime(monkeypatch, operation):
     )
 
 
-def test_run_eval_task_produces_patch(monkeypatch, tmp_path):
+def test_run_eval_task_produces_patch(monkeypatch, tmp_path, eval_in_env):
     patch_evaluator_llm(monkeypatch, FakeLLMClient)
     env = FakeEnv()
 
-    async def env_factory(task):
-        return env
-
-    result = run(run_eval_task(
+    result = run(eval_in_env(
         EvalTask(task_id="t1", description="fix the bug"),
-        output_dir=str(tmp_path),
-        tools_factory=list,
-        env_factory=env_factory,
+                     env,
     ))
 
     assert isinstance(result, EvalResult)

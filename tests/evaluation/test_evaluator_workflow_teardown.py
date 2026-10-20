@@ -10,18 +10,15 @@ from tests.support.evaluator_workflow_test_support import (
     generate_review_fix,
     patch_evaluator_llm,
     run,
-    run_eval_task,
 )
 
 
 def test_late_test_injection_paths_are_cleaned_and_never_submitted(
     monkeypatch,
     tmp_path,
+    eval_in_env,
 ):
     env = FakeEnv(diff="diff --git a/tests/leak.py b/tests/leak.py\n+secret test\n")
-
-    async def env_factory(task):
-        return env
 
     async def late_apply_test_patch(_env, _patch):
         try:
@@ -33,16 +30,14 @@ def test_late_test_injection_paths_are_cleaned_and_never_submitted(
     monkeypatch.setattr(evaluator, "apply_test_patch", late_apply_test_patch)
 
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(
                 task_id="late-test-injection",
                 description="x",
                 timeout=0.02,
                 extras={"test_patch": "diff --git a/tests/leak.py b/tests/leak.py"},
             ),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
             workflow=lambda ctx, args: None,
             cancellation_cleanup_timeout=0.05,
         )
@@ -57,7 +52,7 @@ def test_late_test_injection_paths_are_cleaned_and_never_submitted(
     assert any(command == "git --literal-pathspecs clean -fq -- tests/leak.py" for command in env.cmds)
 
 
-def test_workflow_none_path_unchanged(monkeypatch, tmp_path):
+def test_workflow_none_path_unchanged(monkeypatch, tmp_path, eval_in_env):
     from opencollab_eval.usage import LLMResponse, Usage
 
     class FakeLLMClient:
@@ -75,15 +70,10 @@ def test_workflow_none_path_unchanged(monkeypatch, tmp_path):
     patch_evaluator_llm(monkeypatch, FakeLLMClient)
     env = FakeEnv()
 
-    async def env_factory(task):
-        return env
-
     result = run(
-        run_eval_task(
+        eval_in_env(
             EvalTask(task_id="t3", description="fix"),
-            output_dir=str(tmp_path),
-            tools_factory=list,
-            env_factory=env_factory,
+            env,
         )
     )
 
